@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Field, Segmented, TextInput, Toggle } from '@/components/ui';
-import type { Quality } from '@/domain/types';
+import { parseNumberInput } from '@/domain/format';
+import { PROFILE_LIMITS, type Quality } from '@/domain/types';
 import { useI18n } from '@/i18n';
 import { useApp } from '@/store/useApp';
 
@@ -14,29 +15,41 @@ export function ProfilePage() {
   const resetAll = useApp((s) => s.resetAll);
   const navigate = useNavigate();
   const [name, setName] = useState(profile.name);
-  const [weight, setWeight] = useState(String(profile.weightKg));
-  const [ftp, setFtp] = useState(String(profile.ftp));
-  const [maxHr, setMaxHr] = useState(String(profile.maxHr));
-  const [resting, setResting] = useState(String(profile.restingHr));
-  const [lthr, setLthr] = useState(profile.thresholdHr ? String(profile.thresholdHr) : '');
-  const [bike, setBike] = useState(String(profile.bikeWeightKg));
-  const [cda, setCda] = useState(String(profile.cda));
-  const [crr, setCrr] = useState(String(profile.crr));
+  const [weight, setWeight] = useState(show(profile.weightKg));
+  const [ftp, setFtp] = useState(show(profile.ftp));
+  const [maxHr, setMaxHr] = useState(show(profile.maxHr));
+  const [resting, setResting] = useState(show(profile.restingHr));
+  const [lthr, setLthr] = useState(profile.thresholdHr ? show(profile.thresholdHr) : '');
+  const [bike, setBike] = useState(show(profile.bikeWeightKg));
+  const [cda, setCda] = useState(show(profile.cda));
+  const [crr, setCrr] = useState(show(profile.crr));
   const [saved, setSaved] = useState(false);
   const [armed, setArmed] = useState(false);
 
   async function save() {
-    await updateProfile({
+    const limit = (key: keyof typeof PROFILE_LIMITS, value: string, fallback: number) =>
+      parseNumberInput(value, PROFILE_LIMITS[key][0], PROFILE_LIMITS[key][1], fallback);
+    const patch = {
       name: name.trim() || profile.name,
-      weightKg: num(weight, profile.weightKg),
-      ftp: num(ftp, profile.ftp),
-      maxHr: num(maxHr, profile.maxHr),
-      restingHr: num(resting, profile.restingHr),
-      thresholdHr: lthr.trim() ? num(lthr, profile.maxHr) : undefined,
-      bikeWeightKg: num(bike, profile.bikeWeightKg),
-      cda: num(cda, profile.cda),
-      crr: num(crr, profile.crr),
-    });
+      weightKg: limit('weightKg', weight, profile.weightKg),
+      ftp: Math.round(limit('ftp', ftp, profile.ftp)),
+      maxHr: Math.round(limit('maxHr', maxHr, profile.maxHr)),
+      restingHr: Math.round(limit('restingHr', resting, profile.restingHr)),
+      thresholdHr: lthr.trim() ? Math.round(limit('thresholdHr', lthr, profile.maxHr)) : undefined,
+      bikeWeightKg: limit('bikeWeightKg', bike, profile.bikeWeightKg),
+      cda: limit('cda', cda, profile.cda),
+      crr: limit('crr', crr, profile.crr),
+    };
+    await updateProfile(patch);
+    // i campi mostrano il valore davvero salvato, anche se è stato riportato nei limiti
+    setWeight(show(patch.weightKg));
+    setFtp(show(patch.ftp));
+    setMaxHr(show(patch.maxHr));
+    setResting(show(patch.restingHr));
+    setLthr(patch.thresholdHr != null ? show(patch.thresholdHr) : '');
+    setBike(show(patch.bikeWeightKg));
+    setCda(show(patch.cda));
+    setCrr(show(patch.crr));
     setSaved(true);
   }
 
@@ -113,7 +126,7 @@ export function ProfilePage() {
   );
 }
 
-function num(value: string, fallback: number): number {
-  const parsed = Number(value.replace(',', '.'));
-  return Number.isFinite(parsed) ? parsed : fallback;
+/** Numero nel campo, con la virgola decimale come lo si scrive. */
+function show(value: number): string {
+  return String(value).replace('.', ',');
 }

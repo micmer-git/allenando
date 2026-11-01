@@ -126,6 +126,18 @@ export const DEFAULT_PROFILE: Profile = {
   onboarded: false,
 };
 
+/** Limiti dei numeri del profilo: fuori da qui è quasi sempre un errore di battitura. */
+export const PROFILE_LIMITS = {
+  weightKg: [35, 180],
+  ftp: [50, 550],
+  maxHr: [120, 230],
+  restingHr: [30, 110],
+  thresholdHr: [90, 220],
+  bikeWeightKg: [3, 40],
+  cda: [0.15, 0.7],
+  crr: [0.001, 0.02],
+} as const satisfies Record<string, readonly [number, number]>;
+
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'dark',
   camilla: true,

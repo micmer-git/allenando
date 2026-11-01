@@ -47,8 +47,8 @@ export function RideDetailPage() {
         <Metric label={t('metrics.npLong')} value={ride.np != null ? `${formatNumber(ride.np, 0)} W` : '–'} />
         <Metric label={t('metrics.ifLong')} value={ride.intensityFactor != null ? formatNumber(ride.intensityFactor, 2) : '–'} />
         <Metric label={t('metrics.tss')} value={ride.tss != null ? formatNumber(ride.tss, 0) : '–'} />
-        <Metric label={t('metrics.hr')} value={ride.avgHr != null ? `${ride.avgHr}` : '–'} />
-        <Metric label={t('metrics.speed')} value={`${formatNumber(msToKmh(ride.avgSpeed ?? 0), 1)}`} />
+        <Metric label={t('metrics.hr')} value={ride.avgHr != null ? `${ride.avgHr} ${t('units.bpm')}` : '–'} />
+        <Metric label={t('metrics.speed')} value={`${formatNumber(msToKmh(ride.avgSpeed ?? 0), 1)} ${t('units.kmh')}`} />
       </dl>
       <section className="mt-6">
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted">{t('history.zones')}</h2>

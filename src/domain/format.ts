@@ -64,6 +64,17 @@ export function formatGrade(fraction: number): string {
   return `${body}%`;
 }
 
+/**
+ * Numero scritto a mano: accetta la virgola decimale ("68,5") e lo tiene
+ * nei limiti. Vuoto o illeggibile → fallback.
+ */
+export function parseNumberInput(value: string, min: number, max: number, fallback: number): number {
+  const text = value.trim().replace(/\s/g, '').replace(',', '.');
+  const parsed = text === '' ? Number.NaN : Number(text);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
 export function toDatetimeLocalValue(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;

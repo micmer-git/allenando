@@ -5,6 +5,8 @@ import {
   parseControlPointResponse,
   parseFtmsFeatures,
   parseIndoorBikeData,
+  FTMS_OP,
+  FTMS_RESULT_CONTROL_NOT_PERMITTED,
   FTMS_RESULT_SUCCESS,
 } from '@/domain/ftms';
 import { cadenceFromCrank, parseCsc, parseCyclingPower, parseHeartRate, type CrankPoint } from '@/domain/sensors';
@@ -22,6 +24,8 @@ const HRM = 0x2a37;
 const CSC = 0x1816;
 const CSCM = 0x2a5b;
 const SERVICES = [FTMS, CPS, HR, CSC];
+/** Oltre questo silenzio un valore non è più vero: il motore lo vede come zero. */
+export const STALE_MS = 3000;
 
 const emptyServices = (): TrainerServices => ({ ftms: false, power: false, hr: false, csc: false });
 
@@ -42,11 +46,17 @@ export class BluetoothTrainer implements TelemetrySource {
   private status: TrainerSnapshot['status'] = 'idle';
   private deviceName: string | null = null;
   private busy = false;
-  private server: BluetoothRemoteGATTServer | null = null;
-  private device: BluetoothDevice | null = null;
+  /** Rullo e fascia cardio possono essere due periferiche: si tengono tutte. */
+  private devices: BluetoothDevice[] = [];
   private controlChar: BluetoothRemoteGATTCharacteristic | null = null;
+  private controlDevice: BluetoothDevice | null = null;
   private targetPowerSupported = true;
-  private writeChain: Promise<void> = Promise.resolve();
+  /** Un solo comando in volo; quelli arrivati nel frattempo valgono solo l'ultimo. */
+  private pending: Uint8Array | null = null;
+  private writing = false;
+  private powerAt = 0;
+  private cadenceAt = 0;
+  private hrAt = 0;
   private lastGrade = Number.NaN;
   private lastPowerCmd = Number.NaN;
   private lastCmdAt = 0;
@@ -56,11 +66,24 @@ export class BluetoothTrainer implements TelemetrySource {
   private cpsCadence: number | undefined;
   private cscCadence: number | undefined;
   private simT = 0;
-  private onDisconnect = () => {
-    this.status = 'disconnected';
-    this.control = 'none';
-    this.simulation = 'none';
-    this.server = null;
+  private onDisconnect = (event: Event) => {
+    const device = event.target as BluetoothDevice | null;
+    this.devices = this.devices.filter((item) => item !== device);
+    if (device && device === this.controlDevice) {
+      this.controlChar = null;
+      this.controlDevice = null;
+      this.control = 'none';
+      this.simulation = 'none';
+      this.pending = null;
+    }
+    // niente valori fantasma: senza periferica la potenza è zero, non l'ultima letta
+    this.power = 0;
+    this.cadence = 0;
+    this.hr = 0;
+    this.cpsCrank = undefined;
+    this.cscCrank = undefined;
+    this.ftmsCadence = this.cpsCadence = this.cscCadence = undefined;
+    if (this.devices.length === 0) this.status = 'disconnected';
     this.emit();
   };
 
@@ -86,11 +109,13 @@ export class BluetoothTrainer implements TelemetrySource {
       this.advanceSimulator(input);
       return;
     }
-    if (this.status !== 'connected') return;
     const now = performance.now();
+    this.dropStale(now);
+    if (this.status !== 'connected') return;
     if (input.erg && input.targetPower != null && this.control === 'granted' && this.targetPowerSupported) {
       const watts = Math.round(input.targetPower);
-      if (Math.abs(watts - this.lastPowerCmd) >= 1 || now - this.lastCmdAt > 2000) {
+      // !(x < soglia) è vero anche col primo comando, quando l'ultimo valore è NaN
+      if (!(Math.abs(watts - this.lastPowerCmd) < 1) || now - this.lastCmdAt > 2000) {
         this.lastPowerCmd = watts;
         this.lastCmdAt = now;
         this.enqueue(encodeSetTargetPower(watts));
@@ -98,7 +123,7 @@ export class BluetoothTrainer implements TelemetrySource {
       return;
     }
     if (!input.erg && this.simulation !== 'unsupported' && this.control === 'granted') {
-      if (Math.abs(input.grade - this.lastGrade) >= 0.0015 || now - this.lastCmdAt > 1000) {
+      if (!(Math.abs(input.grade - this.lastGrade) < 0.0015) || now - this.lastCmdAt > 1000) {
         this.lastGrade = input.grade;
         this.lastCmdAt = now;
         this.enqueue(
@@ -131,11 +156,14 @@ export class BluetoothTrainer implements TelemetrySource {
       this.emit();
       throw new Error(support.reason === 'ios' ? 'ios' : 'missing');
     }
+    // con un rullo già collegato si può aggiungere una fascia: se l'aggiunta fallisce, il rullo resta
+    const already = this.mode === 'bluetooth' && this.devices.length > 0;
     this.busy = true;
-    this.status = 'connecting';
+    if (!already) this.status = 'connecting';
     this.emit();
+    let device: BluetoothDevice | null = null;
     try {
-      const device = await navigator.bluetooth.requestDevice(
+      device = await navigator.bluetooth.requestDevice(
         acceptAll
           ? { acceptAllDevices: true, optionalServices: SERVICES }
           : {
@@ -143,21 +171,25 @@ export class BluetoothTrainer implements TelemetrySource {
               optionalServices: SERVICES,
             },
       );
-      this.device = device;
-      this.deviceName = device.name ?? null;
       device.addEventListener('gattserverdisconnected', this.onDisconnect);
       const server = await device.gatt?.connect();
       if (!server) throw new Error('gatt');
-      this.server = server;
-      await this.discover(server);
+      if (!this.devices.includes(device)) this.devices.push(device);
+      const now = performance.now();
+      this.powerAt = this.cadenceAt = this.hrAt = now;
+      const hadControl = this.controlChar;
+      await this.discover(server, device);
+      this.deviceName = this.devices.map((item) => item.name).filter(Boolean).join(' + ') || null;
       this.mode = 'bluetooth';
       this.status = 'connected';
-      if (this.services.ftms && this.controlChar) {
+      if (this.controlChar && this.controlChar !== hadControl) {
         await this.requestControl();
       }
     } catch (error) {
+      if (device) this.forget(device);
       const name = error instanceof DOMException ? error.name : '';
-      if (name === 'NotFoundError') this.status = 'cancelled';
+      if (already) this.status = 'connected';
+      else if (name === 'NotFoundError') this.status = 'cancelled';
       else if (this.status !== 'connected') this.status = 'failed';
       if (this.status !== 'connected') this.mode = 'simulator';
       throw error;
@@ -167,28 +199,38 @@ export class BluetoothTrainer implements TelemetrySource {
     }
   }
 
-  disconnect(): void {
-    try {
-      this.device?.removeEventListener('gattserverdisconnected', this.onDisconnect);
-      this.server?.disconnect();
-    } catch {
-      /* la periferica può essere già sparita */
+  private forget(device: BluetoothDevice): void {
+    this.devices = this.devices.filter((item) => item !== device);
+    if (device === this.controlDevice) {
+      this.controlChar = null;
+      this.controlDevice = null;
+      this.pending = null;
     }
-    this.server = null;
-    this.device = null;
+    try {
+      device.removeEventListener('gattserverdisconnected', this.onDisconnect);
+      device.gatt?.disconnect();
+    } catch {
+      /* già sparita */
+    }
+  }
+
+  disconnect(): void {
+    for (const device of [...this.devices]) this.forget(device);
     this.controlChar = null;
+    this.controlDevice = null;
+    this.pending = null;
     this.services = emptyServices();
     this.control = 'none';
     this.simulation = 'none';
     if (this.mode === 'bluetooth') this.status = 'disconnected';
   }
 
-  private async discover(server: BluetoothRemoteGATTServer): Promise<void> {
+  private async discover(server: BluetoothRemoteGATTServer, device: BluetoothDevice): Promise<void> {
     const services = await server.getPrimaryServices();
     for (const service of services) {
       if (isUuid(service.uuid, FTMS)) {
         this.services.ftms = true;
-        await this.bindFtms(service);
+        await this.bindFtms(service, device);
       } else if (isUuid(service.uuid, CPS)) {
         this.services.power = true;
         await this.listen(service, CPM, (view) => this.onCyclingPower(view));
@@ -196,7 +238,10 @@ export class BluetoothTrainer implements TelemetrySource {
         this.services.hr = true;
         await this.listen(service, HRM, (view) => {
           const hr = parseHeartRate(view);
-          if (hr != null) this.hr = hr;
+          if (hr != null) {
+            this.hr = hr;
+            this.hrAt = performance.now();
+          }
           this.emit();
         });
       } else if (isUuid(service.uuid, CSC)) {
@@ -206,7 +251,7 @@ export class BluetoothTrainer implements TelemetrySource {
     }
   }
 
-  private async bindFtms(service: BluetoothRemoteGATTService): Promise<void> {
+  private async bindFtms(service: BluetoothRemoteGATTService, device: BluetoothDevice): Promise<void> {
     try {
       const feature = await service.getCharacteristic(FEATURE);
       const value = await feature.readValue();
@@ -227,12 +272,21 @@ export class BluetoothTrainer implements TelemetrySource {
         if (!value) return;
         const response = parseControlPointResponse(value);
         if (!response) return;
-        if (response.opcode === 0x00) {
+        if (response.opcode === FTMS_OP.requestControl) {
           this.control = response.result === FTMS_RESULT_SUCCESS ? 'granted' : 'denied';
+          // controllo (ri)ottenuto: il prossimo giro rimanda subito bersaglio o pendenza
+          this.lastPowerCmd = Number.NaN;
+          this.lastGrade = Number.NaN;
+          this.emit();
+        } else if (response.result === FTMS_RESULT_CONTROL_NOT_PERMITTED && this.control === 'granted') {
+          // il rullo ha tolto il controllo (per esempio a favore di un'altra app): lo si richiede
+          this.control = 'none';
+          void this.requestControl();
           this.emit();
         }
       });
       this.controlChar = control;
+      this.controlDevice = device;
     } catch {
       this.control = 'unsupported';
     }
@@ -244,14 +298,22 @@ export class BluetoothTrainer implements TelemetrySource {
       await this.write(this.controlChar, encodeRequestControl());
     } catch {
       this.control = 'denied';
+      this.emit();
     }
   }
 
   private onIndoorBike(view: DataView): void {
     const data = parseIndoorBikeData(view);
-    if (!this.services.power && data.powerW != null) this.power = data.powerW;
+    const now = performance.now();
+    if (!this.services.power && data.powerW != null) {
+      this.power = Math.max(0, data.powerW);
+      this.powerAt = now;
+    }
     if (data.cadenceRpm != null) this.ftmsCadence = data.cadenceRpm;
-    if (!this.services.hr && data.heartRate != null) this.hr = data.heartRate;
+    if (!this.services.hr && data.heartRate != null) {
+      this.hr = data.heartRate;
+      this.hrAt = now;
+    }
     this.pickCadence();
     this.emit();
   }
@@ -259,7 +321,8 @@ export class BluetoothTrainer implements TelemetrySource {
   private onCyclingPower(view: DataView): void {
     const reading = parseCyclingPower(view);
     if (!reading) return;
-    this.power = reading.power;
+    this.power = Math.max(0, reading.power);
+    this.powerAt = performance.now();
     if (reading.crankRevs != null && reading.crankTime != null) {
       const next = { revs: reading.crankRevs, time: reading.crankTime };
       const rpm = cadenceFromCrank(this.cpsCrank, next);
@@ -283,7 +346,30 @@ export class BluetoothTrainer implements TelemetrySource {
 
   private pickCadence(): void {
     const value = this.cpsCadence ?? this.cscCadence ?? this.ftmsCadence;
-    if (value != null) this.cadence = value;
+    if (value != null) {
+      this.cadence = value;
+      this.cadenceAt = performance.now();
+    }
+  }
+
+  /** Un sensore che tace da più di STALE_MS non tiene in vita il suo ultimo valore. */
+  private dropStale(now: number): void {
+    if (this.mode !== 'bluetooth') return;
+    let changed = false;
+    if (this.power !== 0 && now - this.powerAt > STALE_MS) {
+      this.power = 0;
+      changed = true;
+    }
+    if (this.cadence !== 0 && now - this.cadenceAt > STALE_MS) {
+      this.cadence = 0;
+      this.cpsCadence = this.cscCadence = this.ftmsCadence = undefined;
+      changed = true;
+    }
+    if (this.hr !== 0 && now - this.hrAt > STALE_MS * 2) {
+      this.hr = 0;
+      changed = true;
+    }
+    if (changed) this.emit();
   }
 
   private async listen(
@@ -305,11 +391,26 @@ export class BluetoothTrainer implements TelemetrySource {
   }
 
   private enqueue(bytes: Uint8Array): void {
-    const char = this.controlChar;
-    if (!char) return;
-    this.writeChain = this.writeChain
-      .then(() => this.write(char, bytes))
-      .catch(() => undefined);
+    if (!this.controlChar) return;
+    this.pending = bytes;
+    if (!this.writing) void this.flush();
+  }
+
+  private async flush(): Promise<void> {
+    this.writing = true;
+    try {
+      while (this.pending && this.controlChar) {
+        const bytes = this.pending;
+        this.pending = null;
+        try {
+          await this.write(this.controlChar, bytes);
+        } catch {
+          /* un comando perso si ripete al giro dopo: ERG ogni 2 s, pendenza ogni 1 s */
+        }
+      }
+    } finally {
+      this.writing = false;
+    }
   }
 
   private async write(char: BluetoothRemoteGATTCharacteristic, bytes: Uint8Array): Promise<void> {

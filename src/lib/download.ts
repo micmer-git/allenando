@@ -9,7 +9,8 @@ export function downloadBytes(filename: string, bytes: Uint8Array, mime: string)
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
-  URL.revokeObjectURL(url);
+  // Safari e Firefox leggono il blob dopo il click: revocarlo subito annulla il download
+  window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
 
 export function downloadText(filename: string, text: string, mime: string): void {

@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Field, TextInput, Toggle, Wordmark } from '@/components/ui';
-import { DEFAULT_PROFILE } from '@/domain/types';
+import { parseNumberInput } from '@/domain/format';
+import { DEFAULT_PROFILE, PROFILE_LIMITS as LIMITS } from '@/domain/types';
 import { useI18n } from '@/i18n';
 import { useApp } from '@/store/useApp';
 
@@ -21,9 +22,9 @@ export function OnboardingPage() {
       {
         ...DEFAULT_PROFILE,
         name: name.trim() || 'Atleta',
-        weightKg: clamp(Number(weight), 35, 180, DEFAULT_PROFILE.weightKg),
-        ftp: clamp(Number(ftp), 50, 550, DEFAULT_PROFILE.ftp),
-        maxHr: clamp(Number(maxHr), 120, 230, DEFAULT_PROFILE.maxHr),
+        weightKg: parseNumberInput(weight, LIMITS.weightKg[0], LIMITS.weightKg[1], DEFAULT_PROFILE.weightKg),
+        ftp: Math.round(parseNumberInput(ftp, LIMITS.ftp[0], LIMITS.ftp[1], DEFAULT_PROFILE.ftp)),
+        maxHr: Math.round(parseNumberInput(maxHr, LIMITS.maxHr[0], LIMITS.maxHr[1], DEFAULT_PROFILE.maxHr)),
         onboarded: true,
       },
       camilla,
@@ -73,11 +74,6 @@ export function OnboardingPage() {
       </form>
     </main>
   );
-}
-
-function clamp(value: number, min: number, max: number, fallback: number): number {
-  if (!Number.isFinite(value)) return fallback;
-  return Math.min(max, Math.max(min, value));
 }
 
 function BikeMark() {

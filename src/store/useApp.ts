@@ -50,6 +50,10 @@ interface AppState {
   resetAll: () => Promise<void>;
 }
 
+function sortSleeps(sleeps: SleepSession[]): SleepSession[] {
+  return [...sleeps].sort((a, b) => (a.start < b.start ? 1 : a.start > b.start ? -1 : 0));
+}
+
 function sortRides(rides: Ride[]): Ride[] {
   return [...rides].sort((a, b) => (a.startTime < b.startTime ? 1 : a.startTime > b.startTime ? -1 : 0));
 }
@@ -158,12 +162,12 @@ export const useApp = create<AppState>((set, get) => ({
     await saveSleepRecord(session);
     const settings = { ...get().settings, activeSleepStart: null };
     await saveKv('settings', settings);
-    set({ sleeps: [session, ...get().sleeps.filter((item) => item.id !== session.id)], settings });
+    set({ sleeps: sortSleeps([session, ...get().sleeps.filter((item) => item.id !== session.id)]), settings });
   },
 
   async addSleep(session) {
     await saveSleepRecord(session);
-    set({ sleeps: [session, ...get().sleeps.filter((item) => item.id !== session.id)] });
+    set({ sleeps: sortSleeps([session, ...get().sleeps.filter((item) => item.id !== session.id)]) });
   },
 
   async deleteSleep(id) {

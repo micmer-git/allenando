@@ -59,6 +59,8 @@ export class RideEngine {
   private powerBuf: { t: number; p: number }[] = [];
   private listeners = new Set<() => void>();
   private sinceEmit = 0;
+  /** finish() aggiunge l'ultimo campione: se si riprende a pedalare, va tolto. */
+  private closingSample = false;
 
   constructor(opts: EngineOptions) {
     this.track = opts.track;
@@ -75,6 +77,8 @@ export class RideEngine {
     this.cw = opts.cw;
     this.startedAt = new Date();
     this.mode = this.workout ? 'erg' : 'free';
+    // il bersaglio è giusto già prima del primo fotogramma, non 0 W
+    if (this.workout) this.targetPower = workoutAt(this.workout, 0, this.ftp).targetPower;
     const pose = this.track.poseAt(0);
     this.grade = pose.grade;
     this.altitude = pose.altitude;
@@ -106,8 +110,18 @@ export class RideEngine {
 
   finish(): void {
     if (this.phase === 'finished') return;
-    this.pushSample();
+    this.closingSample = this.sampleAcc > 0 || this.samples.length === 0;
+    if (this.closingSample) this.pushSample();
     this.phase = 'finished';
+    this.emit();
+  }
+
+  /** Annulla un «Termina» toccato per sbaglio: il giro continua da dove era. */
+  reopen(): void {
+    if (this.phase !== 'finished') return;
+    if (this.closingSample) this.samples.pop();
+    this.closingSample = false;
+    this.phase = 'riding';
     this.emit();
   }
 

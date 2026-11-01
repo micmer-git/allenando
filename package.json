@@ -6,7 +6,7 @@
   "description": "Ciclismo indoor 3D, con Camilla al seguito. PWA offline.",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build && cp dist/index.html dist/404.html",
+    "build": "tsc --noEmit && vite build && node -e \"require('node:fs').copyFileSync('dist/index.html','dist/404.html')\"",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
     "test": "vitest run",
     "samples": "vite-node scripts/make-samples.ts"

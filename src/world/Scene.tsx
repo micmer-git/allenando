@@ -25,7 +25,6 @@ export function RideScene({
         alpha: false,
         stencil: false,
         powerPreference: 'high-performance',
-        preserveDrawingBuffer: true,
       }}
       camera={{ fov: 46, near: 0.1, far: 1800, position: [0, 5, -10] }}
       onCreated={({ gl }) => {

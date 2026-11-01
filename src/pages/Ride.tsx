@@ -160,7 +160,7 @@ function RideScreen({
         ) : null}
         <span data-testid="world-ready" data-ready={ready ? 'yes' : 'no'} className="sr-only" />
       </div>
-      <aside className="max-h-[48%] overflow-auto border-t border-line bg-elev px-4 pb-[max(0.8rem,env(safe-area-inset-bottom))] pt-3 md:max-h-none md:w-[400px] md:shrink-0 md:border-l md:border-t-0">
+      <aside className="max-h-[56%] overflow-auto border-t border-line bg-elev px-4 pb-[max(0.8rem,env(safe-area-inset-bottom))] pt-3 md:max-h-none md:w-[400px] md:shrink-0 md:border-l md:border-t-0">
         {progress && engine.workout ? (
           <div className="mb-3">
             <div className="flex items-end justify-between gap-3">
@@ -202,7 +202,8 @@ function RideScreen({
           <Cell label={t('metrics.time')} value={formatDuration(engine.elapsed)} />
           <Cell label={t('metrics.grade')} value={formatGrade(engine.grade)} />
         </dl>
-        <div className="mt-3 grid grid-cols-2 gap-2">
+        {/* su telefono il pannello scorre: Pausa e Termina restano sempre a portata di dito */}
+        <div className="sticky bottom-0 z-10 -mx-4 mt-3 grid grid-cols-2 gap-2 bg-elev px-4 py-2 md:static md:mx-0 md:px-0 md:py-0">
           <Button
             variant="ghost"
             onClick={() => (engine.phase === 'paused' ? engine.resume() : engine.pause())}
@@ -266,6 +267,14 @@ function RideScreen({
         {snap.mode === 'bluetooth' && snap.status === 'connected' && engine.power <= 0 ? (
           <p className="mt-2 text-sm text-warn">{t('ride.waiting')}</p>
         ) : null}
+        {snap.mode === 'bluetooth' && snap.status === 'disconnected' ? (
+          <p className="mt-2 flex items-center justify-between gap-3 text-sm text-warn" role="status">
+            {t('ride.lost')}
+            <button type="button" className="font-semibold underline" onClick={() => setSensorsOpen(true)}>
+              {t('ride.reconnect')}
+            </button>
+          </p>
+        ) : null}
       </aside>
       {sensorsOpen ? (
         <SensorSheet
@@ -323,6 +332,18 @@ function RideScreen({
                   {t('actions.save')}
                 </Button>
               )}
+              {!saved ? (
+                <Button
+                  variant="soft"
+                  data-testid="ride-continue"
+                  onClick={() => {
+                    engine.reopen();
+                    setSummary(null);
+                  }}
+                >
+                  {t('ride.keepRiding')}
+                </Button>
+              ) : null}
               {!saved ? (
                 <Button variant="ghost" onClick={() => navigate('/')}>
                   {t('actions.discard')}

@@ -47,7 +47,10 @@ function Editor({ initial, isNew }: { initial: Workout; isNew: boolean }) {
       setError(t('workouts.needName'));
       return;
     }
-    if (preview.steps.length === 0 || preview.steps.some((step) => step.durationSec < 10)) {
+    // un passo con numeri illeggibili non va scartato in silenzio: lo si segnala
+    const unreadable = preview.steps.length !== steps.length;
+    const badPower = preview.steps.some((step) => !((step.powerPct ?? step.powerWatts ?? 0) > 0));
+    if (preview.steps.length === 0 || unreadable || badPower || preview.steps.some((step) => step.durationSec < 10)) {
       setError(t('workouts.needStep'));
       return;
     }
@@ -164,9 +167,9 @@ function draftToWorkout(id: string, name: string, steps: DraftStep[]): Workout {
     name,
     steps: steps
       .map((step) => {
-        const durationSec = Math.max(0, Math.round(Number(step.minutes) * 60 + Number(step.seconds)));
-        const power = Number(step.power);
-        const end = Number(step.end);
+        const durationSec = Math.max(0, Math.round(readNumber(step.minutes || '0') * 60 + readNumber(step.seconds || '0')));
+        const power = readNumber(step.power);
+        const end = readNumber(step.end);
         if (step.mode === 'watt') {
           return {
             id: step.id,
@@ -184,4 +187,10 @@ function draftToWorkout(id: string, name: string, steps: DraftStep[]): Workout {
       })
       .filter((step) => step.durationSec > 0 && Number.isFinite(step.powerPct ?? step.powerWatts)),
   };
+}
+
+/** Come lo si scrive a mano: "1,5" vale 1.5, vuoto non vale niente. */
+function readNumber(value: string): number {
+  const text = value.trim().replace(',', '.');
+  return text === '' ? Number.NaN : Number(text);
 }

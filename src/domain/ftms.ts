@@ -35,6 +35,7 @@ export const FTMS_OP = {
 } as const;
 
 export const FTMS_RESULT_SUCCESS = 0x01;
+export const FTMS_RESULT_CONTROL_NOT_PERMITTED = 0x05;
 
 /**
  * Indoor Bike Data (0x2AD2).
