@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import type { Quality } from '@/domain/types';
 import type { Track, TrackPoint } from '@/domain/track';
 import type { RideEngine } from '@/sim/engine';
+import { terrainSizeForTrack } from './landscape';
 
 export function RideScene({
   engine,
@@ -26,14 +27,14 @@ export function RideScene({
         stencil: false,
         powerPreference: 'high-performance',
       }}
-      camera={{ fov: 46, near: 0.1, far: 1800, position: [0, 5, -10] }}
+      camera={{ fov: 52, near: 0.1, far: 1800, position: [0, 3.5, -10] }}
       onCreated={({ gl }) => {
         gl.toneMapping = THREE.ACESFilmicToneMapping;
         gl.toneMappingExposure = 1.08;
       }}
     >
       <color attach="background" args={['#c5dff2']} />
-      <fog attach="fog" args={['#cfe4f2', 28, quality === 'low' ? 260 : 460]} />
+      <fog attach="fog" args={['#cfe4f2', 110, quality === 'low' ? 380 : 600]} />
       <hemisphereLight args={['#e7f4ff', '#7da86a', 0.72]} />
       <ambientLight intensity={0.28} />
       <directionalLight
@@ -72,10 +73,10 @@ function FollowCam({ engine }: { engine: RideEngine }) {
     const fz = Math.cos(pose.heading);
     const rx = Math.cos(pose.heading);
     const rz = -Math.sin(pose.heading);
-    desired.current.set(pose.x - fx * 5.4 + rx * 1.25, pose.y + 2.05, pose.z - fz * 5.4 + rz * 1.25);
+    desired.current.set(pose.x - fx * 9.5 + rx * 0.7, pose.y + 3.45, pose.z - fz * 9.5 + rz * 0.7);
     const k = 1 - Math.exp(-Math.min(1, dt) * 3.4);
     camera.position.lerp(desired.current, k);
-    look.current.set(pose.x - fx * 0.35, pose.y + 0.85, pose.z - fz * 0.35);
+    look.current.set(pose.x + fx * 8, pose.y + 1.1, pose.z + fz * 8);
     camera.lookAt(look.current);
   };
   useLayoutEffect(() => {
@@ -89,34 +90,49 @@ function FollowCam({ engine }: { engine: RideEngine }) {
 
 function World({ engine, quality, camilla }: { engine: RideEngine; quality: Quality; camilla: boolean }) {
   const track = engine.track;
-  const segments = quality === 'low' ? 42 : quality === 'high' ? 84 : 60;
+  const segments = quality === 'low' ? 72 : quality === 'high' ? 136 : 104;
   const terrain = useMemo(() => buildTerrain(track, segments), [track, segments]);
+  const roadside = useMemo(() => ribbon(track.points, 17, -0.7), [track]);
+  const shoulders = useMemo(() => ribbon(track.points, 4.8, -0.035), [track]);
   const road = useMemo(() => buildRoad(track), [track]);
+  const edgeLines = useMemo(() => buildEdgeLines(track), [track]);
   const dashes = useMemo(() => buildDashes(track), [track]);
-  const trees = useMemo(() => scatterTrees(track, quality === 'low' ? 46 : quality === 'high' ? 120 : 78), [track, quality]);
-  const flowers = useMemo(() => (camilla ? scatterFlowers(track, quality === 'low' ? 40 : 90) : []), [track, camilla, quality]);
+  const trees = useMemo(() => scatterTrees(track, quality === 'low' ? 240 : quality === 'high' ? 720 : 480), [track, quality]);
+  const flowers = useMemo(() => (camilla ? scatterFlowers(track, quality === 'low' ? 100 : 220) : []), [track, camilla, quality]);
   const gate = useMemo(() => track.poseAt(28), [track]);
   const sign = useMemo(() => makeSignTexture(), []);
   useEffect(() => {
     return () => {
       terrain.dispose();
+      roadside.dispose();
+      shoulders.dispose();
       road.dispose();
+      edgeLines.dispose();
       dashes.dispose();
       sign.dispose();
     };
-  }, [terrain, road, dashes, sign]);
+  }, [terrain, roadside, shoulders, road, edgeLines, dashes, sign]);
 
   return (
     <group>
       <Sky />
       <mesh geometry={terrain} receiveShadow>
-        <meshLambertMaterial vertexColors />
+        <meshLambertMaterial vertexColors side={THREE.DoubleSide} />
+      </mesh>
+      <mesh geometry={roadside} receiveShadow>
+        <meshLambertMaterial color="#779b5d" side={THREE.DoubleSide} />
+      </mesh>
+      <mesh geometry={shoulders} receiveShadow>
+        <meshLambertMaterial color="#b5a98e" side={THREE.DoubleSide} />
       </mesh>
       <mesh geometry={road} receiveShadow castShadow>
         <meshLambertMaterial color="#3c4452" />
       </mesh>
+      <mesh geometry={edgeLines}>
+        <meshBasicMaterial color="#e9e4d1" side={THREE.DoubleSide} />
+      </mesh>
       <mesh geometry={dashes}>
-        <meshBasicMaterial color="#f0d56c" />
+        <meshBasicMaterial color="#f0d56c" side={THREE.DoubleSide} />
       </mesh>
       <Trees items={trees} />
       {flowers.length > 0 ? <Flowers items={flowers} /> : null}
@@ -127,6 +143,13 @@ function World({ engine, quality, camilla }: { engine: RideEngine; quality: Qual
 }
 
 function Sky() {
+  // A skybox must follow the rider: the loop extends past x=900 m.
+  // Keeping the sphere at world origin made it invisible from the starting line.
+  const skyRef = useRef<THREE.Mesh>(null);
+  const { camera } = useThree();
+  useFrame(() => {
+    if (skyRef.current) skyRef.current.position.copy(camera.position);
+  });
   const geo = useMemo(() => {
     const geometry = new THREE.SphereGeometry(900, 18, 12);
     const colors = new Float32Array(geometry.attributes.position.count * 3);
@@ -146,8 +169,8 @@ function Sky() {
   }, []);
   useEffect(() => () => geo.dispose(), [geo]);
   return (
-    <mesh geometry={geo}>
-      <meshBasicMaterial vertexColors side={THREE.BackSide} depthWrite={false} />
+    <mesh ref={skyRef} geometry={geo} frustumCulled={false} renderOrder={-100}>
+      <meshBasicMaterial vertexColors side={THREE.BackSide} depthWrite={false} fog={false} />
     </mesh>
   );
 }
@@ -323,7 +346,7 @@ function Trailer() {
         <meshStandardMaterial color="#fff7f1" roughness={0.8} />
       </mesh>
       <mesh position={[0, 1.02, 0.28]} rotation={[1.05, 0, 0]}>
-        <sphereGeometry args={[0.4, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.42]} />
+        <sphereGeometry args={[0.34, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.4]} />
         <meshStandardMaterial color="#ffb7cb" roughness={0.65} side={THREE.DoubleSide} />
       </mesh>
       <mesh position={[0, 0.78, 0.22]}>
@@ -422,7 +445,7 @@ function ScatterMesh({ items, kind }: { items: Scatter[]; kind: 'tree' | 'flower
       dummy.updateMatrix();
       if (kind === 'tree') {
         trunk.current?.setMatrixAt(index, dummy.matrix);
-        dummy.position.y = item.y + 1.15 * item.s;
+        dummy.position.y = item.y + 1.7 * item.s;
         dummy.updateMatrix();
         crown.current?.setMatrixAt(index, dummy.matrix);
         crown.current?.setColorAt(index, new THREE.Color(item.color));
@@ -438,7 +461,7 @@ function ScatterMesh({ items, kind }: { items: Scatter[]; kind: 'tree' | 'flower
     if (trunk.current) trunk.current.instanceMatrix.needsUpdate = true;
   }, [items, kind]);
   const crownGeo = useMemo(
-    () => (kind === 'flower' ? new THREE.SphereGeometry(0.16, 7, 6) : new THREE.ConeGeometry(0.55, 1.5, 7)),
+    () => (kind === 'flower' ? new THREE.SphereGeometry(0.16, 7, 6) : new THREE.ConeGeometry(0.68, 2.4, 7)),
     [kind],
   );
   const trunkGeo = useMemo(() => new THREE.CylinderGeometry(0.08, 0.12, 0.9, 6), []);
@@ -467,6 +490,32 @@ function ScatterMesh({ items, kind }: { items: Scatter[]; kind: 'tree' | 'flower
 
 function buildRoad(track: Track): THREE.BufferGeometry {
   return ribbon(track.points, 3.15, 0.08);
+}
+
+/** Two continuous white edge lines following the full track without extra draw calls. */
+function buildEdgeLines(track: Track): THREE.BufferGeometry {
+  const positions: number[] = [];
+  const indices: number[] = [];
+  const pts = track.points;
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i];
+    const b = pts[(i + 1) % pts.length];
+    for (const side of [-1, 1]) {
+      const base = positions.length / 3;
+      for (const p of [a, b]) {
+        const rx = Math.cos(p.heading);
+        const rz = -Math.sin(p.heading);
+        for (const d of [2.9 - 0.055, 2.9 + 0.055]) {
+          positions.push(p.x + rx * d * side, p.y + 0.115, p.z + rz * d * side);
+        }
+      }
+      indices.push(base, base + 2, base + 1, base + 2, base + 3, base + 1);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setIndex(indices);
+  return geo;
 }
 
 function buildDashes(track: Track): THREE.BufferGeometry {
@@ -515,7 +564,9 @@ function ribbon(points: TrackPoint[], half: number, lift: number): THREE.BufferG
 }
 
 function buildTerrain(track: Track, segments: number): THREE.BufferGeometry {
-  const size = 1500;
+  // The 4.8 km loop reaches x=920 m; a fixed 1500 m square ended at +/-750 m.
+  // Its starting line was therefore completely outside the terrain.
+  const size = terrainSizeForTrack(track);
   const geo = new THREE.PlaneGeometry(size, size, segments, segments);
   geo.rotateX(-Math.PI / 2);
   const pos = geo.attributes.position as THREE.BufferAttribute;
@@ -549,25 +600,24 @@ function buildTerrain(track: Track, segments: number): THREE.BufferGeometry {
 }
 
 function scatterTrees(track: Track, count: number): Scatter[] {
+  // Place scenery along the actual 4.8 km route, not within an arbitrary radius
+  // around world origin. The old scatter left the entire starting stretch empty.
   const rand = mulberry32(7);
-  const index = spatialIndex(track.points);
   const out: Scatter[] = [];
-  const colors = ['#2f7a45', '#3e9454', '#256b3c', '#4aa063'];
-  let guard = 0;
-  while (out.length < count && guard < count * 12) {
-    guard += 1;
-    const ang = rand() * Math.PI * 2;
-    const rad = 40 + rand() * 560;
-    const x = Math.cos(ang) * rad;
-    const z = Math.sin(ang) * rad * 0.82;
-    const near = index.nearest(x, z);
-    if (near.dist < 14 || Math.hypot(x, z) < 110) continue;
+  const colors = ['#306b4b', '#477f58', '#245b43', '#619164', '#376e52'];
+  for (let i = 0; i < count; i++) {
+    const distance = (i + 0.2 + rand() * 0.6) * track.length / count;
+    const p = track.poseAt(distance);
+    const side = rand() < 0.5 ? -1 : 1;
+    const offset = side * (rand() < 0.7 ? 19 + rand() * 38 : 56 + rand() * 95);
+    const rx = Math.cos(p.heading);
+    const rz = -Math.sin(p.heading);
     out.push({
-      x,
-      y: near.alt - 0.2,
-      z,
-      s: 0.85 + rand() * 0.9,
-      color: colors[out.length % colors.length],
+      x: p.x + rx * offset,
+      y: p.y - 1.1 + Math.sin(p.x * 0.008) * 0.65,
+      z: p.z + rz * offset,
+      s: 1.0 + rand() * 1.65,
+      color: colors[i % colors.length],
     });
   }
   return out;
