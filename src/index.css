@@ -1,0 +1,142 @@
+@import "tailwindcss";
+@import "@fontsource/outfit/latin-400.css";
+@import "@fontsource/outfit/latin-500.css";
+@import "@fontsource/outfit/latin-600.css";
+@import "@fontsource/outfit/latin-700.css";
+@import "@fontsource/fraunces/latin-500.css";
+@import "@fontsource/fraunces/latin-600.css";
+@import "@fontsource/fraunces/latin-700.css";
+
+@theme inline {
+  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Fraunces", Georgia, "Times New Roman", serif;
+  --color-bg: var(--bg);
+  --color-elev: var(--elev);
+  --color-elev2: var(--elev2);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-line: var(--line);
+  --color-camilla: var(--camilla);
+  --color-sky: var(--sky);
+  --color-good: var(--good);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+}
+
+:root {
+  color-scheme: dark;
+  --bg: #090a0e;
+  --elev: #14161e;
+  --elev2: #1e222d;
+  --ink: #f6f1e8;
+  --muted: #a39c90;
+  --accent: #dff25a;
+  --accent-ink: #1a1d08;
+  --line: rgba(246, 241, 232, 0.12);
+  --camilla: #ffb3c8;
+  --sky: #9fd4ff;
+  --good: #6ee0b2;
+  --warn: #ffb15e;
+  --danger: #ff6d6d;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f3efe6;
+  --elev: #fffdf8;
+  --elev2: #e7e1d4;
+  --ink: #1c1915;
+  --muted: #6e685f;
+  --accent: #1c6b45;
+  --accent-ink: #f3fff6;
+  --line: rgba(28, 25, 21, 0.12);
+  --camilla: #d4537c;
+  --sky: #1f6f9c;
+  --good: #0c7a52;
+  --warn: #a15d0c;
+  --danger: #b42323;
+}
+
+:root[data-camilla="on"] {
+  --accent: #ff8fab;
+  --accent-ink: #2b1219;
+}
+
+:root[data-theme="light"][data-camilla="on"] {
+  --accent: #c4476d;
+  --accent-ink: #fff7f9;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background:
+    radial-gradient(980px 460px at -8% -12%, color-mix(in oklab, var(--accent) 24%, transparent), transparent 56%),
+    radial-gradient(760px 420px at 112% -18%, color-mix(in oklab, var(--camilla) 30%, transparent), transparent 52%),
+    var(--bg);
+  color: var(--ink);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  touch-action: manipulation;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--accent) 42%, transparent);
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+.pb-nav {
+  padding-bottom: calc(6.4rem + env(safe-area-inset-bottom));
+}
+
+@media (min-width: 768px) {
+  .pb-nav {
+    padding-bottom: 2.5rem;
+  }
+}
+
+@media (min-width: 768px) {
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--line);
+    border-radius: 99px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
