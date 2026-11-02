@@ -1,7 +1,9 @@
 import { zipSync, strToU8 } from 'fflate';
 import { describe, expect, it } from 'vitest';
 import type { Ride } from '../src/domain/types';
+import { Encoder, Profile, type FileIdMesg, type LapMesg, type RecordMesg } from '@garmin/fitsdk';
 import { encodeActivityFit } from '../src/io/fit';
+import { encodeTcx } from '../src/io/tcx';
 import { parseUpload } from '../src/io/import';
 
 const ctx = { ftp: 250, lthr: 165 };
@@ -158,5 +160,147 @@ describe('FIT, TCX, GPX e ZIP', () => {
     expect(parsed.errors).toEqual([]);
     expect(parsed.rides).toHaveLength(2);
     expect(parsed.rides.map((item) => item.fileType).sort()).toEqual(['fit', 'gpx']);
+  });
+});
+
+// Percorso DEMO: una retta sintetica, nessuna salita reale.
+const DEMO_LAT = 45.1;
+const DEMO_LON = 9.1;
+const M_PER_DEG_LAT = 111_320;
+
+function demoGpsRide(): Ride {
+  const base = ride({ name: 'DEMO retta GPS', source: 'import' });
+  const samples = base.samples.map((s) => ({
+    ...s,
+    lat: DEMO_LAT + s.distance / M_PER_DEG_LAT,
+    lon: DEMO_LON,
+  }));
+  return {
+    ...base,
+    samples,
+    laps: [
+      { startSec: 0, endSec: 60, distanceStartM: 0, distanceEndM: 480, name: 'Giro 1' },
+      { startSec: 60, endSec: 119, distanceStartM: 480, distanceEndM: 952, name: 'Giro 2' },
+    ],
+  };
+}
+
+describe('GPS e giri negli import', () => {
+  it('FIT: posizioni in gradi e giri tornano indietro dal file', () => {
+    const original = demoGpsRide();
+    const back = parseUpload('DEMO retta.fit', encodeActivityFit(original), ctx).rides[0];
+    expect(back.samples[0].lat).toBeCloseTo(DEMO_LAT, 6);
+    expect(back.samples[0].lon).toBeCloseTo(DEMO_LON, 6);
+    expect(back.samples[50].lat).toBeCloseTo(DEMO_LAT + 400 / M_PER_DEG_LAT, 6);
+    expect(back.laps).toHaveLength(2);
+    expect(back.laps![0].startSec).toBeCloseTo(0, 3);
+    expect(back.laps![0].endSec).toBeCloseTo(60, 3);
+    expect(back.laps![1].startSec).toBeCloseTo(60, 3);
+    expect(back.laps![1].endSec).toBeCloseTo(119, 3);
+    expect(back.laps![1].distanceStartM).toBeCloseTo(480, 0);
+    expect(back.laps![1].distanceEndM).toBeCloseTo(952, 0);
+  });
+
+  it('FIT senza GPS: niente coordinate, mai 0,0', () => {
+    const back = parseUpload('DEMO indoor.fit', encodeActivityFit(ride()), ctx).rides[0];
+    expect(back.samples.every((s) => s.lat === undefined && s.lon === undefined)).toBe(true);
+    // Il file ha un solo lap che copre tutto il giro.
+    expect(back.laps).toHaveLength(1);
+  });
+
+  it('FIT: i record senza posizione restano senza coordinate', () => {
+    const original = demoGpsRide();
+    original.samples = original.samples.map((s, i) => (i >= 60 ? { ...s, lat: undefined, lon: undefined } : s));
+    const back = parseUpload('DEMO mezzo GPS.fit', encodeActivityFit(original), ctx).rides[0];
+    expect(back.samples[30].lat).toBeCloseTo(DEMO_LAT + 240 / M_PER_DEG_LAT, 6);
+    expect(back.samples[90].lat).toBeUndefined();
+    expect(back.samples.some((s) => s.lat === 0 || s.lon === 0)).toBe(false);
+  });
+
+  it("FIT: decodifica un file scritto a mano con l'Encoder del FIT SDK", () => {
+    const encoder = new Encoder();
+    const start = new Date('2026-10-01T06:00:00Z');
+    const semi = (deg: number) => Math.round((deg * 2 ** 31) / 180);
+    encoder.onMesg(Profile.MesgNum.FILE_ID, {
+      type: 'activity',
+      manufacturer: 'development',
+      product: 1,
+      timeCreated: start,
+    } as FileIdMesg);
+    for (let i = 0; i <= 30; i++) {
+      encoder.onMesg(Profile.MesgNum.RECORD, {
+        timestamp: new Date(start.getTime() + i * 1000),
+        positionLat: i === 10 ? undefined : semi(DEMO_LAT + i * 1e-4),
+        positionLong: i === 10 ? undefined : semi(DEMO_LON),
+        distance: i * 11,
+        power: 200,
+      } as RecordMesg);
+    }
+    encoder.onMesg(Profile.MesgNum.LAP, {
+      messageIndex: 0,
+      startTime: start,
+      timestamp: new Date(start.getTime() + 15_000),
+      totalElapsedTime: 15,
+      totalDistance: 165,
+    } as LapMesg);
+    encoder.onMesg(Profile.MesgNum.LAP, {
+      messageIndex: 1,
+      startTime: new Date(start.getTime() + 15_000),
+      timestamp: new Date(start.getTime() + 30_000),
+      totalElapsedTime: 15,
+      totalDistance: 165,
+    } as LapMesg);
+    const back = parseUpload('DEMO sdk.fit', encoder.close(), ctx).rides[0];
+    expect(back.samples[20].lat).toBeCloseTo(DEMO_LAT + 20e-4, 6);
+    expect(back.laps?.map((l) => [l.startSec, l.endSec])).toEqual([
+      [0, 15],
+      [15, 30],
+    ]);
+    expect(back.laps![1].distanceStartM).toBeCloseTo(165, 0);
+  });
+
+  it('TCX: Position e ogni <Lap> diventano coordinate e giri', () => {
+    const tp = (sec: number, dist: number) => {
+      const time = new Date(Date.UTC(2026, 9, 20, 9, 0, sec)).toISOString();
+      const lat = (DEMO_LAT + dist / M_PER_DEG_LAT).toFixed(7);
+      return `<Trackpoint><Time>${time}</Time><Position><LatitudeDegrees>${lat}</LatitudeDegrees><LongitudeDegrees>${DEMO_LON}</LongitudeDegrees></Position><DistanceMeters>${dist}</DistanceMeters><AltitudeMeters>100</AltitudeMeters></Trackpoint>`;
+    };
+    const tcx = `<?xml version="1.0"?><TrainingCenterDatabase><Activities><Activity Sport="Biking"><Id>2026-10-20T09:00:00Z</Id>
+      <Lap StartTime="2026-10-20T09:00:00Z"><TotalTimeSeconds>30</TotalTimeSeconds><DistanceMeters>240</DistanceMeters><Track>${tp(0, 0)}${tp(15, 120)}${tp(30, 240)}</Track></Lap>
+      <Lap StartTime="2026-10-20T09:00:30Z"><TotalTimeSeconds>30</TotalTimeSeconds><DistanceMeters>240</DistanceMeters><Track>${tp(45, 360)}${tp(60, 480)}</Track></Lap>
+      <Notes>DEMO due giri</Notes></Activity></Activities></TrainingCenterDatabase>`;
+    const back = parseUpload('DEMO.tcx', strToU8(tcx), ctx).rides[0];
+    expect(back.samples[0].lat).toBeCloseTo(DEMO_LAT, 6);
+    expect(back.samples[60].lat).toBeCloseTo(DEMO_LAT + 480 / M_PER_DEG_LAT, 6);
+    expect(back.laps).toHaveLength(2);
+    expect(back.laps![1].startSec).toBe(30);
+    expect(back.laps![1].endSec).toBe(60);
+    expect(back.laps![1].distanceStartM).toBeCloseTo(240, 0);
+    expect(back.laps![1].distanceEndM).toBeCloseTo(480, 0);
+  });
+
+  it('TCX: encodeTcx scrive posizioni e giri e li rilegge', () => {
+    const original = demoGpsRide();
+    const back = parseUpload('DEMO.tcx', strToU8(encodeTcx(original)), ctx).rides[0];
+    expect(back.samples[10].lat).toBeCloseTo(original.samples[10].lat!, 6);
+    expect(back.laps).toHaveLength(2);
+    expect(back.laps![1].startSec).toBeCloseTo(60, 3);
+  });
+
+  it('TCX senza Position: coordinate assenti', () => {
+    const back = parseUpload('DEMO.tcx', strToU8(encodeTcx(ride())), ctx).rides[0];
+    expect(back.samples.every((s) => s.lat === undefined)).toBe(true);
+  });
+
+  it('GPX: le coordinate arrivano nei campioni, senza giri', () => {
+    const gpx = `<?xml version="1.0"?><gpx><trk><name>DEMO</name><trkseg>
+      <trkpt lat="45.1000" lon="9.1000"><ele>10</ele><time>2026-09-01T10:00:00Z</time></trkpt>
+      <trkpt lat="45.1010" lon="9.1000"><ele>12</ele><time>2026-09-01T10:00:20Z</time></trkpt>
+    </trkseg></trk></gpx>`;
+    const back = parseUpload('DEMO.gpx', strToU8(gpx), ctx).rides[0];
+    expect(back.samples[0].lat).toBeCloseTo(45.1, 6);
+    expect(back.samples[10].lat).toBeCloseTo(45.1005, 6);
+    expect(back.samples[20].lon).toBeCloseTo(9.1, 6);
+    expect(back.laps).toBeUndefined();
   });
 });

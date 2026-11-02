@@ -280,7 +280,7 @@ export function resampleTo1Hz(points: SeriesPoint[], maxSeconds = 6 * 3600): Rid
     const a = sorted[j];
     const b = sorted[Math.min(j + 1, sorted.length - 1)];
     const u = b.t > a.t ? clamp((t - a.t) / (b.t - a.t), 0, 1) : 0;
-    out.push({
+    const sample: RideSample = {
       t: t - t0,
       power: lerpOpt(a.power, b.power, u) ?? 0,
       hr: lerpOpt(a.hr, b.hr, u) ?? 0,
@@ -289,13 +289,46 @@ export function resampleTo1Hz(points: SeriesPoint[], maxSeconds = 6 * 3600): Rid
       distance: lerpOpt(a.distance, b.distance, u) ?? 0,
       altitude: lerpOpt(a.altitude, b.altitude, u) ?? 0,
       grade: lerpOpt(a.grade, b.grade, u) ?? 0,
-    });
+    };
+    setPosition(sample, a, b, u);
+    out.push(sample);
   }
   return out;
 }
 
+/**
+ * Posizione interpolata solo se entrambi gli estremi ce l'hanno, o copiata dall'unico
+ * che ce l'ha. Senza GPS i campi restano assenti: mai 0,0 di ripiego.
+ */
+function setPosition(sample: RideSample, a: SeriesPoint, b: SeriesPoint, u: number): void {
+  // Sull'istante esatto di un punto conta solo quel punto.
+  const okA = u < 1 - 1e-9 && validPosition(a.lat, a.lon);
+  const okB = u > 1e-9 && validPosition(b.lat, b.lon);
+  if (okA && okB) {
+    sample.lat = a.lat! + (b.lat! - a.lat!) * u;
+    sample.lon = a.lon! + (b.lon! - a.lon!) * u;
+  } else if (okA || okB) {
+    const p = okA ? a : b;
+    sample.lat = p.lat;
+    sample.lon = p.lon;
+  }
+}
+
+/** Coordinate plausibili: finite, nei limiti, e non l'isola di zero (0,0) dei file rotti. */
+export function validPosition(lat: number | undefined, lon: number | undefined): boolean {
+  return (
+    typeof lat === 'number' &&
+    typeof lon === 'number' &&
+    Number.isFinite(lat) &&
+    Number.isFinite(lon) &&
+    Math.abs(lat) <= 90 &&
+    Math.abs(lon) <= 180 &&
+    !(lat === 0 && lon === 0)
+  );
+}
+
 function toSample(p: SeriesPoint, t: number): RideSample {
-  return {
+  const sample: RideSample = {
     t,
     power: p.power ?? 0,
     hr: p.hr ?? 0,
@@ -305,6 +338,8 @@ function toSample(p: SeriesPoint, t: number): RideSample {
     altitude: p.altitude ?? 0,
     grade: p.grade ?? 0,
   };
+  setPosition(sample, p, p, 0);
+  return sample;
 }
 
 function lerpOpt(a: number | undefined, b: number | undefined, u: number): number | undefined {

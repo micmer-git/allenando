@@ -43,6 +43,19 @@ export interface RideSample {
   altitude: number;
   /** frazione (0.05 = 5%) */
   grade: number;
+  /** Gradi decimali WGS84. Assenti se il file non ha GPS: mai 0,0 di ripiego. */
+  lat?: number;
+  lon?: number;
+}
+
+/** Un giro (lap) del file, in secondi dall'inizio dell'attività. */
+export interface RideLap {
+  startSec: number;
+  endSec: number;
+  /** Distanza cumulata all'inizio e alla fine del giro, se nota. */
+  distanceStartM?: number;
+  distanceEndM?: number;
+  name?: string;
 }
 
 export interface Ride {
@@ -73,6 +86,12 @@ export interface Ride {
   workoutName?: string;
   ftp: number;
   samples: RideSample[];
+  /** Giri del file originale (FIT/TCX/Intervals). Assenti se il file non li ha. */
+  laps?: RideLap[];
+  /** Identificativo della sorgente remota, es. `intervals:i12345`. */
+  externalId?: string;
+  /** Salita o traccia su cui si è pedalato indoor (id di VERIFIED_ROUTES). */
+  routeId?: string;
 }
 
 export interface SleepSession {
@@ -140,7 +159,7 @@ export const PROFILE_LIMITS = {
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'dark',
-  camilla: true,
+  camilla: false,
   quality: 'medium',
   locale: 'it',
   activeSleepStart: null,

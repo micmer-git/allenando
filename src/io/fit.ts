@@ -1,7 +1,19 @@
 import { Decoder, Encoder, Profile, Stream, type ActivityMesg, type EventMesg, type FileIdMesg, type LapMesg, type RecordMesg, type SessionMesg } from '@garmin/fitsdk';
-import type { Ride, RideSample } from '@/domain/types';
-import { buildRide, type SeriesPoint } from '@/domain/metrics';
+import type { Ride, RideLap, RideSample } from '@/domain/types';
+import { buildRide, validPosition, type SeriesPoint } from '@/domain/metrics';
 import { resampleTo1Hz } from '@/domain/metrics';
+import { fillLapDistances } from '@/domain/replay';
+
+/** Il FIT scrive le coordinate in semicerchi: 2^31 semicerchi = 180°. */
+const SEMICIRCLES_PER_DEGREE = 2 ** 31 / 180;
+
+export function semicirclesToDegrees(value: number): number {
+  return value / SEMICIRCLES_PER_DEGREE;
+}
+
+export function degreesToSemicircles(value: number): number {
+  return Math.round(value * SEMICIRCLES_PER_DEGREE);
+}
 
 export interface FitDecodeContext {
   ftp: number;
@@ -22,7 +34,7 @@ export function encodeActivityFit(ride: Ride): Uint8Array {
     product: 1,
     serialNumber: 1001,
     timeCreated: start,
-    productName: 'Camilla Ride',
+    productName: 'ALLENANDO',
   } as FileIdMesg);
 
   encoder.onMesg(MesgNum.EVENT, {
@@ -34,8 +46,11 @@ export function encodeActivityFit(ride: Ride): Uint8Array {
   const samples = ride.samples.length > 0 ? ride.samples : [synthetic(ride)];
   for (const sample of samples) {
     const timestamp = new Date(start.getTime() + sample.t * 1000);
+    const gps = validPosition(sample.lat, sample.lon);
     encoder.onMesg(MesgNum.RECORD, {
       timestamp,
+      positionLat: gps ? degreesToSemicircles(sample.lat!) : undefined,
+      positionLong: gps ? degreesToSemicircles(sample.lon!) : undefined,
       distance: round(sample.distance, 2),
       altitude: round(sample.altitude, 1),
       speed: round(Math.max(0, sample.speed), 3),
@@ -53,13 +68,34 @@ export function encodeActivityFit(ride: Ride): Uint8Array {
   } as EventMesg);
 
   const lap = sessionFields(ride, start, end);
-  encoder.onMesg(MesgNum.LAP, { messageIndex: 0, ...lap } as LapMesg);
+  const laps = ride.laps?.filter((l) => Number.isFinite(l.startSec) && l.endSec > l.startSec) ?? [];
+  if (laps.length > 0) {
+    // Un messaggio LAP per giro del file, con tempi e distanze del giro.
+    laps.forEach((l, index) => {
+      const lapStart = new Date(start.getTime() + l.startSec * 1000);
+      const lapEnd = new Date(start.getTime() + l.endSec * 1000);
+      const lapDistance =
+        l.distanceStartM != null && l.distanceEndM != null ? l.distanceEndM - l.distanceStartM : undefined;
+      encoder.onMesg(MesgNum.LAP, {
+        messageIndex: index,
+        timestamp: lapEnd,
+        startTime: lapStart,
+        totalElapsedTime: l.endSec - l.startSec,
+        totalTimerTime: l.endSec - l.startSec,
+        totalDistance: lapDistance != null ? round(Math.max(0, lapDistance), 2) : undefined,
+        event: 'lap',
+        eventType: 'stop',
+      } as LapMesg);
+    });
+  } else {
+    encoder.onMesg(MesgNum.LAP, { messageIndex: 0, ...lap } as LapMesg);
+  }
   encoder.onMesg(MesgNum.SESSION, {
     messageIndex: 0,
     sport: ride.sport === 'running' ? 'running' : 'cycling',
     subSport: ride.source === 'indoor' ? 'indoorCycling' : undefined,
     firstLapIndex: 0,
-    numLaps: 1,
+    numLaps: Math.max(1, laps.length),
     thresholdPower: ride.ftp > 0 ? Math.round(ride.ftp) : undefined,
     ...lap,
   } as SessionMesg);
@@ -125,6 +161,17 @@ interface FitRecord {
   altitude?: number;
   enhancedAltitude?: number;
   grade?: number;
+  /** Semicerchi. */
+  positionLat?: number;
+  positionLong?: number;
+}
+
+interface FitLap {
+  startTime?: Date | number;
+  timestamp?: Date | number;
+  totalElapsedTime?: number;
+  totalTimerTime?: number;
+  totalDistance?: number;
 }
 
 interface FitSession {
@@ -178,6 +225,7 @@ export function decodeFitActivity(data: Uint8Array, ctx: FitDecodeContext): Ride
       distance: num(rec.distance),
       altitude: num(rec.enhancedAltitude ?? rec.altitude),
       grade: rec.grade != null ? rec.grade / 100 : undefined,
+      ...fitPosition(rec),
     });
   }
 
@@ -202,7 +250,8 @@ export function decodeFitActivity(data: Uint8Array, ctx: FitDecodeContext): Ride
   if (timer && timer > duration) duration = timer;
 
   const sport = typeof session?.sport === 'string' ? session.sport : 'cycling';
-  return buildRide({
+  const laps = fitLaps((messages.lapMesgs ?? []) as FitLap[], start, samples);
+  const ride = buildRide({
     id: '',
     name: ctx.name ?? 'Attività FIT',
     sport: sport === 'running' ? 'running' : 'cycling',
@@ -218,6 +267,52 @@ export function decodeFitActivity(data: Uint8Array, ctx: FitDecodeContext): Ride
     fileNp: num(session?.normalizedPower),
     distanceM: num(session?.totalDistance) ?? (samples.length ? samples[samples.length - 1].distance : 0),
   });
+  if (laps.length > 0) ride.laps = laps;
+  return ride;
+}
+
+/** Coordinate del record in gradi; assenti (non 0,0) se il GPS non c'era. */
+function fitPosition(rec: FitRecord): { lat?: number; lon?: number } {
+  const lat = num(rec.positionLat);
+  const lon = num(rec.positionLong);
+  if (lat == null || lon == null) return {};
+  const deg = { lat: semicirclesToDegrees(lat), lon: semicirclesToDegrees(lon) };
+  return validPosition(deg.lat, deg.lon) ? deg : {};
+}
+
+/**
+ * Messaggi LAP → giri in secondi dall'inizio dell'attività. La fine viene dal
+ * timestamp del lap o, in mancanza, da inizio + tempo trascorso. Le distanze
+ * cumulate si leggono dai campioni; senza distanza nei campioni si sommano
+ * le distanze dei lap.
+ */
+function fitLaps(raw: FitLap[], start: Date, samples: RideSample[]): RideLap[] {
+  const laps: RideLap[] = [];
+  let cumulative = 0;
+  let allDistances = true;
+  const sums: { from: number; to: number }[] = [];
+  for (const lap of raw) {
+    const lapStart = toDate(lap.startTime);
+    if (!lapStart) continue;
+    const startSec = (lapStart.getTime() - start.getTime()) / 1000;
+    const stamp = toDate(lap.timestamp);
+    const elapsed = num(lap.totalElapsedTime) ?? num(lap.totalTimerTime);
+    const endSec =
+      stamp && stamp.getTime() > lapStart.getTime()
+        ? (stamp.getTime() - start.getTime()) / 1000
+        : elapsed != null
+          ? startSec + elapsed
+          : Number.NaN;
+    if (!Number.isFinite(startSec) || !Number.isFinite(endSec) || endSec <= startSec) continue;
+    const distance = num(lap.totalDistance);
+    if (distance == null) allDistances = false;
+    sums.push({ from: cumulative, to: cumulative + (distance ?? 0) });
+    cumulative += distance ?? 0;
+    laps.push({ startSec, endSec, name: `Giro ${laps.length + 1}` });
+  }
+  const filled = fillLapDistances(laps, samples);
+  if (filled.some((l) => l.distanceStartM != null) || !allDistances) return filled;
+  return filled.map((l, i) => ({ ...l, distanceStartM: sums[i].from, distanceEndM: sums[i].to }));
 }
 
 function toDate(value: Date | number | undefined): Date | undefined {
