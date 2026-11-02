@@ -1,10 +1,11 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { LoadedRoute } from '@/domain/routes';
 import type { Track, TrackPose } from '@/domain/track';
 import type { Quality } from '@/domain/types';
 import type { RideEngine } from '@/sim/engine';
+import { estimateDistance, type RemoteRider } from '@/multiplayer/room';
 import {
   asphaltTexture,
   buildFarTerrain,
@@ -19,6 +20,20 @@ import {
   type TileSpec,
 } from './builders';
 import { createHeightField, type HeightField } from './heightfield';
+import {
+  BIKE,
+  BODY,
+  buildBody,
+  buildCrankset,
+  buildFrame,
+  buildWheel,
+  labelTexture,
+  limbGeometry,
+  pedalAt,
+  shadowTexture,
+  shoeGeometry,
+  solveKnee,
+} from './rider';
 
 const QUALITY = {
   low: { tile: 1200, spacing: 12, density: 0.6, far: 5000, dpr: 1 as number | [number, number] },
@@ -27,12 +42,16 @@ const QUALITY = {
 } satisfies Record<Quality, unknown>;
 
 const BRAND = '#c8f031';
+const HAZE = '#cfdbe5';
+const SUN: [number, number, number] = [-700, 760, 520];
 
 export function RideScene({
   engine,
   route,
   quality,
   ghostDistance,
+  remote,
+  selfColor,
   onReady,
 }: {
   engine: RideEngine;
@@ -40,6 +59,10 @@ export function RideScene({
   quality: Quality;
   /** Distanza del fantasma in questo istante, o null se non c'è. */
   ghostDistance?: () => number | null;
+  /** Compagni di stanza: chi c'è (cambia di rado) e dove sono (letto a ogni fotogramma). */
+  remote?: { source: RemoteSource; list: { id: string; nick: string; color: number }[] };
+  /** in una stanza, il colore che gli altri vedono addosso a te */
+  selfColor?: string;
   onReady: () => void;
 }) {
   const q = QUALITY[quality];
@@ -54,11 +77,13 @@ export function RideScene({
         gl.toneMappingExposure = 1.05;
       }}
     >
-      <color attach="background" args={['#bcd3e6']} />
-      <fog attach="fog" args={['#c6d6e3', route.dem ? 260 : 120, fogFar]} />
-      <hemisphereLight args={['#eaf3ff', '#5c6b48', 0.75]} />
-      <directionalLight position={[-600, 900, 500]} intensity={1.6} color="#fff2dc" />
-      <World engine={engine} route={route} quality={quality} ghostDistance={ghostDistance} />
+      <color attach="background" args={[HAZE]} />
+      {/* foschia dello stesso colore dell'orizzonte: le creste lontane sfumano nel cielo, senza bande */}
+      <fog attach="fog" args={[HAZE, route.dem ? 260 : 120, fogFar]} />
+      <hemisphereLight args={['#e6f0fb', '#4f5a3c', 0.62]} />
+      {/* sole da sud-ovest, non troppo alto: i versanti del DEM prendono rilievo */}
+      <directionalLight position={SUN} intensity={1.85} color="#fff0d6" />
+      <World engine={engine} route={route} quality={quality} ghostDistance={ghostDistance} remote={remote} selfColor={selfColor} />
       <Ready onReady={onReady} />
     </Canvas>
   );
@@ -80,11 +105,15 @@ function World({
   route,
   quality,
   ghostDistance,
+  remote,
+  selfColor,
 }: {
   engine: RideEngine;
   route: LoadedRoute;
   quality: Quality;
   ghostDistance?: () => number | null;
+  remote?: { source: RemoteSource; list: { id: string; nick: string; color: number }[] };
+  selfColor?: string;
 }) {
   const track = route.track;
   const q = QUALITY[quality];
@@ -98,8 +127,9 @@ function World({
       <Road track={track} field={field} />
       <Props track={track} field={field} density={q.density} />
       <Signs track={track} title={route.title} />
-      <Rider getPose={() => engine.pose()} getCadence={() => engine.cadence} getSpeed={() => engine.speed} />
+      <Rider getPose={() => engine.pose()} getCadence={() => engine.cadence} getSpeed={() => engine.speed} jersey={selfColor ?? BRAND} />
       {ghostDistance ? <Ghost track={track} ghostDistance={ghostDistance} /> : null}
+      {remote && remote.list.length > 0 ? <RemoteRiders track={track} source={remote.source} list={remote.list} /> : null}
       <FollowCam engine={engine} field={field} />
     </group>
   );
@@ -114,17 +144,24 @@ function Sky() {
     if (ref.current) ref.current.position.copy(camera.position);
   });
   const geo = useMemo(() => {
-    const g = new THREE.SphereGeometry(1000, 24, 16);
+    const g = new THREE.SphereGeometry(1000, 32, 20);
     const pos = g.attributes.position;
     const colors = new Float32Array(pos.count * 3);
-    const zenith = new THREE.Color('#5f95cf');
-    const mid = new THREE.Color('#a9c9e6');
-    const horizon = new THREE.Color('#dfe7ee');
+    const zenith = new THREE.Color('#4f88c6');
+    const mid = new THREE.Color('#a3c4e2');
+    const horizon = new THREE.Color(HAZE);
+    const glow = new THREE.Color('#fff4dc');
+    const sun = new THREE.Vector3(...SUN).normalize();
+    const dir = new THREE.Vector3();
     const c = new THREE.Color();
     for (let i = 0; i < pos.count; i++) {
       const y = pos.getY(i) / 1000;
       if (y > 0.08) c.copy(mid).lerp(zenith, Math.min(1, (y - 0.08) / 0.7));
       else c.copy(horizon).lerp(mid, Math.max(0, (y + 0.1) / 0.18));
+      // alone caldo intorno al sole, nello stesso punto della luce che illumina i versanti
+      dir.set(pos.getX(i), pos.getY(i), pos.getZ(i)).normalize();
+      const k = Math.max(0, dir.dot(sun));
+      c.lerp(glow, Math.pow(k, 24) * 0.85 + Math.pow(k, 4) * 0.12);
       c.toArray(colors, i * 3);
     }
     g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
@@ -547,13 +584,14 @@ function chevronTexture(): THREE.CanvasTexture {
   });
 }
 
-// ---------- ciclista e fantasma ----------
+// ---------- ciclista, fantasma e compagni di stanza ----------
 
 function Ghost({ track, ghostDistance }: { track: Track; ghostDistance: () => number | null }) {
   const last = useRef(0);
   return (
     <Rider
       ghost
+      side={-1.1}
       getPose={() => {
         const d = ghostDistance();
         if (d != null) last.current = d;
@@ -565,160 +603,205 @@ function Ghost({ track, ghostDistance }: { track: Track; ghostDistance: () => nu
   );
 }
 
+/** Corsie dei compagni di stanza, per colore: non si sovrappongono a chi guarda (a +0,6 m). */
+const LANES = [-0.7, 1.7, -1.8, -0.15, 2.2, -1.25, 1.15, -2.2];
+
+export interface RemoteSource {
+  /** i ciclisti lontani in questo istante, letti a ogni fotogramma */
+  riders: () => Map<string, RemoteRider>;
+  colors: readonly string[];
+}
+
+function RemoteRiders({ track, source, list }: { track: Track; source: RemoteSource; list: { id: string; nick: string; color: number }[] }) {
+  return (
+    <group>
+      {list.map((r) => (
+        <RemoteRiderView key={r.id} id={r.id} nick={r.nick} color={r.color} track={track} source={source} />
+      ))}
+    </group>
+  );
+}
+
+function RemoteRiderView({ id, nick, color, track, source }: { id: string; nick: string; color: number; track: Track; source: RemoteSource }) {
+  const shown = useRef<number | null>(null);
+  const last = useRef<{ t: number }>({ t: performance.now() });
+  const hex = source.colors[color % source.colors.length];
+  const lane = LANES[color % LANES.length];
+  return (
+    <Rider
+      side={lane}
+      jersey={hex}
+      helmet={hex}
+      label={nick}
+      getPose={() => {
+        const r = source.riders().get(id);
+        const now = performance.now();
+        const dt = Math.min(0.2, (now - last.current.t) / 1000);
+        last.current.t = now;
+        if (r) {
+          const target = Math.min(track.length, Math.max(0, estimateDistance(r, Date.now())));
+          // si insegue la stima senza scatti; oltre 40 m di errore si salta
+          if (shown.current == null || Math.abs(target - shown.current) > 40) shown.current = target;
+          else shown.current += (target - shown.current) * (1 - Math.exp(-dt * 5));
+        }
+        return track.poseAt(shown.current ?? 0);
+      }}
+      getCadence={() => {
+        const r = source.riders().get(id);
+        return r && !r.idle && r.w > 0 && r.v > 0.3 ? 86 : 0;
+      }}
+      getSpeed={() => source.riders().get(id)?.v ?? 0}
+    />
+  );
+}
+
+const GHOST_MAT = new THREE.MeshBasicMaterial({ color: '#8fd8ff', transparent: true, opacity: 0.36, depthWrite: false });
+
 function Rider({
   getPose,
   getCadence,
   getSpeed,
   ghost = false,
+  side = 0.6,
+  jersey = BRAND,
+  helmet = '#f2f3ef',
+  label,
 }: {
   getPose: () => TrackPose;
   getCadence: () => number;
   getSpeed: () => number;
   ghost?: boolean;
+  /** metri a sinistra dell'asse della strada */
+  side?: number;
+  jersey?: string;
+  helmet?: string;
+  label?: string;
 }) {
   const group = useRef<THREE.Group>(null);
-  const front = useRef<THREE.Group>(null);
-  const rear = useRef<THREE.Group>(null);
-  const crank = useRef<THREE.Group>(null);
-  const thighL = useRef<THREE.Group>(null);
-  const thighR = useRef<THREE.Group>(null);
-  const shinL = useRef<THREE.Group>(null);
-  const shinR = useRef<THREE.Group>(null);
-  const spin = useRef(0);
+  const front = useRef<THREE.Mesh>(null);
+  const rear = useRef<THREE.Mesh>(null);
+  const crank = useRef<THREE.Mesh>(null);
+  const legs = useRef<(THREE.Mesh | null)[]>([]);
+  const sprite = useRef<THREE.Sprite>(null);
+  const spin = useRef(Math.random() * Math.PI * 2);
   const roll = useRef(0);
-  const jersey = ghost ? '#8fd8ff' : BRAND;
-  const shorts = ghost ? '#8fd8ff' : '#15181e';
-  const skin = ghost ? '#8fd8ff' : '#d9ad8c';
+  const { camera } = useThree();
+
+  const geo = useMemo(
+    () => ({
+      frame: buildFrame({ frame: '#262a31', accent: jersey }),
+      wheel: buildWheel(),
+      crank: buildCrankset(),
+      body: buildBody({ jersey, shorts: '#15181e', skin: '#d9ad8c', helmet }),
+      thigh: limbGeometry(0.068, 0.05),
+      shin: limbGeometry(0.047, 0.032),
+      shoe: shoeGeometry(),
+    }),
+    [jersey, helmet],
+  );
+  const mats = useMemo(
+    () =>
+      ghost
+        ? { vc: GHOST_MAT, shorts: GHOST_MAT, skin: GHOST_MAT, shoe: GHOST_MAT }
+        : {
+            vc: new THREE.MeshLambertMaterial({ vertexColors: true }),
+            shorts: new THREE.MeshLambertMaterial({ color: '#15181e' }),
+            skin: new THREE.MeshLambertMaterial({ color: '#d9ad8c' }),
+            shoe: new THREE.MeshLambertMaterial({ color: '#eceee9' }),
+          },
+    [ghost],
+  );
+  const labelTex = useMemo(() => (label ? labelTexture(label, jersey) : null), [label, jersey]);
+  useEffect(
+    () => () => {
+      Object.values(geo).forEach((g) => g.dispose());
+      if (!ghost) Object.values(mats).forEach((m) => m.dispose());
+      labelTex?.dispose();
+    },
+    [geo, mats, ghost, labelTex],
+  );
+
+  const tmp = useMemo(
+    () => ({ hip: new THREE.Vector3(), pedal: new THREE.Vector3(), ankle: new THREE.Vector3(), knee: new THREE.Vector3(), dir: new THREE.Vector3(), down: new THREE.Vector3(0, -1, 0) }),
+    [],
+  );
 
   useFrame((_, dt) => {
     const pose = getPose();
     const root = group.current;
     if (!root) return;
-    // il fantasma pedala a destra, per non sovrapporsi
-    const side = ghost ? -1.1 : 0.6;
     root.position.set(pose.x + Math.cos(pose.heading) * side, pose.y, pose.z - Math.sin(pose.heading) * side);
     root.rotation.set(-Math.atan(pose.grade), pose.heading, 0, 'YXZ');
     const cadence = getCadence();
     spin.current += (cadence > 1 ? (cadence / 60) * Math.PI * 2 : 0) * dt;
-    roll.current += (getSpeed() / 0.34) * dt;
+    roll.current += (getSpeed() / BIKE.wheelR) * dt;
     if (front.current) front.current.rotation.x = roll.current;
     if (rear.current) rear.current.rotation.x = roll.current;
     if (crank.current) crank.current.rotation.x = spin.current;
-    const a = spin.current;
-    if (thighL.current) thighL.current.rotation.x = 0.55 * Math.sin(a);
-    if (thighR.current) thighR.current.rotation.x = 0.55 * Math.sin(a + Math.PI);
-    if (shinL.current) shinL.current.rotation.x = 0.85 * Math.max(0, Math.sin(a + 0.4));
-    if (shinR.current) shinR.current.rotation.x = 0.85 * Math.max(0, Math.sin(a + Math.PI + 0.4));
+    // gambe: dal pedale alla caviglia, poi il ginocchio per cinematica inversa
+    for (let i = 0; i < 2; i++) {
+      const right = i === 1;
+      const s = right ? 1 : -1;
+      tmp.hip.set(s * BODY.hip[0], BODY.hip[1], BODY.hip[2]);
+      pedalAt(spin.current, right, tmp.pedal);
+      tmp.ankle.set(tmp.pedal.x, tmp.pedal.y + BODY.ankle[1], tmp.pedal.z + BODY.ankle[2]);
+      solveKnee(tmp.hip, tmp.ankle, BODY.thigh, BODY.shin, tmp.knee);
+      const thigh = legs.current[i * 3];
+      const shin = legs.current[i * 3 + 1];
+      const shoe = legs.current[i * 3 + 2];
+      if (thigh) {
+        thigh.position.copy(tmp.hip);
+        tmp.dir.copy(tmp.knee).sub(tmp.hip);
+        thigh.scale.set(1, tmp.dir.length(), 1);
+        thigh.quaternion.setFromUnitVectors(tmp.down, tmp.dir.normalize());
+      }
+      if (shin) {
+        shin.position.copy(tmp.knee);
+        tmp.dir.copy(tmp.ankle).sub(tmp.knee);
+        shin.scale.set(1, tmp.dir.length(), 1);
+        shin.quaternion.setFromUnitVectors(tmp.down, tmp.dir.normalize());
+      }
+      if (shoe) {
+        shoe.position.copy(tmp.ankle);
+        // la punta scende un po' in spinta e sale in risalita, come la caviglia vera
+        shoe.rotation.set(0.12 * Math.sin(spin.current + (right ? 0 : Math.PI) + 1.2), 0, 0);
+      }
+    }
+    if (sprite.current) {
+      const dist = camera.position.distanceTo(root.position);
+      // l'etichetta cresce con la distanza: resta leggibile anche a un tornante di distanza
+      const k = THREE.MathUtils.clamp(dist * 0.07, 1, 18);
+      sprite.current.scale.set(k * 2.2, k * 0.55, 1);
+      sprite.current.position.y = 1.95 + k * 0.3;
+    }
   });
-
-  const mat = (color: string, extra: Partial<THREE.MeshStandardMaterialParameters> = {}) =>
-    ghost ? (
-      <meshBasicMaterial color={color} transparent opacity={0.38} depthWrite={false} />
-    ) : (
-      <meshStandardMaterial color={color} roughness={0.6} {...extra} />
-    );
 
   return (
     <group ref={group}>
-      <Wheel wheelRef={rear} z={-0.48} ghost={ghost} />
-      <Wheel wheelRef={front} z={0.62} ghost={ghost} />
-      <Tube a={[0, 0.34, -0.48]} b={[0, 0.34, 0.62]} r={0.022} color="#22262e" ghost={ghost} />
-      <Tube a={[0, 0.34, -0.48]} b={[0, 0.92, -0.16]} r={0.02} color="#22262e" ghost={ghost} />
-      <Tube a={[0, 0.92, -0.16]} b={[0, 0.96, 0.36]} r={0.022} color="#22262e" ghost={ghost} />
-      <Tube a={[0, 0.34, 0.62]} b={[0, 0.96, 0.36]} r={0.02} color="#22262e" ghost={ghost} />
-      <Tube a={[0, 0.34, 0.05]} b={[0, 0.92, -0.16]} r={0.018} color="#2d323b" ghost={ghost} />
-      <group ref={crank} position={[0.11, 0.32, 0.05]}>
-        <mesh>
-          <boxGeometry args={[0.02, 0.36, 0.025]} />
-          {mat('#1b1e26', { metalness: 0.6, roughness: 0.35 })}
+      {!ghost ? (
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.015, 0.08]} renderOrder={1}>
+          <planeGeometry args={[0.75, 1.75]} />
+          <meshBasicMaterial map={shadowTexture()} transparent depthWrite={false} polygonOffset polygonOffsetFactor={-3} polygonOffsetUnits={-6} />
         </mesh>
-      </group>
-      <mesh position={[0, 0.95, -0.16]}>
-        <boxGeometry args={[0.12, 0.05, 0.2]} />
-        {mat('#1d2128')}
-      </mesh>
-      <mesh position={[0, 1.13, 0.1]} rotation={[0.62, 0, 0]}>
-        <boxGeometry args={[0.3, 0.4, 0.17]} />
-        {mat(jersey, { roughness: 0.7 })}
-      </mesh>
-      <mesh position={[0, 0.96, -0.04]}>
-        <boxGeometry args={[0.28, 0.14, 0.18]} />
-        {mat(shorts, { roughness: 0.8 })}
-      </mesh>
-      <mesh position={[0, 1.38, 0.3]}>
-        <sphereGeometry args={[0.11, 16, 14]} />
-        {mat(skin, { roughness: 0.65 })}
-      </mesh>
-      <mesh position={[0, 1.44, 0.28]} scale={[1, 0.85, 1.25]}>
-        <sphereGeometry args={[0.13, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.55]} />
-        {mat(ghost ? '#8fd8ff' : '#f2f3ef', { roughness: 0.4 })}
-      </mesh>
-      <Tube a={[-0.16, 1.24, 0.14]} b={[-0.18, 0.98, 0.42]} r={0.035} color={jersey} ghost={ghost} />
-      <Tube a={[0.16, 1.24, 0.14]} b={[0.18, 0.98, 0.42]} r={0.035} color={jersey} ghost={ghost} />
-      <Tube a={[-0.21, 0.97, 0.4]} b={[0.21, 0.97, 0.4]} r={0.016} color="#1c2028" ghost={ghost} />
-      {[
-        [thighL, shinL, -0.1],
-        [thighR, shinR, 0.1],
-      ].map(([thigh, shin, x], i) => (
-        <group key={i} ref={thigh as RefObject<THREE.Group>} position={[x as number, 0.98, -0.02]}>
-          <mesh position={[0, -0.2, 0.02]}>
-            <boxGeometry args={[0.09, 0.4, 0.09]} />
-            {mat(shorts)}
-          </mesh>
-          <group ref={shin as RefObject<THREE.Group>} position={[0, -0.38, 0.02]}>
-            <mesh position={[0, -0.18, 0.04]}>
-              <boxGeometry args={[0.07, 0.36, 0.07]} />
-              {mat(skin)}
-            </mesh>
-          </group>
+      ) : null}
+      <mesh geometry={geo.frame} material={mats.vc} />
+      <mesh ref={rear} geometry={geo.wheel} material={mats.vc} position={BIKE.rearAxle as unknown as [number, number, number]} />
+      <mesh ref={front} geometry={geo.wheel} material={mats.vc} position={BIKE.frontAxle as unknown as [number, number, number]} />
+      <mesh ref={crank} geometry={geo.crank} material={mats.vc} position={BIKE.bb as unknown as [number, number, number]} />
+      <mesh geometry={geo.body} material={mats.vc} />
+      {[0, 1].map((i) => (
+        <group key={i}>
+          <mesh ref={(m) => void (legs.current[i * 3] = m)} geometry={geo.thigh} material={mats.shorts} />
+          <mesh ref={(m) => void (legs.current[i * 3 + 1] = m)} geometry={geo.shin} material={mats.skin} />
+          <mesh ref={(m) => void (legs.current[i * 3 + 2] = m)} geometry={geo.shoe} material={mats.shoe} />
         </group>
       ))}
+      {labelTex ? (
+        <sprite ref={sprite} position={[0, 2.1, 0]}>
+          <spriteMaterial map={labelTex} depthTest={false} transparent />
+        </sprite>
+      ) : null}
     </group>
-  );
-}
-
-function Wheel({ z, wheelRef, ghost }: { z: number; wheelRef: RefObject<THREE.Group | null>; ghost: boolean }) {
-  return (
-    <group ref={wheelRef} position={[0, 0.34, z]}>
-      <mesh rotation={[0, 0, Math.PI / 2]}>
-        <torusGeometry args={[0.32, 0.022, 8, 28]} />
-        {ghost ? <meshBasicMaterial color="#8fd8ff" transparent opacity={0.38} depthWrite={false} /> : <meshStandardMaterial color="#121418" roughness={0.8} />}
-      </mesh>
-      {[0, 1, 2].map((i) => (
-        <mesh key={i} rotation={[(i * Math.PI) / 3, 0, 0]}>
-          <boxGeometry args={[0.01, 0.6, 0.01]} />
-          {ghost ? <meshBasicMaterial color="#8fd8ff" transparent opacity={0.3} depthWrite={false} /> : <meshStandardMaterial color="#b9bec7" metalness={0.5} roughness={0.3} />}
-        </mesh>
-      ))}
-    </group>
-  );
-}
-
-function Tube({
-  a,
-  b,
-  r,
-  color,
-  ghost,
-}: {
-  a: [number, number, number];
-  b: [number, number, number];
-  r: number;
-  color: string;
-  ghost: boolean;
-}) {
-  const length = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
-  const position: [number, number, number] = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
-  const quaternion = useMemo(
-    () => new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]).normalize()),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
-  return (
-    <mesh position={position} quaternion={quaternion}>
-      <cylinderGeometry args={[r, r, Math.max(0.01, length), 8]} />
-      {ghost ? <meshBasicMaterial color="#8fd8ff" transparent opacity={0.38} depthWrite={false} /> : <meshStandardMaterial color={color} roughness={0.55} metalness={0.25} />}
-    </mesh>
   );
 }
 

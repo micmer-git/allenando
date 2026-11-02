@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Button, Field, TextInput, Wordmark } from '@/components/ui';
 import { parseNumberInput } from '@/domain/format';
 import { DEFAULT_PROFILE, PROFILE_LIMITS as LIMITS } from '@/domain/types';
@@ -9,6 +9,7 @@ import { useApp } from '@/store/useApp';
 export function OnboardingPage() {
   const { t } = useI18n();
   const navigate = useNavigate();
+  const location = useLocation();
   const complete = useApp((s) => s.completeOnboarding);
   const [name, setName] = useState('');
   const [weight, setWeight] = useState(String(DEFAULT_PROFILE.weightKg));
@@ -25,7 +26,8 @@ export function OnboardingPage() {
         maxHr: Math.round(parseNumberInput(maxHr, LIMITS.maxHr[0], LIMITS.maxHr[1], DEFAULT_PROFILE.maxHr)),
         onboarded: true,
       });
-    navigate('/');
+    const next = (location.state as { next?: string } | null)?.next;
+    navigate(next && next.startsWith('/') && next !== '/start' ? next : '/', { replace: true });
   }
 
   return (

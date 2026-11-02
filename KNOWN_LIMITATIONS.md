@@ -1,4 +1,4 @@
-# Limiti noti — ALLENANDO V1
+# Limiti noti — ALLENANDO V2
 
 Passa i test (geometria, terreno sotto la strada, replay, Intervals con API simulata, parser) e la build di produzione. Il mondo 3D è stato visto in Chrome headless (WebGL software) su viewport 390×844. **Non è certificato su un rullo fisico.**
 
@@ -18,10 +18,27 @@ Passa i test (geometria, terreno sotto la strada, replay, Intervals con API simu
 - Gli import da file vengono ricampionati a 1 Hz dal codice esistente: nelle pause il fantasma avanza piano invece di fermarsi.
 - La traccia del giro importato è decimata a ≥ 5 m e arrotondata: il fantasma è scalato sulla lunghezza della traccia ricostruita.
 
+## Pedala insieme
+
+- Provato con WebSocket veri contro il Worker pubblicato (`scripts/room-smoke.mjs`, 18 controlli) e con due Chrome headless in profili separati nella stessa stanza (`scripts/shot.mjs --room`). **Non ancora con due telefoni veri su due reti mobili diverse**: è il primo collaudo da fare.
+- La posizione degli altri arriva due volte al secondo e in mezzo è stimata con la loro velocità (al massimo 3 s): con una rete lenta un compagno può scivolare di qualche metro quando arriva l’aggiornamento.
+- Le stanze ci sono solo sulle quattro salite verificate, non sui replay dei giri importati.
+- Nessuna partenza sincronizzata: ognuno parte quando preme. Il pannello dà il distacco in metri, non in secondi.
+- Il server rifiuta le origini estranee, ma fuori dal browser l’intestazione Origin si può falsificare: non è un’autenticazione. Chi ha il link entra; il nome è libero e non verificato.
+- Piano gratuito Cloudflare: 100.000 richieste al giorno per account, e i messaggi WebSocket in entrata contano 1 su 20. Due persone per un’ora fanno circa 14.400 messaggi, cioè ~720 richieste.
+- Su iPhone una scheda in background sospende il WebSocket: tornando in primo piano il client rientra da solo.
+
+## Strada vera
+
+- I link a Google Street View e Mapillary aprono il visore ufficiale in una scheda nuova; dove non c’è copertura lo dice il visore. L’app non mostra, non scarica e non usa quelle immagini: il mondo 3D resta quello ricostruito da OSM e DEM.
+- Il replay fotografico (un video girato dall’utente, sincronizzato con la salita) non c’è.
+
 ## Rullo e mobile
 
 - FTMS/BLE coperti da test su pacchetti, non provati su hardware in questa versione.
 - Il bundle del mondo 3D è ~1 MB (260 kB gzip). Su telefoni modesti usare la grafica **Bassa**.
+- Il ciclista 3D è costruito a mano in proporzione (bici taglia 54-56, pedivelle 172,5 mm, gambe a cinematica inversa sui pedali), una dozzina di chiamate di disegno a testa: non è un modello anatomico né un rig animato. Braccia ferme sulle leve, busto fermo.
+- Il prompt di installazione esiste solo su Chrome/Edge; su iPhone si installa a mano da Safari, come spiega il riquadro in Oggi.
 - Safari/iPhone: niente Web Bluetooth, serve Bluefy.
 
 ## Collaudo da fare
@@ -29,3 +46,5 @@ Passa i test (geometria, terreno sotto la strada, replay, Intervals con API simu
 1. Aprire una salita, pedalare col simulatore a 10× fino in cima: arrivo, riepilogo, salvataggio, poi «Contro il fantasma».
 2. Import Intervals.icu con una chiave vera, un’attività con potenza e GPS: power replay e grade replay.
 3. Rullo FTMS: ERG nel power replay, simulazione nel grade replay, nessun comando misto.
+4. Pedala insieme con due telefoni veri su reti diverse: invito via chat, ingresso, distacchi, una caduta di rete e il rientro.
+5. Installazione da Chrome Android e da Safari iPhone, poi un giro in modalità aereo.

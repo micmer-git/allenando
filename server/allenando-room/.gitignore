@@ -1,0 +1,5 @@
+node_modules
+.wrangler
+.dev.vars*
+# generato da: npx wrangler types
+worker-configuration.d.ts

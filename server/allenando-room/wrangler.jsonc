@@ -1,0 +1,18 @@
+{
+  // Stanze «Pedala insieme» di ALLENANDO: un Durable Object per stanza, WebSocket in ibernazione.
+  // Deploy: npx wrangler deploy (da questa cartella). Nessun segreto: le origini ammesse sono pubbliche.
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "allenando-rooms",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "workers_dev": true,
+  "preview_urls": false,
+  "durable_objects": {
+    "bindings": [{ "name": "ROOMS", "class_name": "Room" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }],
+  "vars": {
+    "ALLOWED_ORIGINS": "https://micmer-git.github.io,http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173"
+  },
+  "observability": { "enabled": false }
+}

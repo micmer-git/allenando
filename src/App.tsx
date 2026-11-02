@@ -16,6 +16,7 @@ import { RidesPage } from '@/pages/Rides';
 import { ReplaySetupPage } from '@/pages/ReplaySetup';
 import { ProfilePage } from '@/pages/Profile';
 import { Wordmark } from '@/components/ui';
+import { OfflineBanner } from '@/components/Install';
 import { useApp } from '@/store/useApp';
 
 const RidePage = lazy(() => import('@/pages/Ride').then((mod) => ({ default: mod.RidePage })));
@@ -58,14 +59,17 @@ function Shell() {
   const memoryOnly = useApp((s) => s.memoryOnly);
   const location = useLocation();
   const { t } = useI18n();
-  if (!onboarded && location.pathname !== '/start') return <Navigate to="/start" replace />;
-  if (onboarded && location.pathname === '/start') return <Navigate to="/" replace />;
+  // chi arriva da un link (un invito in una stanza) ci torna dopo il profilo
+  const next = (location.state as { next?: string } | null)?.next;
+  if (!onboarded && location.pathname !== '/start') return <Navigate to="/start" replace state={{ next: `${location.pathname}${location.search}` }} />;
+  if (onboarded && location.pathname === '/start') return <Navigate to={next && next.startsWith('/') ? next : '/'} replace />;
   const bare = location.pathname === '/start' || location.pathname.startsWith('/ride');
   if (bare) return <Outlet />;
   return (
     <div className="md:grid md:grid-cols-[240px_1fr]">
       <SideNav />
       <div>
+        <OfflineBanner />
         {memoryOnly ? <p className="bg-warn/15 px-4 py-2 text-sm text-warn">{t('app.memory')}</p> : null}
         <Outlet />
         <BottomNav />
