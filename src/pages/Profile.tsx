@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, Field, Segmented, TextInput, Toggle } from '@/components/ui';
+import { Button, Field, Segmented, TextInput } from '@/components/ui';
 import { parseNumberInput } from '@/domain/format';
 import { PROFILE_LIMITS, type Quality } from '@/domain/types';
 import { useI18n } from '@/i18n';
@@ -65,9 +65,6 @@ export function ProfilePage() {
           <Button variant={settings.theme === 'light' ? 'primary' : 'ghost'} onClick={() => void updateSettings({ theme: 'light' })}>
             {t('theme.light')}
           </Button>
-        </div>
-        <div className="mt-3">
-          <Toggle checked={settings.camilla} onChange={(camilla) => void updateSettings({ camilla })} label={t('profile.camilla')} hint={t('profile.camillaHint')} />
         </div>
         <div className="mt-4">
           <p className="mb-2 text-sm font-medium text-muted">{t('profile.quality')}</p>

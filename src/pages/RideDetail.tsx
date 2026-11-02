@@ -35,7 +35,6 @@ export function RideDetailPage() {
       <h1 className="font-display text-4xl leading-tight">{ride.name}</h1>
       <p className="mt-2 text-sm text-muted">
         {ride.source === 'indoor' ? t('history.sourceIndoor') : t('history.sourceImport')}
-        {ride.withCamilla ? ` · ${t('history.withCamilla')}` : ''}
         {ride.tssSource === 'power' ? ` · ${t('history.tssPower')}` : ''}
         {ride.tssSource === 'hr' ? ` · ${t('history.tssHr')}` : ''}
         {ride.tssSource === 'file' ? ` · ${t('history.tssFile')}` : ''}

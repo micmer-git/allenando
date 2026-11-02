@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, Field, TextInput, Toggle, Wordmark } from '@/components/ui';
+import { Button, Field, TextInput, Wordmark } from '@/components/ui';
 import { parseNumberInput } from '@/domain/format';
 import { DEFAULT_PROFILE, PROFILE_LIMITS as LIMITS } from '@/domain/types';
 import { useI18n } from '@/i18n';
@@ -14,21 +14,17 @@ export function OnboardingPage() {
   const [weight, setWeight] = useState(String(DEFAULT_PROFILE.weightKg));
   const [ftp, setFtp] = useState(String(DEFAULT_PROFILE.ftp));
   const [maxHr, setMaxHr] = useState(String(DEFAULT_PROFILE.maxHr));
-  const [camilla, setCamilla] = useState(true);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    await complete(
-      {
+    await complete({
         ...DEFAULT_PROFILE,
         name: name.trim() || 'Atleta',
         weightKg: parseNumberInput(weight, LIMITS.weightKg[0], LIMITS.weightKg[1], DEFAULT_PROFILE.weightKg),
         ftp: Math.round(parseNumberInput(ftp, LIMITS.ftp[0], LIMITS.ftp[1], DEFAULT_PROFILE.ftp)),
         maxHr: Math.round(parseNumberInput(maxHr, LIMITS.maxHr[0], LIMITS.maxHr[1], DEFAULT_PROFILE.maxHr)),
         onboarded: true,
-      },
-      camilla,
-    );
+      });
     navigate('/');
   }
 
@@ -61,13 +57,6 @@ export function OnboardingPage() {
           </Field>
         </div>
         <p className="-mt-2 text-sm text-muted">{t('onboarding.ftpHint')}</p>
-        <Toggle
-          checked={camilla}
-          onChange={setCamilla}
-          label={t('onboarding.camilla')}
-          hint={t('onboarding.camillaHint')}
-          testId="onboarding-camilla"
-        />
         <Button type="submit" data-testid="onboarding-start" className="mt-2 w-full">
           {t('onboarding.enter')}
         </Button>
@@ -77,15 +66,11 @@ export function OnboardingPage() {
 }
 
 function BikeMark() {
+  // segno grafico astratto di una salita: non è il profilo di una strada vera
   return (
-    <svg viewBox="0 0 280 92" className="mt-6 h-24 w-full" aria-hidden="true">
-      <circle cx="58" cy="62" r="22" fill="none" stroke="currentColor" strokeWidth="4" />
-      <circle cx="168" cy="62" r="22" fill="none" stroke="currentColor" strokeWidth="4" />
-      <path d="M58 62 92 32h46l30 30M92 32l18 30M138 32l28-16h-36" fill="none" stroke="currentColor" strokeWidth="4" strokeLinejoin="round" />
-      <rect x="188" y="40" width="62" height="28" rx="8" fill="var(--camilla)" />
-      <circle cx="206" cy="70" r="8" fill="currentColor" />
-      <circle cx="236" cy="70" r="8" fill="currentColor" />
-      <circle cx="220" cy="50" r="7" fill="#f3c3a8" />
+    <svg viewBox="0 0 280 72" className="mt-6 h-20 w-full" aria-hidden="true">
+      <path d="M0 70 L28 68 L60 62 L92 54 L120 46 L150 36 L178 28 L206 18 L232 10 L256 4 L280 2 L280 72 L0 72Z" fill="color-mix(in oklab, var(--accent) 22%, transparent)" />
+      <path d="M0 70 L28 68 L60 62 L92 54 L120 46 L150 36 L178 28 L206 18 L232 10 L256 4 L280 2" fill="none" stroke="var(--accent)" strokeWidth="2.5" />
     </svg>
   );
 }

@@ -5,7 +5,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
-  base: '/camilla-ride/',
+  base: '/allenando/',
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
@@ -17,19 +17,19 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       injectRegister: 'auto',
-      includeAssets: ['favicon.svg', 'pwa-192.png', 'pwa-512.png', 'samples/**/*'],
+      includeAssets: ['favicon.svg', 'pwa-192.png', 'pwa-512.png', 'samples/**/*', 'routes/*.json'],
       manifest: {
-        name: 'Camilla Ride',
-        short_name: 'Camilla Ride',
-        description: 'Ciclismo indoor 3D, allenamenti sul rullo e il sonno di Camilla.',
+        name: 'ALLENANDO',
+        short_name: 'ALLENANDO',
+        description: 'Rullo sulle salite vere: Stelvio, Mortirolo e Selvino in 3D, power replay, grade replay e fantasma dei tuoi giri.',
         lang: 'it',
         dir: 'ltr',
-        start_url: '/camilla-ride/',
-        scope: '/camilla-ride/',
+        start_url: '/allenando/',
+        scope: '/allenando/',
         display: 'standalone',
         orientation: 'any',
-        background_color: '#090a0e',
-        theme_color: '#090a0e',
+        background_color: '#0a0c0f',
+        theme_color: '#0a0c0f',
         categories: ['sports', 'fitness', 'health'],
         icons: [
           { src: 'pwa-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
@@ -38,9 +38,9 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,woff,woff2,fit,gpx,tcx,zip,webmanifest}'],
-        navigateFallback: '/camilla-ride/index.html',
-        navigateFallbackDenylist: [/^\/camilla-ride\/samples\//],
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,woff,woff2,fit,gpx,tcx,zip,json,webmanifest}'],
+        navigateFallback: '/allenando/index.html',
+        navigateFallbackDenylist: [/^\/allenando\/samples\//],
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
         cleanupOutdatedCaches: true,
       },

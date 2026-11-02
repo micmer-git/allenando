@@ -10,8 +10,12 @@ import { HistoryPage } from '@/pages/History';
 import { RideDetailPage } from '@/pages/RideDetail';
 import { LoadPage } from '@/pages/Load';
 import { ImportPage } from '@/pages/Import';
-import { SleepPage } from '@/pages/Sleep';
+import { ClimbsPage } from '@/pages/Climbs';
+import { ClimbDetailPage } from '@/pages/ClimbDetail';
+import { RidesPage } from '@/pages/Rides';
+import { ReplaySetupPage } from '@/pages/ReplaySetup';
 import { ProfilePage } from '@/pages/Profile';
+import { Wordmark } from '@/components/ui';
 import { useApp } from '@/store/useApp';
 
 const RidePage = lazy(() => import('@/pages/Ride').then((mod) => ({ default: mod.RidePage })));
@@ -37,7 +41,10 @@ export function App() {
           <Route path="/history/:id" element={<RideDetailPage />} />
           <Route path="/load" element={<LoadPage />} />
           <Route path="/import" element={<ImportPage />} />
-          <Route path="/sleep" element={<SleepPage />} />
+          <Route path="/salite" element={<ClimbsPage />} />
+          <Route path="/salite/:id" element={<ClimbDetailPage />} />
+          <Route path="/giri" element={<RidesPage />} />
+          <Route path="/giri/:id" element={<ReplaySetupPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
@@ -72,9 +79,8 @@ function ThemeSync() {
   useEffect(() => {
     const root = document.documentElement;
     root.dataset.theme = settings.theme;
-    root.dataset.camilla = settings.camilla ? 'on' : 'off';
     root.lang = settings.locale;
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', settings.theme === 'light' ? '#f3efe6' : '#090a0e');
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', settings.theme === 'light' ? '#f2f3f0' : '#0a0c0f');
   }, [settings]);
   return null;
 }
@@ -84,9 +90,7 @@ function Splash() {
   return (
     <div className="grid min-h-dvh place-items-center px-6 text-center">
       <div>
-        <p className="font-display text-5xl tracking-tight">
-          Camilla <span className="text-accent">Ride</span>
-        </p>
+        <Wordmark className="text-5xl" />
         <p className="mt-3 text-muted">{t('app.loading')}</p>
       </div>
     </div>

@@ -1,17 +1,20 @@
 {
-  "name": "camilla-ride",
+  "name": "allenando",
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Ciclismo indoor 3D, con Camilla al seguito. PWA offline.",
+  "description": "Ciclismo indoor sulle salite vere in 3D, con power replay, grade replay e fantasma. PWA offline.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build && node -e \"require('node:fs').copyFileSync('dist/index.html','dist/404.html')\"",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
     "test": "vitest run",
-    "samples": "vite-node scripts/make-samples.ts"
+    "samples": "vite-node scripts/make-samples.ts",
+    "climbs": "node scripts/fetch-climbs.mjs",
+    "climbs:stats": "vite-node scripts/route-stats.ts"
   },
   "dependencies": {
+    "@fontsource/barlow-condensed": "^5.3.0",
     "@fontsource/fraunces": "^5.3.0",
     "@fontsource/outfit": "^5.3.0",
     "@garmin/fitsdk": "^21.218.0",

@@ -139,10 +139,13 @@ export function Pill({ children, color }: { children: ReactNode; color?: string 
   );
 }
 
-export function Wordmark() {
+export function Wordmark({ className }: { className?: string }) {
   return (
-    <span className="font-display text-xl tracking-tight">
-      Camilla <span className="text-accent">Ride</span>
+    <span className={cn('inline-flex items-center gap-2 font-display text-2xl font-extrabold uppercase tracking-[0.06em]', className)}>
+      <svg width="22" height="16" viewBox="0 0 22 16" aria-hidden="true">
+        <path d="M1 15 7.5 4l4 6 3-4.5L21 15Z" fill="var(--accent)" />
+      </svg>
+      Allenando
     </span>
   );
 }

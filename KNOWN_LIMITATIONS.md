@@ -1,19 +1,31 @@
-# Limiti noti e verifica manuale — Camilla Ride V1
+# Limiti noti — ALLENANDO V1
 
-Questa release passa i test unitari e la build di produzione, ma **non e' certificata su un rullo fisico**.
+Passa i test (geometria, terreno sotto la strada, replay, Intervals con API simulata, parser) e la build di produzione. Il mondo 3D è stato visto in Chrome headless (WebGL software) su viewport 390×844. **Non è certificato su un rullo fisico.**
 
-- **FTMS / BLE**: le routine e i pacchetti sono coperti da test automatici; le connessioni, il controllo ERG, la simulazione di pendenza e le disconnessioni devono essere provati con un rullo reale e Chrome/Edge su HTTPS. Alcuni modelli espongono solo un sottoinsieme dei comandi FTMS.
-- **iPhone/iPad**: Safari non offre Web Bluetooth. Il simulatore, il diario e il sonno funzionano senza rullo; per Bluetooth serve un browser compatibile, per esempio Bluefy.
-- **Garmin**: non e' presente un sync API; per ora si importano manualmente FIT, TCX, GPX e ZIP esportati da Garmin Connect. Il comportamento va provato con almeno un file reale e uno contenente dati mancanti.
-- **Dati**: profilo e attivita' sono locali al browser (IndexedDB); cancellare dati del sito o usare un altro dispositivo non preserva automaticamente lo storico. Esportare i file prima di cancellare i dati.
-- **Prestazioni**: il bundler segnala chunk JavaScript superiori a 500 kB; il mondo 3D potrebbe risultare pesante su cellulari meno potenti. Usare la qualita' grafica bassa se necessario.
-- **PWA offline**: il service worker viene generato in produzione; verificare manualmente l'accesso offline *dopo* la prima visita online su dispositivo mobile.
+## Geometria e quota
 
-## Collaudo su hardware (da fare)
-1. Aprire https://micmer-git.github.io/camilla-ride/ da Chrome/Edge su HTTPS e verificare il profilo e l'avvio del simulatore.
-2. Collegare un rullo FTMS e una fascia cardio; controllare potenza, frequenza, cadenza e disconnessione/riconnessione.
-3. Avviare un allenamento ERG e verificare la risposta della resistenza e gli intervalli; ripetere in pedalata libera con cambio di pendenza.
-4. Salvare la sessione, esportare FIT/TCX, reimportare un file ed esaminare diario e statistiche.
-5. Verificare la navigazione su schermo 360 px e la PWA offline al secondo avvio.
+- La strada è ricostruita da dati aperti: precisione di qualche metro, non di centimetri. La quota è livellata entro ±8–11 m dal DEM a 25 m; le pendenze di picco su 100 m (fino a ~24%) possono contenere ancora rumore del DEM nei tornanti.
+- Partenza e arrivo sono i nodi OSM del paese e del passo: lunghezza e dislivello differiscono di qualche centinaio di metri dalle schede ufficiali.
+- Il percorso è calcolato da OSRM (profilo auto) sulle strade OSM. Per il Mortirolo da Mazzo segue la Strada del Mortirolo e l’ultimo tratto sulla SS42 dir/A fino al passo: va confrontato con un GPX di riferimento.
+- Larghezza della carreggiata stimata (6 m, 4,8 m al Mortirolo): OSM raramente ha il tag `width`.
+- Terreno lontano a 100–180 m di passo: le montagne in distanza sono morbide. Nelle tracce importate (GPX, giri con GPS) non c’è DEM: il terreno intorno è indicativo.
+- Alberi, rocce e neve seguono la quota, non un censimento. Non ci sono edifici, gallerie né i muretti specifici delle strade vere.
 
-La build di CI non sostituisce questi test fisici.
+## Replay e Intervals.icu
+
+- Il client Intervals.icu è provato con risposte simulate e con le intestazioni CORS reali (preflight e 401), **non con una chiave vera**: il primo import reale va controllato.
+- `latlng` degli stream è letto come `data` = latitudini, `data2` = longitudini (gestiti anche altri formati).
+- Gli import da file vengono ricampionati a 1 Hz dal codice esistente: nelle pause il fantasma avanza piano invece di fermarsi.
+- La traccia del giro importato è decimata a ≥ 5 m e arrotondata: il fantasma è scalato sulla lunghezza della traccia ricostruita.
+
+## Rullo e mobile
+
+- FTMS/BLE coperti da test su pacchetti, non provati su hardware in questa versione.
+- Il bundle del mondo 3D è ~1 MB (260 kB gzip). Su telefoni modesti usare la grafica **Bassa**.
+- Safari/iPhone: niente Web Bluetooth, serve Bluefy.
+
+## Collaudo da fare
+
+1. Aprire una salita, pedalare col simulatore a 10× fino in cima: arrivo, riepilogo, salvataggio, poi «Contro il fantasma».
+2. Import Intervals.icu con una chiave vera, un’attività con potenza e GPS: power replay e grade replay.
+3. Rullo FTMS: ERG nel power replay, simulazione nel grade replay, nessun comando misto.

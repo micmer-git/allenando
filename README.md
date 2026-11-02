@@ -1,106 +1,73 @@
-# Camilla Ride
+# ALLENANDO
 
-Ciclismo indoor in un mondo 3D, nel browser. Pensata per il rullo: potenza, zone, allenamenti in ERG, diario e, se ti va, Camilla nel carrellino.
+Rullo indoor sulle salite vere, nel browser. Tre salite, quattro versanti, con la forma vera della strada: tornanti, curve, quota e pendenza georeferenziate. E i tuoi giri veri, rifatti sul rullo.
 
-Tutto resta sul dispositivo. Non c’è account e non partono dati verso un server.
+Sito: [https://micmer-git.github.io/allenando/](https://micmer-git.github.io/allenando/)
 
-Sito: [https://micmer-git.github.io/camilla-ride/](https://micmer-git.github.io/camilla-ride/)
+Tutto resta sul dispositivo. Non c’è account. Le uniche chiamate esterne sono quelle che fai tu verso Intervals.icu, con la tua chiave.
 
-## Cosa fa
+## Le salite
 
-- Anello 3D generato in modo procedurale, con salite, alberi e un lago. La velocità arriva dalla potenza, con un modello fisico (massa, CdA, Crr, pendenza, inerzia). Niente scia.
-- Sensori Bluetooth: rulli FTMS (dati indoor bike, potenza obiettivo per l’ERG, simulazione di pendenza in pedalata libera), misuratori di potenza, fascia cardio, sensore di cadenza.
-- Simulatore integrato, così l’app si usa anche senza rullo.
-- Profilo con FTP, peso e FC. Zone di potenza di Coggan (7) e zone di frequenza di Friel sulla soglia cardiaca.
-- Libreria: fondo, sweet spot, VO2max 5×4′, soglia 2×20′, test a rampa (FTP ≈ 75% del miglior minuto) e un risveglio corto per provare l’ERG. Si possono creare schemi propri.
-- Diario locale (IndexedDB) con media, NP, IF, TSS e tempo nelle zone. Esportazione FIT e TCX.
-- Importazione di FIT, TCX, GPX e di uno ZIP di Garmin Connect. Il carico (CTL 42 giorni, ATL 7, TSB) mette insieme giri indoor e attività importate.
-- PWA: dopo la prima apertura funziona senza rete.
-- Tema Camilla, spegnibile: carrellino nel mondo 3D, chilometri fatti insieme, traguardi, e il diario del sonno.
+| Salita | Versante | Lunghezza | Quota | Media | Tornanti rilevati |
+|---|---|---|---|---|---|
+| Selvino | da Nembro | 11,6 km | 328 → 945 m | 5,3% | 20 |
+| Mortirolo | da Mazzo di Valtellina | 11,3 km | 562 → 1850 m | 11,4% | 24 |
+| Stelvio | da Prato allo Stelvio | 25,2 km | 908 → 2750 m | 7,3% | 48 |
+| Stelvio | da Bormio | 21,6 km | 1216 → 2751 m | 7,1% | 30 |
 
-L’interfaccia è in italiano. Le stringhe stanno in `src/i18n/it.ts`: per aggiungere una lingua si esporta un oggetto con la stessa forma e lo si registra in `src/i18n/index.ts`.
+I numeri sono **calcolati dalle tracce** (`npm run climbs:stats`), non copiati da una scheda: possono scostarsi di qualche metro dai valori ufficiali, perché partenza e arrivo sono i nodi OSM del paese e del passo.
+
+Da dove vengono:
+
+- **Strada**: OpenStreetMap, percorso calcolato con OSRM (`routing.openstreetmap.de`, profilo auto) tra il nodo OSM del paese di partenza e quello del passo. La pianta è nodo per nodo, con gli spigoli arrotondati di al massimo 3,5 m.
+- **Quota**: EU-DEM v1.1 a 25 m (Copernicus) via l’API pubblica di OpenTopoData. Il profilo è livellato dentro un “tubo” di ±8 m dalla quota del DEM (la strada a mezza costa non pesca più il pendio), e la pendenza è mediata su circa 40 m.
+- **Terreno**: griglia DEM da 100–180 m intorno alla strada, raccordata alla carreggiata: vicino alla strada il terreno scende alla sua quota e sta sempre sotto l’asfalto (lo verifica un test su ogni punto delle quattro tracce).
+- **Tornanti**: curve oltre 150° in 70 m. Sono quelli che la geometria mostra, non il conteggio dei cartelli.
+- **Guardrail**: dove il DEM indica un salto di oltre 3 m a 7 m dal bordo.
+- **Vegetazione**: per fascia di quota (latifoglie, abete rosso, larice, rocce), non da un censimento.
+
+Street View non è una fonte: l’app ne mette solo il link ufficiale a Google Maps, come riferimento visivo. Nessuna geometria o texture viene ricavata da lì.
+
+Le tracce si rigenerano con `npm run climbs` (scrive `public/routes/*.json`, circa sei minuti per il limite di una richiesta al secondo di OpenTopoData).
+
+Il **catalogo** elenca altre sedici grandi salite italiane senza numeri: sono segnate «traccia da acquisire» finché non arriva una traccia verificata. Nel frattempo si può importare il GPX di un proprio giro e pedalarlo.
+
+## I tuoi giri: power replay, grade replay, fantasma
+
+**Giri** importa un’attività in due modi:
+
+- **Intervals.icu** con la chiave API personale (Settings → Developer). La chiave resta nello stato della pagina: non va in localStorage, in IndexedDB, nei log o nel repo. L’API di Intervals.icu risponde alle chiamate dal browser (CORS verificato il 02/11/2026). Le attività sincronizzate da Strava arrivano senza dati per i termini di Strava: l’app le segna e propone il file.
+- **File** FIT, TCX, GPX o lo ZIP di Garmin Connect, letti sul dispositivo.
+
+Poi si sceglie il pezzo (tutto, da minuto a minuto, da km a km, o un lap del file) e il modo:
+
+- **Power replay**: il rullo va in ERG con i watt del giro originale, allineati sul tempo trascorso. La pendenza non viene inviata.
+- **Grade replay**: il rullo riceve la pendenza della strada del giro (simulazione FTMS); i watt li metti tu.
+- **Fantasma**: pendenza al rullo e, accanto, il giro di allora alla sua velocità, con il distacco in secondi calcolato sul tempo al metro.
+
+ERG (`0x05`) e simulazione (`0x11`) non vengono mai inviati insieme. Se il giro non ha GPS si pedala su una **strada neutra**, dritta, e lo si dice; se non ha potenza il power replay è disattivato.
+
+Sulle salite del pacchetto, al primo arrivo in cima il tempo diventa il fantasma da battere.
+
+## Rullo e sensori
+
+Web Bluetooth (Chrome/Edge su Android, Mac, Windows, Linux; Bluefy su iPhone). Profili: FTMS (dati, potenza obiettivo, simulazione), Cycling Power, Heart Rate, Cycling Speed and Cadence. Senza rullo c’è il simulatore.
 
 ## Avvio
 
 ```bash
 npm install
 npm test
-npm run dev
-```
-
-In sviluppo l’app è su `http://localhost:5173/camilla-ride/`.
-
-```bash
-npm run build
-npm run preview
-```
-
-I file di esempio in `public/samples/` si rigenerano con `npm run samples`.
-
-## Uso
-
-1. Al primo avvio inserisci nome, peso, FTP e FC massima. Se non conosci la FTP, lascia 220 W e fai il test a rampa.
-2. **Pedala libero** apre il mondo. Lo sforzo del simulatore è il cursore in basso. Con un rullo vero, apri **Sensori**.
-3. **Allenamenti** avvia l’ERG: il bersaglio di watt cambia a ogni intervallo. Sul simulatore la potenza lo insegue con un po’ di inerzia. Su un rullo FTMS l’app chiede il controllo e invia la potenza obiettivo.
-4. **Termina** mostra NP, IF e TSS. Puoi salvare il giro ed esportarlo in FIT o TCX dal diario.
-5. **Importa** accetta più file insieme, o lo ZIP che scarichi da Garmin Connect (Attività → Esporta).
-6. **Sonno di Camilla** ha un timer e l’inserimento a mano. Il totale del giorno divide le sessioni a cavallo della mezzanotte.
-
-In pedalata libera, se il rullo supporta la simulazione FTMS, la pendenza del mondo viene inviata al rullo (grado, Crr, coefficiente aerodinamico). Il peso usato dal rullo per la resistenza è quello salvato nella sua app: allinealo al tuo.
-
-La grafica ha tre livelli. Su un telefono modesto usa **Bassa**.
-
-## Rulli e sensori
-
-Serve un browser con Web Bluetooth, in un contesto sicuro (HTTPS o localhost): Chrome o Edge su Android, Mac, Windows e Linux, oppure Bluefy su iPhone e iPad.
-
-Funzionano i rulli che espongono il profilo Bluetooth **FTMS** (Fitness Machine Service), tra cui molti modelli recenti di Wahoo KICKR, Garmin Tacx, Elite, Saris, JetBlack e altri, quando il FTMS è attivo. In più:
-
-- Cycling Power Service, per la potenza (e la cadenza, se il misuratore la manda)
-- Heart Rate Service
-- Cycling Speed and Cadence, per la cadenza
-
-L’ERG richiede il Fitness Machine Control Point con “target power”. La pendenza in libertà richiede “indoor bike simulation parameters”. Se il rullo manda solo la potenza, il mondo si muove lo stesso, ma la resistenza non cambia da sola: l’app lo dice.
-
-Comandi usati:
-
-- `0x00` richiesta di controllo
-- `0x05` potenza obiettivo, in watt
-- `0x11` simulazione: vento in millesimi di m/s, pendenza in centesimi di percento, Crr in decimillesimi, Cw in centesimi di kg/m
-
-## iPhone e iPad
-
-Safari non implementa il Web Bluetooth. L’app come pagina (o aggiunta alla schermata Home) funziona per simulatore, diario, import e sonno. Per parlare con il rullo apri il sito in **Bluefy – Web BLE Browser**.
-
-Su Android e desktop, Chrome propone l’installazione della PWA.
-
-## Modello fisico
-
-La potenza del ciclista e la velocità di regime sono legate da
-
-```
-P · η = (Crr · m · g · cosθ + ½ · CdA · ρ · v² + m · g · sinθ) · v
-```
-
-con θ = arctan(pendenza), η = 0,975, ρ = 1,225 kg/m³. L’integrazione tiene conto dell’inerzia, con un fattore di massa rotante 1,03, e limita la forza a bassa velocità. I valori di partenza sono CdA 0,32 e Crr 0,004: si cambiano nel profilo.
-
-Il TSS con la potenza è quello di Coggan: `(durata · NP · IF) / (FTP · 3600) · 100`. Senza potenza si usa una stima dalla FC media e dalla soglia (`hrTSS`), ed è segnata come stima. La soglia cardiaca, se non la inserisci, è l’89% della FC massima.
-
-Il TSS delle attività importate che hanno una traccia di potenza variabile è ricalcolato sulla tua FTP.
-
-## Dove stanno i dati
-
-IndexedDB, in questo browser. Cancellarli dal profilo li toglie solo da qui. L’esportazione FIT usa il produttore `development`, accettato da Garmin Connect e Strava.
-
-Un futuro collegamento a un’API (per esempio Garmin Connect) può implementare `ActivitySource` in `src/io/sources.ts` e restituire gli stessi oggetti `Ride`. Oggi l’unica sorgente è il file.
-
-## Sviluppo
-
-```bash
-npm test
+npm run dev        # http://localhost:5173/allenando/
 npm run build
 ```
 
-I test coprono fisica, zone, NP/TSS, CTL/ATL/TSB, parsing FTMS e dei sensori BLE, FIT (andata e ritorno), TCX, GPX e ZIP.
+Il deploy su GitHub Pages parte da `.github/workflows/pages.yml` a ogni push su `main`. La base è `/allenando/`.
 
-Il deploy su GitHub Pages parte da `.github/workflows/pages.yml` a ogni push su `main`. La base dell’app è `/camilla-ride/`.
+## Rapporto con Camilla Ride
+
+ALLENANDO nasce da un fork di [Camilla Ride](https://github.com/micmer-git/camilla-ride), che resta l’app di Luca e Camilla con il carrellino e il diario del sonno. Qui quelle parti non ci sono. Le due app stanno sulla stessa origine (`micmer-git.github.io`) ma usano database locali diversi (`allenando` e `camilla-ride`).
+
+## Licenze dei dati
+
+© OpenStreetMap contributors, ODbL 1.0 · EU-DEM © Copernicus Land Monitoring Service. Vedi `KNOWN_LIMITATIONS.md` per cosa non è ancora verificato.

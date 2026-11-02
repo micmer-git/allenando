@@ -1,22 +1,163 @@
-import { Component, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { WorkoutChart } from '@/components/WorkoutChart';
-import { Button, Segmented } from '@/components/ui';
+import { ProfileChart } from '@/components/RouteViz';
+import { Button, Segmented, Wordmark } from '@/components/ui';
 import { bluetoothSupport } from '@/bluetooth/support';
 import { BluetoothTrainer } from '@/bluetooth/trainer';
 import { formatDuration, formatGrade, formatKm, formatNumber, msToKmh } from '@/domain/format';
 import { STANDARD_AIR, type PhysicsParams } from '@/domain/physics';
-import { getTrack } from '@/domain/track';
-import type { Profile, Quality, Workout, WorkoutStep } from '@/domain/types';
+import {
+  gapSeconds,
+  geoPointsFromSamples,
+  ghostDistanceAt,
+  hasAltitude,
+  hasGps,
+  powerAtTime,
+  profileFromSamples,
+  sliceSection,
+  type ReplayMode,
+} from '@/domain/replay';
+import { loadRouteFile, routeMeta, trackFromGeo, trackFromRouteFile, type LoadedRoute } from '@/domain/routes';
+import { createRouteTrack } from '@/domain/track';
+import type { Profile, Quality, RideSample, Workout, WorkoutStep } from '@/domain/types';
 import { estimateLthr, powerZone } from '@/domain/zones';
 import { findWorkout, workoutAt } from '@/domain/workouts';
 import { useI18n, type Translate } from '@/i18n';
 import { RideEngine } from '@/sim/engine';
 import { useApp } from '@/store/useApp';
 import { RideScene } from '@/world/Scene';
+import { decodeSection } from './ReplaySetup';
 import { workoutTitle } from './Workouts';
 
+const DEFAULT_ROUTE = 'selvino-nembro';
+
+interface RideSetup {
+  route: LoadedRoute;
+  /** id della salita verificata, per legare il giro salvato al fantasma futuro */
+  routeId?: string;
+  replayMode?: ReplayMode;
+  replaySamples?: RideSample[];
+  ghostSamples?: RideSample[];
+  label: string;
+  note?: string;
+}
+
+/** Strada neutra, dritta, per i giri senza GPS: lo diciamo, non la spacciamo per vera. */
+function neutralRoute(samples: RideSample[]): LoadedRoute {
+  const prof = hasAltitude(samples) ? profileFromSamples(samples) : [];
+  const total = Math.max(200, samples[samples.length - 1]?.distance ?? 1000);
+  const pts = [];
+  for (let d = 0; d <= total; d += 10) {
+    let ele: number | null = null;
+    if (prof.length) {
+      const k = prof.findIndex((p) => p.distance >= d);
+      ele = (k < 0 ? prof[prof.length - 1] : prof[k]).altitude;
+    }
+    pts.push({ x: 0, z: d, ele });
+  }
+  return {
+    id: 'neutral',
+    title: 'Strada neutra',
+    subtitle: 'giro senza GPS',
+    track: createRouteTrack(pts, { halfWidth: 3 }),
+    dem: null,
+    origin: { lat: 0, lon: 0 },
+    attribution: '',
+    verified: false,
+  };
+}
+
+function useRideSetup(): { setup: RideSetup | null; error: string | null } {
+  const [params] = useSearchParams();
+  const rides = useApp((s) => s.rides);
+  const [state, setState] = useState<{ setup: RideSetup | null; error: string | null }>({ setup: null, error: null });
+  const key = params.toString();
+  useEffect(() => {
+    let alive = true;
+    const done = (setup: RideSetup | null, error: string | null = null) => {
+      if (alive) setState({ setup, error });
+    };
+    const replayId = params.get('replay');
+    if (replayId) {
+      const ride = rides.find((r) => r.id === replayId);
+      if (!ride) {
+        done(null, 'Giro da rifare non trovato.');
+        return;
+      }
+      const raw = params.get('mode') ?? '';
+      const mode: ReplayMode = raw === 'power' || raw === 'ghost' ? raw : 'grade';
+      const samples = sliceSection(ride, decodeSection(params.get('sec')));
+      if (samples.length < 2) {
+        done(null, 'Il pezzo scelto è vuoto.');
+        return;
+      }
+      let route: LoadedRoute;
+      let note: string | undefined;
+      try {
+        route = hasGps(samples)
+          ? trackFromGeo(`replay-${ride.id}`, ride.name, geoPointsFromSamples(samples), 'traccia del tuo giro')
+          : neutralRoute(samples);
+        if (!hasGps(samples)) note = 'Giro senza GPS: strada neutra, pendenza dal file se c’è.';
+        else if (!hasAltitude(samples)) note = 'Il file non ha quota: la strada è in piano.';
+      } catch {
+        route = neutralRoute(samples);
+        note = 'Traccia GPS inutilizzabile: strada neutra.';
+      }
+      done({ route, replayMode: mode, replaySamples: samples, ghostSamples: mode === 'grade' ? undefined : samples, label: ride.name, note });
+      return;
+    }
+    const id = params.get('route') ?? DEFAULT_ROUTE;
+    const meta = routeMeta(id);
+    if (!meta) {
+      done(null, 'Salita sconosciuta.');
+      return;
+    }
+    const ghostId = params.get('ghost');
+    const ghost = ghostId ? rides.find((r) => r.id === ghostId) : undefined;
+    loadRouteFile(id)
+      .then((file) => {
+        const route = trackFromRouteFile(file, meta.halfWidth);
+        done({ route, routeId: id, ghostSamples: ghost?.samples, label: `${meta.name} ${meta.side}` });
+      })
+      .catch((err: unknown) => done(null, err instanceof Error ? err.message : 'Traccia non disponibile.'));
+    return () => {
+      alive = false;
+    };
+    // salvare un giro cambia la lista: la strada non va ricaricata per questo
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  return state;
+}
+
 export function RidePage() {
+  const { setup, error } = useRideSetup();
+  if (error) {
+    return (
+      <div className="grid min-h-dvh place-items-center px-6 text-center">
+        <div>
+          <p className="text-lg">{error}</p>
+          <Link to="/salite" className="mt-3 inline-block font-semibold text-accent">
+            Salite
+          </Link>
+        </div>
+      </div>
+    );
+  }
+  if (!setup) {
+    return (
+      <div className="grid min-h-dvh place-items-center px-6 text-center">
+        <div>
+          <Wordmark className="text-4xl" />
+          <p className="mt-3 text-muted">Carico la strada e il terreno…</p>
+        </div>
+      </div>
+    );
+  }
+  return <RideSession setup={setup} />;
+}
+
+function RideSession({ setup }: { setup: RideSetup }) {
   const { t } = useI18n();
   const [params] = useSearchParams();
   const profile = useApp((s) => s.profile);
@@ -27,8 +168,9 @@ export function RidePage() {
   const session = useRef<{ engine: RideEngine; trainer: BluetoothTrainer } | null>(null);
   if (!session.current) {
     const trainer = new BluetoothTrainer();
+    const replay = setup.replayMode === 'power' ? setup.replaySamples : undefined;
     const engine = new RideEngine({
-      track: getTrack(),
+      track: setup.route.track,
       source: trainer,
       physics: physicsFrom(profile),
       ftp: profile.ftp,
@@ -37,10 +179,14 @@ export function RidePage() {
       lthr: estimateLthr(profile.maxHr, profile.thresholdHr),
       weightKg: profile.weightKg,
       workout,
-      withCamilla: settings.camilla,
+      withCamilla: false,
       crr: profile.crr,
       cw: profile.cda * 1.225,
+      powerTarget: replay ? (elapsed) => powerAtTime(replay, elapsed) : undefined,
     });
+    // ?at=metri: si parte da un punto della salita (per riprendere un tratto)
+    const at = Number(params.get('at'));
+    if (Number.isFinite(at) && at > 0) engine.distance = Math.min(at, setup.route.track.length - 1);
     session.current = { engine, trainer };
   }
   const { engine, trainer } = session.current;
@@ -61,9 +207,7 @@ export function RidePage() {
     };
   }, [engine, trainer]);
 
-  return (
-    <RideScreen engine={engine} trainer={trainer} profile={profile} workout={workout} quality={settings.quality} t={t} />
-  );
+  return <RideScreen engine={engine} trainer={trainer} profile={profile} workout={workout} quality={settings.quality} setup={setup} t={t} />;
 }
 
 function RideScreen({
@@ -72,6 +216,7 @@ function RideScreen({
   profile,
   workout,
   quality,
+  setup,
   t,
 }: {
   engine: RideEngine;
@@ -79,6 +224,7 @@ function RideScreen({
   profile: Profile;
   workout: Workout | null;
   quality: Quality;
+  setup: RideSetup;
   t: Translate;
 }) {
   const navigate = useNavigate();
@@ -92,7 +238,6 @@ function RideScreen({
   const [effort, setEffort] = useState(62);
   const [summary, setSummary] = useState<ReturnType<RideEngine['toRide']> | null>(null);
   const [saved, setSaved] = useState(false);
-  const [badges, setBadges] = useState<string[]>([]);
   const [ftpApplied, setFtpApplied] = useState(false);
 
   useEffect(() => engine.subscribe(() => bump((n) => n + 1)), [engine]);
@@ -114,27 +259,46 @@ function RideScreen({
   const step = progress && engine.workout ? engine.workout.steps[progress.stepIndex] : undefined;
   const snap = trainer.snapshot();
   const support = bluetoothSupport();
-  const rideName = workout
-    ? workoutTitle(workout, t)
-    : engine.withCamilla
-      ? t('rides.withCamilla')
-      : t('rides.free');
+  const modeLabel =
+    setup.replayMode === 'power' ? 'Power replay' : setup.replayMode === 'grade' ? 'Grade replay' : setup.replayMode === 'ghost' ? 'Fantasma' : null;
+  const rideName = workout ? `${workoutTitle(workout, t)} · ${setup.label}` : modeLabel ? `${modeLabel} · ${setup.label}` : setup.label;
+  const track = setup.route.track;
+  const ghostSamples = setup.ghostSamples;
+  // la traccia ricostruita e il file possono differire di qualche metro: si scala sulla lunghezza
+  const ghostScale = useMemo(() => {
+    const total = ghostSamples?.[ghostSamples.length - 1]?.distance ?? 0;
+    return total > 0 ? track.length / total : 1;
+  }, [ghostSamples, track]);
+  const ghostDistance = useMemo(
+    () => (ghostSamples && ghostSamples.length > 1 ? () => ghostDistanceAt(ghostSamples, engine.elapsed) * ghostScale : undefined),
+    [ghostSamples, ghostScale, engine],
+  );
+  const gap = ghostSamples && ghostSamples.length > 1 ? gapSeconds(ghostSamples, engine.distance / ghostScale, engine.elapsed) : null;
+  const hairpinsDone = track.hairpins.filter((h) => h.distance <= engine.distance).length;
 
   function finish() {
     engine.finish();
-    setSummary(engine.toRide(rideName));
+    const ride = engine.toRide(rideName);
+    if (setup.routeId && !workout && !setup.replayMode) ride.routeId = setup.routeId;
+    setSummary(ride);
   }
 
+  useEffect(() => {
+    if (engine.arrived && !summary) finish();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  });
+
   return (
-    <div className="flex h-dvh flex-col bg-bg md:flex-row" data-testid="ride-screen" data-camilla={engine.withCamilla ? 'yes' : 'no'}>
+    <div className="flex h-dvh flex-col bg-bg md:flex-row" data-testid="ride-screen">
       <div className="relative min-h-0 flex-1">
         <WorldBoundary onFail={() => setWebgl(false)}>
           {webgl ? (
             <RideScene
               key={quality}
               engine={engine}
+              route={setup.route}
               quality={quality}
-              camilla={engine.withCamilla}
+              ghostDistance={ghostDistance}
               onReady={() => setReady(true)}
             />
           ) : (
@@ -153,11 +317,49 @@ function RideScreen({
             {snap.mode === 'bluetooth' ? snap.deviceName || t('ride.connected') : t('ride.simulator')}
           </button>
         </div>
-        {engine.withCamilla ? (
-          <p className="pointer-events-none absolute bottom-3 left-3 rounded-full bg-bg/70 px-3 py-1 text-sm font-semibold text-camilla backdrop-blur">
-            {t('ride.camillaAboard')}
+        <div className="pointer-events-none absolute left-3 top-16 max-w-[62%] rounded-xl bg-bg/70 px-3 py-2 backdrop-blur" data-testid="ride-route">
+          <p className="font-display text-xl uppercase leading-none">{setup.route.title}</p>
+          <p className="text-xs text-muted">
+            {setup.route.subtitle}
+            {modeLabel ? ` · ${modeLabel}` : ''}
+            {!setup.route.verified ? ' · traccia non verificata' : ''}
           </p>
-        ) : null}
+          {setup.note ? <p className="mt-1 text-xs text-warn">{setup.note}</p> : null}
+        </div>
+        <div className="pointer-events-none absolute right-3 top-16 flex flex-col items-end gap-1">
+          <p className="rounded-xl bg-bg/70 px-3 py-1.5 text-right backdrop-blur">
+            <span className="num font-display text-2xl leading-none">{formatKm(Math.max(0, track.length - engine.distance))}</span>
+            <span className="ml-1 text-xs text-muted">km all’arrivo</span>
+          </p>
+          <p className="rounded-xl bg-bg/70 px-3 py-1 text-sm backdrop-blur">
+            <span className="num font-semibold">{formatNumber(engine.altitude, 0)} m</span>
+            {track.hairpins.length > 0 ? (
+              <span className="ml-2 text-muted">
+                tornanti {hairpinsDone}/{track.hairpins.length}
+              </span>
+            ) : null}
+          </p>
+          {gap != null ? (
+            <p
+              className={`rounded-xl px-3 py-1 text-sm font-semibold backdrop-blur ${gap >= 0 ? 'bg-good/25 text-good' : 'bg-danger/25 text-danger'}`}
+              data-testid="ghost-gap"
+            >
+              fantasma {gap >= 0 ? '+' : '−'}
+              {formatDuration(Math.abs(gap))}
+            </p>
+          ) : null}
+        </div>
+        <div className="pointer-events-none absolute inset-x-3 bottom-3 rounded-xl bg-bg/60 p-1.5 backdrop-blur">
+          <ProfileChart
+            track={track}
+            className="block h-12 w-full"
+            height={48}
+            bin={Math.max(100, track.length / 80)}
+            position={engine.distance}
+            ghost={ghostDistance ? ghostDistance() : null}
+          />
+        </div>
+
         <span data-testid="world-ready" data-ready={ready ? 'yes' : 'no'} className="sr-only" />
       </div>
       <aside className="max-h-[56%] overflow-auto border-t border-line bg-elev px-4 pb-[max(0.8rem,env(safe-area-inset-bottom))] pt-3 md:max-h-none md:w-[400px] md:shrink-0 md:border-l md:border-t-0">
@@ -311,9 +513,7 @@ function RideScreen({
                 )}
               </div>
             ) : null}
-            {badges.length > 0 ? (
-              <p className="mt-4 text-camilla">{t('ride.newBadge')}: {badges.join(', ')}</p>
-            ) : null}
+            {engine.arrived ? <p className="mt-3 font-semibold text-accent">In cima: {setup.route.title} {setup.route.subtitle}.</p> : null}
             <div className="mt-6 flex flex-col gap-2">
               {saved ? (
                 <Button data-testid="ride-open-history" onClick={() => navigate(`/history/${summary.id}`)}>
@@ -323,10 +523,7 @@ function RideScreen({
                 <Button
                   data-testid="ride-save"
                   onClick={() => {
-                    void saveRide(summary).then((fresh) => {
-                      setBadges(fresh);
-                      setSaved(true);
-                    });
+                    void saveRide(summary).then(() => setSaved(true));
                   }}
                 >
                   {t('actions.save')}

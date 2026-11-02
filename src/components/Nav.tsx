@@ -1,21 +1,22 @@
 import { NavLink } from 'react-router-dom';
 import { useI18n } from '@/i18n';
+import { Wordmark } from '@/components/ui';
 import { cn } from '@/lib/cn';
 
 const items = [
   { to: '/', key: 'nav.home', icon: HomeIcon, end: true },
-  { to: '/ride', key: 'nav.ride', icon: RideIcon, end: false },
+  { to: '/salite', key: 'nav.climbs', icon: MountainIcon, end: false },
+  { to: '/giri', key: 'nav.rides', icon: RideIcon, end: false },
   { to: '/workouts', key: 'nav.workouts', icon: PlanIcon, end: false },
   { to: '/history', key: 'nav.history', icon: BookIcon, end: false },
-  { to: '/sleep', key: 'nav.sleep', icon: MoonIcon, end: false },
 ] as const;
 
 export function SideNav() {
   const { t } = useI18n();
   return (
     <aside className="sticky top-0 hidden h-dvh flex-col gap-2 border-r border-line px-4 py-6 md:flex">
-      <p className="font-display px-3 text-2xl tracking-tight">
-        Camilla <span className="text-accent">Ride</span>
+      <p className="px-3">
+        <Wordmark />
       </p>
       <nav aria-label={t('nav.primary')} className="mt-6 flex flex-col gap-1">
         {items.map((item) => (
@@ -25,8 +26,8 @@ export function SideNav() {
             end={item.end}
             className={({ isActive }) =>
               cn(
-                'flex h-12 items-center gap-3 rounded-2xl px-3 text-base font-semibold',
-                isActive ? 'bg-accent text-accent-ink' : 'text-muted hover:bg-elev',
+                'flex h-11 items-center gap-3 rounded-xl px-3 text-[15px] font-semibold',
+                isActive ? 'bg-elev2 text-ink shadow-[inset_3px_0_0_var(--accent)]' : 'text-muted hover:bg-elev',
               )
             }
           >
@@ -100,10 +101,11 @@ function BookIcon() {
     </svg>
   );
 }
-function MoonIcon() {
+function MountainIcon() {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M15 3.5A8 8 0 1 0 20.5 14 6.5 6.5 0 0 1 15 3.5Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M2.5 19.5 9 8l3.6 6 2.4-3.6 6.5 9.1H2.5Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M7.4 10.8 9 12.3l1.4-1.3" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
     </svg>
   );
 }

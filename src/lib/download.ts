@@ -24,5 +24,5 @@ export function safeFileName(name: string, ext: string): string {
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '');
-  return `${stem || 'camilla-ride'}.${ext}`;
+  return `${stem || 'allenando'}.${ext}`;
 }

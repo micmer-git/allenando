@@ -36,7 +36,6 @@ export function HistoryPage() {
                 </span>
                 <span className="mt-2 flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-wide text-muted">
                   <span>{ride.source === 'indoor' ? t('history.sourceIndoor') : t('history.sourceImport')}</span>
-                  {ride.withCamilla ? <span className="text-camilla">{t('history.withCamilla')}</span> : null}
                   {ride.tss != null ? <span>{formatNumber(ride.tss, 0)} TSS</span> : null}
                   {ride.np != null ? <span>NP {formatNumber(ride.np, 0)}</span> : null}
                 </span>

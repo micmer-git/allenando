@@ -1,5 +1,5 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
-import type { Profile, Ride, Settings, SleepSession, Workout } from '@/domain/types';
+import type { Profile, Ride, Settings, Workout } from '@/domain/types';
 
 interface Schema extends DBSchema {
   kv: {
@@ -11,18 +11,14 @@ interface Schema extends DBSchema {
     value: Ride;
     indexes: { 'by-start': string };
   };
-  sleeps: {
-    key: string;
-    value: SleepSession;
-    indexes: { 'by-start': string };
-  };
   workouts: {
     key: string;
     value: Workout;
   };
 }
 
-const DB_NAME = 'camilla-ride';
+// Stessa origine di Camilla Ride (micmer-git.github.io): il nome separa i due database.
+const DB_NAME = 'allenando';
 const DB_VERSION = 1;
 
 let database: Promise<IDBPDatabase<Schema>> | null = null;
@@ -39,8 +35,6 @@ async function getDb(): Promise<IDBPDatabase<Schema>> {
         db.createObjectStore('kv');
         const rides = db.createObjectStore('rides', { keyPath: 'id' });
         rides.createIndex('by-start', 'startTime');
-        const sleeps = db.createObjectStore('sleeps', { keyPath: 'id' });
-        sleeps.createIndex('by-start', 'start');
         db.createObjectStore('workouts', { keyPath: 'id' });
       },
     }).catch((error) => {
@@ -55,7 +49,6 @@ async function getDb(): Promise<IDBPDatabase<Schema>> {
 const mem = {
   kv: new Map<string, unknown>(),
   rides: new Map<string, Ride>(),
-  sleeps: new Map<string, SleepSession>(),
   workouts: new Map<string, Workout>(),
 };
 
@@ -124,46 +117,6 @@ export async function deleteRideRecord(id: string): Promise<void> {
   }
 }
 
-export async function loadSleeps(): Promise<SleepSession[]> {
-  if (memory) return [...mem.sleeps.values()].sort((a, b) => (a.start < b.start ? 1 : -1));
-  try {
-    const db = await getDb();
-    const all = await db.getAllFromIndex('sleeps', 'by-start');
-    return all.reverse();
-  } catch {
-    memory = true;
-    return [...mem.sleeps.values()];
-  }
-}
-
-export async function saveSleepRecord(session: SleepSession): Promise<void> {
-  if (memory) {
-    mem.sleeps.set(session.id, session);
-    return;
-  }
-  try {
-    const db = await getDb();
-    await db.put('sleeps', session);
-  } catch {
-    memory = true;
-    mem.sleeps.set(session.id, session);
-  }
-}
-
-export async function deleteSleepRecord(id: string): Promise<void> {
-  if (memory) {
-    mem.sleeps.delete(id);
-    return;
-  }
-  try {
-    const db = await getDb();
-    await db.delete('sleeps', id);
-  } catch {
-    memory = true;
-    mem.sleeps.delete(id);
-  }
-}
-
 export async function loadWorkouts(): Promise<Workout[]> {
   if (memory) return [...mem.workouts.values()];
   try {
@@ -206,16 +159,14 @@ export async function deleteWorkoutRecord(id: string): Promise<void> {
 export async function clearDatabase(): Promise<void> {
   mem.kv.clear();
   mem.rides.clear();
-  mem.sleeps.clear();
   mem.workouts.clear();
   if (memory) return;
   try {
     const db = await getDb();
-    const tx = db.transaction(['kv', 'rides', 'sleeps', 'workouts'], 'readwrite');
+    const tx = db.transaction(['kv', 'rides', 'workouts'], 'readwrite');
     await Promise.all([
       tx.objectStore('kv').clear(),
       tx.objectStore('rides').clear(),
-      tx.objectStore('sleeps').clear(),
       tx.objectStore('workouts').clear(),
       tx.done,
     ]);
