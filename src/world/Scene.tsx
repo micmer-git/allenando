@@ -1,52 +1,64 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, type RefObject } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
+import type { LoadedRoute } from '@/domain/routes';
+import type { Track, TrackPose } from '@/domain/track';
 import type { Quality } from '@/domain/types';
-import type { Track, TrackPoint } from '@/domain/track';
 import type { RideEngine } from '@/sim/engine';
-import { terrainSizeForTrack } from './landscape';
+import {
+  asphaltTexture,
+  buildFarTerrain,
+  buildGuardrails,
+  centerDashes,
+  farTerrainMaterial,
+  runToEnd,
+  scatterProps,
+  strip,
+  tileJob,
+  type Prop,
+  type TileSpec,
+} from './builders';
+import { createHeightField, type HeightField } from './heightfield';
+
+const QUALITY = {
+  low: { tile: 1200, spacing: 12, density: 0.6, far: 5000, dpr: 1 as number | [number, number] },
+  medium: { tile: 1600, spacing: 8, density: 1, far: 8000, dpr: [1, 1.25] as [number, number] },
+  high: { tile: 2400, spacing: 8, density: 1.6, far: 11000, dpr: [1, 1.6] as [number, number] },
+} satisfies Record<Quality, unknown>;
+
+const BRAND = '#c8f031';
 
 export function RideScene({
   engine,
+  route,
   quality,
-  camilla,
+  ghostDistance,
   onReady,
 }: {
   engine: RideEngine;
+  route: LoadedRoute;
   quality: Quality;
-  camilla: boolean;
+  /** Distanza del fantasma in questo istante, o null se non c'è. */
+  ghostDistance?: () => number | null;
   onReady: () => void;
 }) {
+  const q = QUALITY[quality];
+  const fogFar = route.dem ? q.far * 0.9 : 1400;
   return (
     <Canvas
-      dpr={quality === 'low' ? 1 : quality === 'high' ? [1, 1.6] : [1, 1.25]}
-      shadows={quality === 'high'}
-      gl={{
-        antialias: quality !== 'low',
-        alpha: false,
-        stencil: false,
-        powerPreference: 'high-performance',
-      }}
-      camera={{ fov: 52, near: 0.1, far: 1800, position: [0, 3.5, -10] }}
+      dpr={q.dpr}
+      gl={{ antialias: quality !== 'low', alpha: false, stencil: false, powerPreference: 'high-performance' }}
+      camera={{ fov: 55, near: 0.3, far: q.far + 1000, position: [0, 4, -10] }}
       onCreated={({ gl }) => {
         gl.toneMapping = THREE.ACESFilmicToneMapping;
-        gl.toneMappingExposure = 1.08;
+        gl.toneMappingExposure = 1.05;
       }}
     >
-      <color attach="background" args={['#c5dff2']} />
-      <fog attach="fog" args={['#cfe4f2', 110, quality === 'low' ? 380 : 600]} />
-      <hemisphereLight args={['#e7f4ff', '#7da86a', 0.72]} />
-      <ambientLight intensity={0.28} />
-      <directionalLight
-        position={[80, 140, 40]}
-        intensity={1.45}
-        color="#fff1d6"
-        castShadow={quality === 'high'}
-        shadow-mapSize-width={1024}
-        shadow-mapSize-height={1024}
-      />
-      <World engine={engine} quality={quality} camilla={camilla} />
-      <FollowCam engine={engine} />
+      <color attach="background" args={['#bcd3e6']} />
+      <fog attach="fog" args={['#c6d6e3', route.dem ? 260 : 120, fogFar]} />
+      <hemisphereLight args={['#eaf3ff', '#5c6b48', 0.75]} />
+      <directionalLight position={[-600, 900, 500]} intensity={1.6} color="#fff2dc" />
+      <World engine={engine} route={route} quality={quality} ghostDistance={ghostDistance} />
       <Ready onReady={onReady} />
     </Canvas>
   );
@@ -63,119 +75,507 @@ function Ready({ onReady }: { onReady: () => void }) {
   return null;
 }
 
-function FollowCam({ engine }: { engine: RideEngine }) {
-  const { camera } = useThree();
-  const look = useRef(new THREE.Vector3());
-  const desired = useRef(new THREE.Vector3());
-  const place = (dt: number) => {
-    const pose = engine.pose();
-    const fx = Math.sin(pose.heading);
-    const fz = Math.cos(pose.heading);
-    const rx = Math.cos(pose.heading);
-    const rz = -Math.sin(pose.heading);
-    desired.current.set(pose.x - fx * 9.5 + rx * 0.7, pose.y + 3.45, pose.z - fz * 9.5 + rz * 0.7);
-    const k = 1 - Math.exp(-Math.min(1, dt) * 3.4);
-    camera.position.lerp(desired.current, k);
-    look.current.set(pose.x + fx * 8, pose.y + 1.1, pose.z + fz * 8);
-    camera.lookAt(look.current);
-  };
-  useLayoutEffect(() => {
-    place(1);
-    // snap once so the first frame already frames the bike
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  useFrame((_, dt) => place(dt));
-  return null;
-}
-
-function World({ engine, quality, camilla }: { engine: RideEngine; quality: Quality; camilla: boolean }) {
-  const track = engine.track;
-  const segments = quality === 'low' ? 72 : quality === 'high' ? 136 : 104;
-  const terrain = useMemo(() => buildTerrain(track, segments), [track, segments]);
-  const roadside = useMemo(() => ribbon(track.points, 17, -0.7), [track]);
-  const shoulders = useMemo(() => ribbon(track.points, 4.8, -0.035), [track]);
-  const road = useMemo(() => buildRoad(track), [track]);
-  const edgeLines = useMemo(() => buildEdgeLines(track), [track]);
-  const dashes = useMemo(() => buildDashes(track), [track]);
-  const trees = useMemo(() => scatterTrees(track, quality === 'low' ? 240 : quality === 'high' ? 720 : 480), [track, quality]);
-  const flowers = useMemo(() => (camilla ? scatterFlowers(track, quality === 'low' ? 100 : 220) : []), [track, camilla, quality]);
-  const gate = useMemo(() => track.poseAt(28), [track]);
-  const sign = useMemo(() => makeSignTexture(), []);
-  useEffect(() => {
-    return () => {
-      terrain.dispose();
-      roadside.dispose();
-      shoulders.dispose();
-      road.dispose();
-      edgeLines.dispose();
-      dashes.dispose();
-      sign.dispose();
-    };
-  }, [terrain, roadside, shoulders, road, edgeLines, dashes, sign]);
-
+function World({
+  engine,
+  route,
+  quality,
+  ghostDistance,
+}: {
+  engine: RideEngine;
+  route: LoadedRoute;
+  quality: Quality;
+  ghostDistance?: () => number | null;
+}) {
+  const track = route.track;
+  const q = QUALITY[quality];
+  const field = useMemo(() => createHeightField(track, route.dem), [track, route.dem]);
+  const tile = useRef({ value: new THREE.Vector3(0, 0, -1) });
   return (
     <group>
       <Sky />
-      <mesh geometry={terrain} receiveShadow>
-        <meshLambertMaterial vertexColors side={THREE.DoubleSide} />
-      </mesh>
-      <mesh geometry={roadside} receiveShadow>
-        <meshLambertMaterial color="#779b5d" side={THREE.DoubleSide} />
-      </mesh>
-      <mesh geometry={shoulders} receiveShadow>
-        <meshLambertMaterial color="#b5a98e" side={THREE.DoubleSide} />
-      </mesh>
-      <mesh geometry={road} receiveShadow castShadow>
-        <meshLambertMaterial color="#3c4452" />
-      </mesh>
-      <mesh geometry={edgeLines}>
-        <meshBasicMaterial color="#e9e4d1" side={THREE.DoubleSide} />
-      </mesh>
-      <mesh geometry={dashes}>
-        <meshBasicMaterial color="#f0d56c" side={THREE.DoubleSide} />
-      </mesh>
-      <Trees items={trees} />
-      {flowers.length > 0 ? <Flowers items={flowers} /> : null}
-      <Gate pose={gate} texture={sign} />
-      <Rider engine={engine} camilla={camilla} />
+      {route.dem ? <FarTerrain route={route} tile={tile.current} /> : null}
+      <NearTerrain engine={engine} field={field} track={track} size={q.tile} spacing={q.spacing} tile={tile.current} />
+      <Road track={track} field={field} />
+      <Props track={track} field={field} density={q.density} />
+      <Signs track={track} title={route.title} />
+      <Rider getPose={() => engine.pose()} getCadence={() => engine.cadence} getSpeed={() => engine.speed} />
+      {ghostDistance ? <Ghost track={track} ghostDistance={ghostDistance} /> : null}
+      <FollowCam engine={engine} field={field} />
     </group>
   );
 }
 
+// ---------- cielo ----------
+
 function Sky() {
-  // A skybox must follow the rider: the loop extends past x=900 m.
-  // Keeping the sphere at world origin made it invisible from the starting line.
-  const skyRef = useRef<THREE.Mesh>(null);
+  const ref = useRef<THREE.Mesh>(null);
   const { camera } = useThree();
   useFrame(() => {
-    if (skyRef.current) skyRef.current.position.copy(camera.position);
+    if (ref.current) ref.current.position.copy(camera.position);
   });
   const geo = useMemo(() => {
-    const geometry = new THREE.SphereGeometry(900, 18, 12);
-    const colors = new Float32Array(geometry.attributes.position.count * 3);
-    const top = new THREE.Color('#8ebbe6');
-    const mid = new THREE.Color('#d7ecf8');
-    const horizon = new THREE.Color('#f6e7c8');
-    const pos = geometry.attributes.position;
+    const g = new THREE.SphereGeometry(1000, 24, 16);
+    const pos = g.attributes.position;
+    const colors = new Float32Array(pos.count * 3);
+    const zenith = new THREE.Color('#5f95cf');
+    const mid = new THREE.Color('#a9c9e6');
+    const horizon = new THREE.Color('#dfe7ee');
+    const c = new THREE.Color();
     for (let i = 0; i < pos.count; i++) {
-      const y = pos.getY(i) / 900;
-      const color = y > 0.15 ? mid.clone().lerp(top, y) : horizon.clone().lerp(mid, (y + 1) / 1.15);
-      colors[i * 3] = color.r;
-      colors[i * 3 + 1] = color.g;
-      colors[i * 3 + 2] = color.b;
+      const y = pos.getY(i) / 1000;
+      if (y > 0.08) c.copy(mid).lerp(zenith, Math.min(1, (y - 0.08) / 0.7));
+      else c.copy(horizon).lerp(mid, Math.max(0, (y + 0.1) / 0.18));
+      c.toArray(colors, i * 3);
     }
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    return geometry;
+    g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    return g;
   }, []);
   useEffect(() => () => geo.dispose(), [geo]);
   return (
-    <mesh ref={skyRef} geometry={geo} frustumCulled={false} renderOrder={-100}>
+    <mesh ref={ref} geometry={geo} frustumCulled={false} renderOrder={-100}>
       <meshBasicMaterial vertexColors side={THREE.BackSide} depthWrite={false} fog={false} />
     </mesh>
   );
 }
 
-function Rider({ engine, camilla }: { engine: RideEngine; camilla: boolean }) {
+// ---------- terreno ----------
+
+function FarTerrain({ route, tile }: { route: LoadedRoute; tile: { value: THREE.Vector3 } }) {
+  const geo = useMemo(() => (route.dem ? buildFarTerrain(route.dem, route.track.altitudeBase, 0.6) : null), [route]);
+  const mat = useMemo(() => farTerrainMaterial(tile), [tile]);
+  useEffect(
+    () => () => {
+      geo?.dispose();
+      mat.dispose();
+    },
+    [geo, mat],
+  );
+  if (!geo) return null;
+  return <mesh geometry={geo} material={mat} frustumCulled={false} />;
+}
+
+function snap(v: number, s: number): number {
+  return Math.round(v / s) * s;
+}
+
+/**
+ * Il riquadro di terreno fine intorno al ciclista. Quando ci si allontana dal centro, il
+ * riquadro successivo si calcola a fette (pochi millisecondi per fotogramma) un po' più
+ * avanti sulla strada, e si scambia solo quando è pronto.
+ */
+function NearTerrain({
+  engine,
+  field,
+  track,
+  size,
+  spacing,
+  tile,
+}: {
+  engine: RideEngine;
+  field: HeightField;
+  track: Track;
+  size: number;
+  spacing: number;
+  tile: { value: THREE.Vector3 };
+}) {
+  const mesh = useRef<THREE.Mesh>(null);
+  const job = useRef<{ gen: Generator<number, THREE.BufferGeometry, void>; spec: TileSpec } | null>(null);
+  const first = useMemo(() => {
+    const p = engine.pose();
+    const spec = { cx: snap(p.x, spacing), cz: snap(p.z, spacing), size, spacing };
+    return { spec, geo: runToEnd(tileJob(field, spec)) };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [field, size, spacing]);
+  const current = useRef(first.spec);
+  useLayoutEffect(() => {
+    current.current = first.spec;
+    tile.value.set(first.spec.cx, first.spec.cz, first.spec.size / 2 - spacing * 3);
+    if (mesh.current) mesh.current.geometry = first.geo;
+    return () => {
+      mesh.current?.geometry.dispose();
+    };
+  }, [first, tile, spacing]);
+  useFrame(() => {
+    const p = engine.pose();
+    const c = current.current;
+    if (!job.current && (Math.abs(p.x - c.cx) > size / 4 || Math.abs(p.z - c.cz) > size / 4)) {
+      const ahead = track.poseAt(engine.distance + size * 0.2);
+      const spec = { cx: snap((p.x + ahead.x) / 2, spacing), cz: snap((p.z + ahead.z) / 2, spacing), size, spacing };
+      job.current = { gen: tileJob(field, spec), spec };
+    }
+    if (job.current) {
+      const t0 = performance.now();
+      for (;;) {
+        const r = job.current.gen.next();
+        if (r.done) {
+          const old = mesh.current?.geometry;
+          if (mesh.current) mesh.current.geometry = r.value;
+          old?.dispose();
+          current.current = job.current.spec;
+          tile.value.set(job.current.spec.cx, job.current.spec.cz, size / 2 - spacing * 3);
+          job.current = null;
+          break;
+        }
+        if (performance.now() - t0 > 5) break;
+      }
+    }
+  });
+  return (
+    <mesh ref={mesh} geometry={first.geo} frustumCulled={false}>
+      <meshLambertMaterial vertexColors />
+    </mesh>
+  );
+}
+
+// ---------- strada ----------
+
+function Road({ track, field }: { track: Track; field: HeightField }) {
+  const hw = track.halfWidth;
+  const parts = useMemo(() => {
+    const pts = track.points;
+    const wide = hw >= 2.7;
+    return {
+      asphalt: strip(pts, hw, 0, -hw, 0, { uvLength: 10 }),
+      edgeL: strip(pts, hw - 0.12, 0.012, hw - 0.24, 0.012),
+      edgeR: strip(pts, -hw + 0.24, 0.012, -hw + 0.12, 0.012),
+      dashes: wide ? centerDashes(track) : null,
+      shoulderL: strip(pts, hw + 0.7, -0.08, hw, -0.01),
+      shoulderR: strip(pts, -hw, -0.01, -hw - 0.7, -0.08),
+      // scarpate: dal ciglio giù di 3 m, a chiudere qualunque salto tra asfalto e terreno
+      skirtL: strip(pts, hw + 1.8, -3.2, hw + 0.7, -0.08),
+      skirtR: strip(pts, -hw - 0.7, -0.08, -hw - 1.8, -3.2),
+      rails: buildGuardrails(track, field),
+    };
+  }, [track, field, hw]);
+  const asphalt = useMemo(() => asphaltTexture(), []);
+  const posts = useRef<THREE.InstancedMesh>(null);
+  useLayoutEffect(() => {
+    const m = posts.current;
+    if (!m) return;
+    const d = new THREE.Object3D();
+    parts.rails.posts.forEach((p, i) => {
+      d.position.set(p.x, p.y + 0.4, p.z);
+      d.rotation.set(0, p.h, 0);
+      d.updateMatrix();
+      m.setMatrixAt(i, d.matrix);
+    });
+    m.instanceMatrix.needsUpdate = true;
+  }, [parts]);
+  useEffect(
+    () => () => {
+      for (const g of Object.values(parts)) {
+        if (g && 'dispose' in g) g.dispose();
+      }
+      parts.rails.geometry.dispose();
+      asphalt.dispose();
+    },
+    [parts, asphalt],
+  );
+  return (
+    <group>
+      <mesh geometry={parts.asphalt}>
+        <meshLambertMaterial map={asphalt} color="#c9cbd0" polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-2} />
+      </mesh>
+      <mesh geometry={parts.edgeL}>
+        <meshLambertMaterial color="#efeee6" polygonOffset polygonOffsetFactor={-2} polygonOffsetUnits={-4} />
+      </mesh>
+      <mesh geometry={parts.edgeR}>
+        <meshLambertMaterial color="#efeee6" polygonOffset polygonOffsetFactor={-2} polygonOffsetUnits={-4} />
+      </mesh>
+      {parts.dashes ? (
+        <mesh geometry={parts.dashes}>
+          <meshLambertMaterial color="#efeee6" polygonOffset polygonOffsetFactor={-2} polygonOffsetUnits={-4} />
+        </mesh>
+      ) : null}
+      <mesh geometry={parts.shoulderL}>
+        <meshLambertMaterial color="#8f8574" side={THREE.DoubleSide} />
+      </mesh>
+      <mesh geometry={parts.shoulderR}>
+        <meshLambertMaterial color="#8f8574" side={THREE.DoubleSide} />
+      </mesh>
+      <mesh geometry={parts.skirtL}>
+        <meshLambertMaterial color="#7b7468" side={THREE.DoubleSide} />
+      </mesh>
+      <mesh geometry={parts.skirtR}>
+        <meshLambertMaterial color="#7b7468" side={THREE.DoubleSide} />
+      </mesh>
+      <mesh geometry={parts.rails.geometry}>
+        <meshLambertMaterial color="#b9bec4" side={THREE.DoubleSide} />
+      </mesh>
+      {parts.rails.posts.length > 0 ? (
+        <instancedMesh ref={posts} args={[undefined, undefined, parts.rails.posts.length]} frustumCulled={false}>
+          <boxGeometry args={[0.09, 0.8, 0.09]} />
+          <meshLambertMaterial color="#8e949b" />
+        </instancedMesh>
+      ) : null}
+    </group>
+  );
+}
+
+// ---------- alberi e rocce ----------
+
+function Props({ track, field, density }: { track: Track; field: HeightField; density: number }) {
+  const items = useMemo(() => scatterProps(track, field, density), [track, field, density]);
+  const groups = useMemo(() => {
+    const by: Record<Prop['kind'], Prop[]> = { spruce: [], larch: [], broadleaf: [], rock: [] };
+    for (const it of items) by[it.kind].push(it);
+    return by;
+  }, [items]);
+  const geos = useMemo(() => {
+    const spruce = new THREE.ConeGeometry(2.2, 9, 7);
+    spruce.translate(0, 6.3, 0);
+    const larch = new THREE.ConeGeometry(2.4, 8, 6);
+    larch.translate(0, 6, 0);
+    const broad = new THREE.IcosahedronGeometry(3.2, 0);
+    broad.scale(1, 0.85, 1);
+    broad.translate(0, 5.6, 0);
+    const trunk = new THREE.CylinderGeometry(0.18, 0.3, 3.2, 5);
+    trunk.translate(0, 1.4, 0);
+    const rock = new THREE.DodecahedronGeometry(1, 0);
+    rock.scale(1.3, 0.7, 1);
+    return { spruce, larch, broad, trunk, rock };
+  }, []);
+  useEffect(() => () => Object.values(geos).forEach((g) => g.dispose()), [geos]);
+  return (
+    <group>
+      <Instances items={groups.spruce} geometry={geos.spruce} colors={['#24452c', '#2c5233', '#1f3d29']} />
+      <Instances items={groups.larch} geometry={geos.larch} colors={['#5b7a3a', '#6b8a40', '#4f6e35']} />
+      <Instances items={groups.broadleaf} geometry={geos.broad} colors={['#4f7d36', '#5f8c3c', '#6d9443']} />
+      <Instances
+        items={[...groups.spruce, ...groups.larch, ...groups.broadleaf]}
+        geometry={geos.trunk}
+        colors={['#5a4331']}
+      />
+      <Instances items={groups.rock} geometry={geos.rock} colors={['#8b877f', '#7a766f', '#9b968c']} rock />
+    </group>
+  );
+}
+
+function Instances({
+  items,
+  geometry,
+  colors,
+  rock = false,
+}: {
+  items: Prop[];
+  geometry: THREE.BufferGeometry;
+  colors: string[];
+  rock?: boolean;
+}) {
+  const ref = useRef<THREE.InstancedMesh>(null);
+  useLayoutEffect(() => {
+    const m = ref.current;
+    if (!m) return;
+    const d = new THREE.Object3D();
+    const c = new THREE.Color();
+    items.forEach((it, i) => {
+      d.position.set(it.x, it.y, it.z);
+      d.rotation.set(rock ? it.tint : 0, it.r, 0);
+      d.scale.setScalar(it.s);
+      d.updateMatrix();
+      m.setMatrixAt(i, d.matrix);
+      m.setColorAt(i, c.set(colors[Math.floor(it.tint * colors.length) % colors.length]));
+    });
+    m.instanceMatrix.needsUpdate = true;
+    if (m.instanceColor) m.instanceColor.needsUpdate = true;
+  }, [items, colors, rock]);
+  if (items.length === 0) return null;
+  return (
+    <instancedMesh ref={ref} args={[geometry, undefined, items.length]} frustumCulled={false}>
+      <meshLambertMaterial flatShading={rock} />
+    </instancedMesh>
+  );
+}
+
+// ---------- cartelli ----------
+
+function Signs({ track, title }: { track: Track; title: string }) {
+  const data = useMemo(() => {
+    const km: { pose: TrackPose; tex: THREE.CanvasTexture }[] = [];
+    const total = track.length;
+    for (let d = 1000; d < total - 300; d += 1000) {
+      const a = track.poseAt(d);
+      const b = track.poseAt(Math.min(total, d + 1000));
+      const grade = (b.altitude - a.altitude) / (b.distance - a.distance || 1);
+      km.push({ pose: a, tex: kmTexture(Math.round((total - d) / 1000), grade, Math.round(a.altitude)) });
+    }
+    const chevrons = track.hairpins.map((h) => ({ pose: track.poseAt(h.distance), side: h.side }));
+    return {
+      km,
+      chevrons,
+      start: track.poseAt(Math.min(20, total * 0.05)),
+      finish: track.poseAt(Math.max(0, total - 8)),
+      startTex: bannerTexture('PARTENZA', title),
+      finishTex: bannerTexture('ARRIVO', title),
+      chevronTex: chevronTexture(),
+    };
+  }, [track, title]);
+  useEffect(
+    () => () => {
+      data.km.forEach((k) => k.tex.dispose());
+      data.startTex.dispose();
+      data.finishTex.dispose();
+      data.chevronTex.dispose();
+    },
+    [data],
+  );
+  const hw = track.halfWidth;
+  return (
+    <group>
+      <Gate pose={data.start} texture={data.startTex} hw={hw} />
+      <Gate pose={data.finish} texture={data.finishTex} hw={hw} />
+      {data.km.map((k, i) => (
+        <group key={i} position={offset(k.pose, -(hw + 1.3))} rotation={[0, k.pose.heading + Math.PI, 0]}>
+          <mesh position={[0, 0.7, 0]}>
+            <boxGeometry args={[0.07, 1.4, 0.07]} />
+            <meshLambertMaterial color="#666b72" />
+          </mesh>
+          <mesh position={[0, 1.65, 0]}>
+            <planeGeometry args={[1.2, 0.6]} />
+            <meshBasicMaterial map={k.tex} side={THREE.DoubleSide} />
+          </mesh>
+        </group>
+      ))}
+      {data.chevrons.map((c, i) => (
+        // pannello a frecce sul lato esterno del tornante
+        <group key={i} position={offset(c.pose, -c.side * (hw + 1.6))} rotation={[0, c.pose.heading + Math.PI, 0]}>
+          <mesh position={[0, 0.5, 0]}>
+            <boxGeometry args={[0.06, 1, 0.06]} />
+            <meshLambertMaterial color="#666b72" />
+          </mesh>
+          <mesh position={[0, 1.2, 0]}>
+            <planeGeometry args={[1.4, 0.5]} />
+            <meshBasicMaterial map={data.chevronTex} side={THREE.DoubleSide} />
+          </mesh>
+        </group>
+      ))}
+    </group>
+  );
+}
+
+function offset(p: TrackPose, left: number): [number, number, number] {
+  return [p.x + Math.cos(p.heading) * left, p.y, p.z - Math.sin(p.heading) * left];
+}
+
+function Gate({ pose, texture, hw }: { pose: TrackPose; texture: THREE.Texture; hw: number }) {
+  const w = hw * 2 + 2.4;
+  return (
+    <group position={[pose.x, pose.y, pose.z]} rotation={[0, pose.heading, 0]}>
+      <mesh position={[-w / 2, 2.2, 0]}>
+        <boxGeometry args={[0.22, 4.4, 0.22]} />
+        <meshLambertMaterial color="#20242b" />
+      </mesh>
+      <mesh position={[w / 2, 2.2, 0]}>
+        <boxGeometry args={[0.22, 4.4, 0.22]} />
+        <meshLambertMaterial color="#20242b" />
+      </mesh>
+      <mesh position={[0, 4.3, 0]}>
+        <boxGeometry args={[w + 0.3, 1.1, 0.12]} />
+        <meshBasicMaterial map={texture} />
+      </mesh>
+    </group>
+  );
+}
+
+function canvasTex(w: number, h: number, draw: (g: CanvasRenderingContext2D) => void): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const g = canvas.getContext('2d');
+  if (g) draw(g);
+  const t = new THREE.CanvasTexture(canvas);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+function kmTexture(kmLeft: number, grade: number, alt: number): THREE.CanvasTexture {
+  return canvasTex(256, 128, (g) => {
+    g.fillStyle = '#f4f4f0';
+    g.fillRect(0, 0, 256, 128);
+    g.fillStyle = '#16181d';
+    g.fillRect(0, 0, 256, 40);
+    g.fillStyle = '#f4f4f0';
+    g.font = '700 26px sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(`${alt} m`, 128, 21);
+    g.fillStyle = '#16181d';
+    g.font = '800 40px sans-serif';
+    g.textAlign = 'left';
+    g.fillText(`${kmLeft} km`, 12, 86);
+    g.textAlign = 'right';
+    g.fillStyle = grade > 0.1 ? '#c22f2f' : grade > 0.07 ? '#d07a12' : '#2f7a3d';
+    g.font = '800 32px sans-serif';
+    g.fillText(`${(grade * 100).toFixed(1).replace('.', ',')}%`, 246, 86);
+  });
+}
+
+function bannerTexture(label: string, title: string): THREE.CanvasTexture {
+  return canvasTex(1024, 128, (g) => {
+    g.fillStyle = '#121418';
+    g.fillRect(0, 0, 1024, 128);
+    g.fillStyle = BRAND;
+    g.fillRect(0, 0, 20, 128);
+    g.font = '800 64px sans-serif';
+    g.textBaseline = 'middle';
+    g.fillStyle = BRAND;
+    g.fillText(label, 52, 66);
+    g.fillStyle = '#f1f2ee';
+    g.textAlign = 'right';
+    g.font = '700 54px sans-serif';
+    g.fillText(title.toUpperCase(), 990, 66);
+  });
+}
+
+function chevronTexture(): THREE.CanvasTexture {
+  return canvasTex(256, 96, (g) => {
+    g.fillStyle = '#c62828';
+    g.fillRect(0, 0, 256, 96);
+    g.fillStyle = '#ffffff';
+    for (let i = 0; i < 4; i++) {
+      const x = 24 + i * 58;
+      g.beginPath();
+      g.moveTo(x, 14);
+      g.lineTo(x + 28, 48);
+      g.lineTo(x, 82);
+      g.lineTo(x + 16, 82);
+      g.lineTo(x + 44, 48);
+      g.lineTo(x + 16, 14);
+      g.closePath();
+      g.fill();
+    }
+  });
+}
+
+// ---------- ciclista e fantasma ----------
+
+function Ghost({ track, ghostDistance }: { track: Track; ghostDistance: () => number | null }) {
+  const last = useRef(0);
+  return (
+    <Rider
+      ghost
+      getPose={() => {
+        const d = ghostDistance();
+        if (d != null) last.current = d;
+        return track.poseAt(last.current);
+      }}
+      getCadence={() => 85}
+      getSpeed={() => 5}
+    />
+  );
+}
+
+function Rider({
+  getPose,
+  getCadence,
+  getSpeed,
+  ghost = false,
+}: {
+  getPose: () => TrackPose;
+  getCadence: () => number;
+  getSpeed: () => number;
+  ghost?: boolean;
+}) {
   const group = useRef<THREE.Group>(null);
   const front = useRef<THREE.Group>(null);
   const rear = useRef<THREE.Group>(null);
@@ -185,19 +585,24 @@ function Rider({ engine, camilla }: { engine: RideEngine; camilla: boolean }) {
   const shinL = useRef<THREE.Group>(null);
   const shinR = useRef<THREE.Group>(null);
   const spin = useRef(0);
-  const jersey = camilla ? '#f0a0b6' : '#dff25a';
-  const shorts = '#243044';
+  const roll = useRef(0);
+  const jersey = ghost ? '#8fd8ff' : BRAND;
+  const shorts = ghost ? '#8fd8ff' : '#15181e';
+  const skin = ghost ? '#8fd8ff' : '#d9ad8c';
 
   useFrame((_, dt) => {
-    const pose = engine.pose();
+    const pose = getPose();
     const root = group.current;
     if (!root) return;
-    root.position.set(pose.x, pose.y + 0.1, pose.z);
-    root.rotation.set(0, pose.heading, 0);
-    const cadence = engine.cadence;
-    spin.current += (cadence > 1 ? (cadence / 60) * Math.PI * 2 : engine.speed / 0.34) * dt;
-    if (front.current) front.current.rotation.x = engine.distance / 0.34;
-    if (rear.current) rear.current.rotation.x = engine.distance / 0.34;
+    // il fantasma pedala a destra, per non sovrapporsi
+    const side = ghost ? -1.1 : 0.6;
+    root.position.set(pose.x + Math.cos(pose.heading) * side, pose.y, pose.z - Math.sin(pose.heading) * side);
+    root.rotation.set(-Math.atan(pose.grade), pose.heading, 0, 'YXZ');
+    const cadence = getCadence();
+    spin.current += (cadence > 1 ? (cadence / 60) * Math.PI * 2 : 0) * dt;
+    roll.current += (getSpeed() / 0.34) * dt;
+    if (front.current) front.current.rotation.x = roll.current;
+    if (rear.current) rear.current.rotation.x = roll.current;
     if (crank.current) crank.current.rotation.x = spin.current;
     const a = spin.current;
     if (thighL.current) thighL.current.rotation.x = 0.55 * Math.sin(a);
@@ -206,533 +611,150 @@ function Rider({ engine, camilla }: { engine: RideEngine; camilla: boolean }) {
     if (shinR.current) shinR.current.rotation.x = 0.85 * Math.max(0, Math.sin(a + Math.PI + 0.4));
   });
 
+  const mat = (color: string, extra: Partial<THREE.MeshStandardMaterialParameters> = {}) =>
+    ghost ? (
+      <meshBasicMaterial color={color} transparent opacity={0.38} depthWrite={false} />
+    ) : (
+      <meshStandardMaterial color={color} roughness={0.6} {...extra} />
+    );
+
   return (
     <group ref={group}>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, -0.2]}>
-        <circleGeometry args={[0.85, 20]} />
-        <meshBasicMaterial map={blob()} transparent depthWrite={false} />
-      </mesh>
-      <Wheel wheelRef={rear} z={-0.48} />
-      <Wheel wheelRef={front} z={0.62} />
-      <Tube a={[0, 0.34, -0.48]} b={[0, 0.34, 0.62]} r={0.025} color="#2c313c" />
-      <Tube a={[0, 0.34, -0.48]} b={[0, 0.92, -0.16]} r={0.02} color="#2c313c" />
-      <Tube a={[0, 0.92, -0.16]} b={[0, 0.96, 0.36]} r={0.02} color="#2c313c" />
-      <Tube a={[0, 0.34, 0.62]} b={[0, 0.96, 0.36]} r={0.02} color="#2c313c" />
-      <Tube a={[0, 0.34, 0.05]} b={[0, 0.92, -0.16]} r={0.018} color="#3a4150" />
+      <Wheel wheelRef={rear} z={-0.48} ghost={ghost} />
+      <Wheel wheelRef={front} z={0.62} ghost={ghost} />
+      <Tube a={[0, 0.34, -0.48]} b={[0, 0.34, 0.62]} r={0.022} color="#22262e" ghost={ghost} />
+      <Tube a={[0, 0.34, -0.48]} b={[0, 0.92, -0.16]} r={0.02} color="#22262e" ghost={ghost} />
+      <Tube a={[0, 0.92, -0.16]} b={[0, 0.96, 0.36]} r={0.022} color="#22262e" ghost={ghost} />
+      <Tube a={[0, 0.34, 0.62]} b={[0, 0.96, 0.36]} r={0.02} color="#22262e" ghost={ghost} />
+      <Tube a={[0, 0.34, 0.05]} b={[0, 0.92, -0.16]} r={0.018} color="#2d323b" ghost={ghost} />
       <group ref={crank} position={[0.11, 0.32, 0.05]}>
         <mesh>
           <boxGeometry args={[0.02, 0.36, 0.025]} />
-          <meshStandardMaterial color="#1b1e26" metalness={0.6} roughness={0.35} />
-        </mesh>
-        <mesh position={[0.03, 0.18, 0]}>
-          <boxGeometry args={[0.06, 0.025, 0.08]} />
-          <meshStandardMaterial color="#1b1e26" />
-        </mesh>
-        <mesh position={[-0.03, -0.18, 0]}>
-          <boxGeometry args={[0.06, 0.025, 0.08]} />
-          <meshStandardMaterial color="#1b1e26" />
+          {mat('#1b1e26', { metalness: 0.6, roughness: 0.35 })}
         </mesh>
       </group>
       <mesh position={[0, 0.95, -0.16]}>
-        <boxGeometry args={[0.12, 0.05, 0.16]} />
-        <meshStandardMaterial color="#1d2128" />
+        <boxGeometry args={[0.12, 0.05, 0.2]} />
+        {mat('#1d2128')}
       </mesh>
-      <mesh position={[0, 1.12, 0.1]} rotation={[0.5, 0, 0]}>
-        <boxGeometry args={[0.28, 0.36, 0.16]} />
-        <meshStandardMaterial color={jersey} roughness={0.72} />
+      <mesh position={[0, 1.13, 0.1]} rotation={[0.62, 0, 0]}>
+        <boxGeometry args={[0.3, 0.4, 0.17]} />
+        {mat(jersey, { roughness: 0.7 })}
       </mesh>
-      <mesh position={[0, 0.96, -0.02]}>
-        <boxGeometry args={[0.28, 0.14, 0.16]} />
-        <meshStandardMaterial color={shorts} roughness={0.8} />
+      <mesh position={[0, 0.96, -0.04]}>
+        <boxGeometry args={[0.28, 0.14, 0.18]} />
+        {mat(shorts, { roughness: 0.8 })}
       </mesh>
-      <mesh position={[0, 1.4, 0.24]}>
+      <mesh position={[0, 1.38, 0.3]}>
         <sphereGeometry args={[0.11, 16, 14]} />
-        <meshStandardMaterial color="#e2b89a" roughness={0.65} />
+        {mat(skin, { roughness: 0.65 })}
       </mesh>
-      <mesh position={[0, 1.46, 0.22]}>
-        <sphereGeometry args={[0.125, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.58]} />
-        <meshStandardMaterial color={camilla ? '#f7c5d4' : '#2a3038'} roughness={0.5} />
+      <mesh position={[0, 1.44, 0.28]} scale={[1, 0.85, 1.25]}>
+        <sphereGeometry args={[0.13, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.55]} />
+        {mat(ghost ? '#8fd8ff' : '#f2f3ef', { roughness: 0.4 })}
       </mesh>
-      <mesh position={[0, 1.48, 0.27]}>
-        <boxGeometry args={[0.16, 0.035, 0.02]} />
-        <meshStandardMaterial color="#1a1c22" />
-      </mesh>
-      <Tube a={[-0.16, 1.22, 0.12]} b={[-0.16, 1.0, 0.42]} r={0.035} color={jersey} />
-      <Tube a={[0.16, 1.22, 0.12]} b={[0.16, 1.0, 0.42]} r={0.035} color={jersey} />
-      <Tube a={[-0.2, 0.98, 0.4]} b={[0.2, 0.98, 0.4]} r={0.016} color="#1c2028" />
-      <group ref={thighL} position={[-0.1, 0.98, -0.02]}>
-        <mesh position={[0, -0.2, 0.02]}>
-          <boxGeometry args={[0.09, 0.4, 0.09]} />
-          <meshStandardMaterial color={shorts} />
-        </mesh>
-        <group ref={shinL} position={[0, -0.38, 0.02]}>
-          <mesh position={[0, -0.18, 0.04]}>
-            <boxGeometry args={[0.07, 0.36, 0.07]} />
-            <meshStandardMaterial color="#e2b89a" />
+      <Tube a={[-0.16, 1.24, 0.14]} b={[-0.18, 0.98, 0.42]} r={0.035} color={jersey} ghost={ghost} />
+      <Tube a={[0.16, 1.24, 0.14]} b={[0.18, 0.98, 0.42]} r={0.035} color={jersey} ghost={ghost} />
+      <Tube a={[-0.21, 0.97, 0.4]} b={[0.21, 0.97, 0.4]} r={0.016} color="#1c2028" ghost={ghost} />
+      {[
+        [thighL, shinL, -0.1],
+        [thighR, shinR, 0.1],
+      ].map(([thigh, shin, x], i) => (
+        <group key={i} ref={thigh as RefObject<THREE.Group>} position={[x as number, 0.98, -0.02]}>
+          <mesh position={[0, -0.2, 0.02]}>
+            <boxGeometry args={[0.09, 0.4, 0.09]} />
+            {mat(shorts)}
           </mesh>
+          <group ref={shin as RefObject<THREE.Group>} position={[0, -0.38, 0.02]}>
+            <mesh position={[0, -0.18, 0.04]}>
+              <boxGeometry args={[0.07, 0.36, 0.07]} />
+              {mat(skin)}
+            </mesh>
+          </group>
         </group>
-      </group>
-      <group ref={thighR} position={[0.1, 0.98, -0.02]}>
-        <mesh position={[0, -0.2, 0.02]}>
-          <boxGeometry args={[0.09, 0.4, 0.09]} />
-          <meshStandardMaterial color={shorts} />
-        </mesh>
-        <group ref={shinR} position={[0, -0.38, 0.02]}>
-          <mesh position={[0, -0.18, 0.04]}>
-            <boxGeometry args={[0.07, 0.36, 0.07]} />
-            <meshStandardMaterial color="#e2b89a" />
-          </mesh>
-        </group>
-      </group>
-      {camilla ? <Trailer /> : null}
+      ))}
     </group>
   );
 }
 
-function Wheel({ z, wheelRef }: { z: number; wheelRef: RefObject<THREE.Group | null> }) {
+function Wheel({ z, wheelRef, ghost }: { z: number; wheelRef: RefObject<THREE.Group | null>; ghost: boolean }) {
   return (
     <group ref={wheelRef} position={[0, 0.34, z]}>
       <mesh rotation={[0, 0, Math.PI / 2]}>
-        <cylinderGeometry args={[0.34, 0.34, 0.035, 22]} />
-        <meshStandardMaterial color="#1a1d24" roughness={0.7} />
-      </mesh>
-      <mesh rotation={[0, 0, Math.PI / 2]}>
-        <cylinderGeometry args={[0.04, 0.04, 0.05, 10]} />
-        <meshStandardMaterial color="#d9dde6" metalness={0.7} roughness={0.25} />
+        <torusGeometry args={[0.32, 0.022, 8, 28]} />
+        {ghost ? <meshBasicMaterial color="#8fd8ff" transparent opacity={0.38} depthWrite={false} /> : <meshStandardMaterial color="#121418" roughness={0.8} />}
       </mesh>
       {[0, 1, 2].map((i) => (
-        <mesh key={i} rotation={[0, 0, (i * Math.PI) / 3]}>
-          <boxGeometry args={[0.015, 0.62, 0.012]} />
-          <meshStandardMaterial color="#c5cad3" metalness={0.5} roughness={0.3} />
+        <mesh key={i} rotation={[(i * Math.PI) / 3, 0, 0]}>
+          <boxGeometry args={[0.01, 0.6, 0.01]} />
+          {ghost ? <meshBasicMaterial color="#8fd8ff" transparent opacity={0.3} depthWrite={false} /> : <meshStandardMaterial color="#b9bec7" metalness={0.5} roughness={0.3} />}
         </mesh>
       ))}
     </group>
   );
 }
 
-function Tube({ a, b, r, color }: { a: [number, number, number]; b: [number, number, number]; r: number; color: string }) {
+function Tube({
+  a,
+  b,
+  r,
+  color,
+  ghost,
+}: {
+  a: [number, number, number];
+  b: [number, number, number];
+  r: number;
+  color: string;
+  ghost: boolean;
+}) {
   const length = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
   const position: [number, number, number] = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
-  const quaternion = new THREE.Quaternion().setFromUnitVectors(
-    new THREE.Vector3(0, 1, 0),
-    new THREE.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]).normalize(),
+  const quaternion = useMemo(
+    () => new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]).normalize()),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
   );
   return (
     <mesh position={position} quaternion={quaternion}>
       <cylinderGeometry args={[r, r, Math.max(0.01, length), 8]} />
-      <meshStandardMaterial color={color} roughness={0.55} metalness={0.25} />
+      {ghost ? <meshBasicMaterial color="#8fd8ff" transparent opacity={0.38} depthWrite={false} /> : <meshStandardMaterial color={color} roughness={0.55} metalness={0.25} />}
     </mesh>
   );
 }
 
-function Trailer() {
-  return (
-    <group position={[0, 0, -1.9]}>
-      <Tube a={[0, 0.42, 1.25]} b={[0, 0.5, 0.35]} r={0.02} color="#8d6a55" />
-      <mesh position={[0, 0.3, 0]} rotation={[0, 0, Math.PI / 2]}>
-        <cylinderGeometry args={[0.05, 0.05, 0.78, 8]} />
-        <meshStandardMaterial color="#2a241f" />
-      </mesh>
-      <mesh position={[-0.38, 0.3, 0]} rotation={[0, 0, Math.PI / 2]}>
-        <cylinderGeometry args={[0.2, 0.2, 0.07, 16]} />
-        <meshStandardMaterial color="#f7f3ee" />
-      </mesh>
-      <mesh position={[0.38, 0.3, 0]} rotation={[0, 0, Math.PI / 2]}>
-        <cylinderGeometry args={[0.2, 0.2, 0.07, 16]} />
-        <meshStandardMaterial color="#f7f3ee" />
-      </mesh>
-      <mesh position={[0, 0.58, 0.02]}>
-        <boxGeometry args={[0.72, 0.34, 0.92]} />
-        <meshStandardMaterial color="#fff7f1" roughness={0.8} />
-      </mesh>
-      <mesh position={[0, 1.02, 0.28]} rotation={[1.05, 0, 0]}>
-        <sphereGeometry args={[0.34, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.4]} />
-        <meshStandardMaterial color="#ffb7cb" roughness={0.65} side={THREE.DoubleSide} />
-      </mesh>
-      <mesh position={[0, 0.78, 0.22]}>
-        <boxGeometry args={[0.62, 0.08, 0.08]} />
-        <meshStandardMaterial color="#9fd4ff" />
-      </mesh>
-      <group position={[0, 0.78, -0.16]} rotation={[0.2, Math.PI, 0]}>
-        <mesh>
-          <sphereGeometry args={[0.16, 18, 16]} />
-          <meshStandardMaterial color="#f6c7ad" roughness={0.55} />
-        </mesh>
-        <mesh position={[-0.055, 0.02, 0.13]}>
-          <sphereGeometry args={[0.022, 10, 10]} />
-          <meshStandardMaterial color="#2a2428" />
-        </mesh>
-        <mesh position={[0.055, 0.02, 0.13]}>
-          <sphereGeometry args={[0.022, 10, 10]} />
-          <meshStandardMaterial color="#2a2428" />
-        </mesh>
-        <mesh position={[0, -0.045, 0.145]} rotation={[0.2, 0, 0]}>
-          <torusGeometry args={[0.04, 0.01, 8, 12, Math.PI]} />
-          <meshStandardMaterial color="#d4537c" />
-        </mesh>
-        <mesh position={[-0.07, -0.01, 0.1]}>
-          <sphereGeometry args={[0.028, 8, 8]} />
-          <meshStandardMaterial color="#f3a8b8" />
-        </mesh>
-        <mesh position={[0.07, -0.01, 0.1]}>
-          <sphereGeometry args={[0.028, 8, 8]} />
-          <meshStandardMaterial color="#f3a8b8" />
-        </mesh>
-        <mesh position={[0, 0.16, 0.02]}>
-          <sphereGeometry args={[0.055, 10, 8]} />
-          <meshStandardMaterial color="#e23b6a" />
-        </mesh>
-        <mesh position={[-0.07, 0.13, 0.02]} rotation={[0, 0, 0.7]}>
-          <sphereGeometry args={[0.045, 8, 6]} />
-          <meshStandardMaterial color="#ff8fab" />
-        </mesh>
-        <mesh position={[0.07, 0.13, 0.02]} rotation={[0, 0, -0.7]}>
-          <sphereGeometry args={[0.045, 8, 6]} />
-          <meshStandardMaterial color="#ff8fab" />
-        </mesh>
-        <mesh position={[0, -0.2, 0]}>
-          <sphereGeometry args={[0.13, 14, 12]} />
-          <meshStandardMaterial color="#f7c5d4" />
-        </mesh>
-      </group>
-    </group>
-  );
-}
+// ---------- camera ----------
 
-function Gate({ pose, texture }: { pose: { x: number; y: number; z: number; heading: number }; texture: THREE.Texture }) {
-  return (
-    <group position={[pose.x, pose.y, pose.z]} rotation={[0, pose.heading, 0]}>
-      <mesh position={[-1.7, 1.3, 0]} castShadow>
-        <cylinderGeometry args={[0.08, 0.1, 2.6, 8]} />
-        <meshLambertMaterial color="#8a6246" />
-      </mesh>
-      <mesh position={[1.7, 1.3, 0]} castShadow>
-        <cylinderGeometry args={[0.08, 0.1, 2.6, 8]} />
-        <meshLambertMaterial color="#8a6246" />
-      </mesh>
-      <mesh position={[0, 2.45, 0]}>
-        <boxGeometry args={[3.6, 0.7, 0.08]} />
-        <meshBasicMaterial map={texture} />
-      </mesh>
-    </group>
-  );
-}
-
-function Trees({ items }: { items: Scatter[] }) {
-  return <ScatterMesh items={items} kind="tree" />;
-}
-function Flowers({ items }: { items: Scatter[] }) {
-  return <ScatterMesh items={items} kind="flower" />;
-}
-
-interface Scatter {
-  x: number;
-  y: number;
-  z: number;
-  s: number;
-  color: string;
-}
-
-function ScatterMesh({ items, kind }: { items: Scatter[]; kind: 'tree' | 'flower' }) {
-  const crown = useRef<THREE.InstancedMesh>(null);
-  const trunk = useRef<THREE.InstancedMesh>(null);
+/** Camera alle spalle; non entra mai nel versante, nemmeno nei tornanti stretti. */
+function FollowCam({ engine, field }: { engine: RideEngine; field: HeightField }) {
+  const { camera } = useThree();
+  const look = useRef(new THREE.Vector3());
+  const desired = useRef(new THREE.Vector3());
+  const heading = useRef<number | null>(null);
+  const place = (dt: number) => {
+    const pose = engine.pose();
+    // la direzione della camera insegue quella della strada con un po' di ritardo
+    if (heading.current == null) heading.current = pose.heading;
+    let dh = pose.heading - heading.current;
+    while (dh > Math.PI) dh -= Math.PI * 2;
+    while (dh < -Math.PI) dh += Math.PI * 2;
+    heading.current += dh * (1 - Math.exp(-Math.min(1, dt) * 2.6));
+    const h = heading.current;
+    const fx = Math.sin(h);
+    const fz = Math.cos(h);
+    desired.current.set(pose.x - fx * 8.5, pose.y + 3.1, pose.z - fz * 8.5);
+    const ground = field.height(desired.current.x, desired.current.z, 4);
+    desired.current.y = Math.max(desired.current.y, ground + 1.8);
+    const k = 1 - Math.exp(-Math.min(1, dt) * 4);
+    camera.position.lerp(desired.current, k);
+    const groundNow = field.height(camera.position.x, camera.position.z, 4);
+    if (camera.position.y < groundNow + 1.5) camera.position.y = groundNow + 1.5;
+    look.current.set(pose.x + Math.sin(pose.heading) * 7, pose.y + 1.2, pose.z + Math.cos(pose.heading) * 7);
+    camera.lookAt(look.current);
+  };
   useLayoutEffect(() => {
-    const dummy = new THREE.Object3D();
-    items.forEach((item, index) => {
-      dummy.position.set(item.x, item.y, item.z);
-      dummy.scale.setScalar(item.s);
-      dummy.rotation.y = item.x * 0.2;
-      dummy.updateMatrix();
-      if (kind === 'tree') {
-        trunk.current?.setMatrixAt(index, dummy.matrix);
-        dummy.position.y = item.y + 1.7 * item.s;
-        dummy.updateMatrix();
-        crown.current?.setMatrixAt(index, dummy.matrix);
-        crown.current?.setColorAt(index, new THREE.Color(item.color));
-      } else {
-        crown.current?.setMatrixAt(index, dummy.matrix);
-        crown.current?.setColorAt(index, new THREE.Color(item.color));
-      }
-    });
-    if (crown.current) {
-      crown.current.instanceMatrix.needsUpdate = true;
-      if (crown.current.instanceColor) crown.current.instanceColor.needsUpdate = true;
-    }
-    if (trunk.current) trunk.current.instanceMatrix.needsUpdate = true;
-  }, [items, kind]);
-  const crownGeo = useMemo(
-    () => (kind === 'flower' ? new THREE.SphereGeometry(0.16, 7, 6) : new THREE.ConeGeometry(0.68, 2.4, 7)),
-    [kind],
-  );
-  const trunkGeo = useMemo(() => new THREE.CylinderGeometry(0.08, 0.12, 0.9, 6), []);
-  const crownMat = useMemo(() => new THREE.MeshLambertMaterial(), []);
-  const trunkMat = useMemo(() => new THREE.MeshLambertMaterial({ color: '#6b4a32' }), []);
-  useEffect(
-    () => () => {
-      crownGeo.dispose();
-      trunkGeo.dispose();
-      crownMat.dispose();
-      trunkMat.dispose();
-    },
-    [crownGeo, trunkGeo, crownMat, trunkMat],
-  );
-  if (items.length === 0) return null;
-  if (kind === 'flower') {
-    return <instancedMesh ref={crown} args={[crownGeo, crownMat, items.length]} />;
-  }
-  return (
-    <group>
-      <instancedMesh ref={trunk} args={[trunkGeo, trunkMat, items.length]} />
-      <instancedMesh ref={crown} args={[crownGeo, crownMat, items.length]} />
-    </group>
-  );
-}
-
-function buildRoad(track: Track): THREE.BufferGeometry {
-  return ribbon(track.points, 3.15, 0.08);
-}
-
-/** Two continuous white edge lines following the full track without extra draw calls. */
-function buildEdgeLines(track: Track): THREE.BufferGeometry {
-  const positions: number[] = [];
-  const indices: number[] = [];
-  const pts = track.points;
-  for (let i = 0; i < pts.length; i++) {
-    const a = pts[i];
-    const b = pts[(i + 1) % pts.length];
-    for (const side of [-1, 1]) {
-      const base = positions.length / 3;
-      for (const p of [a, b]) {
-        const rx = Math.cos(p.heading);
-        const rz = -Math.sin(p.heading);
-        for (const d of [2.9 - 0.055, 2.9 + 0.055]) {
-          positions.push(p.x + rx * d * side, p.y + 0.115, p.z + rz * d * side);
-        }
-      }
-      indices.push(base, base + 2, base + 1, base + 2, base + 3, base + 1);
-    }
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geo.setIndex(indices);
-  return geo;
-}
-
-function buildDashes(track: Track): THREE.BufferGeometry {
-  const positions: number[] = [];
-  const indices: number[] = [];
-  const pts = track.points;
-  for (let i = 0; i < pts.length; i++) {
-    if (Math.floor(pts[i].distance / 7) % 2 !== 0) continue;
-    const a = pts[i];
-    const b = pts[(i + 1) % pts.length];
-    const base = positions.length / 3;
-    for (const p of [a, b]) {
-      const rx = Math.cos(p.heading) * 0.07;
-      const rz = -Math.sin(p.heading) * 0.07;
-      positions.push(p.x - rx, p.y + 0.1, p.z - rz, p.x + rx, p.y + 0.1, p.z + rz);
-    }
-    indices.push(base, base + 2, base + 1, base + 2, base + 3, base + 1);
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geo.setIndex(indices);
-  return geo;
-}
-
-function ribbon(points: TrackPoint[], half: number, lift: number): THREE.BufferGeometry {
-  const n = points.length;
-  const positions = new Float32Array(n * 6);
-  for (let i = 0; i < n; i++) {
-    const p = points[i];
-    const rx = Math.cos(p.heading) * half;
-    const rz = -Math.sin(p.heading) * half;
-    positions.set([p.x - rx, p.y + lift, p.z - rz, p.x + rx, p.y + lift, p.z + rz], i * 6);
-  }
-  const indices: number[] = [];
-  for (let i = 0; i < n; i++) {
-    const j = (i + 1) % n;
-    const a = i * 2;
-    const b = j * 2;
-    indices.push(a, b, a + 1, b, b + 1, a + 1);
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geo.setIndex(indices);
-  geo.computeVertexNormals();
-  return geo;
-}
-
-function buildTerrain(track: Track, segments: number): THREE.BufferGeometry {
-  // The 4.8 km loop reaches x=920 m; a fixed 1500 m square ended at +/-750 m.
-  // Its starting line was therefore completely outside the terrain.
-  const size = terrainSizeForTrack(track);
-  const geo = new THREE.PlaneGeometry(size, size, segments, segments);
-  geo.rotateX(-Math.PI / 2);
-  const pos = geo.attributes.position as THREE.BufferAttribute;
-  const colors = new Float32Array(pos.count * 3);
-  const index = spatialIndex(track.points);
-  const water = new THREE.Color('#7ebbd4');
-  const grassA = new THREE.Color('#6ea34f');
-  const grassB = new THREE.Color('#97c56a');
-  const dirt = new THREE.Color('#c6b08a');
-  const tint = new THREE.Color();
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i);
-    const z = pos.getZ(i);
-    const near = index.nearest(x, z);
-    const radial = Math.hypot(x, z);
-    if (radial < 92) {
-      pos.setY(i, 2.15);
-      water.toArray(colors, i * 3);
-      continue;
-    }
-    const hills = 7 * Math.sin(x * 0.008) * Math.cos(z * 0.0065) + 12 * Math.sin(x * 0.0024 + 0.5) + 4 * Math.cos(z * 0.0032);
-    const influence = Math.exp(-(near.dist * near.dist) / (36 * 36));
-    pos.setY(i, hills * (1 - influence) + (near.alt - 0.55) * influence);
-    const mix = 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(x * 0.03) * Math.cos(z * 0.028));
-    tint.copy(near.dist < 9 ? dirt : grassA).lerp(near.dist < 9 ? dirt : grassB, near.dist < 9 ? 0 : mix);
-    tint.toArray(colors, i * 3);
-  }
-  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  geo.computeVertexNormals();
-  return geo;
-}
-
-function scatterTrees(track: Track, count: number): Scatter[] {
-  // Place scenery along the actual 4.8 km route, not within an arbitrary radius
-  // around world origin. The old scatter left the entire starting stretch empty.
-  const rand = mulberry32(7);
-  const out: Scatter[] = [];
-  const colors = ['#306b4b', '#477f58', '#245b43', '#619164', '#376e52'];
-  for (let i = 0; i < count; i++) {
-    const distance = (i + 0.2 + rand() * 0.6) * track.length / count;
-    const p = track.poseAt(distance);
-    const side = rand() < 0.5 ? -1 : 1;
-    const offset = side * (rand() < 0.7 ? 19 + rand() * 38 : 56 + rand() * 95);
-    const rx = Math.cos(p.heading);
-    const rz = -Math.sin(p.heading);
-    out.push({
-      x: p.x + rx * offset,
-      y: p.y - 1.1 + Math.sin(p.x * 0.008) * 0.65,
-      z: p.z + rz * offset,
-      s: 1.0 + rand() * 1.65,
-      color: colors[i % colors.length],
-    });
-  }
-  return out;
-}
-
-function scatterFlowers(track: Track, count: number): Scatter[] {
-  const rand = mulberry32(21);
-  const index = spatialIndex(track.points);
-  const out: Scatter[] = [];
-  const colors = ['#ff8fab', '#fff4ea', '#ffd1dc', '#9fd4ff', '#ffe08a'];
-  const step = Math.max(1, Math.floor(track.points.length / count));
-  for (let i = 0; i < track.points.length && out.length < count; i += step) {
-    const p = track.points[i];
-    const side = rand() > 0.5 ? 1 : -1;
-    const rx = Math.cos(p.heading) * side * (5.5 + rand() * 3);
-    const rz = -Math.sin(p.heading) * side * (5.5 + rand() * 3);
-    const x = p.x + rx;
-    const z = p.z + rz;
-    const near = index.nearest(x, z);
-    if (near.dist < 4.2) continue;
-    out.push({ x, y: p.y + 0.12, z, s: 0.7 + rand() * 0.6, color: colors[out.length % colors.length] });
-  }
-  return out;
-}
-
-function spatialIndex(points: TrackPoint[]) {
-  const cell = 28;
-  const map = new Map<string, number[]>();
-  points.forEach((p, i) => {
-    const key = `${Math.floor(p.x / cell)}:${Math.floor(p.z / cell)}`;
-    const bucket = map.get(key);
-    if (bucket) bucket.push(i);
-    else map.set(key, [i]);
-  });
-  return {
-    nearest(x: number, z: number) {
-      const cx = Math.floor(x / cell);
-      const cz = Math.floor(z / cell);
-      let best = 0;
-      let bestD = Infinity;
-      for (let oz = -3; oz <= 3; oz++) {
-        for (let ox = -3; ox <= 3; ox++) {
-          const bucket = map.get(`${cx + ox}:${cz + oz}`);
-          if (!bucket) continue;
-          for (const i of bucket) {
-            const p = points[i];
-            const d = (p.x - x) ** 2 + (p.z - z) ** 2;
-            if (d < bestD) {
-              bestD = d;
-              best = i;
-            }
-          }
-        }
-      }
-      if (!Number.isFinite(bestD)) {
-        for (let i = 0; i < points.length; i += 10) {
-          const p = points[i];
-          const d = (p.x - x) ** 2 + (p.z - z) ** 2;
-          if (d < bestD) {
-            bestD = d;
-            best = i;
-          }
-        }
-      }
-      return { dist: Math.sqrt(bestD), alt: points[best]?.y ?? 0 };
-    },
-  };
-}
-
-function mulberry32(seed: number) {
-  let a = seed;
-  return () => {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function makeSignTexture(): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 128;
-  const g = canvas.getContext('2d');
-  if (!g) return new THREE.CanvasTexture(canvas);
-  g.fillStyle = '#fff8f1';
-  g.fillRect(0, 0, 512, 128);
-  g.strokeStyle = '#e7a0b6';
-  g.lineWidth = 10;
-  g.strokeRect(8, 8, 496, 112);
-  g.fillStyle = '#2c2428';
-  g.font = '700 54px sans-serif';
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  g.fillText('CAMILLA RIDE', 256, 64);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
-}
-
-let shadowBlob: THREE.CanvasTexture | null = null;
-function blob(): THREE.CanvasTexture {
-  if (shadowBlob) return shadowBlob;
-  const canvas = document.createElement('canvas');
-  canvas.width = 64;
-  canvas.height = 64;
-  const g = canvas.getContext('2d');
-  if (g) {
-    const grd = g.createRadialGradient(32, 32, 4, 32, 32, 32);
-    grd.addColorStop(0, 'rgba(0,0,0,0.38)');
-    grd.addColorStop(1, 'rgba(0,0,0,0)');
-    g.fillStyle = grd;
-    g.fillRect(0, 0, 64, 64);
-  }
-  shadowBlob = new THREE.CanvasTexture(canvas);
-  return shadowBlob;
+    place(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useFrame((_, dt) => place(dt));
+  return null;
 }

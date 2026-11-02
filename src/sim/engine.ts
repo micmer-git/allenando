@@ -22,6 +22,12 @@ export interface EngineOptions {
   withCamilla: boolean;
   crr: number;
   cw: number;
+  /**
+   * Potenza obiettivo da un giro registrato (power replay): watt per tempo trascorso e
+   * distanza, oppure null dove il giro originale non ha potenza. Con un allenamento attivo
+   * vince l'allenamento. Quando c'è un bersaglio il rullo va in ERG e NON riceve la pendenza.
+   */
+  powerTarget?: (elapsed: number, distance: number) => number | null;
 }
 
 export class RideEngine {
@@ -38,6 +44,8 @@ export class RideEngine {
   targetPower = 0;
   mode: 'free' | 'erg' = 'free';
   workoutDone = false;
+  /** Strada aperta finita: arrivati in cima. */
+  arrived = false;
   effort = 0.62;
   timeScale = 1;
   samples: RideSample[] = [];
@@ -55,6 +63,7 @@ export class RideEngine {
   private readonly weightKg: number;
   private readonly crr: number;
   private readonly cw: number;
+  private readonly powerTarget: EngineOptions['powerTarget'];
   private sampleAcc = 0;
   private powerBuf: { t: number; p: number }[] = [];
   private listeners = new Set<() => void>();
@@ -75,10 +84,18 @@ export class RideEngine {
     this.withCamilla = opts.withCamilla;
     this.crr = opts.crr;
     this.cw = opts.cw;
+    this.powerTarget = opts.powerTarget;
     this.startedAt = new Date();
     this.mode = this.workout ? 'erg' : 'free';
     // il bersaglio è giusto già prima del primo fotogramma, non 0 W
     if (this.workout) this.targetPower = workoutAt(this.workout, 0, this.ftp).targetPower;
+    else if (this.powerTarget) {
+      const w = this.powerTarget(0, 0);
+      if (w != null) {
+        this.mode = 'erg';
+        this.targetPower = w;
+      }
+    }
     const pose = this.track.poseAt(0);
     this.grade = pose.grade;
     this.altitude = pose.altitude;
@@ -131,7 +148,7 @@ export class RideEngine {
     const scaled = dt * (this.source.mode === 'simulator' ? this.timeScale : 1);
     const steps = Math.max(1, Math.ceil(scaled / 0.05));
     const h = scaled / steps;
-    for (let i = 0; i < steps; i++) this.step(h);
+    for (let i = 0; i < steps && this.phase === 'riding'; i++) this.step(h);
     this.sinceEmit += dt;
     if (this.sinceEmit >= 0.2) {
       this.sinceEmit = 0;
@@ -183,6 +200,10 @@ export class RideEngine {
         this.mode = 'erg';
         this.targetPower = progress.targetPower;
       }
+    } else if (!this.workout && this.powerTarget) {
+      const w = this.powerTarget(this.elapsed, this.distance);
+      this.mode = w != null ? 'erg' : 'free';
+      this.targetPower = w ?? 0;
     } else if (!this.workout) {
       this.mode = 'free';
       this.targetPower = 0;
@@ -209,6 +230,10 @@ export class RideEngine {
     this.altitude = pose.altitude;
     this.speed = stepSpeed(this.power, this.speed, this.grade, dt, this.physics);
     this.distance += this.speed * dt;
+    if (!this.track.closed && this.distance >= this.track.length) {
+      this.distance = this.track.length;
+      this.arrived = true;
+    }
 
     this.powerBuf.push({ t: this.elapsed, p: this.power });
     const cutoff = this.elapsed - 3;
@@ -222,6 +247,7 @@ export class RideEngine {
       this.sampleAcc -= 1;
       this.pushSample();
     }
+    if (this.arrived) this.finish();
   }
 
   private currentSample(): RideSample {
