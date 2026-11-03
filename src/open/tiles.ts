@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { groundColor, hash2 } from '@/world/builders';
-import { CLS, FLAG, type Edge, type WorldGraph } from './graph';
+import { ASPHALT_REPEAT_M, groundColor, hash2 } from '@/world/builders';
+import { CLS, FLAG, type Edge, type EdgePose, type WorldGraph } from './graph';
 import type { WorldField } from './field';
 import { BUILDING_KIND, COVER, type Building, type Place, type WorldFeatures } from './world';
 import { addBuilding, BLANK_UV, ringArea, Tris } from './buildings';
@@ -35,8 +35,9 @@ export interface TileMeshes {
   paint: THREE.BufferGeometry | null;
   verge: THREE.BufferGeometry | null;
   concrete: THREE.BufferGeometry | null;
+  /** cordoli e marciapiedi dei paesi, a colori di vertice */
+  kerb: THREE.BufferGeometry | null;
   rails: THREE.BufferGeometry | null;
-  posts: { x: number; y: number; z: number; h: number }[];
   tunnel: THREE.BufferGeometry | null;
   buildings: BuildingMeshes;
   water: THREE.BufferGeometry | null;
@@ -46,7 +47,7 @@ export interface TileMeshes {
 export type TreeKind = 'spruce' | 'larch' | 'broadleaf' | 'rock' | 'cypress';
 
 /** Un accumulatore di triangoli, con colori facoltativi. */
-class Mesh {
+export class Mesh {
   pos: number[] = [];
   uv: number[] = [];
   col: number[] = [];
@@ -64,7 +65,7 @@ class Mesh {
     if (this.empty) return null;
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
-    g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
+    if (this.uv.length === (this.pos.length / 3) * 2) g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
     if (this.col.length) g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
     g.setIndex(this.idx);
     if (normals) g.computeVertexNormals();
@@ -73,7 +74,7 @@ class Mesh {
   }
 }
 
-interface P {
+export interface P {
   x: number;
   y: number;
   z: number;
@@ -82,7 +83,7 @@ interface P {
 }
 
 /** Striscia fra due scostamenti laterali (sinistra positiva), con il proprio sollevamento. */
-function strip(m: Mesh, pts: P[], a: number, liftA: number, b: number, liftB: number, uvLen = 8, keep?: (p: P) => boolean): void {
+export function strip(m: Mesh, pts: P[], a: number, liftA: number, b: number, liftB: number, uvLen = 8, keep?: (p: P) => boolean, color?: THREE.Color): void {
   let prev = -1;
   for (const p of pts) {
     if (keep && !keep(p)) {
@@ -91,8 +92,8 @@ function strip(m: Mesh, pts: P[], a: number, liftA: number, b: number, liftB: nu
     }
     const lx = Math.cos(p.h);
     const lz = -Math.sin(p.h);
-    const i = m.vertex(p.x + lx * a, p.y + liftA, p.z + lz * a, 0, p.d / uvLen);
-    m.vertex(p.x + lx * b, p.y + liftB, p.z + lz * b, 1, p.d / uvLen);
+    const i = m.vertex(p.x + lx * a, p.y + liftA, p.z + lz * a, 0, p.d / uvLen, color);
+    m.vertex(p.x + lx * b, p.y + liftB, p.z + lz * b, 1, p.d / uvLen, color);
     if (prev >= 0) {
       if (b < a) m.idx.push(prev, prev + 1, i, prev + 1, i + 1, i);
       else m.idx.push(prev, i, prev + 1, prev + 1, i, i + 1);
@@ -102,7 +103,7 @@ function strip(m: Mesh, pts: P[], a: number, liftA: number, b: number, liftB: nu
 }
 
 /** Le corse dell'arco dentro il rettangolo, campionate ogni `step` metri nel verso dell'arco. */
-function runsInside(graph: WorldGraph, e: Edge, x0: number, z0: number, x1: number, z1: number, step: number): P[][] {
+export function runsInside(graph: WorldGraph, e: Edge, x0: number, z0: number, x1: number, z1: number, step: number): P[][] {
   const out: P[][] = [];
   let cur: P[] | null = null;
   let lastOut: P | null = null;
@@ -261,7 +262,88 @@ export function parcelColor(x: number, z: number, cov: number): THREE.Color {
   return parcelOut.copy(list[Math.floor(h * list.length) % list.length]);
 }
 
-/** Strade, ponti, gallerie, guardrail della mattonella. */
+/** Le strade importanti stanno sopra le minori agli incroci, di un centimetro e mezzo per classe. */
+export const roadLift = (cls: number): number => 0.03 + (7 - cls) * 0.015;
+
+/** Il suolo dei paesi: lì ci sono marciapiedi e lampioni, e la mezzeria ha il passo urbano. */
+export const URBAN = new Set<number>([COVER.residential, COVER.industrial]);
+
+/**
+ * Quanto stare lontani da un incrocio prima di disegnare marciapiedi, guardrail, segni: la
+ * semilarghezza più grande fra le altre strade del nodo, più un metro e mezzo. 0 se il nodo è
+ * solo la continuazione della stessa strada.
+ */
+export function junctionClear(graph: WorldGraph, node: number, self: number): number {
+  if (graph.adjStart[node + 1] - graph.adjStart[node] < 3) return 0;
+  let w = 0;
+  for (let i = graph.adjStart[node]; i < graph.adjStart[node + 1]; i++) {
+    const id = graph.adjEdges[i];
+    if (id !== self) w = Math.max(w, graph.edges[id].hw);
+  }
+  return w + 1.5;
+}
+
+/** Quanto gira la strada intorno a s: differenza di direzione fra 12 m prima e 12 m dopo, radianti. */
+export function bendAt(graph: WorldGraph, e: Edge, s: number): number {
+  const a = graph.pose(e.id, Math.max(0, s - 12), 1).heading;
+  const b = graph.pose(e.id, Math.min(e.length, s + 12), 1).heading;
+  return Math.abs(Math.atan2(Math.sin(b - a), Math.cos(b - a)));
+}
+
+const KERB = new THREE.Color('#d2cdc3');
+const WALK = [new THREE.Color('#b4ada1'), new THREE.Color('#aaa398'), new THREE.Color('#bdb6aa')];
+const WALK_EDGE = new THREE.Color('#8d877d');
+
+/**
+ * Mezzeria all'italiana: tratteggio 4,5 + 7,5 m fuori dai paesi, 3 + 4,5 m nei paesi, continua
+ * nelle curve strette e negli ultimi 15 m prima di un incrocio. Si campiona ogni 1,5 m, che
+ * divide esattamente tutti i passi.
+ */
+function centerLine(paint: Mesh, graph: WorldGraph, field: WorldField, e: Edge, s0: number, s1: number, lift: number, endA: number, endB: number): void {
+  const lo = Math.max(6, endA);
+  const hi = e.length - Math.max(6, endB);
+  const solidAt = (s: number) => (endA > 0 && s < endA + 15) || (endB > 0 && s > e.length - endB - 15) || bendAt(graph, e, s) > 0.62;
+  // un rettangolo largo 12 cm fra due pose: faccia in su (sinistra prima, come i nastri)
+  const seg = (a: EdgePose, b: EdgePose) => {
+    const ax = Math.cos(a.heading) * 0.06;
+    const az = -Math.sin(a.heading) * 0.06;
+    const bx = Math.cos(b.heading) * 0.06;
+    const bz = -Math.sin(b.heading) * 0.06;
+    const k = paint.vertex(a.x + ax, a.y + lift, a.z + az);
+    paint.vertex(a.x - ax, a.y + lift, a.z - az);
+    paint.vertex(b.x + bx, b.y + lift, b.z + bz);
+    paint.vertex(b.x - bx, b.y + lift, b.z - bz);
+    paint.idx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2);
+  };
+  let prev: EdgePose | null = null;
+  const start = Math.ceil(s0 / 1.5) * 1.5;
+  for (let s = start; s <= s1 + 1e-6; s += 1.5) {
+    if (s < lo || s > hi) {
+      prev = null;
+      continue;
+    }
+    if (solidAt(s)) {
+      // continua: nelle curve strette e prima degli incroci
+      const p = graph.pose(e.id, s, 1);
+      if (prev) seg(prev, p);
+      prev = p;
+      continue;
+    }
+    prev = null;
+    const p = graph.pose(e.id, s, 1);
+    const urban = URBAN.has(field.terrain.cover(p.x, p.z));
+    const period = urban ? 7.5 : 12;
+    const on = urban ? 3 : 4.5;
+    const phase = s % period;
+    if (phase > 1e-6 && period - phase > 1e-6) continue;
+    const end = s + on;
+    if (end > hi || solidAt(end)) continue;
+    // un trattino intero, un rettangolo solo
+    seg(p, graph.pose(e.id, end, 1));
+  }
+}
+
+/** Strade, ponti, gallerie, cordoli e marciapiedi della mattonella. Il guardrail sta nell'arredo vicino. */
 export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec): Generator<void, Omit<TileMeshes, 'terrain' | 'buildings' | 'trees' | 'water' | 'rails'>, void> {
   const asphalt = new Mesh();
   const stone = new Mesh();
@@ -269,9 +351,8 @@ export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec):
   const paint = new Mesh();
   const verge = new Mesh();
   const concrete = new Mesh();
+  const kerb = new Mesh();
   const tunnel = new Mesh();
-  const rail = new Mesh();
-  const posts: TileMeshes['posts'] = [];
   const x0 = spec.x0;
   const z0 = spec.z0;
   const x1 = spec.x0 + spec.size;
@@ -289,28 +370,35 @@ export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec):
     const runs = runsInside(graph, e, x0, z0, x1, z1, e.cls >= CLS.residential ? 2.5 : 3);
     const bridge = (e.flags & FLAG.bridge) !== 0;
     const tun = (e.flags & FLAG.tunnel) !== 0;
+    const ring = (e.flags & FLAG.roundabout) !== 0;
     const hw = e.hw;
-    // le strade importanti sopra le minori agli incroci, di un centimetro e mezzo per classe
-    const lift = 0.03 + (7 - e.cls) * 0.015;
+    const lift = roadLift(e.cls);
     const surface = e.flags & FLAG.cobbles || e.cls === CLS.pedestrian ? stone : e.cls === CLS.cycleway ? cycle : asphalt;
     const nearEnd = (p: P) => p.d > 10 && p.d < e.length - 10;
+    const endA = junctionClear(graph, e.a, id);
+    const endB = junctionClear(graph, e.b, id);
+    // marciapiede: nei paesi, sulle strade da provinciale in giù, lontano dagli incroci
+    const walkable = !bridge && !tun && !ring && e.cls >= CLS.secondary && e.cls <= CLS.residential && !(e.flags & FLAG.cobbles);
+    const walkAt = (p: P) => walkable && p.d > endA + 1 && p.d < e.length - endB - 1 && URBAN.has(field.terrain.cover(p.x, p.z));
+    const lineW = e.cls <= CLS.primary ? 0.15 : 0.12;
     for (const pts of runs) {
       if (pts.length < 2) continue;
-      strip(surface, pts, hw, lift, -hw, lift, surface === stone ? 4 : 10);
+      strip(surface, pts, hw, lift, -hw, lift, surface === stone ? 4 : surface === asphalt ? ASPHALT_REPEAT_M : 10);
       if (e.cls <= CLS.unclassified && !tun) {
-        strip(paint, pts, hw - 0.12, lift + 0.012, hw - 0.26, lift + 0.012, 8, nearEnd);
-        strip(paint, pts, -hw + 0.26, lift + 0.012, -hw + 0.12, lift + 0.012, 8, nearEnd);
+        strip(paint, pts, hw - 0.12, lift + 0.012, hw - 0.12 - lineW, lift + 0.012, 8, nearEnd);
+        strip(paint, pts, -hw + 0.12 + lineW, lift + 0.012, -hw + 0.12, lift + 0.012, 8, nearEnd);
       }
-      if (e.cls <= CLS.tertiary && hw >= 2.7 && !(e.flags & (FLAG.oneway | FLAG.onewayRev))) {
-        strip(paint, pts, 0.07, lift + 0.014, -0.07, lift + 0.014, 8, (p) => nearEnd(p) && p.d % 12 < 4.5);
+      if (e.cls <= CLS.tertiary && hw >= 2.7 && !ring && !(e.flags & (FLAG.oneway | FLAG.onewayRev))) {
+        centerLine(paint, graph, field, e, pts[0].d, pts[pts.length - 1].d, lift + 0.014, endA, endB);
       }
       if (bridge) {
-        // impalcato: bordo in cemento, parapetti, pile fino al terreno
-        strip(concrete, pts, hw + 0.6, lift + 0.9, hw, lift, 8);
-        strip(concrete, pts, -hw, lift, -hw - 0.6, lift + 0.9, 8);
-        strip(concrete, pts, hw + 0.6, lift + 0.9, hw + 0.6, -1.6, 8);
-        strip(concrete, pts, -hw - 0.6, -1.6, -hw - 0.6, lift + 0.9, 8);
-        strip(concrete, pts, -hw - 0.6, -1.6, hw + 0.6, -1.6, 8);
+        // impalcato: cordolo in cemento coi due fianchi, bordo esterno fino alla trave, pile fino al terreno
+        for (const s of [1, -1]) {
+          strip(concrete, pts, s * hw, lift, s * hw, lift + 0.3, 8);
+          strip(concrete, pts, s * (hw + 0.55), lift + 0.3, s * hw, lift + 0.3, 8);
+          strip(concrete, pts, s * (hw + 0.55), lift + 0.3, s * (hw + 0.55), -1.6, 8);
+        }
+        strip(concrete, pts, -hw - 0.55, -1.6, hw + 0.55, -1.6, 8);
         for (const p of pts) {
           if (Math.floor(p.d / 32) === Math.floor((p.d - 3) / 32)) continue;
           const ground = field.terrain.height(p.x, p.z);
@@ -321,27 +409,20 @@ export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec):
         // galleria: volta a botte sopra la carreggiata
         tunnelVault(tunnel, pts, hw + 1.2, lift);
       } else {
-        strip(verge, pts, hw + 0.8, lift - 0.1, hw, lift - 0.02, 8);
-        strip(verge, pts, -hw, lift - 0.02, -hw - 0.8, lift - 0.1, 8);
-        strip(verge, pts, hw + 2, -3.4, hw + 0.8, lift - 0.1, 8);
-        strip(verge, pts, -hw - 0.8, lift - 0.1, -hw - 2, -3.4, 8);
-        if (e.cls <= CLS.unclassified) {
+        const noWalk = (p: P) => !walkAt(p);
+        strip(verge, pts, hw + 0.8, lift - 0.1, hw, lift - 0.02, 8, noWalk);
+        strip(verge, pts, -hw, lift - 0.02, -hw - 0.8, lift - 0.1, 8, noWalk);
+        strip(verge, pts, hw + 2, -3.4, hw + 0.8, lift - 0.1, 8, noWalk);
+        strip(verge, pts, -hw - 0.8, lift - 0.1, -hw - 2, -3.4, 8, noWalk);
+        if (walkable) {
+          // cordolo alto 14 cm, marciapiede di 1,6 m in masselli, e il fianco che scende nel terreno
+          const top = lift + 0.14;
+          const tone = WALK[Math.floor(hash2(e.id, 3) * WALK.length) % WALK.length];
           for (const s of [1, -1]) {
-            const run: TileMeshes['posts'] = [];
-            for (const p of pts) {
-              if (Math.floor(p.d / 4) === Math.floor((p.d - 3) / 4)) continue;
-              const lx = Math.cos(p.h) * s;
-              const lz = -Math.sin(p.h) * s;
-              const probe = field.terrain.height(p.x + lx * (hw + 6), p.z + lz * (hw + 6));
-              if (p.y - probe > 3.2) run.push({ x: p.x + lx * (hw + 0.7), y: p.y + lift, z: p.z + lz * (hw + 0.7), h: p.h });
-              else if (run.length) {
-                railRun(rail, run);
-                posts.push(...run);
-                run.length = 0;
-              }
-            }
-            railRun(rail, run);
-            posts.push(...run);
+            // il fianco del cordolo chiaro, il piano del marciapiede, il fianco esterno che scende
+            strip(kerb, pts, s * hw, lift - 0.02, s * hw, top, 8, walkAt, KERB);
+            strip(kerb, pts, s * (hw + 1.75), top, s * hw, top, 8, walkAt, tone);
+            strip(kerb, pts, s * (hw + 1.75), top, s * (hw + 2.1), -2.8, 8, walkAt, WALK_EDGE);
           }
         }
       }
@@ -354,55 +435,13 @@ export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec):
     cycle: cycle.build(),
     paint: paint.build(),
     verge: verge.build(),
-    concrete: mergeOrNull(concrete.build(), rail.build()),
-    posts,
+    concrete: concrete.build(),
+    kerb: kerb.build(),
     tunnel: tunnel.build(),
   };
 }
 
-function mergeOrNull(a: THREE.BufferGeometry | null, b: THREE.BufferGeometry | null): THREE.BufferGeometry | null {
-  if (!a) return b;
-  if (!b) return a;
-  const pa = a.attributes.position.array as Float32Array;
-  const pb = b.attributes.position.array as Float32Array;
-  const ua = a.attributes.uv?.array as Float32Array | undefined;
-  const ia = a.index!.array as ArrayLike<number>;
-  const ib = b.index!.array as ArrayLike<number>;
-  const pos = new Float32Array(pa.length + pb.length);
-  pos.set(pa);
-  pos.set(pb, pa.length);
-  const uv = new Float32Array((pos.length / 3) * 2);
-  if (ua) uv.set(ua);
-  const idx: number[] = Array.from(ia);
-  const off = pa.length / 3;
-  for (let i = 0; i < ib.length; i++) idx.push(ib[i] + off);
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-  g.setIndex(idx);
-  g.computeVertexNormals();
-  g.computeBoundingSphere();
-  a.dispose();
-  b.dispose();
-  return g;
-}
-
-/** La lama del guardrail fra paletti consecutivi dello stesso lato. */
-function railRun(m: Mesh, posts: TileMeshes['posts']): void {
-  for (let i = 1; i < posts.length; i++) {
-    const a = posts[i - 1];
-    const b = posts[i];
-    const gap = Math.hypot(b.x - a.x, b.z - a.z);
-    if (gap > 6.5 || gap < 0.5) continue;
-    const k = m.vertex(a.x, a.y + 0.5, a.z);
-    m.vertex(a.x, a.y + 0.82, a.z);
-    m.vertex(b.x, b.y + 0.5, b.z);
-    m.vertex(b.x, b.y + 0.82, b.z);
-    m.idx.push(k, k + 2, k + 1, k + 1, k + 2, k + 3);
-  }
-}
-
-function pier(m: Mesh, p: P, w: number, top: number, bottom: number): void {
+export function pier(m: Mesh, p: P, w: number, top: number, bottom: number): void {
   const fx = Math.sin(p.h) * 0.8;
   const fz = Math.cos(p.h) * 0.8;
   const lx = Math.cos(p.h) * w;
@@ -663,8 +702,6 @@ export interface Furniture {
   /** cartelli bianchi col nome del paese; h è la direzione di chi entra */
   towns: { x: number; y: number; z: number; h: number; name: string }[];
 }
-
-const URBAN = new Set<number>([COVER.residential, COVER.industrial]);
 
 /**
  * Lampioni ogni 30 m sulle strade dei paesi (un lato, alternato), e il cartello col nome dove una

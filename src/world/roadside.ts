@@ -19,17 +19,13 @@ import type { PoiKind } from '@/open/world';
  * piano dei distanziali]. Gli orli piegano indietro: da vicino la lamiera ha spessore.
  */
 export const WBEAM: [number, number][] = [
-  [0.858, -0.012],
-  [0.862, 0.02],
-  [0.84, 0.072],
-  [0.8, 0.085],
-  [0.756, 0.058],
-  [0.705, 0.03],
-  [0.654, 0.058],
-  [0.61, 0.085],
-  [0.57, 0.072],
-  [0.548, 0.02],
-  [0.552, -0.012],
+  [0.862, -0.014],
+  [0.845, 0.078],
+  [0.775, 0.08],
+  [0.705, 0.028],
+  [0.635, 0.08],
+  [0.565, 0.078],
+  [0.548, -0.014],
 ];
 
 /** Dal centro del paletto al piano posteriore della lama, verso la strada. */
@@ -121,11 +117,30 @@ export function railFrames(posts: { x: number; y: number; z: number; h: number }
 
 const tmpColor = new THREE.Color();
 
-/** Una primitiva con un colore per tutti i vertici (o uno per faccia, per i box). */
-function paint(geo: THREE.BufferGeometry, color: string | string[]): THREE.BufferGeometry {
-  const g = geo.index ? geo.toNonIndexed() : geo;
+/**
+ * Una primitiva con un colore per tutti i vertici (o uno per faccia, per i box). `drop`: facce del
+ * box da togliere perché non si vedono mai (0 +x, 1 -x, 2 +y, 3 -y, 4 +z, 5 -z).
+ */
+function paint(geo: THREE.BufferGeometry, color: string | string[], drop: number[] = []): THREE.BufferGeometry {
+  let g = geo.index ? geo.toNonIndexed() : geo;
   if (g !== geo) geo.dispose();
   g.deleteAttribute('uv');
+  if (drop.length) {
+    const keep = [0, 1, 2, 3, 4, 5].filter((f) => !drop.includes(f));
+    const out = new THREE.BufferGeometry();
+    for (const name of ['position', 'normal'] as const) {
+      const src = g.attributes[name].array as Float32Array;
+      const dst = new Float32Array(keep.length * 18);
+      keep.forEach((f, i) => dst.set(src.subarray(f * 18, f * 18 + 18), i * 18));
+      out.setAttribute(name, new THREE.BufferAttribute(dst, 3));
+    }
+    g.dispose();
+    g = out;
+    if (Array.isArray(color)) {
+      const all = color;
+      color = keep.map((f) => all[Math.min(all.length - 1, f)]);
+    }
+  }
   const n = g.attributes.position.count;
   const col = new Float32Array(n * 3);
   if (Array.isArray(color)) {
@@ -142,12 +157,14 @@ function paint(geo: THREE.BufferGeometry, color: string | string[]): THREE.Buffe
   return g;
 }
 
-function box(w: number, h: number, d: number, x: number, y: number, z: number, color: string | string[], ry = 0): THREE.BufferGeometry {
+function box(w: number, h: number, d: number, x: number, y: number, z: number, color: string | string[], drop: number[] = []): THREE.BufferGeometry {
   const g = new THREE.BoxGeometry(w, h, d);
-  if (ry) g.rotateY(ry);
   g.translate(x, y, z);
-  return paint(g, color);
+  return paint(g, color, drop);
 }
+
+/** Senza il fondo: per tutto quello che sta piantato per terra. */
+const BOTTOM = [3];
 
 function cyl(rTop: number, rBottom: number, h: number, seg: number, x: number, y: number, z: number, color: string, open = false): THREE.BufferGeometry {
   const g = new THREE.CylinderGeometry(rTop, rBottom, h, seg, 1, open);
@@ -178,35 +195,42 @@ function gable(w: number, d: number, h: number, x: number, y: number, z: number,
 const GALV = '#aab1b8';
 const GALV_DARK = '#8d949b';
 
-/** Paletto a C infisso nel terreno, col distanziale verso la strada (−x). */
+/**
+ * Paletto infisso nel terreno (la sezione a C si legge dal colore: anima chiara, ali scure) col
+ * distanziale verso la strada (−x). Solo le facce che si vedono: 18 triangoli.
+ */
 export function railPostGeometry(): THREE.BufferGeometry {
   return merge([
-    box(0.014, 1.38, 0.1, 0, 0.06, 0, GALV),
-    box(0.06, 1.38, 0.014, 0.03, 0.06, 0.05, GALV_DARK),
-    box(0.06, 1.38, 0.014, 0.03, 0.06, -0.05, GALV_DARK),
+    box(0.07, 1.38, 0.1, 0.02, 0.06, 0, [GALV_DARK, GALV, GALV, GALV, GALV_DARK, GALV_DARK], BOTTOM),
     // distanziale: un pezzo di profilato fra paletto e lama
-    box(RAIL_SPACER - 0.01, 0.3, 0.07, -(RAIL_SPACER - 0.01) / 2, 0.705, 0, GALV_DARK),
+    box(RAIL_SPACER - 0.02, 0.3, 0.07, -(RAIL_SPACER - 0.02) / 2 - 0.015, 0.705, 0, GALV_DARK, [2, 3]),
   ]);
 }
 
 /** Catadiottro nella gola della lama: rosso verso +z, bianco verso −z (si gira col lato). */
 export function reflectorGeometry(): THREE.BufferGeometry {
-  return merge([box(0.03, 0.075, 0.05, -(RAIL_SPACER + 0.045), 0.705, 0, ['#2a2c2f', '#2a2c2f', '#2a2c2f', '#2a2c2f', '#ff2a1f', '#f4f4ee'])]);
+  return merge([box(0.03, 0.075, 0.05, -(RAIL_SPACER + 0.045), 0.705, 0, ['#2a2c2f', '#2a2c2f', '#2a2c2f', '#2a2c2f', '#ff2a1f', '#f4f4ee'], [0, 1, 2, 3])]);
 }
 
 /** Delineatore di margine: bianco, fascia nera in alto, 1,05 m fuori terra. */
 export function delineatorGeometry(): THREE.BufferGeometry {
-  return merge([box(0.1, 1.35, 0.12, 0, 0.375, 0, '#f2f2ec'), box(0.104, 0.24, 0.124, 0, 0.86, 0, '#141414')]);
+  return merge([box(0.1, 1.35, 0.12, 0, 0.375, 0, '#f2f2ec', BOTTOM), box(0.104, 0.24, 0.124, 0, 0.86, 0, '#141414', [2, 3])]);
 }
 
-/** Gli «occhi» del delineatore: rettangolo rosso verso +z, due tondi bianchi (qui un rettangolo) verso −z. */
+/** Gli «occhi» del delineatore: rettangolo rosso verso +z, bianco verso −z. */
 export function delineatorEyesGeometry(): THREE.BufferGeometry {
-  return merge([box(0.05, 0.17, 0.008, 0, 0.86, 0.066, '#ff3b1f'), box(0.05, 0.15, 0.008, 0, 0.86, -0.066, '#fbfbf2')]);
+  const eye = (h: number, z: number, back: boolean, c: string) => {
+    const g = new THREE.PlaneGeometry(0.05, h);
+    if (back) g.rotateY(Math.PI);
+    g.translate(0, 0.86, z);
+    return paint(g, c);
+  };
+  return merge([eye(0.17, 0.064, false, '#ff3b1f'), eye(0.15, -0.064, true, '#fbfbf2')]);
 }
 
-/** Cartello: palo. Il cartello vero (piano con la trama) è a parte. */
+/** Cartello: palo (aperto: non se ne vedono le teste). Il cartello vero è a parte. */
 export function signPoleGeometry(): THREE.BufferGeometry {
-  return merge([cyl(0.03, 0.03, 2.75, 6, 0, 1.25, 0.03, '#9aa0a6')]);
+  return merge([cyl(0.03, 0.03, 2.75, 5, 0, 1.25, 0.03, '#9aa0a6', true)]);
 }
 
 /** Il piano del cartello: 0,8 m, centro a 2,15 m, guarda −z. `cell` è la casella dell'atlante. */
@@ -232,18 +256,31 @@ export function signPlateGeometry(cell: number, back = false): THREE.BufferGeome
 /** Semaforo: palo, lanterna con visiere e pannello di contrasto, rosso e giallo spenti. Guarda −z. */
 export function signalGeometry(): THREE.BufferGeometry {
   const lamp = (y: number, c: string) => {
-    const g = new THREE.CircleGeometry(0.1, 10);
+    const g = new THREE.CircleGeometry(0.1, 8);
     g.rotateY(Math.PI);
     g.translate(0, y, -0.166);
     return paint(g, c);
   };
+  const visor = (y: number) => {
+    const g = new THREE.PlaneGeometry(0.26, 0.16);
+    g.rotateX(-Math.PI / 2 + 0.25);
+    g.translate(0, y, -0.235);
+    return paint(g, '#26302a');
+  };
+  const plate = (back: boolean) => {
+    const g = new THREE.PlaneGeometry(0.62, 1.22);
+    if (back) g.rotateY(Math.PI);
+    g.translate(0, 2.86, back ? 0.08 : 0.07);
+    return paint(g, '#111311');
+  };
   return merge([
-    cyl(0.055, 0.065, 3.45, 8, 0, 1.6, 0, '#3e4a43'),
-    box(0.32, 0.98, 0.22, 0, 2.86, -0.05, '#26302a'),
-    box(0.62, 1.22, 0.02, 0, 2.86, 0.075, '#111311'),
-    box(0.26, 0.03, 0.15, 0, 3.27, -0.235, '#26302a'),
-    box(0.26, 0.03, 0.15, 0, 2.97, -0.235, '#26302a'),
-    box(0.26, 0.03, 0.15, 0, 2.67, -0.235, '#26302a'),
+    cyl(0.055, 0.065, 3.45, 6, 0, 1.6, 0, '#3e4a43', true),
+    box(0.32, 0.98, 0.22, 0, 2.86, -0.05, '#26302a', BOTTOM),
+    plate(false),
+    plate(true),
+    visor(3.27),
+    visor(2.97),
+    visor(2.67),
     lamp(3.15, '#3a0e0b'),
     lamp(2.85, '#3a2a0a'),
   ]);
@@ -251,7 +288,7 @@ export function signalGeometry(): THREE.BufferGeometry {
 
 /** La luce verde, accesa: materiale senza ombre. */
 export function signalGreenGeometry(): THREE.BufferGeometry {
-  const g = new THREE.CircleGeometry(0.1, 12);
+  const g = new THREE.CircleGeometry(0.1, 8);
   g.rotateY(Math.PI);
   g.translate(0, 2.55, -0.168);
   return merge([paint(g, '#5dff8a')]);
@@ -268,7 +305,7 @@ export function signalGlowGeometry(): THREE.BufferGeometry {
 
 /** Ringhiera dei ponti: un montante ogni 2 m (la lama orizzontale è nella mattonella). */
 export function bridgePostGeometry(): THREE.BufferGeometry {
-  return merge([box(0.06, 0.86, 0.06, 0, 0.73, 0, '#7f878d')]);
+  return merge([box(0.06, 0.86, 0.06, 0, 0.73, 0, '#7f878d', BOTTOM)]);
 }
 
 /** Cespuglio delle aiuole: verde, qualcuno fiorito (colore per istanza). */

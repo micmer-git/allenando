@@ -263,23 +263,23 @@ export function asphaltTexture(): THREE.CanvasTexture {
       }
     }
     g.putImageData(img, 0, 0);
-    // rattoppi: rettangoli di asfalto più nuovo, col giunto scuro attorno
-    for (let p = 0; p < 4; p++) {
-      const w = 30 + rnd() * 70;
-      const h = 60 + rnd() * 180;
+    // rattoppi: rettangoli di asfalto più nuovo, appena più scuri, col giunto sigillato attorno
+    for (let p = 0; p < 3; p++) {
+      const w = 26 + rnd() * 50;
+      const h = 50 + rnd() * 120;
       const x = rnd() * (W - w);
       const y = rnd() * (H - h);
-      g.fillStyle = `rgba(28,30,33,${0.32 + rnd() * 0.18})`;
+      g.fillStyle = `rgba(30,32,35,${0.12 + rnd() * 0.08})`;
       g.fillRect(x, y, w, h);
-      g.strokeStyle = 'rgba(15,16,18,0.55)';
+      g.strokeStyle = 'rgba(18,19,21,0.35)';
       g.lineWidth = 2;
       g.strokeRect(x, y, w, h);
     }
     // crepe: spezzate sottili, e qualche sigillatura di catrame lucido (più larga)
-    for (let c = 0; c < 14; c++) {
-      const seal = c < 4;
-      g.strokeStyle = seal ? 'rgba(14,15,17,0.6)' : 'rgba(20,21,24,0.55)';
-      g.lineWidth = seal ? 3.5 : 1;
+    for (let c = 0; c < 12; c++) {
+      const seal = c < 3;
+      g.strokeStyle = seal ? 'rgba(16,17,19,0.32)' : 'rgba(20,21,24,0.4)';
+      g.lineWidth = seal ? 2.2 : 1;
       g.beginPath();
       let x = rnd() * W;
       let y = rnd() * H;
