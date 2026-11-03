@@ -20,20 +20,11 @@ import {
   type TileSpec,
 } from './builders';
 import { createHeightField, type HeightField } from './heightfield';
-import {
-  BIKE,
-  BODY,
-  buildBody,
-  buildCrankset,
-  buildFrame,
-  buildWheel,
-  labelTexture,
-  limbGeometry,
-  pedalAt,
-  shadowTexture,
-  shoeGeometry,
-  solveKnee,
-} from './rider';
+import { DEFAULT_LOOK, lookFromColor } from '@/game/look';
+import { Rider } from './RiderMesh';
+
+// il ciclista vive in RiderMesh.tsx: lo si riesporta per chi lo prendeva da qui
+export { Rider };
 
 const QUALITY = {
   low: { tile: 1200, spacing: 12, density: 0.6, far: 5000, dpr: 1 as number | [number, number] },
@@ -127,7 +118,7 @@ function World({
       <Road track={track} field={field} />
       <Props track={track} field={field} density={q.density} />
       <Signs track={track} title={route.title} />
-      <Rider getPose={() => engine.pose()} getCadence={() => engine.cadence} getSpeed={() => engine.speed} jersey={selfColor ?? BRAND} />
+      <Rider getPose={() => engine.pose()} getCadence={() => engine.cadence} getSpeed={() => engine.speed} getPower={() => engine.power} look={selfColor ? lookFromColor(selfColor) : DEFAULT_LOOK} />
       {ghostDistance ? <Ghost track={track} ghostDistance={ghostDistance} /> : null}
       {remote && remote.list.length > 0 ? <RemoteRiders track={track} source={remote.source} list={remote.list} /> : null}
       <FollowCam engine={engine} field={field} />
@@ -600,6 +591,7 @@ function Ghost({ track, ghostDistance }: { track: Track; ghostDistance: () => nu
   return (
     <Rider
       ghost
+      detail="media"
       side={-1.1}
       getPose={() => {
         const d = ghostDistance();
@@ -641,6 +633,8 @@ function RemoteRiderView({ id, nick, color, track, source }: { id: string; nick:
       side={lane}
       jersey={hex}
       helmet={hex}
+      detail="media"
+      lodDistance={35}
       label={nick}
       getPose={() => {
         const r = source.riders().get(id);
@@ -661,156 +655,6 @@ function RemoteRiderView({ id, nick, color, track, source }: { id: string; nick:
       }}
       getSpeed={() => source.riders().get(id)?.v ?? 0}
     />
-  );
-}
-
-const GHOST_MAT = new THREE.MeshBasicMaterial({ color: '#8fd8ff', transparent: true, opacity: 0.36, depthWrite: false });
-
-export function Rider({
-  getPose,
-  getCadence,
-  getSpeed,
-  ghost = false,
-  side = 0.6,
-  jersey = BRAND,
-  helmet = '#f2f3ef',
-  label,
-}: {
-  getPose: () => TrackPose;
-  getCadence: () => number;
-  getSpeed: () => number;
-  ghost?: boolean;
-  /** metri a sinistra dell'asse della strada */
-  side?: number;
-  jersey?: string;
-  helmet?: string;
-  label?: string;
-}) {
-  const group = useRef<THREE.Group>(null);
-  const front = useRef<THREE.Mesh>(null);
-  const rear = useRef<THREE.Mesh>(null);
-  const crank = useRef<THREE.Mesh>(null);
-  const legs = useRef<(THREE.Mesh | null)[]>([]);
-  const sprite = useRef<THREE.Sprite>(null);
-  const spin = useRef(Math.random() * Math.PI * 2);
-  const roll = useRef(0);
-  const { camera } = useThree();
-
-  const geo = useMemo(
-    () => ({
-      frame: buildFrame({ frame: '#262a31', accent: jersey }),
-      wheel: buildWheel(),
-      crank: buildCrankset(),
-      body: buildBody({ jersey, shorts: '#15181e', skin: '#d9ad8c', helmet }),
-      thigh: limbGeometry(0.068, 0.05),
-      shin: limbGeometry(0.047, 0.032),
-      shoe: shoeGeometry(),
-    }),
-    [jersey, helmet],
-  );
-  const mats = useMemo(
-    () =>
-      ghost
-        ? { vc: GHOST_MAT, shorts: GHOST_MAT, skin: GHOST_MAT, shoe: GHOST_MAT }
-        : {
-            vc: new THREE.MeshLambertMaterial({ vertexColors: true }),
-            shorts: new THREE.MeshLambertMaterial({ color: '#15181e' }),
-            skin: new THREE.MeshLambertMaterial({ color: '#d9ad8c' }),
-            shoe: new THREE.MeshLambertMaterial({ color: '#eceee9' }),
-          },
-    [ghost],
-  );
-  const labelTex = useMemo(() => (label ? labelTexture(label, jersey) : null), [label, jersey]);
-  useEffect(
-    () => () => {
-      Object.values(geo).forEach((g) => g.dispose());
-      if (!ghost) Object.values(mats).forEach((m) => m.dispose());
-      labelTex?.dispose();
-    },
-    [geo, mats, ghost, labelTex],
-  );
-
-  const tmp = useMemo(
-    () => ({ hip: new THREE.Vector3(), pedal: new THREE.Vector3(), ankle: new THREE.Vector3(), knee: new THREE.Vector3(), dir: new THREE.Vector3(), down: new THREE.Vector3(0, -1, 0) }),
-    [],
-  );
-
-  useFrame((_, dt) => {
-    const pose = getPose();
-    const root = group.current;
-    if (!root) return;
-    root.position.set(pose.x + Math.cos(pose.heading) * side, pose.y, pose.z - Math.sin(pose.heading) * side);
-    root.rotation.set(-Math.atan(pose.grade), pose.heading, 0, 'YXZ');
-    const cadence = getCadence();
-    spin.current += (cadence > 1 ? (cadence / 60) * Math.PI * 2 : 0) * dt;
-    roll.current += (getSpeed() / BIKE.wheelR) * dt;
-    if (front.current) front.current.rotation.x = roll.current;
-    if (rear.current) rear.current.rotation.x = roll.current;
-    if (crank.current) crank.current.rotation.x = spin.current;
-    // gambe: dal pedale alla caviglia, poi il ginocchio per cinematica inversa
-    for (let i = 0; i < 2; i++) {
-      const right = i === 1;
-      const s = right ? 1 : -1;
-      tmp.hip.set(s * BODY.hip[0], BODY.hip[1], BODY.hip[2]);
-      pedalAt(spin.current, right, tmp.pedal);
-      tmp.ankle.set(tmp.pedal.x, tmp.pedal.y + BODY.ankle[1], tmp.pedal.z + BODY.ankle[2]);
-      solveKnee(tmp.hip, tmp.ankle, BODY.thigh, BODY.shin, tmp.knee);
-      const thigh = legs.current[i * 3];
-      const shin = legs.current[i * 3 + 1];
-      const shoe = legs.current[i * 3 + 2];
-      if (thigh) {
-        thigh.position.copy(tmp.hip);
-        tmp.dir.copy(tmp.knee).sub(tmp.hip);
-        thigh.scale.set(1, tmp.dir.length(), 1);
-        thigh.quaternion.setFromUnitVectors(tmp.down, tmp.dir.normalize());
-      }
-      if (shin) {
-        shin.position.copy(tmp.knee);
-        tmp.dir.copy(tmp.ankle).sub(tmp.knee);
-        shin.scale.set(1, tmp.dir.length(), 1);
-        shin.quaternion.setFromUnitVectors(tmp.down, tmp.dir.normalize());
-      }
-      if (shoe) {
-        shoe.position.copy(tmp.ankle);
-        // la punta scende un po' in spinta e sale in risalita, come la caviglia vera
-        shoe.rotation.set(0.12 * Math.sin(spin.current + (right ? 0 : Math.PI) + 1.2), 0, 0);
-      }
-    }
-    if (sprite.current) {
-      const dist = camera.position.distanceTo(root.position);
-      // l'etichetta cresce con la distanza: resta leggibile anche a un tornante di distanza
-      const k = THREE.MathUtils.clamp(dist * 0.07, 1, 18);
-      sprite.current.scale.set(k * 2.2, k * 0.55, 1);
-      sprite.current.position.y = 1.95 + k * 0.3;
-    }
-  });
-
-  return (
-    <group ref={group}>
-      {!ghost ? (
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.015, 0.08]} renderOrder={1}>
-          <planeGeometry args={[0.75, 1.75]} />
-          <meshBasicMaterial map={shadowTexture()} transparent depthWrite={false} polygonOffset polygonOffsetFactor={-3} polygonOffsetUnits={-6} />
-        </mesh>
-      ) : null}
-      <mesh geometry={geo.frame} material={mats.vc} />
-      <mesh ref={rear} geometry={geo.wheel} material={mats.vc} position={BIKE.rearAxle as unknown as [number, number, number]} />
-      <mesh ref={front} geometry={geo.wheel} material={mats.vc} position={BIKE.frontAxle as unknown as [number, number, number]} />
-      <mesh ref={crank} geometry={geo.crank} material={mats.vc} position={BIKE.bb as unknown as [number, number, number]} />
-      <mesh geometry={geo.body} material={mats.vc} />
-      {[0, 1].map((i) => (
-        <group key={i}>
-          <mesh ref={(m) => void (legs.current[i * 3] = m)} geometry={geo.thigh} material={mats.shorts} />
-          <mesh ref={(m) => void (legs.current[i * 3 + 1] = m)} geometry={geo.shin} material={mats.skin} />
-          <mesh ref={(m) => void (legs.current[i * 3 + 2] = m)} geometry={geo.shoe} material={mats.shoe} />
-        </group>
-      ))}
-      {labelTex ? (
-        <sprite ref={sprite} position={[0, 2.1, 0]}>
-          <spriteMaterial map={labelTex} depthTest={false} transparent />
-        </sprite>
-      ) : null}
-    </group>
   );
 }
 

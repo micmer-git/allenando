@@ -11,6 +11,7 @@ import { FLAG, type Dir } from './graph';
 import type { WorldField } from './field';
 import type { NpcCrowd } from './npc';
 import { NPC_JERSEYS } from './npc';
+import { lookFromColor } from '@/game/look';
 import { buildingsJob, furnitureJob, railsGeometry, roadsJob, terrainJob, treesJob, waterGeometry, type BuildingMeshes, type TileMeshes, type TileSpec, type TreeKind } from './tiles';
 import { facadeTexture, groundDetailTexture, roofTilesTexture } from './textures';
 import { atmosphere, CLEAR, sunFor, sunVector, type Daytime } from './sky';
@@ -1189,7 +1190,7 @@ export function kindLabel(kind: string): string {
 // ---------- ciclisti ----------
 
 function PlayerRider({ engine, playerPose, selfColor }: WorldSceneProps) {
-  return <Rider side={0} jersey={selfColor} getPose={playerPose} getCadence={() => engine.cadence} getSpeed={() => engine.speed} />;
+  return <Rider side={0} jersey={selfColor} getPose={playerPose} getCadence={() => engine.cadence} getSpeed={() => engine.speed} getPower={() => engine.power} />;
 }
 
 function NpcRiders({ crowd }: { crowd: NpcCrowd }) {
@@ -1199,8 +1200,9 @@ function NpcRiders({ crowd }: { crowd: NpcCrowd }) {
         <Rider
           key={n.slot}
           side={0}
-          jersey={NPC_JERSEYS[n.slot % NPC_JERSEYS.length]}
-          helmet={n.slot % 3 === 0 ? '#20242b' : '#f2f3ef'}
+          look={lookFromColor(NPC_JERSEYS[n.slot % NPC_JERSEYS.length], n.slot)}
+          detail="media"
+          lodDistance={30}
           getPose={() => {
             const m = crowd.npcs[n.slot];
             return { x: m.x, y: m.active ? m.y : -5000, z: m.z, heading: m.heading, grade: m.grade, altitude: m.y, distance: 0 };
@@ -1220,6 +1222,8 @@ function RemoteRiderView({ rider }: { rider: RemoteWorldRider }) {
       side={0}
       jersey={rider.color}
       helmet={rider.color}
+      detail="media"
+      lodDistance={35}
       label={rider.nick}
       getPose={() => {
         const p = rider.pose();
