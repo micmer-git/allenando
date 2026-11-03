@@ -45,6 +45,7 @@ import { fetchWeather, type WeatherNow } from '@/open/weather';
 import { sunFor } from '@/open/sky';
 import { applyCareer, ORO_RULES, type CareerOutcome, type OroLine, type RideFacts, type SegmentResult } from '@/game/career';
 import { RideGame } from '@/game/rideGame';
+import { SEGMENT_STYLE } from '@/game/arches';
 import { sessionById } from '@/game/sessions';
 import { useGame } from '@/game/useGame';
 import { RewardsSummary, SegmentHud, SessionHud } from './RideGameHud';
@@ -763,6 +764,7 @@ function RideScreen({
               bin={Math.max(100, track.length / 80)}
               position={engine.distance}
               ghost={ghostDistance ? ghostDistance() : null}
+              marks={game.tracker.windows.map((w) => ({ from: w.from, to: w.to, color: SEGMENT_STYLE[w.seg.kind].color }))}
             />
           )}
         </div>
