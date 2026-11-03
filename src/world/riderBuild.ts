@@ -47,7 +47,7 @@ interface Lod {
 }
 
 const LOD: Record<RiderDetail, Lod> = {
-  alta: { tube: 10, thin: 8, small: 8, bar: 16, barSeg: 6, limb: 12, torso: 24, dome: 3, head: 16, helmet: [12, 12], wheel: 36, tyre: 6, hub: 10, spokes: [20, 24], chain: 52, cassette: 3, ring: 0, teeth: 36, fine: true, mid: true },
+  alta: { tube: 10, thin: 8, small: 8, bar: 16, barSeg: 6, limb: 12, torso: 24, dome: 3, head: 16, helmet: [12, 12], wheel: 36, tyre: 6, hub: 10, spokes: [20, 24], chain: 44, cassette: 3, ring: 0, teeth: 36, fine: true, mid: true },
   media: { tube: 6, thin: 5, small: 6, bar: 7, barSeg: 4, limb: 7, torso: 12, dome: 2, head: 9, helmet: [6, 6], wheel: 16, tyre: 4, hub: 6, spokes: [0, 0], chain: 0, cassette: 1, ring: 16, teeth: 0, fine: false, mid: true },
   bassa: { tube: 4, thin: 3, small: 4, bar: 3, barSeg: 3, limb: 5, torso: 8, dome: 1, head: 6, helmet: [4, 4], wheel: 14, tyre: 3, hub: 0, spokes: [0, 0], chain: 0, cassette: 0, ring: 8, teeth: 0, fine: false, mid: false },
 };
@@ -873,8 +873,8 @@ function buildHead(P: Parts, L: Lod) {
   const [nu, na] = L.helmet;
   const key = [
     // s, z, y bordo, semilarghezza, altezza
-    [0, 0.16, 0.118, 0.06, 0.01],
-    [0.12, 0.138, 0.114, 0.082, 0.05],
+    [0, 0.152, 0.11, 0.062, 0.03],
+    [0.12, 0.132, 0.108, 0.083, 0.064],
     [0.35, 0.07, 0.1, 0.091, 0.092],
     [0.6, -0.02, 0.078, 0.09, 0.104],
     [0.85, -0.108, 0.045, 0.077, 0.082],
@@ -916,6 +916,25 @@ function buildHead(P: Parts, L: Lod) {
   helmet.setAttribute('uv', new THREE.Float32BufferAttribute(huv, 2));
   helmet.setIndex(hi);
   helmet.computeVertexNormals();
+  if (L.fine) {
+    // l'imbottitura scura dentro il guscio: da sotto il casco ha uno spessore, non si vede il vuoto
+    const liner = helmet.clone();
+    const lp = liner.attributes.position as THREE.BufferAttribute;
+    const c = new THREE.Vector3(0, 0.07, 0.0);
+    const v = new THREE.Vector3();
+    for (let i = 0; i < lp.count; i++) {
+      v.fromBufferAttribute(lp, i).sub(c).multiplyScalar(0.93).add(c);
+      lp.setXYZ(i, v.x, v.y, v.z);
+    }
+    const idx = liner.index!;
+    for (let i = 0; i < idx.count; i += 3) {
+      const t = idx.getX(i + 1);
+      idx.setX(i + 1, idx.getX(i + 2));
+      idx.setX(i + 2, t);
+    }
+    liner.computeVertexNormals();
+    P.local(liner, B.head, 'strap');
+  }
   P.local(helmet, B.head, ATLAS.helmet);
   if (L.fine) {
     // cinghietti sotto il mento

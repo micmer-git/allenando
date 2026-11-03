@@ -86,6 +86,8 @@ export function Rider({
 
   const labelTex = useMemo(() => (label ? labelTexture(label, look.jersey) : null), [label, look.jersey]);
   useEffect(() => () => labelTex?.dispose(), [labelTex]);
+  // geometria e materiali sono condivisi (cache): di suo il ciclista ha solo la texture delle ossa
+  useEffect(() => () => rig.skeleton.dispose(), [rig]);
 
   useFrame((_, dt) => {
     const pose = getPose();
