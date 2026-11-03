@@ -92,7 +92,7 @@ export function SessionHud({ game }: { game: RideGame }) {
     const s = Math.ceil(game.countdown);
     return (
       <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center bg-black/35" data-testid="session-grid">
-        <div className="text-center">
+        <div className="rounded-3xl bg-black/55 px-7 py-4 text-center backdrop-blur-sm">
           <p className="text-xs font-bold uppercase tracking-[0.18em]" style={{ color: st.color }}>
             {def.title}
           </p>
@@ -184,6 +184,7 @@ export function RewardsSummary({ outcome, results }: { outcome: CareerOutcome; r
             <Coin size={22} />+{outcome.total}
           </p>
         </div>
+        {outcome.lines.length === 0 ? <p className="mt-1 text-sm text-muted">Giro troppo corto per l’oro.</p> : null}
         <ul className="mt-2 flex flex-col gap-1 text-sm">
           {outcome.lines.map((l, i) => (
             <li key={i} className="flex justify-between gap-3">

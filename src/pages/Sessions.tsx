@@ -13,7 +13,7 @@ export function countdown(ms: number): string {
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   const sec = s % 60;
-  if (h > 0) return `${h} h ${m} min`;
+  if (h > 0) return `${h} h ${String(m).padStart(2, '0')}`;
   if (m >= 10) return `${m} min`;
   return `${m}:${String(sec).padStart(2, '0')}`;
 }
@@ -60,9 +60,9 @@ export function SessionsPage() {
             >
               <span className="absolute inset-y-0 left-0 w-1.5" style={{ background: st.color }} aria-hidden="true" />
               <div className="flex items-center gap-3 py-3 pl-5 pr-3">
-                <div className="w-14 shrink-0 text-center">
+                <div className="w-[4.6rem] shrink-0 text-center">
                   <span className="num block font-display text-3xl leading-none">{hhmm(s.start)}</span>
-                  <span className="mt-1 block text-[11px] font-semibold uppercase tracking-wide text-muted">
+                  <span className="mt-1 block whitespace-nowrap text-[11px] font-semibold uppercase tracking-wide text-muted">
                     {ph === 'via' ? 'in corso' : ph === 'aperta' ? countdown(s.start - now) : `fra ${countdown(s.start - now)}`}
                   </span>
                 </div>

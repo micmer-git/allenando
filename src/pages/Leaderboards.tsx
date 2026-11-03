@@ -50,7 +50,7 @@ export function LeaderboardsPage() {
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 pb-nav pt-5 md:px-8 md:pt-10" data-testid="leaderboards">
-      <Link to="/tu" className="-ml-1 inline-flex h-11 items-center text-sm font-semibold text-muted">
+      <Link to="/tu" className="-ml-1 inline-flex h-11 min-w-11 items-center pr-3 text-sm font-semibold text-muted">
         ← Tu
       </Link>
       <h1 className="font-display text-5xl uppercase leading-[0.9]">Classifiche</h1>

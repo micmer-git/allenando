@@ -736,7 +736,7 @@ function RideScreen({
             </div>
           </div>
         </div>
-        <div className="pointer-events-none absolute inset-x-0 top-[6.4rem] flex flex-col items-center gap-1.5 px-14">
+        <div className="pointer-events-none absolute inset-x-0 top-[8rem] flex flex-col items-center gap-1.5 px-14">
           <SessionHud game={game} />
           <SegmentHud game={game} />
           {session ? <Toasts session={session} /> : null}
@@ -818,8 +818,8 @@ function RideScreen({
         </p>
         {/* su telefono il pannello scorre: Pausa e Termina restano sempre a portata di dito */}
         <div className="sticky bottom-0 z-10 -mx-4 mt-1.5 grid grid-cols-2 gap-2 bg-elev px-4 py-1 md:static md:mx-0 md:px-0 md:py-0">
-          <Button variant="ghost" className="h-11" onClick={() => (engine.phase === 'paused' ? engine.resume() : engine.pause())}>
-            {engine.phase === 'paused' ? t('actions.resume') : t('actions.pause')}
+          <Button variant="ghost" className="h-11" disabled={game.stage === 'griglia'} onClick={() => (engine.phase === 'paused' ? engine.resume() : engine.pause())}>
+            {game.stage === 'griglia' ? 'In griglia' : engine.phase === 'paused' ? t('actions.resume') : t('actions.pause')}
           </Button>
           <Button data-testid="ride-finish" className="h-11" onClick={finish}>
             {t('actions.finish')}

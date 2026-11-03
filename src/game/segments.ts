@@ -295,6 +295,15 @@ export class SegmentTracker {
 
   constructor(public windows: Window[]) {}
 
+  /**
+   * Dove si parte. Un centimetro indietro: così un tratto che comincia proprio sotto le ruote
+   * (la salita intera, il GPM di Città Alta dal metro zero) parte al primo fotogramma.
+   */
+  prime(distance: number, elapsed: number): void {
+    this.lastD = distance - 0.01;
+    this.lastT = elapsed;
+  }
+
   update(distance: number, elapsed: number, power: number, altitude: number): SegmentEvent[] {
     const ev: SegmentEvent[] = [];
     const prevD = this.lastD;

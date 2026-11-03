@@ -193,6 +193,15 @@ describe('tratti', () => {
     expect(t2.update(150, 15, 300, 0)[0]?.type).toBe('abort');
   });
 
+  it('un tratto che parte al metro zero si cronometra dal primo fotogramma', () => {
+    const t = new SegmentTracker([{ seg: { id: 'z', kind: 'gpm', name: 'z', from: 0, to: 100 }, from: 0, to: 100 }]);
+    t.prime(0, 0);
+    expect(t.update(2, 0.5, 200, 0)[0]?.type).toBe('start');
+    expect(t.live[0].t0).toBeCloseTo(0, 1);
+    const fin = t.update(101, 25, 200, 0).find((e) => e.type === 'finish');
+    expect(fin).toBeTruthy();
+  });
+
   it('le salite verificate sono un GPM intero e gli ultimi 3 km', () => {
     const s = climbSegments('stelvio-prato', 'Stelvio', 25_200);
     expect(s.map((x) => x.kind)).toEqual(['gpm', 'crono']);

@@ -84,6 +84,7 @@ export class RideGame {
       windows = climbSegments(opts.climb.routeId, opts.climb.name, this.track.length).map((s) => ({ seg: s, from: s.from, to: s.to }));
     }
     this.tracker = new SegmentTracker(windows);
+    this.tracker.prime(this.engine.distance, this.engine.elapsed);
     this.rebuildArches();
     // la sessione: in griglia fino al via; il gruppo solo nelle uscite di gruppo
     const def = this.sessionDef;
