@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { GRADE_LEGEND, gradeColor, ProfileChart, RouteMap, useVerifiedRoute } from '@/components/RouteViz';
 import { Button } from '@/components/ui';
+import { BoardPanel } from '@/components/Board';
 import { formatDuration, formatKm, formatNumber } from '@/domain/format';
 import { projector } from '@/domain/geo';
 import { osmUrl, routeMeta, routeStats, streetViewUrl } from '@/domain/routes';
@@ -128,6 +129,15 @@ export function ClimbDetailPage() {
                 </p>
               </div>
             </div>
+          </section>
+
+          <section className="mt-6 rounded-2xl border border-line bg-elev p-4" data-testid="climb-board">
+            <BoardPanel id={`salita:${id}`} title="Classifica della salita" />
+            {route.track.length > 6500 ? (
+              <div className="mt-4 border-t border-line pt-3">
+                <BoardPanel id={`salita:${id}:fine`} title="Gli ultimi 3 km" limit={5} />
+              </div>
+            ) : null}
           </section>
 
           <section className="mt-6">
