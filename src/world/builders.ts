@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import type { DemGrid } from '@/domain/routes';
-import type { Track, TrackPoint } from '@/domain/track';
+import type { Track, TrackPoint, TrackPose } from '@/domain/track';
 import type { HeightField } from './heightfield';
+import { RAIL_POST_STEP, RAIL_SPACER, railFrames, sweepBeam, type Tri } from './roadside';
 
 /*
  * Geometrie del mondo, tutte generate dalla traccia vera e dal DEM.
@@ -206,41 +207,100 @@ export function strip(
   return geo;
 }
 
+/** L'asfalto si ripete ogni tanti metri lungo la strada: la trama copre tutta la larghezza. */
+export const ASPHALT_REPEAT_M = 20;
+
+/**
+ * Asfalto disegnato a canvas, tutta la carreggiata × 20 m: grana dell'inerte a due scale, sassolini
+ * chiari, le quattro tracce delle ruote più lisce e scure (due corsie), la riga d'olio in mezzo alla
+ * corsia, rattoppi più neri coi bordi netti, crepe e sigillature di catrame. Quasi grigio: il
+ * colore vero lo dà il materiale (asciutto o bagnato).
+ */
 export function asphaltTexture(): THREE.CanvasTexture {
+  const W = 256;
+  const H = 1024;
   const canvas = document.createElement('canvas');
-  canvas.width = 128;
-  canvas.height = 256;
+  canvas.width = W;
+  canvas.height = H;
   const g = canvas.getContext('2d');
   if (g) {
-    g.fillStyle = '#4a4d52';
-    g.fillRect(0, 0, 128, 256);
-    const img = g.getImageData(0, 0, 128, 256);
     let seed = 11;
     const rnd = () => {
       seed = (seed * 16807) % 2147483647;
       return seed / 2147483647;
     };
-    for (let i = 0; i < img.data.length; i += 4) {
-      const n = (rnd() - 0.5) * 34;
-      img.data[i] += n;
-      img.data[i + 1] += n;
-      img.data[i + 2] += n;
+    // macchie larghe (stesure diverse, umidità) su una griglia di 32 px, interpolate
+    const GX = W / 32 + 1;
+    const GY = H / 32 + 1;
+    const blot = Array.from({ length: GX * GY }, () => (rnd() - 0.5) * 12);
+    const tracks = [0.17, 0.33, 0.67, 0.83];
+    const img = g.createImageData(W, H);
+    const d = img.data;
+    for (let y = 0; y < H; y++) {
+      const gy = y / 32;
+      const j = Math.floor(gy);
+      const v = gy - j;
+      for (let x = 0; x < W; x++) {
+        const gx = x / 32;
+        const i = Math.floor(gx);
+        const u = gx - i;
+        const k = j * GX + i;
+        const big = blot[k] * (1 - u) * (1 - v) + blot[k + 1] * u * (1 - v) + blot[k + GX] * (1 - u) * v + blot[k + GX + 1] * u * v;
+        // tracce delle ruote: lisce (meno grana) e un filo più scure
+        const ux = x / W;
+        let wear = 0;
+        for (const t of tracks) wear = Math.max(wear, Math.max(0, 1 - Math.abs(ux - t) / 0.055));
+        const oil = Math.max(0, 1 - Math.abs(Math.abs(ux - 0.5) - 0.25) / 0.03) * 0.5;
+        const grain = (rnd() - 0.5) * (34 - wear * 16);
+        let l = 78 + big + grain - wear * 7 - oil * 6;
+        // sassolini dell'inerte, più radi nelle tracce consumate
+        if (rnd() < 0.035 * (1 - wear * 0.6)) l += 26 + rnd() * 22;
+        const o = (y * W + x) * 4;
+        d[o] = l;
+        d[o + 1] = l + 1;
+        d[o + 2] = l + 4;
+        d[o + 3] = 255;
+      }
     }
     g.putImageData(img, 0, 0);
-    // tracce delle ruote, un filo più scure e lisce
-    g.fillStyle = 'rgba(30,32,36,0.18)';
-    g.fillRect(22, 0, 16, 256);
-    g.fillRect(90, 0, 16, 256);
-    // qualche rattoppo
-    g.fillStyle = 'rgba(25,27,30,0.35)';
-    g.fillRect(60, 40, 30, 22);
-    g.fillRect(14, 170, 22, 40);
+    // rattoppi: rettangoli di asfalto più nuovo, col giunto scuro attorno
+    for (let p = 0; p < 4; p++) {
+      const w = 30 + rnd() * 70;
+      const h = 60 + rnd() * 180;
+      const x = rnd() * (W - w);
+      const y = rnd() * (H - h);
+      g.fillStyle = `rgba(28,30,33,${0.32 + rnd() * 0.18})`;
+      g.fillRect(x, y, w, h);
+      g.strokeStyle = 'rgba(15,16,18,0.55)';
+      g.lineWidth = 2;
+      g.strokeRect(x, y, w, h);
+    }
+    // crepe: spezzate sottili, e qualche sigillatura di catrame lucido (più larga)
+    for (let c = 0; c < 14; c++) {
+      const seal = c < 4;
+      g.strokeStyle = seal ? 'rgba(14,15,17,0.6)' : 'rgba(20,21,24,0.55)';
+      g.lineWidth = seal ? 3.5 : 1;
+      g.beginPath();
+      let x = rnd() * W;
+      let y = rnd() * H;
+      g.moveTo(x, y);
+      const along = rnd() < 0.6;
+      for (let s = 0; s < 14; s++) {
+        x += along ? (rnd() - 0.5) * 10 : 6 + rnd() * 10;
+        y += along ? 6 + rnd() * 14 : (rnd() - 0.5) * 8;
+        g.lineTo(x, y);
+      }
+      g.stroke();
+    }
+    // la mezzeria vecchia cancellata col fresatore: una banda appena più scura al centro
+    g.fillStyle = 'rgba(30,32,36,0.08)';
+    g.fillRect(W * 0.485, 0, W * 0.03, H);
   }
   const tex = new THREE.CanvasTexture(canvas);
   tex.wrapS = THREE.ClampToEdgeWrapping;
   tex.wrapT = THREE.RepeatWrapping;
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
+  tex.anisotropy = 8;
   return tex;
 }
 
@@ -251,51 +311,94 @@ export function centerDashes(track: Track): THREE.BufferGeometry {
   });
 }
 
+export interface RoadsidePost {
+  x: number;
+  y: number;
+  z: number;
+  /** direzione della strada */
+  h: number;
+  /** +1 a sinistra di chi va avanti, −1 a destra */
+  side: 1 | -1;
+}
+
 export interface RailRun {
+  /** la lama a doppia onda, terminali interrati compresi */
   geometry: THREE.BufferGeometry;
-  posts: { x: number; y: number; z: number; h: number }[];
+  /** paletti a C ogni 4 m */
+  posts: RoadsidePost[];
+  /** delineatori bianchi dove non c'è guardrail */
+  delineators: RoadsidePost[];
 }
 
 /**
- * Guardrail dove il terreno scende: si confronta la quota del terreno a 6 m dal bordo
- * con quella della strada. È il DEM a dire dov'è il vuoto, non un disegno.
+ * Guardrail dove il terreno scende: si confronta la quota del terreno a 7 m dal bordo con quella
+ * della strada. È il DEM a dire dov'è il vuoto, non un disegno. Le file più corte di tre paletti
+ * non si mettono, un buco di un paletto si chiude. Dove non c'è guardrail, i delineatori di
+ * margine ogni 40 m (ogni 20 nelle curve).
  */
 export function buildGuardrails(track: Track, field: HeightField): RailRun {
-  const pts = track.points;
   const hw = track.halfWidth;
-  const pos: number[] = [];
-  const idx: number[] = [];
-  const posts: RailRun['posts'] = [];
-  const every = Math.max(1, Math.round(4 / (pts[1]?.distance - pts[0]?.distance || 2)));
-  for (const side of [1, -1]) {
-    let prev = -1;
-    for (let i = 0; i < pts.length; i += every) {
-      const p = pts[i];
+  const m: Tri = { pos: [], idx: [] };
+  const posts: RoadsidePost[] = [];
+  const delineators: RoadsidePost[] = [];
+  const step = RAIL_POST_STEP;
+  const n = Math.floor(track.length / step);
+  for (const side of [1, -1] as const) {
+    const want: boolean[] = [];
+    const at: TrackPose[] = [];
+    for (let i = 0; i <= n; i++) {
+      const p = track.poseAt(i * step);
+      at.push(p);
       const lx = Math.cos(p.heading) * side;
       const lz = -Math.sin(p.heading) * side;
       const probe = field.height(p.x + lx * (hw + 7), p.z + lz * (hw + 7), 4);
       const nearOther = field.road.nearest(p.x + lx * (hw + 7), p.z + lz * (hw + 7));
-      const drop = p.y - probe;
-      const rail = drop > 3 && (!nearOther || nearOther.dist > hw + 1);
-      if (!rail) {
-        prev = -1;
+      want.push(p.y - probe > 3 && (!nearOther || nearOther.dist > hw + 1));
+    }
+    // un buco di un paletto si chiude, una fila corta si toglie
+    for (let i = 1; i < n; i++) if (!want[i] && want[i - 1] && want[i + 1]) want[i] = true;
+    let run: RoadsidePost[] = [];
+    const flush = () => {
+      if (run.length >= 3) {
+        sweepBeam(m, railFrames(run, side));
+        posts.push(...run);
+      }
+      run = [];
+    };
+    const o = hw + 0.7 + RAIL_SPACER;
+    for (let i = 0; i <= n; i++) {
+      if (!want[i]) {
+        flush();
         continue;
       }
-      const o = hw + 0.7;
-      const x = p.x + lx * o;
-      const z = p.z + lz * o;
-      const base = pos.length / 3;
-      pos.push(x, p.y + 0.5, z, x, p.y + 0.82, z);
-      if (prev >= 0) idx.push(prev, base, prev + 1, prev + 1, base, base + 1);
-      prev = base;
-      posts.push({ x, y: p.y, z, h: p.heading });
+      const p = at[i];
+      run.push({ x: p.x + Math.cos(p.heading) * side * o, y: p.y, z: p.z - Math.sin(p.heading) * side * o, h: p.heading, side });
+    }
+    flush();
+    // delineatori: lontano da ogni guardrail di questo lato, più fitti dove la strada gira
+    let last = -Infinity;
+    for (let i = 2; i <= n - 2; i++) {
+      const p = at[i];
+      const bend = Math.abs(wrap(at[Math.min(n, i + 4)].heading - at[Math.max(0, i - 4)].heading));
+      const gap = bend > 0.35 ? 20 : 40;
+      if (i * step - last < gap) continue;
+      let railNear = false;
+      for (let k = Math.max(0, i - 3); k <= Math.min(n, i + 3); k++) if (want[k]) railNear = true;
+      if (railNear) continue;
+      last = i * step;
+      const off = hw + 0.75;
+      delineators.push({ x: p.x + Math.cos(p.heading) * side * off, y: p.y, z: p.z - Math.sin(p.heading) * side * off, h: p.heading, side });
     }
   }
   const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  geo.setIndex(idx);
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(m.pos, 3));
+  geo.setIndex(m.idx);
   geo.computeVertexNormals();
-  return { geometry: geo, posts };
+  return { geometry: geo, posts, delineators };
+}
+
+function wrap(a: number): number {
+  return Math.atan2(Math.sin(a), Math.cos(a));
 }
 
 // ---------- vegetazione e rocce ----------
