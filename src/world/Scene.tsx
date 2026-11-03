@@ -494,7 +494,7 @@ function offset(p: TrackPose, left: number): [number, number, number] {
   return [p.x + Math.cos(p.heading) * left, p.y, p.z - Math.sin(p.heading) * left];
 }
 
-function Gate({ pose, texture, hw }: { pose: TrackPose; texture: THREE.Texture; hw: number }) {
+export function Gate({ pose, texture, hw }: { pose: TrackPose; texture: THREE.Texture; hw: number }) {
   const w = hw * 2 + 2.4;
   return (
     <group position={[pose.x, pose.y, pose.z]} rotation={[0, pose.heading, 0]}>
@@ -525,7 +525,7 @@ export function canvasTex(w: number, h: number, draw: (g: CanvasRenderingContext
   return t;
 }
 
-function kmTexture(kmLeft: number, grade: number, alt: number): THREE.CanvasTexture {
+export function kmTexture(kmLeft: number, grade: number, alt: number): THREE.CanvasTexture {
   return canvasTex(256, 128, (g) => {
     g.fillStyle = '#f4f4f0';
     g.fillRect(0, 0, 256, 128);
@@ -547,7 +547,7 @@ function kmTexture(kmLeft: number, grade: number, alt: number): THREE.CanvasText
   });
 }
 
-function bannerTexture(label: string, title: string): THREE.CanvasTexture {
+export function bannerTexture(label: string, title: string): THREE.CanvasTexture {
   return canvasTex(1024, 128, (g) => {
     g.fillStyle = '#121418';
     g.fillRect(0, 0, 1024, 128);
@@ -557,10 +557,19 @@ function bannerTexture(label: string, title: string): THREE.CanvasTexture {
     g.textBaseline = 'middle';
     g.fillStyle = BRAND;
     g.fillText(label, 52, 66);
+    // il nome nello spazio che resta dopo l'etichetta: si stringe il carattere finché ci sta
+    const left = 52 + g.measureText(label).width + 36;
+    const room = 990 - left;
+    let size = 54;
+    g.font = `700 ${size}px sans-serif`;
+    const text = title.toUpperCase();
+    while (g.measureText(text).width > room && size > 24) {
+      size -= 3;
+      g.font = `700 ${size}px sans-serif`;
+    }
     g.fillStyle = '#f1f2ee';
     g.textAlign = 'right';
-    g.font = '700 54px sans-serif';
-    g.fillText(title.toUpperCase(), 990, 66);
+    g.fillText(text, 990, 66, room);
   });
 }
 

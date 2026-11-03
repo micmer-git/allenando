@@ -22,7 +22,7 @@ import { headingToBearing, loadRouteFile, mapillaryUrl, routeMeta, streetViewUrl
 import { projector } from '@/domain/geo';
 import { RIDER_COLORS } from '@/multiplayer/protocol';
 import { createRouteTrack } from '@/domain/track';
-import type { Profile, Quality, RideSample, Workout, WorkoutStep } from '@/domain/types';
+import type { Profile, Quality, RideSample, Settings, Workout, WorkoutStep } from '@/domain/types';
 import { estimateLthr, powerZone } from '@/domain/zones';
 import { findWorkout, workoutAt } from '@/domain/workouts';
 import { useI18n, type Translate } from '@/i18n';
@@ -39,8 +39,9 @@ import { WorldScene, npcCount, type RemoteWorldRider } from '@/open/WorldScene';
 import { loadPlan } from '@/open/plan';
 import { WorldClient } from '@/multiplayer/world-client';
 import { applyRide, levelOf, loadProgress, postResult, postXp, saveProgress, type XpLine } from '@/open/progress';
-import { AheadProfile, LoopSheet, Nearby, Toasts, TurnPicker, WorldMini, XpSummary } from './WorldHud';
+import { AheadProfile, LoopSheet, Nearby, Toasts, TurnPicker, WeatherChip, WorldMini, XpSummary } from './WorldHud';
 import type { Dir } from '@/open/graph';
+import { fetchWeather, type WeatherNow } from '@/open/weather';
 
 const DEFAULT_ROUTE = 'selvino-nembro';
 
@@ -362,6 +363,26 @@ function RideScreen({
     const terrain = new Terrain(world.data.graph);
     return { terrain, field: createWorldField(world.data.graph, terrain, world.data.features) };
   }, [world]);
+  const weatherMode = useApp((s) => s.settings.weather);
+  const daytime = useApp((s) => s.settings.daytime);
+  const [weather, setWeather] = useState<WeatherNow | null>(null);
+  useEffect(() => {
+    if (!world || !session) return;
+    if (weatherMode !== 'vero') {
+      session.weather = null;
+      setWeather(null);
+      return;
+    }
+    let alive = true;
+    void fetchWeather(world.data.graph.origin.lat, world.data.graph.origin.lon).then((w) => {
+      if (!alive) return;
+      session.weather = w;
+      setWeather(w);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [world, session, weatherMode]);
   useEffect(() => {
     if (!session || !share) return;
     const client = new WorldClient({ world: 'bergamo', nick: profile.name || 'Ciclista' });
@@ -459,6 +480,9 @@ function RideScreen({
               nextTurn={nextTurn}
               playerPose={playerPose}
               onReady={() => setReady(true)}
+              weather={weather}
+              daytime={daytime}
+              ride={session.onRoute ? session.ride : null}
             />
           ) : webgl ? (
             <RideScene
@@ -554,6 +578,7 @@ function RideScreen({
                   </>
                 )}
               </p>
+              {session ? <WeatherChip session={session} engine={engine} /> : null}
               {session && session.offRoute ? (
                 <button type="button" className="pointer-events-auto h-11 rounded-full bg-accent px-3.5 text-sm font-semibold text-accent-ink" onClick={() => session.rejoin(engine.distance)} data-testid="world-rejoin">
                   Torna sul percorso
@@ -750,6 +775,34 @@ function RideScreen({
                 { value: 'high', label: t('quality.high') },
               ]}
             />
+            {session ? (
+              <>
+                <div className="mt-3">
+                  <Segmented<Settings['weather']>
+                    label="Meteo"
+                    value={weatherMode}
+                    onChange={(next) => void updateSettings({ weather: next })}
+                    options={[
+                      { value: 'vero', label: 'Vero, col vento' },
+                      { value: 'sereno', label: 'Sempre sereno' },
+                    ]}
+                  />
+                </div>
+                <div className="mt-3">
+                  <Segmented<Settings['daytime']>
+                    label="Luce"
+                    value={daytime}
+                    onChange={(next) => void updateSettings({ daytime: next })}
+                    options={[
+                      { value: 'vera', label: 'Adesso' },
+                      { value: 'mattina', label: 'Mattina' },
+                      { value: 'mezzogiorno', label: 'Mezzodì' },
+                      { value: 'sera', label: 'Tramonto' },
+                    ]}
+                  />
+                </div>
+              </>
+            ) : null}
             {here ? (
               <>
                 <div className="mt-2 grid grid-cols-2 gap-2">
