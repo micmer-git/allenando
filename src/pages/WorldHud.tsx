@@ -8,6 +8,7 @@ import type { RideEngine } from '@/sim/engine';
 import { suggestLoops, type LoopSuggestion, type LoopTaste } from '@/open/loops';
 import type { WorldSession } from '@/open/session';
 import type { XpLine } from '@/open/progress';
+import { weatherLabel } from '@/open/weather';
 
 /**
  * Le parti della schermata di pedalata che servono solo nel mondo aperto: la scelta agli
@@ -272,5 +273,28 @@ export function XpSummary({ lines, total, level, rank, rankNote }: { lines: XpLi
       {rank ? <p className="mt-3 text-sm font-semibold text-accent">{rank}</p> : null}
       {rankNote ? <p className="mt-1 text-xs text-muted">{rankNote}</p> : null}
     </div>
+  );
+}
+
+/** Meteo vero in una riga: temperatura, tempo, e da dove arriva il vento rispetto a chi pedala. */
+export function WeatherChip({ session, engine }: { session: WorldSession; engine: RideEngine }) {
+  const w = session.weather;
+  if (!w) return null;
+  // freccia: dove va il vento rispetto alla strada davanti (su = a favore, giù = contro)
+  const rel = w.windFrom + session.pose.heading;
+  const kmh = Math.round(w.windMs * 3.6);
+  const head = engine.wind;
+  const text = w.windMs < 1.2 ? 'aria ferma' : Math.abs(head) < 0.5 ? `laterale ${kmh} km/h` : head > 0 ? `contro ${kmh} km/h` : `a favore ${kmh} km/h`;
+  return (
+    <p className="flex items-center gap-1.5 rounded-xl bg-bg/70 px-2.5 py-1 text-[11px] backdrop-blur" data-testid="world-weather" aria-label={`Meteo: ${weatherLabel(w.code)}, vento ${text}`}>
+      <span className="num font-semibold">{Math.round(w.tempC)}°</span>
+      <span className="text-muted">{weatherLabel(w.code)}</span>
+      {w.windMs >= 1.2 ? (
+        <svg viewBox="0 0 12 12" className="h-3 w-3" style={{ transform: `rotate(${rel}rad)` }} aria-hidden="true">
+          <path d="M6 1 L10 7 H7.2 V11 H4.8 V7 H2 Z" fill={head > 0.5 ? 'var(--danger, #e5484d)' : head < -0.5 ? 'var(--good, #3fbf7f)' : 'currentColor'} />
+        </svg>
+      ) : null}
+      <span className="font-semibold">{text}</span>
+    </p>
   );
 }

@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { groundColor, hash2 } from '@/world/builders';
 import { CLS, FLAG, type Edge, type WorldGraph } from './graph';
 import type { WorldField } from './field';
-import { BUILDING_KIND, COVER, type Building, type WorldFeatures } from './world';
+import { BUILDING_KIND, COVER, type Building, type Place, type WorldFeatures } from './world';
+import { addBuilding, BLANK_UV, ringArea, Tris } from './buildings';
 
 /*
  * Le mattonelle del mondo vicino al ciclista: terreno raccordato alle strade, nastri d'asfalto
@@ -37,7 +38,7 @@ export interface TileMeshes {
   rails: THREE.BufferGeometry | null;
   posts: { x: number; y: number; z: number; h: number }[];
   tunnel: THREE.BufferGeometry | null;
-  buildings: THREE.BufferGeometry | null;
+  buildings: BuildingMeshes;
   water: THREE.BufferGeometry | null;
   trees: { kind: TreeKind; x: number; y: number; z: number; s: number; r: number; tint: number }[];
 }
@@ -145,6 +146,7 @@ export function* terrainJob(field: WorldField, spec: TileSpec): Generator<void, 
   const side = n + 1;
   const pos = new Float32Array((side * side + side * 4) * 3);
   const col = new Float32Array((side * side + side * 4) * 3);
+  const uv = new Float32Array((side * side + side * 4) * 2);
   const dist = new Float32Array(side * side);
   const wet = new Uint8Array(side * side);
   for (let j = 0; j < side; j++) {
@@ -185,6 +187,8 @@ export function* terrainJob(field: WorldField, spec: TileSpec): Generator<void, 
       pos[v * 3] = pos[k * 3];
       pos[v * 3 + 1] = pos[k * 3 + 1] - 25;
       pos[v * 3 + 2] = pos[k * 3 + 2];
+      uv[v * 2] = pos[k * 3] / DETAIL_M;
+      uv[v * 2 + 1] = pos[k * 3 + 2] / DETAIL_M;
       v++;
     }
   }
@@ -210,9 +214,11 @@ export function* terrainJob(field: WorldField, spec: TileSpec): Generator<void, 
     const y = pos[k * 3 + 1];
     const noise = hash2(Math.floor(x / 23), Math.floor(z / 23));
     groundColor(c, y, nrm.getY(k), nrm.getZ(k), noise, 99);
+    uv[k * 2] = x / DETAIL_M;
+    uv[k * 2 + 1] = z / DETAIL_M;
     const cov = field.terrain.cover(x, z);
-    const cc = COVER_COLOR[cov];
-    if (cc && cov !== COVER.water) c.lerp(tmpC.copy(cc).offsetHSL(0, 0, (noise - 0.5) * 0.06), cov === COVER.rock ? 0.5 : 0.72);
+    const cc = cov === COVER.farmland || cov === COVER.open ? parcelColor(x, z, cov) : COVER_COLOR[cov];
+    if (cc && cov !== COVER.water) c.lerp(tmpC.copy(cc).offsetHSL(0, 0, (noise - 0.5) * 0.06), cov === COVER.rock ? 0.5 : cov === COVER.open ? 0.45 : 0.72);
     if (wet[k]) c.copy(COVER_COLOR[COVER.water]);
     // terra battuta e marciapiede ai bordi della carreggiata
     if (dist[k] < 5) c.lerp(tmpC.set(cov === COVER.residential || cov === COVER.industrial ? '#a7a39a' : '#9c8b6c'), 1 - dist[k] / 5);
@@ -231,8 +237,28 @@ export function* terrainJob(field: WorldField, spec: TileSpec): Generator<void, 
     }
   }
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   geo.computeBoundingSphere();
   return geo;
+}
+
+/** La grana del suolo si ripete ogni 12 m. */
+const DETAIL_M = 12;
+
+/**
+ * Campi a mosaico: appezzamenti di 70 × 45 m (orientati come la centuriazione della pianura) con colture
+ * diverse — mais, grano, arato, erba medica. I prati di montagna variano poco, tra sfalcio e pascolo.
+ */
+const FIELDS = ['#8ea24f', '#a9a85a', '#c2b26a', '#7f9a46', '#9a8a66', '#6f9440', '#b4b46c'].map((h) => new THREE.Color(h));
+const MEADOWS = ['#7f9c4a', '#8aa652', '#76944a', '#93a95b'].map((h) => new THREE.Color(h));
+const parcelOut = new THREE.Color();
+export function parcelColor(x: number, z: number, cov: number): THREE.Color {
+  const a = 0.38;
+  const u = Math.floor((x * Math.cos(a) + z * Math.sin(a)) / 70);
+  const w = Math.floor((-x * Math.sin(a) + z * Math.cos(a)) / 45);
+  const h = hash2(u * 1.31 + 7, w * 0.77 - 3);
+  const list = cov === COVER.farmland ? FIELDS : MEADOWS;
+  return parcelOut.copy(list[Math.floor(h * list.length) % list.length]);
 }
 
 /** Strade, ponti, gallerie, guardrail della mattonella. */
@@ -438,11 +464,19 @@ const ROOFS = [
   ['#5a5d63'],
 ];
 
-export function* buildingsJob(field: WorldField, list: Building[], spec: TileSpec): Generator<void, THREE.BufferGeometry | null, void> {
-  const pos: number[] = [];
-  const col: number[] = [];
+export interface BuildingMeshes {
+  /** pareti, timpani e tetti piani: trama delle facciate */
+  walls: THREE.BufferGeometry | null;
+  /** falde in coppi */
+  roofs: THREE.BufferGeometry | null;
+}
+
+export function* buildingsJob(field: WorldField, list: Building[], spec: TileSpec): Generator<void, BuildingMeshes, void> {
+  const walls = new Tris();
+  const roofs = new Tris();
   const wall = new THREE.Color();
   const roof = new THREE.Color();
+  const base = new THREE.Color();
   const x1 = spec.x0 + spec.size;
   const z1 = spec.z0 + spec.size;
   let count = 0;
@@ -459,86 +493,51 @@ export function* buildingsJob(field: WorldField, list: Building[], spec: TileSpe
     cz /= m;
     if (cx < spec.x0 || cx >= x1 || cz < spec.z0 || cz >= z1) continue;
     // base: il punto più basso del terreno sotto l'impronta, così nessun angolo galleggia
-    let base = Infinity;
-    for (let i = 0; i < r.length; i += 2) base = Math.min(base, field.height(r[i], r[i + 1], spec.spacing));
-    const ground = base - 0.6;
-    const bottom = ground + b.minH;
-    let top = base + b.h;
+    let low = Infinity;
+    for (let i = 0; i < r.length; i += 2) low = Math.min(low, field.height(r[i], r[i + 1], spec.spacing));
+    const ground = low - 0.6;
     const seed = hash2(Math.floor(cx), Math.floor(cz));
+    const stone = b.kind === BUILDING_KIND.church || b.kind === BUILDING_KIND.tower || b.kind === BUILDING_KIND.castle;
     if (b.kind === BUILDING_KIND.industrial) wall.set(WALL_INDUSTRIAL[Math.floor(seed * 3) % 3]);
-    else if (b.kind === BUILDING_KIND.church || b.kind === BUILDING_KIND.tower || b.kind === BUILDING_KIND.castle) wall.set(WALL_STONE).offsetHSL(0, 0, (seed - 0.5) * 0.08);
+    else if (stone) wall.set(WALL_STONE).offsetHSL(0, 0, (seed - 0.5) * 0.08);
     else wall.set(WALLS[Math.floor(seed * WALLS.length) % WALLS.length]);
     const roofSet = ROOFS[b.roof] ?? ROOFS[0];
-    roof.set(roofSet[Math.floor(seed * 7) % roofSet.length]);
-    // pareti: facce piatte (normali per faccia), il piano terra un filo più scuro
-    for (let i = 0; i < m; i++) {
-      const ax = r[i * 2];
-      const az = r[i * 2 + 1];
-      const bx = r[((i + 1) % m) * 2];
-      const bz = r[((i + 1) % m) * 2 + 1];
-      const mid = Math.min(top, bottom + 3.2);
-      quad(pos, col, ax, az, bx, bz, bottom, mid, tmpC.copy(wall).multiplyScalar(0.86));
-      quad(pos, col, ax, az, bx, bz, mid, top, wall);
-    }
-    // tetto: piatto, triangolato; le torri hanno la cuspide
-    const contour = [];
-    for (let i = 0; i < m; i++) contour.push(new THREE.Vector2(r[i * 2], r[i * 2 + 1]));
-    let tris: number[][];
-    try {
-      tris = THREE.ShapeUtils.triangulateShape(contour, []);
-    } catch {
-      tris = [];
-    }
-    for (const [a, bIdx, c] of tris) {
-      const A = contour[a];
-      const B = contour[bIdx];
-      const C = contour[c];
-      // la faccia deve guardare in su: (B−A)×(C−A) con y positiva
-      const up = (B.y - A.y) * (C.x - A.x) - (B.x - A.x) * (C.y - A.y) > 0;
-      if (up) pushTri(pos, col, A.x, top, A.y, B.x, top, B.y, C.x, top, C.y, roof);
-      else pushTri(pos, col, A.x, top, A.y, C.x, top, C.y, B.x, top, B.y, roof);
-    }
-    if (b.kind === BUILDING_KIND.tower && m <= 8) {
-      const apex = top + Math.min(9, Math.sqrt(Math.abs(polygonArea(r))) * 0.9);
+    roof.set(roofSet[Math.floor(seed * 7) % roofSet.length]).offsetHSL(0, 0, (hash2(cz, cx) - 0.5) * 0.06);
+    base.copy(wall).multiplyScalar(0.84);
+    // i tetti in coppi sono quasi tutti rossi: il grigio dei dati OSM resta ai tetti piani
+    const pitchedRoof = b.roof === 0 || b.kind === BUILDING_KIND.house ? roof : tmpC.set(ROOFS[0][Math.floor(seed * 4) % 4]);
+    const { top, shape } = addBuilding(walls, roofs, b, ground, { wall, base, roof, tiles: pitchedRoof, blind: stone || b.kind === BUILDING_KIND.industrial });
+    if (b.kind === BUILDING_KIND.tower && m <= 8 && shape === 'flat') {
+      // cuspide dei campanili
+      const apex = top + Math.min(9, Math.sqrt(Math.abs(ringArea(r))) * 0.9);
       for (let i = 0; i < m; i++) {
         const ax = r[i * 2];
         const az = r[i * 2 + 1];
         const bx = r[((i + 1) % m) * 2];
         const bz = r[((i + 1) % m) * 2 + 1];
-        pushTri(pos, col, ax, top, az, bx, top, bz, cx, apex, cz, roof);
+        walls.facing(
+          { x: ax, y: top, z: az, u: BLANK_UV, v: BLANK_UV },
+          { x: bx, y: top, z: bz, u: BLANK_UV, v: BLANK_UV },
+          { x: cx, y: apex, z: cz, u: BLANK_UV, v: BLANK_UV },
+          [(ax + bx) / 2 - cx, 0.3, (az + bz) / 2 - cz],
+          roof,
+        );
       }
-      top = apex;
     }
-    if (++count % 200 === 0) yield;
+    if (++count % 150 === 0) yield;
   }
-  if (pos.length === 0) return null;
+  return { walls: trisGeometry(walls), roofs: trisGeometry(roofs) };
+}
+
+function trisGeometry(t: Tris): THREE.BufferGeometry | null {
+  if (t.count === 0) return null;
   const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setAttribute('position', new THREE.Float32BufferAttribute(t.pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(t.uv, 2));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(t.col, 3));
   g.computeVertexNormals();
   g.computeBoundingSphere();
   return g;
-}
-
-function polygonArea(r: Float32Array): number {
-  let s = 0;
-  const m = r.length / 2;
-  for (let i = 0; i < m; i++) {
-    const j = (i + 1) % m;
-    s += r[i * 2] * r[j * 2 + 1] - r[j * 2] * r[i * 2 + 1];
-  }
-  return s / 2;
-}
-
-function pushTri(pos: number[], col: number[], ax: number, ay: number, az: number, bx: number, by: number, bz: number, cx: number, cy: number, cz: number, c: THREE.Color): void {
-  pos.push(ax, ay, az, bx, by, bz, cx, cy, cz);
-  for (let i = 0; i < 3; i++) col.push(c.r, c.g, c.b);
-}
-
-/** Una parete dal segmento a→b: con l'anello antiorario (visto da sopra, z a sud) guarda fuori. */
-function quad(pos: number[], col: number[], ax: number, az: number, bx: number, bz: number, y0: number, y1: number, c: THREE.Color): void {
-  pushTri(pos, col, ax, y0, az, bx, y0, bz, ax, y1, az, c);
-  pushTri(pos, col, bx, y0, bz, bx, y1, bz, ax, y1, az, c);
 }
 
 // ---------- alberi ----------
@@ -654,4 +653,92 @@ export function railsGeometry(field: WorldField, features: WorldFeatures, spec: 
     flush();
   }
   return m.build();
+}
+
+// ---------- arredo: lampioni e cartelli d'inizio paese ----------
+
+export interface Furniture {
+  /** lampioni: posizione al piede, rotazione del braccio verso la strada */
+  lamps: { x: number; y: number; z: number; h: number }[];
+  /** cartelli bianchi col nome del paese; h è la direzione di chi entra */
+  towns: { x: number; y: number; z: number; h: number; name: string }[];
+}
+
+const URBAN = new Set<number>([COVER.residential, COVER.industrial]);
+
+/**
+ * Lampioni ogni 30 m sulle strade dei paesi (un lato, alternato), e il cartello col nome dove una
+ * strada entra nell'abitato. Il nome è quello del paese più vicino nei dati OSM, entro 1,5 km.
+ */
+export function* furnitureJob(graph: WorldGraph, field: WorldField, places: Place[], spec: TileSpec): Generator<void, Furniture, void> {
+  const lamps: Furniture['lamps'] = [];
+  const towns: Furniture['towns'] = [];
+  const x0 = spec.x0;
+  const z0 = spec.z0;
+  const x1 = spec.x0 + spec.size;
+  const z1 = spec.z0 + spec.size;
+  const ids = new Set<number>();
+  for (let x = x0 - 50; x <= x1 + 50; x += 90) for (let z = z0 - 50; z <= z1 + 50; z += 90) collectEdges(graph, x, z, ids);
+  const named = places.filter((p) => p.kind === 'city' || p.kind === 'town' || p.kind === 'village' || p.kind === 'hamlet');
+  const nearestTown = (x: number, z: number): string | null => {
+    let best: Place | null = null;
+    let bd = 1500;
+    for (const p of named) {
+      const d = Math.hypot(p.x - x, p.z - z);
+      if (d < bd) {
+        bd = d;
+        best = p;
+      }
+    }
+    return best?.name ?? null;
+  };
+  const inside = (x: number, z: number) => x >= x0 && x < x1 && z >= z0 && z < z1;
+  let count = 0;
+  for (const id of ids) {
+    const e = graph.edges[id];
+    if (e.cls > CLS.residential || e.flags & FLAG.tunnel) continue;
+    const step = 10;
+    const n = Math.max(1, Math.floor(e.length / step));
+    const urban: boolean[] = [];
+    for (let k = 0; k <= n; k++) {
+      const p = graph.pose(e.id, (e.length * k) / n, 1);
+      urban.push(URBAN.has(field.terrain.cover(p.x, p.z)));
+    }
+    // lampioni nei tratti urbani, lontano dalle estremità (gli incroci li hanno già)
+    if (!(e.flags & FLAG.bridge)) {
+      for (let s = 15; s < e.length - 10; s += 30) {
+        const k = Math.round((s / e.length) * n);
+        if (!urban[k]) continue;
+        const p = graph.pose(e.id, s, 1);
+        if (!inside(p.x, p.z)) continue;
+        const side = Math.floor(s / 30) % 2 === 0 ? 1 : -1;
+        const off = e.hw + 0.9;
+        // h: rotazione che porta il braccio (+z del modello) verso il centro della strada
+        lamps.push({ x: p.x + Math.cos(p.heading) * off * side, y: p.y, z: p.z - Math.sin(p.heading) * off * side, h: Math.atan2(-Math.cos(p.heading) * side, Math.sin(p.heading) * side) });
+      }
+    }
+    // ingresso nell'abitato: almeno 60 m di campagna e poi almeno 40 m di case, in un verso o nell'altro
+    if (e.cls <= CLS.unclassified) {
+      for (let k = 6; k <= n - 4; k++) {
+        const before = urban.slice(k - 6, k).every((u) => !u);
+        const after = urban.slice(k, k + 4).every((u) => u);
+        const beforeRev = urban.slice(k, k + 6).every((u) => !u);
+        const afterRev = urban.slice(Math.max(0, k - 4), k).every((u) => u);
+        const enter = before && after ? 1 : beforeRev && afterRev && k + 6 <= n + 1 ? -1 : 0;
+        if (!enter) continue;
+        if (enter > 0 && !graph.allowed(e.id, 1)) continue;
+        if (enter < 0 && !graph.allowed(e.id, -1)) continue;
+        const p = graph.pose(e.id, (e.length * k) / n, enter as 1 | -1);
+        if (!inside(p.x, p.z)) continue;
+        const name = nearestTown(p.x, p.z);
+        if (!name) continue;
+        // a destra di chi entra
+        const off = e.hw + 1.4;
+        towns.push({ x: p.x - Math.cos(p.heading) * off, y: p.y, z: p.z + Math.sin(p.heading) * off, h: p.heading, name });
+        k += 6;
+      }
+    }
+    if (++count % 40 === 0) yield;
+  }
+  return { lamps, towns };
 }

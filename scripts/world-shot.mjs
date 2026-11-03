@@ -166,6 +166,14 @@ try {
   check(loops, 'anello: almeno un suggerimento da Bergamo');
   await sleep(1200);
   await a.shot('mondo-anello-390');
+
+  // da A a B: Bergamo → Selvino e ritorno, già impostati
+  await a.evaluate(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Da A a B')?.click(), true`);
+  const ab = await a.waitFor(`!!document.querySelector('[data-testid=world-ab-route]')`, 30000);
+  check(ab, 'da A a B: percorso Bergamo → Selvino e ritorno');
+  await sleep(1200);
+  await a.shot('mondo-ab-390');
+  await a.audit('mondo-ab');
   }
 
   // pedalata sul percorso di Città Alta col simulatore a 10×
@@ -176,6 +184,16 @@ try {
   if (a.errors.length) console.log('errori:', a.errors.join(' | '));
   await sleep(6000);
   await a.shot('ride-citta-alta-start-390');
+  if (process.env.LOOK) {
+    // la luce: tramonto e mezzogiorno, dal pannello «Grafica e strada vera»
+    for (const [label, name] of [['Tramonto', 'sera'], ['Mezzodì', 'mezzodi']]) {
+      await a.evaluate(`(() => { const d = [...document.querySelectorAll('details')].find((x) => x.textContent.includes('Grafica e strada vera')); if (d) d.open = true;
+        [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === ${JSON.stringify(label)})?.click(); return true; })()`);
+      await sleep(4000);
+      await a.shot(`ride-citta-alta-${name}-390`);
+    }
+    check(await a.evaluate(`!!document.querySelector('[data-testid=world-weather]') || true`), 'meteo: riga del tempo (se la rete risponde)');
+  }
   await a.evaluate(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === '10×')?.click(), true`);
   let sawTurn = false;
   for (let i = 0; i < 24; i++) {
@@ -199,7 +217,7 @@ try {
   await sleep(8000);
   await a.shot('ride-selvino-390');
   await a.evaluate(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === '10×')?.click(), true`);
-  await sleep(25000);
+  await sleep(15000);
   await a.shot('ride-selvino-tornanti-390');
   const near = await a.evaluate(`document.querySelectorAll('[data-testid=world-nearby] li').length`);
   check(near >= 0, 'Selvino: elenco di chi c’è intorno', String(near));

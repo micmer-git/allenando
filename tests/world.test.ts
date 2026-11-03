@@ -3,13 +3,15 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { WorldGraph, type Leg, type WorldGraphFile } from '../src/open/graph';
 import { suggestLoops } from '../src/open/loops';
-import type { RideDef } from '../src/open/world';
+import { planAB } from '../src/open/ab';
+import { decodeFeatures, type RideDef } from '../src/open/world';
 import { WORLD_EDGES, WORLD_ID, WORLD_RIDES } from '../src/multiplayer/world-rides';
 
 // Il mondo di Bergamo come lo scarica la pagina: grafo e percorsi generati da build-world.
 const dir = join(__dirname, '..', 'public', 'world', 'bergamo');
 const file = JSON.parse(readFileSync(join(dir, 'graph.json'), 'utf8')) as WorldGraphFile;
 const rides = JSON.parse(readFileSync(join(dir, 'rides.json'), 'utf8')) as RideDef[];
+const features = decodeFeatures(JSON.parse(readFileSync(join(dir, 'features.json'), 'utf8')) as Parameters<typeof decodeFeatures>[0]);
 const graph = new WorldGraph(file);
 
 const legsOf = (r: RideDef): Leg[] => r.legs.map(([edge, dir]) => ({ edge, dir }));
@@ -70,5 +72,24 @@ describe('mondo di Bergamo', () => {
     expect(graph.endNode(last.edge, last.dir)).toBe(start);
     expect(l.lengthM).toBeGreaterThan(12000);
     expect(l.lengthM).toBeLessThan(30000);
+  });
+
+  it('da A a B: da Bergamo a Selvino si sale, e il ritorno passa per un’altra strada', () => {
+    const places = features.places;
+    const pl = (n: string) => places.find((p) => p.name === n)!;
+    expect(pl('Bergamo')).toBeTruthy();
+    expect(pl('Selvino')).toBeTruthy();
+    const one = planAB(graph, places, pl('Bergamo'), pl('Selvino'));
+    expect(one).not.toBeNull();
+    expect(one!.lengthM).toBeGreaterThan(14000);
+    expect(one!.lengthM).toBeLessThan(35000);
+    expect(one!.gainM).toBeGreaterThan(450);
+    const both = planAB(graph, places, pl('Bergamo'), pl('Selvino'), { back: true });
+    expect(both).not.toBeNull();
+    const legs = both!.legs;
+    for (let i = 1; i < legs.length; i++) expect(graph.startNode(legs[i].edge, legs[i].dir)).toBe(graph.endNode(legs[i - 1].edge, legs[i - 1].dir));
+    expect(graph.endNode(legs[legs.length - 1].edge, legs[legs.length - 1].dir)).toBe(graph.startNode(legs[0].edge, legs[0].dir));
+    expect(both!.overlap).toBeLessThan(0.7);
+    expect(both!.via.length).toBeGreaterThan(1);
   });
 });

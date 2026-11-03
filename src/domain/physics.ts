@@ -5,7 +5,9 @@
  *  F = Crr·m·g·cosθ + ½·CdA·ρ·v² + m·g·sinθ
  *
  * θ = arctan(pendenza), con pendenza = dislivello / distanza orizzontale.
- * Nessun drafting. L'inerzia rotazionale entra solo nell'accelerazione.
+ * Il vento (facoltativo) entra nella velocità dell'aria: ½·CdA·ρ·(v + w)·|v + w|, con w positivo
+ * se contro. La scia la mette chi chiama, riducendo il CdA. L'inerzia rotazionale entra solo
+ * nell'accelerazione.
  */
 
 export interface PhysicsParams {
@@ -21,6 +23,13 @@ export interface PhysicsParams {
   eta: number;
   /** Fattore di massa rotante, applicato solo all'accelerazione. */
   rotatingFactor: number;
+  /** Vento contro (positivo) o a favore (negativo), m/s. */
+  wind?: number;
+}
+
+function aeroForce(speedMs: number, p: PhysicsParams): number {
+  const air = speedMs + (p.wind ?? 0);
+  return 0.5 * p.cda * p.rho * air * Math.abs(air);
 }
 
 export const STANDARD_AIR: Pick<PhysicsParams, 'rho' | 'g' | 'eta' | 'rotatingFactor'> = {
@@ -33,7 +42,7 @@ export const STANDARD_AIR: Pick<PhysicsParams, 'rho' | 'g' | 'eta' | 'rotatingFa
 export function resistiveForce(speedMs: number, grade: number, p: PhysicsParams): number {
   const theta = Math.atan(grade);
   const roll = p.crr * p.massKg * p.g * Math.cos(theta);
-  const aero = 0.5 * p.cda * p.rho * speedMs * speedMs;
+  const aero = aeroForce(speedMs, p);
   const grav = p.massKg * p.g * Math.sin(theta);
   return roll + aero + grav;
 }
@@ -80,7 +89,7 @@ export function stepSpeed(
   const v = Math.max(0, speedMs);
   const theta = Math.atan(grade);
   const roll = p.crr * p.massKg * p.g * Math.cos(theta);
-  const aero = 0.5 * p.cda * p.rho * v * v;
+  const aero = aeroForce(v, p);
   const grav = p.massKg * p.g * Math.sin(theta);
   const vForce = Math.max(v, 0.35);
   const eta = p.eta > 0 ? p.eta : 1;

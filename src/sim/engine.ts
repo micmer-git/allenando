@@ -54,6 +54,8 @@ export class RideEngine {
    */
   aero = 1;
   rolling = 1;
+  /** vento contro (positivo) o a favore, m/s: lo mette il mondo aperto col meteo vero */
+  wind = 0;
   samples: RideSample[] = [];
   readonly startedAt: Date;
   readonly withCamilla: boolean;
@@ -226,6 +228,7 @@ export class RideEngine {
       erg: this.mode === 'erg',
       crr: this.crr * this.rolling,
       cw: this.cw * this.aero,
+      windSpeedMs: this.wind,
     });
     this.power = Math.max(0, this.source.power);
     this.hr = Math.max(0, this.source.hr);
@@ -234,7 +237,8 @@ export class RideEngine {
     const pose = this.track.poseAt(this.distance);
     this.grade = pose.grade;
     this.altitude = pose.altitude;
-    const physics = this.aero === 1 && this.rolling === 1 ? this.physics : { ...this.physics, cda: this.physics.cda * this.aero, crr: this.physics.crr * this.rolling };
+    const physics =
+      this.aero === 1 && this.rolling === 1 && this.wind === 0 ? this.physics : { ...this.physics, cda: this.physics.cda * this.aero, crr: this.physics.crr * this.rolling, wind: this.wind };
     this.speed = stepSpeed(this.power, this.speed, this.grade, dt, physics);
     this.distance += this.speed * dt;
     if (!this.track.closed && this.distance >= this.track.length) {

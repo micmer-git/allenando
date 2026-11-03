@@ -1,18 +1,22 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { TrackPose } from '@/domain/track';
 import type { Quality } from '@/domain/types';
 import type { RideEngine } from '@/sim/engine';
 import { asphaltTexture, groundColor, hash2 } from '@/world/builders';
-import { Rider, Sky, canvasTex } from '@/world/Scene';
+import { Gate, Rider, bannerTexture, canvasTex, kmTexture } from '@/world/Scene';
 import { FLAG, type Dir } from './graph';
 import type { WorldField } from './field';
-import type { WorldPath } from './path';
 import type { NpcCrowd } from './npc';
 import { NPC_JERSEYS } from './npc';
-import { buildingsJob, railsGeometry, roadsJob, terrainJob, treesJob, waterGeometry, type TileMeshes, type TileSpec, type TreeKind } from './tiles';
-import { loadBuildings, type Building, type Terrain, type WorldData } from './world';
+import { buildingsJob, furnitureJob, railsGeometry, roadsJob, terrainJob, treesJob, waterGeometry, type BuildingMeshes, type TileMeshes, type TileSpec, type TreeKind } from './tiles';
+import { facadeTexture, groundDetailTexture, roofTilesTexture } from './textures';
+import { atmosphere, CLEAR, sunFor, sunVector, type Daytime } from './sky';
+import type { WeatherNow } from './weather';
+import { loadBuildings, type Building, type RideDef, type Terrain, type WorldData } from './world';
+import { WorldPath } from './path';
 
 const QUALITY = {
   low: { tile: 500, ring: 2, spacing: 16, trees: 0.9, far: 6000, farStride: 2, npcs: 6, dpr: 1 as number | [number, number] },
@@ -25,7 +29,6 @@ export function npcCount(quality: Quality): number {
 }
 
 const HAZE = '#cfdbe5';
-const SUN: [number, number, number] = [-700, 760, 520];
 
 export interface RemoteWorldRider {
   id: string;
@@ -50,6 +53,11 @@ export interface WorldSceneProps {
   /** posa del giocatore con lo scostamento di corsia: la usano anche HUD e scia */
   playerPose: () => TrackPose;
   onReady: () => void;
+  /** meteo vero (null: sereno) e ora del giorno */
+  weather: WeatherNow | null;
+  daytime: Daytime;
+  /** il percorso scelto, per i cartelli dei km e gli archi */
+  ride: RideDef | null;
 }
 
 export function WorldScene(props: WorldSceneProps) {
@@ -66,9 +74,6 @@ export function WorldScene(props: WorldSceneProps) {
     >
       <color attach="background" args={[HAZE]} />
       <fog attach="fog" args={[HAZE, 350, q.far * 0.92]} />
-      <hemisphereLight args={['#e6f0fb', '#4f5a3c', 0.62]} />
-      <directionalLight position={SUN} intensity={1.85} color="#fff0d6" />
-      <Sky />
       <WorldContent {...props} />
       <ReadyWhenTiles onReady={props.onReady} />
     </Canvas>
@@ -98,12 +103,15 @@ function WorldContent(props: WorldSceneProps) {
   const mats = useMaterials(farRect.current);
   return (
     <group>
+      <Atmosphere weather={props.weather} daytime={props.daytime} data={data} far={q.far} mats={mats} />
+      {props.weather && props.weather.rain >= 0.1 ? <Rain mmh={props.weather.rain} weather={props.weather} /> : null}
       <FarTerrain terrain={terrain} stride={q.farStride} material={mats.far} />
       <NearTiles {...props} mats={mats} rect={farRect.current} />
       <Lakes data={data} />
       <Walls data={data} field={field} />
       <Labels data={data} engine={props.engine} playerPose={props.playerPose} />
       <Landmarks data={data} playerPose={props.playerPose} />
+      {props.ride ? <RideSigns data={data} ride={props.ride} /> : null}
       <PlayerRider {...props} />
       <NpcRiders crowd={props.crowd} />
       {props.remote.map((r) => (
@@ -121,6 +129,9 @@ function useMaterials(rect: { value: THREE.Vector3 }) {
   const mats = useMemo(() => {
     const asphaltTex = asphaltTexture();
     const stoneTex = settTexture();
+    const facadeTex = facadeTexture();
+    const tilesTex = roofTilesTexture();
+    const groundTex = groundDetailTexture();
     const far = new THREE.MeshLambertMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: 3, polygonOffsetUnits: 6 });
     far.onBeforeCompile = (shader) => {
       shader.uniforms.uRect = rect;
@@ -133,7 +144,7 @@ function useMaterials(rect: { value: THREE.Vector3 }) {
     };
     return {
       far,
-      terrain: new THREE.MeshLambertMaterial({ vertexColors: true }),
+      terrain: new THREE.MeshLambertMaterial({ vertexColors: true, map: groundTex }),
       asphalt: new THREE.MeshLambertMaterial({ map: asphaltTex, color: '#c9cbd0', polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
       stone: new THREE.MeshLambertMaterial({ map: stoneTex, color: '#d8cfc2', polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
       cycle: new THREE.MeshLambertMaterial({ map: asphaltTex, color: '#c98f7d', polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
@@ -142,7 +153,8 @@ function useMaterials(rect: { value: THREE.Vector3 }) {
       concrete: new THREE.MeshLambertMaterial({ color: '#b3b1aa', side: THREE.DoubleSide }),
       tunnel: new THREE.MeshLambertMaterial({ color: '#4b4a47', emissive: '#2a2618', side: THREE.DoubleSide }),
       rails: new THREE.MeshLambertMaterial({ color: '#7d756b' }),
-      buildings: new THREE.MeshLambertMaterial({ vertexColors: true }),
+      buildings: new THREE.MeshLambertMaterial({ vertexColors: true, map: facadeTex }),
+      roofs: new THREE.MeshLambertMaterial({ vertexColors: true, map: tilesTex }),
       water: new THREE.MeshLambertMaterial({ color: '#4f8199', emissive: '#0d2430', transparent: true, opacity: 0.92, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }),
       post: new THREE.MeshLambertMaterial({ color: '#8e949b' }),
       trees: {
@@ -153,7 +165,12 @@ function useMaterials(rect: { value: THREE.Vector3 }) {
         rock: new THREE.MeshLambertMaterial({ flatShading: true }),
         trunk: new THREE.MeshLambertMaterial({ color: '#5a4331' }),
       },
-      textures: [asphaltTex, stoneTex],
+      lamp: new THREE.MeshLambertMaterial({ color: '#3b3f45' }),
+      lampHead: new THREE.MeshLambertMaterial({ color: '#d9d6cc', emissive: '#000000' }),
+      textures: [asphaltTex, stoneTex, facadeTex, tilesTex, groundTex],
+      geos: furnitureGeometries(),
+      /** cartelli d'inizio paese, uno per nome */
+      signs: new Map<string, THREE.MeshLambertMaterial>(),
     };
   }, [rect]);
   useEffect(
@@ -161,12 +178,60 @@ function useMaterials(rect: { value: THREE.Vector3 }) {
       for (const [k, v] of Object.entries(mats)) {
         if (k === 'trees') Object.values(v as Record<string, THREE.Material>).forEach((m) => m.dispose());
         else if (k === 'textures') (v as THREE.Texture[]).forEach((t) => t.dispose());
+        else if (k === 'geos') Object.values(v as Record<string, THREE.BufferGeometry>).forEach((g) => g.dispose());
+        else if (k === 'signs')
+          (v as Map<string, THREE.MeshLambertMaterial>).forEach((m) => {
+            m.map?.dispose();
+            m.dispose();
+          });
         else (v as THREE.Material).dispose();
       }
     },
     [mats],
   );
   return mats;
+}
+
+/** Geometrie condivise dell'arredo: non si buttano con le mattonelle (userData.shared). */
+function furnitureGeometries() {
+  const pole = new THREE.CylinderGeometry(0.07, 0.1, 6.6, 6);
+  pole.translate(0, 3.3, 0);
+  const arm = new THREE.BoxGeometry(0.07, 0.07, 1.35);
+  arm.translate(0, 6.5, 0.62);
+  const lamp = mergeGeometries([pole, arm], false)!;
+  pole.dispose();
+  arm.dispose();
+  const lampHead = new THREE.BoxGeometry(0.36, 0.13, 0.55);
+  lampHead.translate(0, 6.42, 1.22);
+  const signPole = new THREE.CylinderGeometry(0.045, 0.045, 2.6, 5);
+  signPole.translate(0, 1.3, 0);
+  const sign = new THREE.PlaneGeometry(2.1, 0.72);
+  sign.translate(0, 2.35, 0.06);
+  const out = { lamp, lampHead, signPole, sign };
+  for (const g of Object.values(out)) g.userData.shared = true;
+  return out;
+}
+
+/** Il cartello d'inizio centro abitato: bianco, bordo nero, il nome in maiuscolo. */
+function townSignTexture(name: string): THREE.CanvasTexture {
+  return canvasTex(512, 176, (g) => {
+    g.fillStyle = '#f7f7f2';
+    g.fillRect(0, 0, 512, 176);
+    g.strokeStyle = '#121212';
+    g.lineWidth = 12;
+    g.strokeRect(14, 14, 484, 148);
+    g.fillStyle = '#121212';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    const label = name.toUpperCase();
+    let size = 72;
+    g.font = `700 ${size}px sans-serif`;
+    while (g.measureText(label).width > 440 && size > 26) {
+      size -= 4;
+      g.font = `700 ${size}px sans-serif`;
+    }
+    g.fillText(label, 256, 90);
+  });
 }
 
 type Mats = ReturnType<typeof useMaterials>;
@@ -194,6 +259,198 @@ function settTexture(): THREE.CanvasTexture {
   t.wrapS = THREE.RepeatWrapping;
   t.wrapT = THREE.RepeatWrapping;
   return t;
+}
+
+// ---------- cielo, luce, nuvole ----------
+
+/**
+ * Il cielo di Bergamo adesso (o all'ora scelta): sole nella posizione vera, colori del cielo e della
+ * luce, foschia che si chiude con le nuvole e la pioggia, strade bagnate. Si ricalcola ogni 30 s.
+ */
+function Atmosphere({ weather, daytime, data, far, mats }: { weather: WeatherNow | null; daytime: Daytime; data: WorldData; far: number; mats: Mats }) {
+  const { scene, gl, camera } = useThree();
+  const hemi = useRef<THREE.HemisphereLight>(null);
+  const sun = useRef<THREE.DirectionalLight>(null);
+  const dome = useRef<THREE.Mesh>(null);
+  const clouds = useRef<THREE.Mesh>(null);
+  const clock = useRef(0);
+  const geo = useMemo(() => {
+    const g = new THREE.SphereGeometry(1000, 40, 24);
+    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 3), 3));
+    return g;
+  }, []);
+  const cloudGeo = useMemo(() => new THREE.SphereGeometry(940, 48, 16, 0, Math.PI * 2, 0, Math.PI * 0.47), []);
+  const cloudTex = useMemo(() => cloudTexture(), []);
+  const cloudMat = useMemo(() => new THREE.MeshBasicMaterial({ map: cloudTex, transparent: true, depthWrite: false, fog: false, side: THREE.BackSide, opacity: 0 }), [cloudTex]);
+  useEffect(
+    () => () => {
+      geo.dispose();
+      cloudGeo.dispose();
+      cloudTex.dispose();
+      cloudMat.dispose();
+    },
+    [geo, cloudGeo, cloudTex, cloudMat],
+  );
+  const apply = () => {
+    const s = sunFor(daytime, new Date(), data.graph.origin.lat, data.graph.origin.lon);
+    const look = weather ?? CLEAR;
+    const a = atmosphere(s, look);
+    const dir = sunVector(s);
+    const pos = geo.attributes.position as THREE.BufferAttribute;
+    const col = geo.attributes.color as THREE.BufferAttribute;
+    const c = new THREE.Color();
+    const v = new THREE.Vector3();
+    for (let i = 0; i < pos.count; i++) {
+      const y = pos.getY(i) / 1000;
+      if (y > 0.08) c.copy(a.mid).lerp(a.zenith, Math.min(1, (y - 0.08) / 0.7));
+      else c.copy(a.horizon).lerp(a.mid, Math.max(0, (y + 0.1) / 0.18));
+      v.set(pos.getX(i), pos.getY(i), pos.getZ(i)).normalize();
+      const k = Math.max(0, v.dot(dir));
+      c.lerp(a.glow, Math.pow(k, 24) * 0.85 + Math.pow(k, 4) * 0.16);
+      col.setXYZ(i, c.r, c.g, c.b);
+    }
+    col.needsUpdate = true;
+    if (scene.background instanceof THREE.Color) scene.background.copy(a.horizon);
+    if (scene.fog instanceof THREE.Fog) {
+      scene.fog.color.copy(a.horizon);
+      scene.fog.near = a.fogNear;
+      scene.fog.far = far * 0.92 * a.fogFar;
+    }
+    if (sun.current) {
+      sun.current.position.copy(dir).multiplyScalar(1000);
+      sun.current.color.copy(a.sunColor);
+      sun.current.intensity = a.sunIntensity;
+    }
+    if (hemi.current) {
+      hemi.current.color.copy(a.hemiSky);
+      hemi.current.groundColor.copy(a.hemiGround);
+      hemi.current.intensity = a.hemiIntensity;
+    }
+    gl.toneMappingExposure = a.exposure;
+    // nuvole: più fitte col cielo coperto, tinte dalla luce del momento
+    cloudMat.opacity = look.cloud < 0.05 ? 0 : Math.min(0.92, 0.15 + look.cloud * 0.85);
+    cloudMat.color.copy(a.horizon).lerp(a.glow, 0.35).multiplyScalar(look.rain > 0.1 ? 0.8 : 1.05);
+    // lampioni accesi quando il sole è basso o il cielo è scuro
+    const dusk = s.elevation < (7 * Math.PI) / 180 || (look.cloud > 0.85 && look.rain > 1);
+    mats.lampHead.emissive.set(dusk ? '#ffcf8a' : '#000000');
+    // asfalto e porfido bagnati: più scuri
+    const wet = look.rain >= 0.1;
+    mats.asphalt.color.set(wet ? '#7f8186' : '#c9cbd0');
+    mats.stone.color.set(wet ? '#a39a8e' : '#d8cfc2');
+  };
+  useEffect(() => {
+    apply();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weather, daytime]);
+  useFrame((_, dt) => {
+    if (dome.current) dome.current.position.copy(camera.position);
+    if (clouds.current) {
+      clouds.current.position.copy(camera.position);
+      // le nuvole viaggiano col vento
+      const w = weather ? Math.max(0.3, weather.windMs) : 0.5;
+      clouds.current.rotation.y += dt * w * 0.0006;
+    }
+    clock.current += dt;
+    if (clock.current > 30) {
+      clock.current = 0;
+      apply();
+    }
+  });
+  return (
+    <>
+      <hemisphereLight ref={hemi} args={['#e6f0fb', '#4f5a3c', 0.62]} />
+      <directionalLight ref={sun} position={[-700, 760, 520]} intensity={1.85} color="#fff0d6" />
+      <mesh ref={dome} geometry={geo} frustumCulled={false} renderOrder={-100}>
+        <meshBasicMaterial vertexColors side={THREE.BackSide} depthWrite={false} fog={false} />
+      </mesh>
+      <mesh ref={clouds} geometry={cloudGeo} material={cloudMat} frustumCulled={false} renderOrder={-99} />
+    </>
+  );
+}
+
+/** Cumuli su una fascia di cielo: bianchi con l'alfa, si ripetono tutto intorno. */
+function cloudTexture(): THREE.CanvasTexture {
+  let seed = 91;
+  const rnd = () => {
+    seed = (seed * 16807) % 2147483647;
+    return seed / 2147483647;
+  };
+  const W = 1024;
+  const H = 256;
+  const t = canvasTex(W, H, (g) => {
+    g.clearRect(0, 0, W, H);
+    for (let i = 0; i < 70; i++) {
+      // radi verso lo zenit (in alto nella trama), fitti sopra l'orizzonte
+      const y = H * (0.25 + 0.7 * Math.sqrt(rnd()));
+      const x = rnd() * W;
+      const rx = 30 + rnd() * 90;
+      const ry = rx * (0.35 + rnd() * 0.25);
+      for (let k = 0; k < 7; k++) {
+        const bx = x + (rnd() - 0.5) * rx * 1.4;
+        const by = y + (rnd() - 0.6) * ry;
+        const r = ry * (0.6 + rnd() * 0.7);
+        for (const dx of [0, -W, W]) {
+          const grd = g.createRadialGradient(bx + dx, by, 0, bx + dx, by, r);
+          grd.addColorStop(0, 'rgba(255,255,255,0.55)');
+          grd.addColorStop(0.6, 'rgba(255,255,255,0.25)');
+          grd.addColorStop(1, 'rgba(255,255,255,0)');
+          g.fillStyle = grd;
+          g.fillRect(bx + dx - r, by - r, r * 2, r * 2);
+        }
+      }
+    }
+  });
+  t.wrapS = THREE.RepeatWrapping;
+  t.repeat.set(2, 1);
+  return t;
+}
+
+/** Pioggia: righe che cadono intorno alla camera, inclinate dal vento. */
+function Rain({ mmh, weather }: { mmh: number; weather: WeatherNow }) {
+  const { camera } = useThree();
+  const n = Math.round(Math.min(2400, 500 + mmh * 450));
+  const geo = useMemo(() => {
+    const g = new THREE.BufferGeometry();
+    const pos = new Float32Array(n * 6);
+    for (let i = 0; i < n; i++) {
+      pos[i * 6] = (Math.random() - 0.5) * 70;
+      pos[i * 6 + 1] = Math.random() * 30;
+      pos[i * 6 + 2] = (Math.random() - 0.5) * 70;
+    }
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    return g;
+  }, [n]);
+  useEffect(() => () => geo.dispose(), [geo]);
+  const ref = useRef<THREE.LineSegments>(null);
+  useFrame((_, dt) => {
+    const pos = geo.attributes.position as THREE.BufferAttribute;
+    const a = pos.array as Float32Array;
+    // il vento porta le gocce da dove soffia verso il lato opposto
+    const wx = -Math.sin(weather.windFrom) * weather.windMs * 0.5;
+    const wz = Math.cos(weather.windFrom) * weather.windMs * 0.5;
+    const step = Math.min(0.05, dt);
+    for (let i = 0; i < n; i++) {
+      const k = i * 6;
+      a[k] += wx * step;
+      a[k + 1] -= 8.5 * step;
+      a[k + 2] += wz * step;
+      if (a[k + 1] < -2) {
+        a[k] = (Math.random() - 0.5) * 70;
+        a[k + 1] = 28;
+        a[k + 2] = (Math.random() - 0.5) * 70;
+      }
+      a[k + 3] = a[k] + wx * 0.05;
+      a[k + 4] = a[k + 1] - 0.55;
+      a[k + 5] = a[k + 2] + wz * 0.05;
+    }
+    pos.needsUpdate = true;
+    if (ref.current) ref.current.position.set(camera.position.x, camera.position.y - 8, camera.position.z);
+  });
+  return (
+    <lineSegments ref={ref} geometry={geo} frustumCulled={false}>
+      <lineBasicMaterial color="#c9d3dc" transparent opacity={0.45} fog={false} />
+    </lineSegments>
+  );
 }
 
 // ---------- terreno lontano ----------
@@ -298,7 +555,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; rect: { value: THREE.V
   function* tileJob(entry: TileEntry, spec: TileSpec): Generator<void, void, void> {
     const terrainGeo = yield* terrainJob(field, spec);
     const roads = yield* roadsJob(data.graph, field, spec);
-    let bGeo: THREE.BufferGeometry | null = null;
+    let bGeo: BuildingMeshes = { walls: null, roofs: null };
     for (;;) {
       const list = buildingsFor(spec);
       if (list) {
@@ -322,7 +579,8 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; rect: { value: THREE.V
     add(roads.verge, mats.verge);
     add(roads.concrete, mats.concrete);
     add(roads.tunnel, mats.tunnel);
-    add(bGeo, mats.buildings);
+    add(bGeo.walls, mats.buildings);
+    add(bGeo.roofs, mats.roofs);
     add(water, mats.water);
     add(rails, mats.rails);
     if (roads.posts.length) {
@@ -337,6 +595,43 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; rect: { value: THREE.V
       });
       inst.computeBoundingSphere();
       g.add(inst);
+    }
+    // arredo: lampioni nei paesi e il cartello col nome all'ingresso (solo vicino, da lontano non si vede)
+    if (spec.ring <= 2) {
+      const furn = yield* furnitureJob(data.graph, field, data.features.places, spec);
+      const d = new THREE.Object3D();
+      if (furn.lamps.length) {
+        const poles = new THREE.InstancedMesh(mats.geos.lamp, mats.lamp, furn.lamps.length);
+        const heads = new THREE.InstancedMesh(mats.geos.lampHead, mats.lampHead, furn.lamps.length);
+        furn.lamps.forEach((l, i) => {
+          d.position.set(l.x, l.y - 0.2, l.z);
+          d.rotation.set(0, l.h, 0);
+          d.updateMatrix();
+          poles.setMatrixAt(i, d.matrix);
+          heads.setMatrixAt(i, d.matrix);
+        });
+        poles.computeBoundingSphere();
+        heads.computeBoundingSphere();
+        g.add(poles, heads);
+      }
+      for (const t of furn.towns) {
+        let mat = mats.signs.get(t.name);
+        if (!mat) {
+          mat = new THREE.MeshLambertMaterial({ map: townSignTexture(t.name) });
+          mats.signs.set(t.name, mat);
+        }
+        const sign = new THREE.Group();
+        sign.position.set(t.x, t.y - 0.1, t.z);
+        // la faccia (+z del piano) guarda chi arriva: verso −avanti
+        sign.rotation.y = t.h + Math.PI;
+        sign.add(new THREE.Mesh(mats.geos.sign, mat));
+        for (const dx of [-0.8, 0.8]) {
+          const p = new THREE.Mesh(mats.geos.signPole, mats.lamp);
+          p.position.x = dx;
+          sign.add(p);
+        }
+        g.add(sign);
+      }
     }
     entry.group = g;
     entry.trees = trees;
@@ -442,7 +737,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; rect: { value: THREE.V
 function disposeGroup(g: THREE.Group | null): void {
   if (!g) return;
   g.traverse((o) => {
-    if (o instanceof THREE.Mesh) o.geometry.dispose();
+    if (o instanceof THREE.Mesh && !o.geometry.userData.shared) o.geometry.dispose();
   });
 }
 
@@ -744,6 +1039,72 @@ function Landmarks({ data, playerPose }: { data: WorldData; playerPose: () => Tr
     }
   });
   return <group ref={group} />;
+}
+
+// ---------- cartelli del percorso ----------
+
+/**
+ * Sul percorso scelto: l'arco di partenza e quello d'arrivo del tratto cronometrato e, se è una salita,
+ * il cartello a ogni chilometro con i km che mancano, la quota e la pendenza del km dopo.
+ */
+function RideSigns({ data, ride }: { data: WorldData; ride: RideDef }) {
+  const signs = useMemo(() => {
+    const g = data.graph;
+    const [first, ...rest] = ride.legs;
+    const e0 = g.edges[first[0]];
+    const path = new WorldPath(g, { edge: first[0], dir: first[1], s: first[1] > 0 ? 0 : e0.length });
+    for (const [edge, dir] of rest) path.append(edge, dir);
+    const [from, to] = ride.timed;
+    const a = path.poseAt(from);
+    const b = path.poseAt(to);
+    const climb = b.altitude - a.altitude > 80;
+    const km: { pose: TrackPose; tex: THREE.CanvasTexture; hw: number }[] = [];
+    if (climb) {
+      for (let d = from + 1000; d < to - 300; d += 1000) {
+        const p = path.poseAt(d);
+        const q = path.poseAt(Math.min(to, d + 1000));
+        const grade = (q.altitude - p.altitude) / Math.max(1, Math.min(to, d + 1000) - d);
+        km.push({ pose: p, tex: kmTexture(Math.round((to - d) / 1000), grade, Math.round(p.altitude)), hw: g.edges[path.edgeAt(d).edge].hw });
+      }
+    }
+    const startTex = bannerTexture(climb ? 'INIZIO SALITA' : 'PARTENZA', ride.name);
+    const finishTex = bannerTexture('ARRIVO', ride.name);
+    return {
+      km,
+      start: { pose: path.poseAt(Math.min(path.length, from + 4)), tex: startTex, hw: g.edges[path.edgeAt(from + 4).edge].hw },
+      finish: { pose: path.poseAt(Math.max(0, to - 2)), tex: finishTex, hw: g.edges[path.edgeAt(Math.max(0, to - 2)).edge].hw },
+    };
+  }, [data, ride]);
+  useEffect(
+    () => () => {
+      signs.km.forEach((k) => k.tex.dispose());
+      signs.start.tex.dispose();
+      signs.finish.tex.dispose();
+    },
+    [signs],
+  );
+  return (
+    <group>
+      <Gate pose={signs.start.pose} texture={signs.start.tex} hw={signs.start.hw} />
+      <Gate pose={signs.finish.pose} texture={signs.finish.tex} hw={signs.finish.hw} />
+      {signs.km.map((k, i) => {
+        // a destra di chi sale
+        const off = k.hw + 1.3;
+        return (
+          <group key={i} position={[k.pose.x - Math.cos(k.pose.heading) * off, k.pose.y, k.pose.z + Math.sin(k.pose.heading) * off]} rotation={[0, k.pose.heading + Math.PI, 0]}>
+            <mesh position={[0, 0.7, 0]}>
+              <boxGeometry args={[0.07, 1.4, 0.07]} />
+              <meshLambertMaterial color="#666b72" />
+            </mesh>
+            <mesh position={[0, 1.65, 0]}>
+              <planeGeometry args={[1.2, 0.6]} />
+              <meshBasicMaterial map={k.tex} side={THREE.DoubleSide} />
+            </mesh>
+          </group>
+        );
+      })}
+    </group>
+  );
 }
 
 export function kindLabel(kind: string): string {

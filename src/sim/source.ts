@@ -12,6 +12,8 @@ export interface SourceUpdate {
   erg: boolean;
   crr: number;
   cw: number;
+  /** vento contro (positivo), m/s: va al rullo insieme alla pendenza */
+  windSpeedMs?: number;
 }
 
 export interface TrainerServices {

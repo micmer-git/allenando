@@ -12,6 +12,7 @@ import { EMPTY_PROGRESS, fetchRideBoard, fetchXpBoard, levelOf, loadProgress, ty
 import { Terrain, loadWorld, type RideDef, type WorldData } from '@/open/world';
 import { kindLabel } from '@/open/WorldScene';
 import { savePlan } from '@/open/plan';
+import { planAB, type AbRoute } from '@/open/ab';
 
 const AREAS: { id: RideDef['area']; label: string }[] = [
   { id: 'citta', label: 'Bergamo città' },
@@ -31,7 +32,7 @@ export function WorldPage() {
   const [far, setFar] = useState<Float32Array | null>(null);
   const [progress, setProgress] = useState<WorldProgress>(EMPTY_PROGRESS);
   const [online, setOnline] = useState<number | null>(null);
-  const [tab, setTab] = useState<'percorsi' | 'libero' | 'anello' | 'classifiche'>('percorsi');
+  const [tab, setTab] = useState<'percorsi' | 'libero' | 'anello' | 'ab' | 'classifiche'>('percorsi');
   const [picked, setPicked] = useState<string | null>(null);
 
   useEffect(() => {
@@ -83,6 +84,7 @@ export function WorldPage() {
             { value: 'percorsi', label: 'Percorsi' },
             { value: 'libero', label: 'Libero' },
             { value: 'anello', label: 'Anello' },
+            { value: 'ab', label: 'Da A a B' },
             { value: 'classifiche', label: 'Classifiche' },
           ]}
         />
@@ -90,6 +92,7 @@ export function WorldPage() {
       {tab === 'percorsi' ? <RidesTab data={data} far={far} progress={progress} picked={picked} setPicked={setPicked} /> : null}
       {tab === 'libero' ? <FreeTab data={data} far={far} /> : null}
       {tab === 'anello' ? <LoopTab data={data} far={far} /> : null}
+      {tab === 'ab' ? <AbTab data={data} far={far} /> : null}
       {tab === 'classifiche' ? <BoardsTab data={data} /> : null}
       <p className="mt-8 text-xs leading-relaxed text-muted">
         Strade, edifici, fiumi, cime e paesi: © OpenStreetMap contributors (ODbL), dati del {data.graph.builtAt}. Quote: EU-DEM © Copernicus, livellate lungo la strada. I ciclisti
@@ -441,6 +444,120 @@ function LoopTab({ data, far }: { data: WorldData; far: Float32Array | null }) {
               Pedala questo anello
             </Button>
           ) : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+type AbPoint = { x: number; z: number; label: string };
+
+function AbTab({ data, far }: { data: WorldData; far: Float32Array | null }) {
+  const navigate = useNavigate();
+  const starts = useMemo(() => STARTS.map((n) => ({ name: n, p: startPoint(data, n) })).filter((s) => s.p), [data]);
+  const fromName = (n: string): AbPoint | null => {
+    const p = startPoint(data, n);
+    return p ? { x: p.x, z: p.z, label: n } : null;
+  };
+  const [a, setA] = useState<AbPoint | null>(() => fromName('Bergamo'));
+  const [b, setB] = useState<AbPoint | null>(() => fromName('Selvino'));
+  const [picking, setPicking] = useState<'a' | 'b'>('b');
+  const [back, setBack] = useState(true);
+  const [cycle, setCycle] = useState(false);
+  const [route, setRoute] = useState<AbRoute | null | 'none'>(null);
+  useEffect(() => {
+    if (!a || !b) {
+      setRoute(null);
+      return;
+    }
+    // il calcolo su 28 mila archi prende qualche decimo: si lascia prima disegnare
+    const id = window.setTimeout(() => setRoute(planAB(data.graph, data.features.places, a, b, { back, prefs: { preferCycleways: cycle } }) ?? 'none'), 30);
+    return () => window.clearTimeout(id);
+  }, [data, a, b, back, cycle]);
+  const real = route && route !== 'none' ? route : null;
+  const overlays = useMemo<MapOverlay[]>(() => (real ? [{ legs: real.legs, color: '#c8f031', width: 5 }] : []), [real]);
+  const focus = useMemo(() => (real ? legsBounds(data, real.legs) : null), [data, real]);
+  const markers = useMemo<MapMarker[]>(
+    () => [...(a ? [{ x: a.x, z: a.z, color: '#5fe0a8', label: `A · ${a.label}`, ring: true }] : []), ...(b ? [{ x: b.x, z: b.z, color: '#ff6464', label: `B · ${b.label}`, ring: true }] : [])],
+    [a, b],
+  );
+  const select = (value: string, set: (p: AbPoint | null) => void) => set(fromName(value));
+  return (
+    <section className="mt-4">
+      <p className="text-[15px] leading-relaxed">Scegli da dove parti e dove vuoi arrivare: un paese qui sotto o un punto sulla carta. Ti porto per la strada più adatta alla bici.</p>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        {(['a', 'b'] as const).map((k) => {
+          const cur = k === 'a' ? a : b;
+          return (
+            <label key={k} className="block text-sm font-semibold">
+              {k === 'a' ? 'Partenza (A)' : 'Arrivo (B)'}
+              <select
+                className="mt-1 h-12 w-full rounded-2xl border border-line bg-elev px-3 text-[15px]"
+                value={starts.some((s) => s.name === cur?.label) ? cur?.label : ''}
+                onChange={(e) => select(e.target.value, k === 'a' ? setA : setB)}
+                data-testid={`world-ab-${k}`}
+              >
+                <option value="" disabled>
+                  {cur ? cur.label : 'scegli'}
+                </option>
+                {starts.map((s) => (
+                  <option key={s.name}>{s.name}</option>
+                ))}
+              </select>
+            </label>
+          );
+        })}
+      </div>
+      <div className="mt-3">
+        <Segmented<'a' | 'b'>
+          label="Toccando la carta scegli"
+          value={picking}
+          onChange={setPicking}
+          options={[
+            { value: 'a', label: 'la partenza' },
+            { value: 'b', label: 'l’arrivo' },
+          ]}
+        />
+      </div>
+      <div className="mt-3">
+        <WorldMap
+          data={data}
+          far={far}
+          height={320}
+          overlays={overlays}
+          focus={focus}
+          markers={markers}
+          onPick={(x, z) => {
+            const hit = data.graph.nearest(x, z, 600, (e) => e.cls !== CLS.trunk);
+            if (!hit) return;
+            const p = data.graph.pose(hit.edge, hit.s);
+            const e = data.graph.edges[hit.edge];
+            const pt = { x: p.x, z: p.z, label: e.name || e.ref || 'punto sulla carta' };
+            if (picking === 'a') {
+              setA(pt);
+              setPicking('b');
+            } else setB(pt);
+          }}
+        />
+      </div>
+      <label className="mt-3 flex min-h-11 items-center justify-between gap-3 text-sm">
+        <span className="font-semibold">E ritorno, per un’altra strada</span>
+        <input type="checkbox" className="h-6 w-6 accent-[var(--accent)]" checked={back} onChange={(e) => setBack(e.target.checked)} data-testid="world-ab-back" />
+      </label>
+      <label className="flex min-h-11 items-center justify-between gap-3 text-sm">
+        <span className="font-semibold">Preferisci le ciclabili</span>
+        <input type="checkbox" className="h-6 w-6 accent-[var(--accent)]" checked={cycle} onChange={(e) => setCycle(e.target.checked)} />
+      </label>
+      {route === 'none' ? <p className="mt-2 text-sm text-warn">Fra questi due punti non trovo una strada pedalabile: prova un altro punto.</p> : null}
+      {real ? (
+        <div className="mt-2 rounded-2xl bg-elev px-3.5 py-3" data-testid="world-ab-route">
+          <p className="font-semibold">{real.via.slice(0, 5).join(' · ') || `${a?.label} → ${b?.label}`}</p>
+          <p className="num mt-0.5 text-sm text-muted">
+            {formatKm(real.lengthM)} km · D+ {formatNumber(real.gainM, 0)} m{back ? ` · ${Math.round(real.overlap * 100)}% di ritorno sulla stessa strada` : ''}
+          </p>
+          <Button className="mt-3 w-full" onClick={() => navigate(`/ride?world=bergamo&plan=${savePlan({ legs: real.legs, name: `${a?.label} → ${b?.label}${back ? ' e ritorno' : ''}` })}`)} data-testid="world-ab-ride">
+            Pedala da A a B
+          </Button>
         </div>
       ) : null}
     </section>

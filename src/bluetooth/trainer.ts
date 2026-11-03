@@ -58,6 +58,7 @@ export class BluetoothTrainer implements TelemetrySource {
   private cadenceAt = 0;
   private hrAt = 0;
   private lastGrade = Number.NaN;
+  private lastWind = 0;
   private lastPowerCmd = Number.NaN;
   private lastCmdAt = 0;
   private cpsCrank: CrankPoint | undefined;
@@ -123,11 +124,14 @@ export class BluetoothTrainer implements TelemetrySource {
       return;
     }
     if (!input.erg && this.simulation !== 'unsupported' && this.control === 'granted') {
-      if (!(Math.abs(input.grade - this.lastGrade) < 0.0015) || now - this.lastCmdAt > 1000) {
+      const wind = input.windSpeedMs ?? 0;
+      if (!(Math.abs(input.grade - this.lastGrade) < 0.0015) || Math.abs(wind - this.lastWind) > 0.4 || now - this.lastCmdAt > 1000) {
         this.lastGrade = input.grade;
+        this.lastWind = wind;
         this.lastCmdAt = now;
         this.enqueue(
           encodeIndoorBikeSimulation({
+            windSpeedMs: wind,
             grade: input.grade,
             crr: input.crr,
             cw: input.cw,

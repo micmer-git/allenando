@@ -5,6 +5,7 @@ import { CLS, FLAG, type Dir, type Leg, type TurnOption, type WorldGraph } from 
 import { WorldPath } from './path';
 import { draftFactor, NpcCrowd } from './npc';
 import type { Landmark, Place, RideDef, WorldData } from './world';
+import { headwind, type WeatherNow } from './weather';
 
 /**
  * Una pedalata nel mondo aperto: tiene il percorso vivo (WorldPath) davanti alle ruote,
@@ -57,6 +58,9 @@ export class WorldSession {
   private lane = -1.6;
   private towardCache = new Map<string, string>();
   client: WorldClient | null = null;
+  /** meteo vero sopra Bergamo: se c'è, il vento entra nella fisica e nel rullo */
+  weather: WeatherNow | null = null;
+  private windClock = 0;
 
   constructor(
     readonly data: WorldData,
@@ -157,6 +161,12 @@ export class WorldSession {
     for (const r of this.remoteNow.values()) others.push(r);
     const target = draftFactor(pose, others);
     engine.aero += (target - engine.aero) * Math.min(1, dt * 2);
+    // vento vero: contro o a favore secondo la direzione di marcia, meno fra case e boschi, a raffiche
+    this.windClock += dt;
+    const shelter = e.cls >= CLS.residential || e.flags & FLAG.tunnel ? (e.flags & FLAG.tunnel ? 0 : 0.35) : 0.6;
+    const gust = 1 + 0.22 * Math.sin(this.windClock * 0.31) + 0.1 * Math.sin(this.windClock * 1.7 + 1.3);
+    const wind = this.weather ? headwind(this.weather, pose.heading, shelter) * gust : 0;
+    engine.wind += (wind - engine.wind) * Math.min(1, dt * 0.8);
     // dislivello per i punti
     if (this.lastAlt != null && engine.phase === 'riding') {
       const dy = pose.altitude - this.lastAlt;

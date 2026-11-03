@@ -28,6 +28,10 @@ export interface Settings {
   locale: Locale;
   /** ISO timestamp se un timer del sonno è aperto. */
   activeSleepStart: string | null;
+  /** Mondo aperto: meteo vero di Bergamo (nuvole, pioggia, vento nella fisica) o sempre sereno. */
+  weather: 'vero' | 'sereno';
+  /** Mondo aperto: la luce dell'ora vera o di un momento scelto. */
+  daytime: 'vera' | 'mattina' | 'mezzogiorno' | 'sera';
 }
 
 export interface RideSample {
@@ -163,4 +167,6 @@ export const DEFAULT_SETTINGS: Settings = {
   quality: 'medium',
   locale: 'it',
   activeSleepStart: null,
+  weather: 'vero',
+  daytime: 'vera',
 };
