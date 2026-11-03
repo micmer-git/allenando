@@ -17,6 +17,9 @@
   --color-muted: var(--muted);
   --color-accent: var(--accent);
   --color-accent-ink: var(--accent-ink);
+  --color-accent-2: var(--accent-2);
+  --color-volata: var(--volata);
+  --color-gpm: var(--gpm);
   --color-line: var(--line);
   --color-sky: var(--sky);
   --color-good: var(--good);
@@ -24,36 +27,46 @@
   --color-danger: var(--danger);
 }
 
+/* OROBIA: notte calda e oro. Il giallo è il marchio, l'ambra il suo secondo tono. */
 :root {
   color-scheme: dark;
-  --bg: #0a0c0f;
-  --elev: #13161b;
-  --elev2: #1c2027;
-  --ink: #eef0ec;
-  --muted: #8e959d;
-  --accent: #c8f031;
-  --accent-ink: #12160a;
-  --line: rgba(238, 240, 236, 0.1);
+  --bg: #0c0b09;
+  --elev: #17150f;
+  --elev2: #221f17;
+  --ink: #f6f2e6;
+  --muted: #9d9686;
+  --accent: #ffc814;
+  --accent-2: #ff9f1c;
+  --accent-ink: #1a1505;
+  --mark-ink: #16130a;
+  --line: rgba(246, 242, 230, 0.1);
   --sky: #7cc7ff;
   --good: #5fe0a8;
-  --warn: #ffb35c;
+  --warn: #ff8a3d;
   --danger: #ff6464;
+  --volata: #d6267a;
+  --gpm: #1f7fe0;
 }
 
 :root[data-theme="light"] {
   color-scheme: light;
-  --bg: #f2f3f0;
-  --elev: #ffffff;
-  --elev2: #e4e7e2;
-  --ink: #121418;
-  --muted: #5d646c;
-  --accent: #4a6b00;
-  --accent-ink: #f6ffe0;
-  --line: rgba(18, 20, 24, 0.12);
+  --bg: #f6f3ea;
+  --elev: #fffdf6;
+  --elev2: #ece6d6;
+  --ink: #16130a;
+  --muted: #6b6455;
+  /* sul chiaro l'oro scende di tono: il giallo puro non si legge come testo */
+  --accent: #9a6f00;
+  --accent-2: #b8560b;
+  --accent-ink: #fffaf0;
+  --mark-ink: #16130a;
+  --line: rgba(22, 19, 10, 0.12);
   --sky: #1d6a9e;
   --good: #0c7a52;
-  --warn: #a15d0c;
+  --warn: #a1450c;
   --danger: #b42323;
+  --volata: #b01863;
+  --gpm: #1565c0;
 }
 
 html,
@@ -111,22 +124,48 @@ textarea {
 }
 
 @media (min-width: 768px) {
-  .font-display {
-  font-weight: 700;
-  letter-spacing: -0.005em;
-}
-
-.eyebrow {
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.pb-nav {
+  .pb-nav {
     padding-bottom: 2.5rem;
   }
+}
+
+/* l'oro che si accende: barre di livello, monete, traguardi appena presi */
+.gold-sheen {
+  background: linear-gradient(100deg, var(--accent) 0%, var(--accent-2) 55%, var(--accent) 100%);
+  background-size: 200% 100%;
+}
+
+@keyframes orobia-pop {
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.pop-in {
+  animation: orobia-pop 420ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+
+@keyframes orobia-rise {
+  from {
+    transform: translateY(12px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.rise-in {
+  animation: orobia-rise 360ms ease-out both;
 }
 
 @media (min-width: 768px) {

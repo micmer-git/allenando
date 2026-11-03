@@ -1,4 +1,11 @@
-# Limiti noti — ALLENANDO V2
+# Limiti noti — OROBIA (già ALLENANDO)
+
+## Il gioco
+
+- Oro, guardaroba, traguardi e record stanno sul dispositivo: cancellare i dati del sito li perde, e non passano da un telefono all’altro.
+- Le classifiche non sono un’autenticazione: il server scarta i tempi impossibili ma non può sapere se un tempo è stato fatto davvero. Il rullo e il simulatore stanno in classifiche separate.
+- I tratti dei percorsi si ricavano dal profilo con una regola: un GPM, una volata, una crono. Se il mondo viene ricostruito con dati OSM diversi, un tratto può spostarsi di qualche metro e cambiare record.
+- Il gruppo delle sessioni è virtuale e non aspetta nessuno: chi si stacca resta staccato. Le sessioni dipendono dall’orologio del telefono; un orologio sbagliato di minuti fa partire in un momento diverso dagli altri.
 
 Passa i test (geometria, terreno sotto la strada, replay, Intervals con API simulata, parser) e la build di produzione. Il mondo 3D è stato visto in Chrome headless (WebGL software) su viewport 390×844. **Non è certificato su un rullo fisico.**
 
@@ -37,7 +44,7 @@ Passa i test (geometria, terreno sotto la strada, replay, Intervals con API simu
 
 - FTMS/BLE coperti da test su pacchetti, non provati su hardware in questa versione.
 - Il bundle del mondo 3D è ~1 MB (260 kB gzip). Su telefoni modesti usare la grafica **Bassa**.
-- Il ciclista 3D è costruito a mano in proporzione (bici taglia 54-56, pedivelle 172,5 mm, gambe a cinematica inversa sui pedali), una dozzina di chiamate di disegno a testa: non è un modello anatomico né un rig animato. Braccia ferme sulle leve, busto fermo.
+- Il ciclista 3D è costruito in codice, non scolpito: una maglia con 23 ossa (una chiamata di disegno a testa), gambe e braccia a cinematica inversa su pedali e leve, tre dettagli (alta ≤ 11,8k triangoli, media ≤ 3,9k, bassa ≤ 1,2k). Si alza sui pedali sulle rampe e negli scatti, si raccoglie in aero, piega in curva. Non ha dita articolate né stoffa che si muove; i ciclisti degli altri in rete hanno una divisa semplice dal loro colore, perché la stanza non trasmette ancora l'aspetto completo. Laboratorio visivo: `lab/rider.html` (solo `vite dev`).
 - Il prompt di installazione esiste solo su Chrome/Edge; su iPhone si installa a mano da Safari, come spiega il riquadro in Oggi.
 - Safari/iPhone: niente Web Bluetooth, serve Bluefy.
 

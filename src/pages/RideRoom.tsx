@@ -147,7 +147,7 @@ export function RoomSheet({ handle, routeTitle, onClose }: { handle: RoomHandle;
 
   async function share() {
     if (!handle.invite) return;
-    const data = { title: 'ALLENANDO · Pedala insieme', text: `Pedala con me su ${routeTitle}`, url: handle.invite };
+    const data = { title: 'OROBIA · Pedala insieme', text: `Pedala con me su ${routeTitle}`, url: handle.invite };
     if (typeof navigator.share === 'function') {
       try {
         await navigator.share(data);

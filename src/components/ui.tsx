@@ -1,4 +1,5 @@
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react';
+import { useId, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
+import { BRAND, MARK } from '@/brand';
 import { cn } from '@/lib/cn';
 
 export function Button({
@@ -143,13 +144,30 @@ export function Pill({ children, color }: { children: ReactNode; color?: string 
   );
 }
 
+/** Il medaglione del marchio: sole d'oro, cresta delle Orobie, strada a tornanti fino al passo. */
+export function Mark({ size = 28, className, title }: { size?: number; className?: string; title?: string }) {
+  const id = useId();
+  return (
+    <svg width={size} height={size} viewBox="8 8 48 48" className={className} role={title ? 'img' : undefined} aria-hidden={title ? undefined : true} aria-label={title}>
+      <defs>
+        <clipPath id={`m${id}`}>
+          <circle cx={MARK.disc.cx} cy={MARK.disc.cy} r={MARK.disc.r} />
+        </clipPath>
+      </defs>
+      <circle cx={MARK.disc.cx} cy={MARK.disc.cy} r={MARK.disc.r} fill="var(--accent)" />
+      <g clipPath={`url(#m${id})`}>
+        <path d={MARK.ridge} fill="var(--mark-ink)" />
+        <path d={MARK.road} fill="none" stroke="var(--accent)" strokeWidth={2.8} strokeLinecap="round" strokeLinejoin="round" />
+      </g>
+    </svg>
+  );
+}
+
 export function Wordmark({ className }: { className?: string }) {
   return (
-    <span className={cn('inline-flex items-center gap-2 font-display text-2xl font-extrabold uppercase tracking-[0.06em]', className)}>
-      <svg width="22" height="16" viewBox="0 0 22 16" aria-hidden="true">
-        <path d="M1 15 7.5 4l4 6 3-4.5L21 15Z" fill="var(--accent)" />
-      </svg>
-      Allenando
+    <span className={cn('inline-flex items-center gap-[0.32em] font-display text-2xl font-extrabold uppercase leading-none tracking-[0.08em]', className)}>
+      <Mark size={26} className="h-[1.05em] w-[1.05em] shrink-0" />
+      <span className="translate-y-[0.03em]">{BRAND.name}</span>
     </span>
   );
 }

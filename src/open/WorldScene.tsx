@@ -11,12 +11,35 @@ import { FLAG, type Dir } from './graph';
 import type { WorldField } from './field';
 import type { NpcCrowd } from './npc';
 import { NPC_JERSEYS } from './npc';
+import { lookFromColor, type Look } from '@/game/look';
 import { buildingsJob, furnitureJob, railsGeometry, roadsJob, terrainJob, treesJob, waterGeometry, type BuildingMeshes, type TileMeshes, type TileSpec, type TreeKind } from './tiles';
 import { facadeTexture, groundDetailTexture, roofTilesTexture } from './textures';
 import { atmosphere, CLEAR, sunFor, sunVector, type Daytime } from './sky';
 import type { WeatherNow } from './weather';
 import { loadBuildings, type Building, type RideDef, type Terrain, type WorldData } from './world';
 import { WorldPath } from './path';
+import type { ArchSpec } from '@/game/arches';
+import { Arches } from '@/world/Arches';
+import { HairpinSigns, hairpinSigns } from '@/world/HairpinSigns';
+import { findHairpins } from '@/domain/geo';
+import {
+  bridgePostGeometry,
+  delineatorEyesGeometry,
+  delineatorGeometry,
+  disposeRoadsideMaterials,
+  instanced,
+  railPostGeometry,
+  reflectorGeometry,
+  roadsideMaterials,
+  shrubGeometry,
+  signalGeometry,
+  signalGlowGeometry,
+  signalGreenGeometry,
+  signPoleGeometry,
+  stoneGeometry,
+  stoneTexture,
+} from '@/world/roadside';
+import { ROADSIDE_KINDS, streetJob, type RoadsideItems, type RoadsideKind } from './streets';
 
 const QUALITY = {
   low: { tile: 500, ring: 2, spacing: 16, trees: 0.9, far: 6000, farStride: 2, npcs: 6, dpr: 1 as number | [number, number] },
@@ -58,6 +81,10 @@ export interface WorldSceneProps {
   daytime: Daytime;
   /** il percorso scelto, per i cartelli dei km e gli archi */
   ride: RideDef | null;
+  /** archi e cartelli dei traguardi (volata, GPM, crono), calcolati dal gioco */
+  arches?: ArchSpec[];
+  /** quello che indossi nel garage */
+  look?: Look;
 }
 
 export function WorldScene(props: WorldSceneProps) {
@@ -120,6 +147,7 @@ function WorldContent(props: WorldSceneProps) {
         <RemoteRiderView key={r.id} rider={r} />
       ))}
       <TurnArrow nextTurn={props.nextTurn} />
+      <WorldArches arches={props.arches} path={props.path} engine={props.engine} />
       <WorldCam {...props} />
     </group>
   );
@@ -167,6 +195,10 @@ function useMaterials(rect: { value: THREE.Vector3 }) {
         rock: new THREE.MeshLambertMaterial({ flatShading: true }),
         trunk: new THREE.MeshLambertMaterial({ color: '#5a4331' }),
       },
+      /** cordoli, marciapiedi e aiuole delle rotatorie: colori di vertice, visti anche da sotto */
+      kerb: new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }),
+      /** l'arredo stradale: lamiera zincata, cartelli, semafori, catadiottri */
+      road: roadsideMaterials(),
       lamp: new THREE.MeshLambertMaterial({ color: '#3b3f45' }),
       lampHead: new THREE.MeshLambertMaterial({ color: '#d9d6cc', emissive: '#000000' }),
       textures: [asphaltTex, stoneTex, facadeTex, tilesTex, groundTex],
@@ -181,6 +213,7 @@ function useMaterials(rect: { value: THREE.Vector3 }) {
         if (k === 'trees') Object.values(v as Record<string, THREE.Material>).forEach((m) => m.dispose());
         else if (k === 'textures') (v as THREE.Texture[]).forEach((t) => t.dispose());
         else if (k === 'geos') Object.values(v as Record<string, THREE.BufferGeometry>).forEach((g) => g.dispose());
+        else if (k === 'road') disposeRoadsideMaterials(v as ReturnType<typeof roadsideMaterials>);
         else if (k === 'signs')
           (v as Map<string, THREE.MeshLambertMaterial>).forEach((m) => {
             m.map?.dispose();
@@ -209,9 +242,17 @@ function furnitureGeometries() {
   signPole.translate(0, 1.3, 0);
   const sign = new THREE.PlaneGeometry(2.1, 0.72);
   sign.translate(0, 2.35, 0.06);
-  const out = { lamp, lampHead, signPole, sign };
+  const out = { lamp, lampHead, signPole, sign, stoneSS: stoneGeometry('#c3262b'), stoneSP: stoneGeometry('#e2b21c'), stoneFace: stonePlane() };
   for (const g of Object.values(out)) g.userData.shared = true;
   return out;
+}
+
+/** La faccia scritta del cippo, verso chi arriva (−z). */
+function stonePlane(): THREE.BufferGeometry {
+  const g = new THREE.PlaneGeometry(0.28, 0.42);
+  g.rotateY(Math.PI);
+  g.translate(0, 0.3, -0.082);
+  return g;
 }
 
 /** Il cartello d'inizio centro abitato: bianco, bordo nero, il nome in maiuscolo. */
@@ -502,7 +543,10 @@ interface TileEntry {
   job: Generator<void, void, void> | null;
   group: THREE.Group | null;
   trees: TileMeshes['trees'];
-  posts: TileMeshes['posts'];
+  /** arredo vicino: si costruisce quando la mattonella arriva entro due anelli, anche se era nata lontana */
+  detail: 'none' | 'build' | 'ready';
+  djob: Generator<void, void, void> | null;
+  items: RoadsideItems | null;
 }
 
 function NearTiles(props: WorldSceneProps & { mats: Mats; rect: { value: THREE.Vector3 } }) {
@@ -512,8 +556,12 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; rect: { value: THREE.V
   const tiles = useRef(new Map<string, TileEntry>());
   const buildings = useRef(new Map<string, Building[] | Promise<Building[]>>());
   const forest = useRef<ForestHandle | null>(null);
+  const roadside = useRef<RoadsideHandle | null>(null);
   const center = useRef<[number, number] | null>(null);
   const dirtyTrees = useRef(false);
+  /** l'arredo piccolo (paletti, cartelli, semafori) si rifà anche quando il centro si sposta */
+  const dirtyProps = useRef(false);
+  const riderTile = useRef<[number, number] | null>(null);
   const T = q.tile;
   const b = data.graph.bounds;
 
@@ -580,64 +628,84 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; rect: { value: THREE.V
     add(roads.paint, mats.paint);
     add(roads.verge, mats.verge);
     add(roads.concrete, mats.concrete);
+    add(roads.kerb, mats.kerb);
     add(roads.tunnel, mats.tunnel);
     add(bGeo.walls, mats.buildings);
     add(bGeo.roofs, mats.roofs);
     add(water, mats.water);
     add(rails, mats.rails);
-    if (roads.posts.length) {
-      const box = new THREE.BoxGeometry(0.09, 0.8, 0.09);
-      const inst = new THREE.InstancedMesh(box, mats.post, roads.posts.length);
-      const d = new THREE.Object3D();
-      roads.posts.forEach((p, i) => {
-        d.position.set(p.x, p.y + 0.4, p.z);
-        d.rotation.set(0, p.h, 0);
-        d.updateMatrix();
-        inst.setMatrixAt(i, d.matrix);
-      });
-      inst.computeBoundingSphere();
-      g.add(inst);
-    }
-    // arredo: lampioni nei paesi e il cartello col nome all'ingresso (solo vicino, da lontano non si vede)
-    if (spec.ring <= 2) {
-      const furn = yield* furnitureJob(data.graph, field, data.features.places, spec);
-      const d = new THREE.Object3D();
-      if (furn.lamps.length) {
-        const poles = new THREE.InstancedMesh(mats.geos.lamp, mats.lamp, furn.lamps.length);
-        const heads = new THREE.InstancedMesh(mats.geos.lampHead, mats.lampHead, furn.lamps.length);
-        furn.lamps.forEach((l, i) => {
-          d.position.set(l.x, l.y - 0.2, l.z);
-          d.rotation.set(0, l.h, 0);
-          d.updateMatrix();
-          poles.setMatrixAt(i, d.matrix);
-          heads.setMatrixAt(i, d.matrix);
-        });
-        poles.computeBoundingSphere();
-        heads.computeBoundingSphere();
-        g.add(poles, heads);
-      }
-      for (const t of furn.towns) {
-        let mat = mats.signs.get(t.name);
-        if (!mat) {
-          mat = new THREE.MeshLambertMaterial({ map: townSignTexture(t.name) });
-          mats.signs.set(t.name, mat);
-        }
-        const sign = new THREE.Group();
-        sign.position.set(t.x, t.y - 0.1, t.z);
-        // la faccia (+z del piano) guarda chi arriva: verso −avanti
-        sign.rotation.y = t.h + Math.PI;
-        sign.add(new THREE.Mesh(mats.geos.sign, mat));
-        for (const dx of [-0.8, 0.8]) {
-          const p = new THREE.Mesh(mats.geos.signPole, mats.lamp);
-          p.position.x = dx;
-          sign.add(p);
-        }
-        g.add(sign);
-      }
-    }
     entry.group = g;
     entry.trees = trees;
-    entry.posts = roads.posts;
+  }
+
+  /**
+   * L'arredo vicino: lampioni e cartelli dei paesi, guardrail, delineatori, semafori, cartelli,
+   * strisce, aiuole, i luoghi da passare. Si aggiunge al gruppo della mattonella già pronta.
+   */
+  function* detailJob(entry: TileEntry, spec: TileSpec): Generator<void, void, void> {
+    const g = new THREE.Group();
+    const add = (geo: THREE.BufferGeometry | null, mat: THREE.Material) => {
+      if (geo) g.add(new THREE.Mesh(geo, mat));
+    };
+    const street = yield* streetJob(data.graph, field, data.features, spec);
+    add(street.beam, mats.road.beam);
+    add(street.paint, mats.paint);
+    add(street.decal, mats.road.decal);
+    add(street.island, mats.kerb);
+    add(street.signs, mats.road.sign);
+    add(street.signBacks, mats.road.signBack);
+    add(street.props, mats.road.lit);
+    for (const st of street.stones) {
+      const key = `cippo:${st.ref}`;
+      let mat = mats.signs.get(key);
+      if (!mat) {
+        mat = new THREE.MeshLambertMaterial({ map: stoneTexture(st.ref) });
+        mats.signs.set(key, mat);
+      }
+      const stone = new THREE.Group();
+      stone.position.set(st.x, st.y, st.z);
+      stone.rotation.y = st.h;
+      stone.add(new THREE.Mesh(st.cap === '#c3262b' ? mats.geos.stoneSS : mats.geos.stoneSP, mats.road.lit), new THREE.Mesh(mats.geos.stoneFace, mat));
+      g.add(stone);
+    }
+    // arredo dei paesi: lampioni e il cartello col nome all'ingresso
+    const furn = yield* furnitureJob(data.graph, field, data.features.places, spec);
+    const d = new THREE.Object3D();
+    if (furn.lamps.length) {
+      const poles = new THREE.InstancedMesh(mats.geos.lamp, mats.lamp, furn.lamps.length);
+      const heads = new THREE.InstancedMesh(mats.geos.lampHead, mats.lampHead, furn.lamps.length);
+      furn.lamps.forEach((l, i) => {
+        d.position.set(l.x, l.y - 0.2, l.z);
+        d.rotation.set(0, l.h, 0);
+        d.updateMatrix();
+        poles.setMatrixAt(i, d.matrix);
+        heads.setMatrixAt(i, d.matrix);
+      });
+      poles.computeBoundingSphere();
+      heads.computeBoundingSphere();
+      g.add(poles, heads);
+    }
+    for (const t of furn.towns) {
+      let mat = mats.signs.get(t.name);
+      if (!mat) {
+        mat = new THREE.MeshLambertMaterial({ map: townSignTexture(t.name) });
+        mats.signs.set(t.name, mat);
+      }
+      const sign = new THREE.Group();
+      sign.position.set(t.x, t.y - 0.1, t.z);
+      // la faccia (+z del piano) guarda chi arriva: verso −avanti
+      sign.rotation.y = t.h + Math.PI;
+      sign.add(new THREE.Mesh(mats.geos.sign, mat));
+      for (const dx of [-0.8, 0.8]) {
+        const p = new THREE.Mesh(mats.geos.signPole, mats.lamp);
+        p.position.x = dx;
+        sign.add(p);
+      }
+      g.add(sign);
+    }
+    entry.group?.add(g);
+    entry.items = street.items;
+    if (street.trees.length) entry.trees = [...entry.trees, ...street.trees];
   }
 
   useFrame(() => {
@@ -647,15 +715,24 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; rect: { value: THREE.V
     const az = pose.z + Math.cos(pose.heading) * T * 0.4;
     const cx = Math.floor((ax - b.x0) / T);
     const cz = Math.floor((az - b.z0) / T);
+    // la mattonella sotto le ruote: l'arredo vicino parte da lì (il centro sta 200 m avanti)
+    const rx = Math.floor((pose.x - b.x0) / T);
+    const rz = Math.floor((pose.z - b.z0) / T);
+    const near = (t: TileEntry) => Math.min(Math.max(Math.abs(t.ix - cx), Math.abs(t.iz - cz)), Math.max(Math.abs(t.ix - rx), Math.abs(t.iz - rz)));
+    if (!riderTile.current || riderTile.current[0] !== rx || riderTile.current[1] !== rz) {
+      riderTile.current = [rx, rz];
+      dirtyProps.current = true;
+    }
     const map = tiles.current;
     if (!center.current || center.current[0] !== cx || center.current[1] !== cz) {
       center.current = [cx, cz];
+      dirtyProps.current = true;
       for (let dz = -q.ring; dz <= q.ring; dz++) {
         for (let dx = -q.ring; dx <= q.ring; dx++) {
           const ix = cx + dx;
           const iz = cz + dz;
           const key = `${ix}_${iz}`;
-          if (!map.has(key)) map.set(key, { key, ix, iz, state: 'wait', job: null, group: null, trees: [], posts: [] });
+          if (!map.has(key)) map.set(key, { key, ix, iz, state: 'wait', job: null, group: null, trees: [], detail: 'none', djob: null, items: null });
         }
       }
       for (const [key, t] of map) {
@@ -676,11 +753,27 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; rect: { value: THREE.V
     while (performance.now() - t0 < 6 && guard++ < 50) {
       let job: TileEntry | null = null;
       let best = Infinity;
+      let detail = false;
       for (const t of map.values()) {
-        if (t.state === 'ready') continue;
         const d = Math.max(Math.abs(t.ix - cx), Math.abs(t.iz - cz));
+        if (t.state === 'ready') {
+          // l'arredo vicino: entro due anelli, dopo le mattonelle che mancano ancora alla stessa distanza
+          if (t.detail === 'build') {
+            job = t;
+            detail = true;
+            break;
+          }
+          const dn = near(t);
+          if (t.detail === 'none' && dn <= DETAIL_RING && dn + 0.5 < best) {
+            best = dn + 0.5;
+            job = t;
+            detail = true;
+          }
+          continue;
+        }
         if (t.state === 'build') {
           job = t;
+          detail = false;
           break;
         }
         // si comincia solo quando il DEM sotto la mattonella (e il bordo) è arrivato
@@ -693,9 +786,25 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; rect: { value: THREE.V
         if (d < best) {
           best = d;
           job = t;
+          detail = false;
         }
       }
       if (!job) break;
+      if (detail) {
+        if (job.detail === 'none') {
+          const d = Math.max(Math.abs(job.ix - cx), Math.abs(job.iz - cz));
+          job.djob = detailJob(job, specOf(job.ix, job.iz, d));
+          job.detail = 'build';
+        }
+        const r = job.djob!.next();
+        if (r.done) {
+          job.detail = 'ready';
+          job.djob = null;
+          dirtyTrees.current = true;
+          dirtyProps.current = true;
+        }
+        continue;
+      }
       if (job.state === 'wait') {
         const d = Math.max(Math.abs(job.ix - cx), Math.abs(job.iz - cz));
         job.job = tileJob(job, specOf(job.ix, job.iz, d));
@@ -726,12 +835,20 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; rect: { value: THREE.V
       for (const t of map.values()) if (t.state === 'ready') all.push(...t.trees);
       forest.current.set(all);
     }
+    if (dirtyProps.current && roadside.current) {
+      dirtyProps.current = false;
+      // solo le mattonelle intorno al ciclista: a più di un anello un paletto è meno di un pixel
+      const list: RoadsideItems[] = [];
+      for (const t of map.values()) if (t.items && near(t) <= PROP_RING) list.push(t.items);
+      roadside.current.set(list);
+    }
   });
 
   return (
     <group>
       <group ref={root} />
       <Forest handle={forest} mats={mats} />
+      <Roadside handle={roadside} mats={mats} />
     </group>
   );
 }
@@ -819,6 +936,106 @@ function Forest({ handle, mats }: { handle: React.MutableRefObject<ForestHandle 
     };
   }, [handle, geos, mats]);
   return <group ref={group} />;
+}
+
+// ---------- arredo stradale: un'istanza per tipo per tutto il mondo vicino ----------
+
+/** Le mattonelle entro questo anello hanno l'arredo vicino. */
+const DETAIL_RING = 2;
+/** Le mattonelle entro questo anello mostrano l'arredo piccolo (istanze): paletti, cartelli, semafori. */
+const PROP_RING = 1;
+
+interface RoadsideHandle {
+  set(list: RoadsideItems[]): void;
+}
+
+/**
+ * Paletti e catadiottri dei guardrail, delineatori, pali dei cartelli, semafori (palo e lanterna,
+ * la luce verde accesa e il suo alone), cespugli delle aiuole, montanti delle ringhiere: come il
+ * bosco, un InstancedMesh per pezzo per tutte le mattonelle vicine, rifatto quando ne arriva una.
+ */
+function Roadside({ handle, mats }: { handle: React.MutableRefObject<RoadsideHandle | null>; mats: Mats }) {
+  const group = useRef<THREE.Group>(null);
+  const parts = useMemo(() => {
+    const r = mats.road;
+    const p: Record<RoadsideKind, [THREE.BufferGeometry, THREE.Material][]> = {
+      railPost: [[railPostGeometry(), r.lit]],
+      reflector: [[reflectorGeometry(), r.bright]],
+      delineator: [
+        [delineatorGeometry(), r.lit],
+        [delineatorEyesGeometry(), r.bright],
+      ],
+      signPole: [[signPoleGeometry(), r.lit]],
+      signal: [
+        [signalGeometry(), r.lit],
+        [signalGreenGeometry(), r.bright],
+        [signalGlowGeometry(), r.glow],
+      ],
+      shrub: [[shrubGeometry(), r.shrub]],
+      bridgePost: [[bridgePostGeometry(), r.lit]],
+    };
+    return p;
+  }, [mats]);
+  const live = useRef<THREE.InstancedMesh[]>([]);
+  useEffect(() => {
+    const g = group.current;
+    const current = live.current;
+    handle.current = {
+      set(list) {
+        if (!g) return;
+        for (const m of current) {
+          g.remove(m);
+          m.dispose();
+        }
+        current.length = 0;
+        for (const k of ROADSIDE_KINDS) {
+          const items = list.flatMap((l) => l[k]);
+          for (const [geo, mat] of parts[k]) {
+            const m = instanced(geo, mat, items, false);
+            if (m) {
+              current.push(m);
+              g.add(m);
+            }
+          }
+        }
+      },
+    };
+    return () => {
+      handle.current = null;
+      for (const m of current) m.dispose();
+      current.length = 0;
+      for (const l of Object.values(parts)) for (const [geo] of l) geo.dispose();
+    };
+  }, [handle, parts]);
+  return <group ref={group} />;
+}
+
+// ---------- archi dei traguardi ----------
+
+/**
+ * Gli archi passati dal gioco. Solo in sviluppo, `?archlab` mette tre archi e un cartello davanti
+ * al ciclista per vederli senza il gioco (non esiste nella build pubblicata).
+ */
+function WorldArches({ arches, path, engine }: { arches?: ArchSpec[]; path: WorldPath; engine: RideEngine }) {
+  const lab = useMemo<ArchSpec[] | null>(() => {
+    if (!import.meta.env.DEV || typeof location === 'undefined' || !new URLSearchParams(location.search).has('archlab')) return null;
+    const at = (d: number) => path.poseAt(Math.min(path.length - 1, engine.distance + d));
+    const hw = (d: number) => path.graph.edges[path.edgeAt(Math.min(path.length - 1, engine.distance + d)).edge].hw;
+    const spec = (id: string, kind: ArchSpec['kind'], role: ArchSpec['role'], label: string, sub: string, d: number): ArchSpec => {
+      const p = at(d);
+      return { id, kind, role, label, sub, x: p.x, y: p.y, z: p.z, heading: p.heading, halfWidth: hw(d) };
+    };
+    return [
+      spec('lab:a', 'volata', 'start', 'VOLATA', 'Traguardo di Zogno', 28),
+      spec('lab:b', 'gpm', 'banner', '500 m', 'GPM', 60),
+      spec('lab:c', 'gpm', 'finish', 'GPM', 'Colle di Zambla', 110),
+      spec('lab:d', 'crono', 'start', 'CRONO', 'Cronoscalata', 170),
+    ];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [path]);
+  const list = lab ?? arches;
+  if (!list || list.length === 0) return null;
+  return <Arches specs={list} />;
 }
 
 // ---------- laghi e mura ----------
@@ -912,7 +1129,7 @@ function labelTex(name: string, sub: string, peak: boolean): THREE.CanvasTexture
       g.font = '600 30px sans-serif';
       g.lineWidth = 7;
       g.strokeText(sub, 256, 98);
-      g.fillStyle = peak ? '#ffd27a' : '#c8f031';
+      g.fillStyle = peak ? '#ffd27a' : '#ffc814';
       g.fillText(sub, 256, 98);
     }
   });
@@ -1126,7 +1343,14 @@ function RideSigns({ data, ride }: { data: WorldData; ride: RideDef }) {
     }
     const startTex = bannerTexture(climb ? 'INIZIO SALITA' : 'PARTENZA', ride.name);
     const finishTex = bannerTexture('ARRIVO', ride.name);
+    // tornanti numerati sulle salite, contati dall'alto come i cartelli veri (Selvino ne ha venti)
+    const pts = path.points;
+    // il giro di una rotatoria non è un tornante
+    const nearRing = (d: number) => [-40, -20, 0, 20, 40].some((o) => g.isRing(path.edgeAt(Math.min(path.length, Math.max(0, d + o))).edge));
+    const bends = climb ? findHairpins(pts.map((p) => p.distance), pts.map((p) => p.heading)).filter((h) => h.distance > from + 20 && h.distance < to - 20 && !nearRing(h.distance)) : [];
+    const hairpins = hairpinSigns(bends, (d) => path.poseAt(d), (d) => g.edges[path.edgeAt(d).edge].hw);
     return {
+      hairpins,
       km,
       start: { pose: path.poseAt(Math.min(path.length, from + 4)), tex: startTex, hw: g.edges[path.edgeAt(from + 4).edge].hw },
       finish: { pose: path.poseAt(Math.max(0, to - 2)), tex: finishTex, hw: g.edges[path.edgeAt(Math.max(0, to - 2)).edge].hw },
@@ -1144,6 +1368,7 @@ function RideSigns({ data, ride }: { data: WorldData; ride: RideDef }) {
     <group>
       <Gate pose={signs.start.pose} texture={signs.start.tex} hw={signs.start.hw} />
       <Gate pose={signs.finish.pose} texture={signs.finish.tex} hw={signs.finish.hw} />
+      <HairpinSigns items={signs.hairpins} />
       {signs.km.map((k, i) => {
         // a destra di chi sale
         const off = k.hw + 1.3;
@@ -1188,8 +1413,8 @@ export function kindLabel(kind: string): string {
 
 // ---------- ciclisti ----------
 
-function PlayerRider({ engine, playerPose, selfColor }: WorldSceneProps) {
-  return <Rider side={0} jersey={selfColor} getPose={playerPose} getCadence={() => engine.cadence} getSpeed={() => engine.speed} />;
+function PlayerRider({ engine, playerPose, selfColor, look }: WorldSceneProps) {
+  return <Rider side={0} look={look ?? (selfColor ? lookFromColor(selfColor) : undefined)} getPose={playerPose} getCadence={() => engine.cadence} getSpeed={() => engine.speed} getPower={() => engine.power} />;
 }
 
 function NpcRiders({ crowd }: { crowd: NpcCrowd }) {
@@ -1199,8 +1424,9 @@ function NpcRiders({ crowd }: { crowd: NpcCrowd }) {
         <Rider
           key={n.slot}
           side={0}
-          jersey={NPC_JERSEYS[n.slot % NPC_JERSEYS.length]}
-          helmet={n.slot % 3 === 0 ? '#20242b' : '#f2f3ef'}
+          look={lookFromColor(NPC_JERSEYS[n.slot % NPC_JERSEYS.length], n.slot)}
+          detail="media"
+          lodDistance={30}
           getPose={() => {
             const m = crowd.npcs[n.slot];
             return { x: m.x, y: m.active ? m.y : -5000, z: m.z, heading: m.heading, grade: m.grade, altitude: m.y, distance: 0 };
@@ -1220,6 +1446,8 @@ function RemoteRiderView({ rider }: { rider: RemoteWorldRider }) {
       side={0}
       jersey={rider.color}
       helmet={rider.color}
+      detail="media"
+      lodDistance={35}
       label={rider.nick}
       getPose={() => {
         const p = rider.pose();
@@ -1268,7 +1496,7 @@ function TurnArrow({ nextTurn }: { nextTurn: WorldSceneProps['nextTurn'] }) {
   return (
     <group ref={ref} visible={false}>
       <mesh geometry={geo} rotation={[-0.5, 0, 0]}>
-        <meshBasicMaterial color="#c8f031" side={THREE.DoubleSide} transparent opacity={0.92} depthTest={false} fog={false} />
+        <meshBasicMaterial color="#ffc814" side={THREE.DoubleSide} transparent opacity={0.92} depthTest={false} fog={false} />
       </mesh>
     </group>
   );

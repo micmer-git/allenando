@@ -8,7 +8,10 @@ import type { BoardRow, XpRow } from '@/multiplayer/world-protocol';
 import type { Leg } from '@/open/graph';
 import { CLS } from '@/open/graph';
 import { suggestLoops, type LoopSuggestion, type LoopTaste } from '@/open/loops';
-import { EMPTY_PROGRESS, fetchRideBoard, fetchXpBoard, levelOf, loadProgress, type WorldProgress } from '@/open/progress';
+import { EMPTY_PROGRESS, fetchLeaders, fetchRideBoard, fetchXpBoard, levelOf, loadProgress, type Leader, type WorldProgress } from '@/open/progress';
+import { worldSegments } from '@/game/segments';
+import { SEGMENT_STYLE } from '@/game/arches';
+import { useGame } from '@/game/useGame';
 import { Terrain, loadWorld, type RideDef, type WorldData } from '@/open/world';
 import { kindLabel } from '@/open/WorldScene';
 import { savePlan } from '@/open/plan';
@@ -30,7 +33,7 @@ const TABS: { value: Tab; label: string }[] = [
   { value: 'classifiche', label: 'Classifica' },
 ];
 
-const ROUTE_COLORS = ['#c8f031', '#ff6b4a', '#4ab8ff', '#ffc93c', '#c77dff', '#3ce0b0', '#ff5fa2'];
+const ROUTE_COLORS = ['#ffc814', '#ff6b4a', '#4ab8ff', '#c8f031', '#c77dff', '#3ce0b0', '#ff5fa2'];
 
 /** I punti di partenza del giro libero: i paesi grandi del mondo, presi dai dati. */
 const STARTS = ['Bergamo', 'Città Alta', 'Ponteranica', 'Alzano Lombardo', 'Nembro', 'Albino', 'Gazzaniga', 'Ponte Nossa', 'Clusone', 'Castione della Presolana', 'Villa d’Almè', 'Zogno', 'San Pellegrino Terme', 'San Giovanni Bianco', 'Piazza Brembana', 'Branzi', 'Serina', 'Selvino'];
@@ -134,20 +137,22 @@ function Stat({ label, value }: { label: string; value: string }) {
 function RidesTab({ data, far, progress, picked, setPicked }: { data: WorldData; far: Float32Array | null; progress: WorldProgress; picked: string | null; setPicked: (id: string | null) => void }) {
   const navigate = useNavigate();
   const sel = data.rides.find((r) => r.id === picked) ?? null;
-  const overlays = useMemo<MapOverlay[]>(
-    () =>
-      sel
-        ? [{ legs: sel.legs.map(([edge, dir]) => ({ edge, dir })), color: '#c8f031', width: 5 }]
-        : data.rides.map((r, i) => ({ legs: r.legs.map(([edge, dir]) => ({ edge, dir })), color: ROUTE_COLORS[i % ROUTE_COLORS.length], width: 3 })),
-    [data, sel],
-  );
+  const overlays = useMemo<MapOverlay[]>(() => {
+    if (!sel) return data.rides.map((r, i) => ({ legs: r.legs.map(([edge, dir]) => ({ edge, dir })), color: ROUTE_COLORS[i % ROUTE_COLORS.length], width: 3 }));
+    // sopra il percorso, i suoi tratti cronometrati nei loro colori
+    const segs = worldSegments(data).anchors.filter((a) => a.rideId === sel.id);
+    return [
+      { legs: sel.legs.map(([edge, dir]) => ({ edge, dir })), color: '#ffc814', width: 5 },
+      ...segs.map((a) => ({ legs: a.legs, color: SEGMENT_STYLE[a.seg.kind].color, width: 7 })),
+    ];
+  }, [data, sel]);
   const focus = useMemo(() => (sel ? legsBounds(data, sel.legs.map(([edge, dir]) => ({ edge, dir }))) : null), [data, sel]);
   const markers = useMemo<MapMarker[]>(() => {
     if (!sel) return [];
     const out: MapMarker[] = [];
     for (const l of sel.landmarks) {
       const lm = data.features.landmarks.find((x) => x.id === l.id);
-      if (lm) out.push({ x: lm.x, z: lm.z, color: progress.visited[lm.id] ? '#c8f031' : '#ffffff', label: lm.name });
+      if (lm) out.push({ x: lm.x, z: lm.z, color: progress.visited[lm.id] ? '#ffc814' : '#ffffff', label: lm.name });
     }
     return out;
   }, [data, sel, progress]);
@@ -243,6 +248,7 @@ function RideCard({ data, ride, progress, onClose, onRide }: { data: WorldData; 
           );
         })}
       </ol>
+      <RideSegments data={data} ride={ride} />
       <div className="mt-4 flex items-center justify-between gap-2">
         <h3 className="text-xs font-semibold uppercase tracking-wider text-muted">Classifica</h3>
         <div className="w-52">
@@ -265,7 +271,52 @@ function RideCard({ data, ride, progress, onClose, onRide }: { data: WorldData; 
   );
 }
 
-function BoardList({ board }: { board: { total: number; rows: BoardRow[]; mine: { rank: number; sec: number } | null } | null | 'loading' }) {
+/** I tratti cronometrati del percorso: volate, GPM e crono, col primo in classifica e il tuo record. */
+function RideSegments({ data, ride }: { data: WorldData; ride: RideDef }) {
+  const segs = worldSegments(data).byRide.get(ride.id) ?? [];
+  const pbs = useGame((s) => s.career.pbs);
+  const [leaders, setLeaders] = useState<Record<string, Leader> | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void fetchLeaders(
+      segs.map((s) => s.id),
+      false,
+    ).then((l) => alive && setLeaders(l));
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ride.id]);
+  if (!segs.length) return null;
+  return (
+    <>
+      <h3 className="mt-4 text-xs font-semibold uppercase tracking-wider text-muted">Tratti cronometrati</h3>
+      <ul className="mt-2 flex flex-col gap-1.5" data-testid="world-ride-segments">
+        {segs.map((s) => {
+          const st = SEGMENT_STYLE[s.kind];
+          const lead = leaders?.[s.id];
+          return (
+            <li key={s.id} className="flex items-center gap-2.5 rounded-xl bg-bg/50 px-3 py-2 text-sm">
+              <span className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase" style={{ background: st.color, color: st.ink }}>
+                {st.short}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-semibold">{s.name}</span>
+                <span className="num block text-xs text-muted">
+                  km {formatKm(s.from)} → {formatKm(s.to)}
+                  {lead ? ` · 1° ${lead.nick} ${formatDuration(lead.sec)}` : ''}
+                </span>
+              </span>
+              {pbs[s.id] ? <span className="num shrink-0 text-xs font-semibold text-accent">tu {formatDuration(pbs[s.id].sec)}</span> : null}
+            </li>
+          );
+        })}
+      </ul>
+    </>
+  );
+}
+
+function BoardList({ board }:{ board: { total: number; rows: BoardRow[]; mine: { rank: number; sec: number } | null } | null | 'loading' }) {
   if (board === 'loading') return <p className="mt-2 text-sm text-muted">Carico la classifica…</p>;
   if (!board) return <p className="mt-2 text-sm text-muted">Classifica non raggiungibile: serve la rete.</p>;
   if (board.rows.length === 0) return <p className="mt-2 text-sm text-muted">Nessun tempo ancora. Il primo è tuo.</p>;
@@ -320,7 +371,7 @@ function FreeTab({ data, far }: { data: WorldData; far: Float32Array | null }) {
           data={data}
           far={far}
           height={320}
-          markers={point ? [{ x: point.x, z: point.z, color: '#c8f031', label: point.label, ring: true }] : []}
+          markers={point ? [{ x: point.x, z: point.z, color: '#ffc814', label: point.label, ring: true }] : []}
           onPick={(x, z) => {
             const hit = data.graph.nearest(x, z, 600, (e) => e.cls !== CLS.trunk);
             if (!hit) return;
@@ -470,7 +521,7 @@ function AbTab({ data, far }: { data: WorldData; far: Float32Array | null }) {
     return () => window.clearTimeout(id);
   }, [data, a, b, back, cycle]);
   const real = route && route !== 'none' ? route : null;
-  const overlays = useMemo<MapOverlay[]>(() => (real ? [{ legs: real.legs, color: '#c8f031', width: 5 }] : []), [real]);
+  const overlays = useMemo<MapOverlay[]>(() => (real ? [{ legs: real.legs, color: '#ffc814', width: 5 }] : []), [real]);
   const focus = useMemo(() => (real ? legsBounds(data, real.legs) : null), [data, real]);
   const markers = useMemo<MapMarker[]>(
     () => [...(a ? [{ x: a.x, z: a.z, color: '#5fe0a8', label: `A · ${a.label}`, ring: true }] : []), ...(b ? [{ x: b.x, z: b.z, color: '#ff6464', label: `B · ${b.label}`, ring: true }] : [])],

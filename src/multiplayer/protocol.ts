@@ -23,7 +23,7 @@ export const ROOM_TTL_MS = 6 * 60 * 60 * 1000;
 export const NICK_MAX = 24;
 
 /** Dieci colori ben distinti sul verde e sul grigio del mondo 3D. */
-export const RIDER_COLORS = ['#c8f031', '#ff6b4a', '#4ab8ff', '#ffc93c', '#c77dff', '#3ce0b0', '#ff5fa2', '#f4f4f0'] as const;
+export const RIDER_COLORS = ['#ffc814', '#ff6b4a', '#4ab8ff', '#c8f031', '#c77dff', '#3ce0b0', '#ff5fa2', '#f4f4f0'] as const;
 
 export const CLOSE = {
   full: 4001,

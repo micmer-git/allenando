@@ -28,6 +28,12 @@ export interface EngineOptions {
    * vince l'allenamento. Quando c'è un bersaglio il rullo va in ERG e NON riceve la pendenza.
    */
   powerTarget?: (elapsed: number, distance: number) => number | null;
+  /**
+   * Dove si è sulla Terra a una certa distanza: le strade del mondo e delle salite sono
+   * georeferenziate, così il FIT esportato ha la traccia GPS vera (Strava la mostra come
+   * «giro virtuale» sulla mappa). Null per la strada neutra, che non è da nessuna parte.
+   */
+  geoAt?: (distance: number) => { lat: number; lon: number } | null;
 }
 
 export class RideEngine {
@@ -72,6 +78,7 @@ export class RideEngine {
   private readonly crr: number;
   private readonly cw: number;
   private readonly powerTarget: EngineOptions['powerTarget'];
+  private readonly geoAt: EngineOptions['geoAt'];
   private sampleAcc = 0;
   private powerBuf: { t: number; p: number }[] = [];
   private listeners = new Set<() => void>();
@@ -93,6 +100,7 @@ export class RideEngine {
     this.crr = opts.crr;
     this.cw = opts.cw;
     this.powerTarget = opts.powerTarget;
+    this.geoAt = opts.geoAt;
     this.startedAt = new Date();
     this.mode = this.workout ? 'erg' : 'free';
     // il bersaglio è giusto già prima del primo fotogramma, non 0 W
@@ -262,7 +270,7 @@ export class RideEngine {
   }
 
   private currentSample(): RideSample {
-    return {
+    const sample: RideSample = {
       t: this.elapsed,
       power: this.power,
       hr: this.hr,
@@ -272,6 +280,13 @@ export class RideEngine {
       altitude: this.altitude,
       grade: this.grade,
     };
+    const geo = this.geoAt?.(this.distance) ?? null;
+    if (geo && Number.isFinite(geo.lat) && Number.isFinite(geo.lon) && !(geo.lat === 0 && geo.lon === 0)) {
+      // sette decimali: un centimetro, più che abbastanza
+      sample.lat = Math.round(geo.lat * 1e7) / 1e7;
+      sample.lon = Math.round(geo.lon * 1e7) / 1e7;
+    }
+    return sample;
   }
 
   private pushSample(): void {

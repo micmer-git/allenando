@@ -13,13 +13,25 @@ import { headwind, type WeatherNow } from './weather';
  * passati, fa vivere i ciclisti virtuali e mette la scia e il fondo nella fisica.
  */
 
+/**
+ * Un'uscita proposta all'incrocio. In una rotatoria ci sono anche `exit` (1 = la prima uscita),
+ * `roundabout: true` e `via` (il pezzo d'anello da fare): l'HUD scrive «2ª uscita».
+ */
+export type JunctionOption = TurnOption & { toward: string; onRoute: boolean };
+
 export interface JunctionView {
-  /** indice del tratto che finisce all'incrocio */
+  /** indice del tratto che finisce all'incrocio (in una rotatoria: all'ingresso nell'anello) */
   leg: number;
   /** metri all'incrocio */
   dist: number;
-  options: (TurnOption & { toward: string; onRoute: boolean })[];
+  /**
+   * Da sinistra a destra, come le strade davanti. In una rotatoria (si gira in senso antiorario)
+   * vuol dire dall'ultima uscita alla prima: il numero è in `exit`.
+   */
+  options: JunctionOption[];
   selected: number;
+  /** la scelta è una rotatoria: una domanda sola, poi l'anello si segue da solo */
+  roundabout?: true;
 }
 
 export interface Toast {
@@ -138,7 +150,13 @@ export class WorldSession {
     let guard = 0;
     while (this.path.length - distance < LOOKAHEAD && guard++ < 200) {
       const last = this.path.legs[this.path.legs.length - 1];
-      const next = this.graph.straightest(last.edge, last.dir);
+      // in una rotatoria si fa l'anello fino all'uscita più dritta, non si esce al primo ramo
+      const exits = this.graph.roundaboutExits(last.edge, last.dir);
+      const next = exits ? this.graph.straightestExit(last.edge, exits) : this.graph.straightest(last.edge, last.dir);
+      for (const l of next.via ?? []) {
+        this.path.append(l.edge, l.dir);
+        this.routeIndex.push(-1);
+      }
       this.path.append(next.edge, next.dir);
       this.routeIndex.push(-1);
     }
@@ -197,6 +215,11 @@ export class WorldSession {
       return;
     }
     const leg = this.path.legs[k];
+    // sull'anello di una rotatoria non si chiede niente: l'uscita è già stata scelta all'ingresso
+    if (this.graph.isRing(leg.edge)) {
+      this.junction = null;
+      return;
+    }
     const dist = this.path.legEnd(k) - d;
     if (dist > 220) {
       this.junction = null;
@@ -206,23 +229,29 @@ export class WorldSession {
       this.junction.dist = dist;
       return;
     }
-    const opts = this.graph.options(leg.edge, leg.dir);
+    const exits = this.graph.roundaboutExits(leg.edge, leg.dir);
+    const opts: TurnOption[] = exits ? [...exits].reverse() : this.graph.options(leg.edge, leg.dir);
     if (opts.length < 2) {
       this.junction = null;
       return;
     }
-    const next = this.path.legs[k + 1];
-    const routeNext = this.onRoute ? this.routeLegs[this.routeIndex[k] + 1] : undefined;
-    const options = opts.map((o) => ({
-      ...o,
-      toward: this.toward(o.edge, o.dir),
-      onRoute: routeNext != null && routeNext.edge === o.edge && routeNext.dir === o.dir,
-    }));
+    // un'uscita coincide con il percorso se ne coincidono l'anello e la strada dopo
+    const matches = (o: TurnOption, legs: (Leg | undefined)[]) => {
+      const seq = [...(o.via ?? []), { edge: o.edge, dir: o.dir }];
+      return seq.every((l, i) => legs[i] != null && legs[i]!.edge === l.edge && legs[i]!.dir === l.dir);
+    };
+    const ahead = (from: number, n: number): (Leg | undefined)[] => Array.from({ length: n }, (_, i) => this.path.legs[from + i]);
+    const ri = this.onRoute ? this.routeIndex[k] : -1;
+    const routeAhead = (n: number): (Leg | undefined)[] => (ri >= 0 ? Array.from({ length: n }, (_, i) => this.routeLegs[ri + 1 + i]) : []);
+    const options: JunctionOption[] = opts.map((o) => {
+      const n = (o.via?.length ?? 0) + 1;
+      return { ...o, toward: this.toward(o.edge, o.dir), onRoute: ri >= 0 && matches(o, routeAhead(n)) };
+    });
     const selected = Math.max(
       0,
-      options.findIndex((o) => next && o.edge === next.edge && o.dir === next.dir),
+      options.findIndex((o) => matches(o, ahead(k + 1, (o.via?.length ?? 0) + 1))),
     );
-    this.junction = { leg: k, dist, options, selected };
+    this.junction = exits ? { leg: k, dist, options, selected, roundabout: true } : { leg: k, dist, options, selected };
   }
 
   /** Verso dove porta una strada: il primo paese a 1-6 km seguendo la via più dritta. */
@@ -268,11 +297,16 @@ export class WorldSession {
     if (j.selected === index && this.path.legs[j.leg + 1]) return;
     this.path.truncateAfter(j.leg);
     this.routeIndex.length = j.leg + 1;
-    this.path.append(o.edge, o.dir);
+    const ri0 = this.routeIndex[j.leg];
+    // in una rotatoria: prima il pezzo d'anello, poi l'uscita
+    const seq = [...(o.via ?? []), { edge: o.edge, dir: o.dir }];
+    seq.forEach((l, i) => {
+      this.path.append(l.edge, l.dir);
+      this.routeIndex.push(o.onRoute ? ri0 + 1 + i : -1);
+    });
     if (o.onRoute) {
       // si resta sul percorso: si rimette il resto
-      const ri = this.routeIndex[j.leg] + 1;
-      this.routeIndex.push(ri);
+      const ri = ri0 + seq.length;
       for (let i = ri + 1; i < this.routeLegs.length; i++) {
         this.path.append(this.routeLegs[i].edge, this.routeLegs[i].dir);
         this.routeIndex.push(i);
@@ -280,7 +314,6 @@ export class WorldSession {
     } else {
       if (this.planned && !this.offRoute) this.toast('Fuori dal percorso', this.ride ? 'Il tempo non va in classifica. «Torna sul percorso» ti riporta sulla strada.' : '«Torna sul percorso» ti riporta sull’anello.', 'info');
       this.offRoute = this.planned;
-      this.routeIndex.push(-1);
       this.extend(this.path.legs[j.leg].from);
     }
     j.selected = index;
@@ -374,7 +407,8 @@ export class WorldSession {
     const j = this.junction;
     if (!j || j.dist > 160) return null;
     const o = j.options[j.selected];
-    if (!o || Math.abs(o.turn) < 25) return null;
+    // in una rotatoria la freccia sta sempre sull'uscita scelta, anche se è «dritto»
+    if (!o || (Math.abs(o.turn) < 25 && !o.roundabout)) return null;
     const node = this.graph.startNode(o.edge, o.dir);
     void distance;
     return { x: this.graph.nodeX[node], y: this.graph.nodeY[node], z: this.graph.nodeZ[node], heading: this.graph.entryHeading(o.edge, o.dir) };

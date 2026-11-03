@@ -333,7 +333,7 @@ function draw(g: CanvasRenderingContext2D, data: WorldData, relief: HTMLCanvasEl
     // prima il posto del segno stesso, poi il nome sopra, staccato quanto basta da non toccarlo
     if (m.heading != null) room(x, y + 13, 26, 26);
     else room(x, y + 6, 14, 12);
-    halo(m.label, x, y - (m.heading != null ? 15 : 9), '700 11px sans-serif', '#0a0c0f', 'rgba(255,255,255,0.92)');
+    halo(m.label, x, y - (m.heading != null ? 15 : 9), '700 11px sans-serif', '#0c0b09', 'rgba(255,255,255,0.92)');
   }
   const places = data.features.places
     .filter((p) => p.kind === 'city' || (p.kind === 'town' && v.mpp < 90) || (p.kind === 'village' && v.mpp < 32) || ((p.kind === 'suburb' || p.kind === 'quarter') && v.mpp < 6))
@@ -358,13 +358,13 @@ function draw(g: CanvasRenderingContext2D, data: WorldData, relief: HTMLCanvasEl
     const x = sx(m.x);
     const y = sz(m.z);
     g.fillStyle = m.color;
-    g.strokeStyle = '#0a0c0f';
+    g.strokeStyle = '#0c0b09';
     g.lineWidth = m.small ? 1 : 2;
     g.beginPath();
     if (m.heading != null) {
       // un alone, perché «sei qui» si trovi al primo sguardo
       g.save();
-      g.fillStyle = 'rgba(200,240,49,0.28)';
+      g.fillStyle = 'rgba(255,200,20,0.28)';
       g.beginPath();
       g.arc(x, y, 17, 0, Math.PI * 2);
       g.fill();
@@ -488,7 +488,7 @@ export function MiniMap({
       }
       const route = legs();
       if (route.length) {
-        g.strokeStyle = '#c8f031';
+        g.strokeStyle = '#ffc814';
         g.lineWidth = 3.4 / k;
         g.beginPath();
         let first = true;
@@ -517,8 +517,8 @@ export function MiniMap({
       }
       g.restore();
       // il giocatore: una freccia al centro, sempre in su
-      g.fillStyle = '#c8f031';
-      g.strokeStyle = '#0a0c0f';
+      g.fillStyle = '#ffc814';
+      g.strokeStyle = '#0c0b09';
       g.lineWidth = 1.5;
       g.beginPath();
       g.moveTo(size / 2, size / 2 - 8);

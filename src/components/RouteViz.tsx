@@ -97,6 +97,7 @@ export function ProfileChart({
   ghost,
   bin = 200,
   height = 120,
+  marks,
 }: {
   track: Track;
   className?: string;
@@ -104,6 +105,8 @@ export function ProfileChart({
   ghost?: number | null;
   bin?: number;
   height?: number;
+  /** tratti cronometrati: una fascia colorata in cima, da/a in metri */
+  marks?: { from: number; to: number; color: string }[];
 }) {
   const W = 1000;
   const H = height;
@@ -146,6 +149,11 @@ export function ProfileChart({
           <path key={i} d={b.d} fill={b.color} opacity={0.9} />
         ))}
         <path d={line} fill="none" stroke="var(--ink)" strokeWidth={1.6} vectorEffect="non-scaling-stroke" />
+        {marks?.map((m, i) => {
+          const x0 = (Math.max(0, m.from) / track.length) * W;
+          const x1 = (Math.min(track.length, m.to) / track.length) * W;
+          return x1 > x0 ? <rect key={i} x={x0} y={0} width={Math.max(2, x1 - x0)} height={Math.max(3, H * 0.09)} fill={m.color} data-testid="profile-mark" /> : null;
+        })}
         {gx != null ? <line x1={gx} x2={gx} y1={0} y2={H} stroke="#8fd8ff" strokeWidth={2} strokeDasharray="4 4" vectorEffect="non-scaling-stroke" /> : null}
         {px != null ? <line x1={px} x2={px} y1={0} y2={H} stroke="var(--ink)" strokeOpacity={0.4} strokeWidth={1.5} vectorEffect="non-scaling-stroke" /> : null}
       </svg>
@@ -160,7 +168,7 @@ export function PositionDot({ left, top }: { left: number; top: number }) {
     <span
       data-testid="profile-dot"
       aria-hidden="true"
-      className="pointer-events-none absolute h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[#0a0c0f] bg-accent shadow-[0_0_0_3px_rgba(200,240,49,0.35)]"
+      className="pointer-events-none absolute h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[#0c0b09] bg-accent shadow-[0_0_0_3px_rgba(255,200,20,0.35)]"
       style={{ left: `${(Math.min(1, Math.max(0, left)) * 100).toFixed(2)}%`, top: `${(Math.min(1, Math.max(0, top)) * 100).toFixed(2)}%` }}
     />
   );

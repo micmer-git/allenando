@@ -47,7 +47,7 @@ export function TurnPicker({ session, engine }: { session: WorldSession; engine:
   return (
     <div className="pointer-events-auto rounded-2xl bg-bg/80 p-1.5 backdrop-blur" data-testid="turn-picker" role="group" aria-label="Svolta al prossimo incrocio">
       <p className="px-1.5 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">
-        Incrocio tra <span className="num text-ink">{Math.max(0, Math.round(j.dist))} m</span>
+        {j.roundabout ? 'Rotatoria tra' : 'Incrocio tra'} <span className="num text-ink">{Math.max(0, Math.round(j.dist))} m</span>
       </p>
       <div className="flex gap-1">
         {j.options.map((o, i) => {
@@ -61,8 +61,8 @@ export function TurnPicker({ session, engine }: { session: WorldSession; engine:
               data-testid={`turn-${i}`}
               className={`flex min-h-12 w-[68px] min-w-0 flex-col items-center justify-center rounded-xl px-1 py-1 text-center ${sel ? 'bg-accent text-accent-ink' : 'bg-elev2 text-ink'} ${o.onRoute && !sel ? 'ring-2 ring-accent' : ''}`}
             >
-              <TurnIcon deg={o.turn} uTurn={o.uTurn} />
-              <span className="mt-0.5 w-full truncate text-[11px] font-semibold leading-tight">{o.uTurn ? 'inversione' : o.toward || turnWord(o.turn)}</span>
+              {o.exit ? <span className="num font-display text-xl leading-none">{o.exit}ª</span> : <TurnIcon deg={o.turn} uTurn={o.uTurn} />}
+              <span className="mt-0.5 w-full truncate text-[11px] font-semibold leading-tight">{o.uTurn ? 'inversione' : o.toward || (o.exit ? `${o.exit}ª uscita` : turnWord(o.turn))}</span>
               <span className={`w-full truncate text-[10px] leading-tight ${sel ? 'text-accent-ink/75' : 'text-muted'}`}>{o.label}</span>
             </button>
           );
@@ -215,12 +215,12 @@ export function MapSheet({ session, engine, far, track, onClose }: { session: Wo
     };
   }, [onClose]);
   const legs = session.planned ? session.plannedLegs : session.path.legs;
-  const overlays = useMemo<MapOverlay[]>(() => [{ legs, color: '#c8f031', width: 5 }], [legs]);
+  const overlays = useMemo<MapOverlay[]>(() => [{ legs, color: '#ffc814', width: 5 }], [legs]);
   const p = session.pose;
   const markers: MapMarker[] = [];
   for (const n of session.crowd.npcs) if (n.active) markers.push({ x: n.x, z: n.z, color: '#9aa0a8', small: true });
   for (const r of session.remoteNow.values()) markers.push({ x: r.x, z: r.z, color: RIDER_COLORS[r.color % RIDER_COLORS.length], label: r.nick });
-  markers.push({ x: p.x, z: p.z, color: '#c8f031', heading: p.heading, label: 'Tu' });
+  markers.push({ x: p.x, z: p.z, color: '#ffc814', heading: p.heading, label: 'Tu' });
   const where = [session.placeName(), session.roadLabel(engine.distance), `${formatNumber(engine.altitude, 0)} m`].filter(Boolean).join(' · ');
   const left = session.onRoute && track ? Math.max(0, track.length - engine.distance) : null;
   return (

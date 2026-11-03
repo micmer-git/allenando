@@ -1,8 +1,26 @@
-# ALLENANDO
+# OROBIA
 
-Rullo indoor sulle salite vere, nel browser. Tre salite, quattro versanti, con la forma vera della strada: tornanti, curve, quota e pendenza georeferenziate. E i tuoi giri veri, rifatti sul rullo.
+Le strade vere di Bergamo, sul rullo, nel browser. Un mondo aperto (Bergamo, Val Brembana, Val Seriana) con volate, GPM, cronometro e sessioni di gruppo; quattro salite verificate (Selvino, Mortirolo, Stelvio da Prato e da Bormio); i tuoi giri veri, rifatti sul rullo.
 
 Sito: [https://micmer-git.github.io/allenando/](https://micmer-git.github.io/allenando/)
+
+**Il nome.** Fino al 3 novembre 2026 si chiamava ALLENANDO. OROBIA: «oro» come il giallo del marchio, le Orobie come le montagne di Bergamo. L’indirizzo `/allenando/`, il repo e il database locale (`allenando`) restano quelli: cambiarli farebbe perdere i giri salvati e le app già installate. Il marchio sta in `src/brand.ts` (nome, colori, geometria del simbolo) e in `public/favicon.svg`.
+
+## Il gioco
+
+Tutto sul dispositivo (IndexedDB, chiave `career`), come i giri; in rete vanno solo i tempi e i punti delle classifiche.
+
+- **Oro**: si guadagna pedalando (km, metri di dislivello, tratti, record, missioni, traguardi, serie di giorni). Le regole stanno in `src/game/career.ts` (`ORO_RULES`) e si leggono nel riepilogo a fine giro.
+- **Garage**: maglie (dieci disegni), caschi, bici e ruote. Si comprano con l’oro, alcuni dopo un livello, altri solo con un traguardo. **Solo estetica**: nessun pezzo cambia la fisica.
+- **Traguardi**: km, dislivello, salite, volate, GPM, crono, luoghi, pioggia e notte vere, serie di giorni, potenza. Quelli a soglia mostrano a che punto sei.
+- **Missioni del giorno**: tre, le stesse per tutti in quel giorno (dipendono solo dalla data).
+- **Tratti cronometrati** (`src/game/segments.ts`): nei 13 percorsi del mondo si ricavano dal profilo — il GPM sulla salita con più dislivello, una volata da 300 m piatti prima dell’arrivo, una crono regolare da 3–8 km — e si ancorano agli archi del grafo: valgono anche nel giro libero, per chiunque ci passi nel verso giusto. Sulle salite verificate il GPM è la salita intera, più gli ultimi 3 km. Il tempo parte sotto l’arco e si ferma sotto l’arco d’arrivo, interpolato fra due fotogrammi; chi svolta fuori dal tratto lo annulla.
+- **Sessioni** (`src/game/sessions.ts`): ogni mezz’ora, a :00 e :30, una sessione (gruppo, crono, volate, salita) su un percorso del mondo. Il calendario dipende solo dall’orologio, quindi è lo stesso su tutti i telefoni senza un server. Si entra da 15 minuti prima a 5 minuti dopo il via; in griglia si aspetta il via, tutti insieme. Nelle uscite di gruppo pedala un gruppo virtuale a W/kg dichiarati, con la fisica vera, e la sua scia abbassa il CdA fino al 35%.
+- **Classifiche**: salite, percorsi, tratti, sessioni e punti, col tempo del rullo separato da quello del simulatore. Il server rifiuta i tempi sotto quello credibile di un professionista (`boardLimit` in `src/multiplayer/world-protocol.ts`).
+
+## Esporta con il GPS vero
+
+Ogni giro sulle strade del mondo o sulle salite registra latitudine e longitudine della strada, campione per campione: la posa sul percorso riproiettata sull’origine del mondo (la stessa proiezione con cui il mondo è costruito). Il FIT esportato ha la traccia e si dichiara **giro virtuale** (`sub_sport = virtual_activity`): Strava lo mette sulla mappa vera di Bergamo ma lo tiene fuori dai segmenti all’aperto, come fa con Zwift. C’è anche il GPX. I giri senza strada (la strada neutra dei replay senza GPS) restano senza coordinate: non se ne inventano.
 
 Tutto resta sul dispositivo. Non c’è account. Le uniche chiamate esterne sono quelle che fai tu: verso Intervals.icu con la tua chiave, e verso il server delle stanze solo se entri in una stanza «Pedala insieme».
 
@@ -23,7 +41,9 @@ Da dove vengono:
 - **Quota**: EU-DEM v1.1 a 25 m (Copernicus) via l’API pubblica di OpenTopoData. Il profilo è livellato dentro un “tubo” di ±8 m dalla quota del DEM (la strada a mezza costa non pesca più il pendio), e la pendenza è mediata su circa 40 m.
 - **Terreno**: griglia DEM da 100–180 m intorno alla strada, raccordata alla carreggiata: vicino alla strada il terreno scende alla sua quota e sta sempre sotto l’asfalto (lo verifica un test su ogni punto delle quattro tracce).
 - **Tornanti**: curve oltre 150° in 70 m. Sono quelli che la geometria mostra, non il conteggio dei cartelli.
-- **Guardrail**: dove il DEM indica un salto di oltre 3 m a 7 m dal bordo.
+- **Guardrail**: dove il DEM indica un salto di oltre 3 m a 7 m dal bordo (file di almeno tre paletti). Lama a doppia onda, paletti ogni 4 m, catadiottri, terminali interrati; dove non c'è, delineatori ogni 40 m (20 in curva).
+- **Cartelli dei tornanti**: «TORNANTE N» con la quota, contati dall'alto come sullo Stelvio. Il numero è quello dei tornanti trovati dalla geometria, non quello dei cartelli ufficiali.
+- **Mondo di Bergamo**: semafori (sempre verdi: sono un punto di riferimento, non fermano nessuno), strisce pedonali, stop e dare precedenza, mini rotatorie e i luoghi da passare (fontanelle, belvederi, edicole, chiese, campanili, negozi di bici, bar di paese) vengono dai nodi OSM (`python scripts/world/extract-pbf.py --points`, una dozzina di secondi). Le rotatorie sono `junction=roundabout` di OSM; aiuole, cespugli e sculture nel mezzo sono disegnati, non rilevati.
 - **Vegetazione**: per fascia di quota (latifoglie, abete rosso, larice, rocce), non da un censimento.
 
 Street View non è una fonte: l’app ne mette solo il link ufficiale a Google Maps, come riferimento visivo. Nessuna geometria o texture viene ricavata da lì.
