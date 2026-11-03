@@ -6,6 +6,8 @@ import { formatDateTime, formatDuration, formatKm, formatNumber, msToKmh } from 
 import { HR_ZONES, POWER_ZONES } from '@/domain/zones';
 import { encodeActivityFit } from '@/io/fit';
 import { encodeTcx } from '@/io/tcx';
+import { encodeGpx } from '@/io/gpx-export';
+import { validPosition } from '@/domain/metrics';
 import { useI18n } from '@/i18n';
 import { downloadBytes, downloadText, safeFileName } from '@/lib/download';
 import { useApp } from '@/store/useApp';
@@ -90,6 +92,24 @@ export function RideDetailPage() {
         <Button variant="ghost" onClick={() => downloadText(safeFileName(ride.name, 'tcx'), encodeTcx(ride), 'application/vnd.garmin.tcx+xml')}>
           {t('history.exportTcx')}
         </Button>
+        {ride.samples.some((s) => validPosition(s.lat, s.lon)) ? (
+          <Button
+            variant="ghost"
+            onClick={() => {
+              const gpx = encodeGpx(ride);
+              if (gpx) downloadText(safeFileName(ride.name, 'gpx'), gpx, 'application/gpx+xml');
+            }}
+          >
+            {t('history.exportGpx')}
+          </Button>
+        ) : null}
+      </div>
+      {ride.source === 'indoor' ? (
+        <p className="mt-2 text-xs text-muted">
+          {ride.samples.some((s) => validPosition(s.lat, s.lon)) ? t('history.gpsYes') : t('history.gpsNo')}
+        </p>
+      ) : null}
+      <div className="mt-3 flex flex-wrap gap-2">
         <Button
           variant="danger"
           onClick={() => {

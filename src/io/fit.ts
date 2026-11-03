@@ -34,7 +34,7 @@ export function encodeActivityFit(ride: Ride): Uint8Array {
     product: 1,
     serialNumber: 1001,
     timeCreated: start,
-    productName: 'ALLENANDO',
+    productName: 'OROBIA',
   } as FileIdMesg);
 
   encoder.onMesg(MesgNum.EVENT, {
@@ -44,6 +44,9 @@ export function encodeActivityFit(ride: Ride): Uint8Array {
   } as EventMesg);
 
   const samples = ride.samples.length > 0 ? ride.samples : [synthetic(ride)];
+  // un giro indoor con la traccia del mondo è un «giro virtuale»: Strava lo mette sulla mappa
+  // vera ma lo tiene fuori dai segmenti all'aperto, come fa con i giri di Zwift
+  const virtual = ride.source === 'indoor' && samples.some((s) => validPosition(s.lat, s.lon));
   for (const sample of samples) {
     const timestamp = new Date(start.getTime() + sample.t * 1000);
     const gps = validPosition(sample.lat, sample.lon);
@@ -93,7 +96,7 @@ export function encodeActivityFit(ride: Ride): Uint8Array {
   encoder.onMesg(MesgNum.SESSION, {
     messageIndex: 0,
     sport: ride.sport === 'running' ? 'running' : 'cycling',
-    subSport: ride.source === 'indoor' ? 'indoorCycling' : undefined,
+    subSport: virtual ? 'virtualActivity' : ride.source === 'indoor' ? 'indoorCycling' : undefined,
     firstLapIndex: 0,
     numLaps: Math.max(1, laps.length),
     thresholdPower: ride.ftp > 0 ? Math.round(ride.ftp) : undefined,

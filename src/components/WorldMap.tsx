@@ -488,7 +488,7 @@ export function MiniMap({
       }
       const route = legs();
       if (route.length) {
-        g.strokeStyle = '#c8f031';
+        g.strokeStyle = '#ffc814';
         g.lineWidth = 3.4 / k;
         g.beginPath();
         let first = true;
@@ -517,7 +517,7 @@ export function MiniMap({
       }
       g.restore();
       // il giocatore: una freccia al centro, sempre in su
-      g.fillStyle = '#c8f031';
+      g.fillStyle = '#ffc814';
       g.strokeStyle = '#0a0c0f';
       g.lineWidth = 1.5;
       g.beginPath();

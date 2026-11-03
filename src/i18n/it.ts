@@ -1,7 +1,7 @@
 /** Dizionario italiano. Un'altra lingua deve rispettare la stessa forma. */
 export const it = {
   app: {
-    name: 'ALLENANDO',
+    name: 'OROBIA',
     loading: 'Carico strade e rullo…',
     memory: 'Salvataggio solo in questa sessione: il browser ha bloccato il database locale.',
   },
@@ -122,7 +122,7 @@ export const it = {
     search: 'Cerca il rullo',
     searchAll: 'Mostra tutti i dispositivi',
     useSim: 'Usa il simulatore',
-    ios: 'Safari su iPhone e iPad non ha il Web Bluetooth. Apri ALLENANDO con Bluefy, il browser che abilita il Bluetooth.',
+    ios: 'Safari su iPhone e iPad non ha il Web Bluetooth. Apri OROBIA con Bluefy, il browser che abilita il Bluetooth.',
     iosLink: 'Bluefy sull’App Store',
     missing: 'Questo browser non supporta il Web Bluetooth. Su Android e computer usa Chrome o Edge. Su iPhone, Bluefy.',
     cancelled: 'Connessione annullata.',
@@ -205,6 +205,9 @@ export const it = {
     deleting: 'Tieni premuto di nuovo per eliminare',
     exportFit: 'Esporta FIT',
     exportTcx: 'Esporta TCX',
+    exportGpx: 'Esporta GPX',
+    gpsYes: 'Traccia GPS vera: su Strava è un giro virtuale, sulla mappa.',
+    gpsNo: 'Senza GPS: strada neutra.',
     zones: 'Tempo nelle zone di potenza',
     hrZones: 'Tempo nelle zone di FC',
     sourceIndoor: 'Indoor',

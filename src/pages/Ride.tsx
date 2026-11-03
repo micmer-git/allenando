@@ -58,6 +58,16 @@ interface RideSetup {
   world?: { data: WorldData; session: WorldSession };
 }
 
+/** Da distanza sulla strada a latitudine e longitudine; null se la strada non è da nessuna parte. */
+export function geoFor(route: LoadedRoute): ((distance: number) => { lat: number; lon: number } | null) | undefined {
+  if (route.id === 'neutral' || (route.origin.lat === 0 && route.origin.lon === 0)) return undefined;
+  const proj = projector(route.origin);
+  return (distance) => {
+    const p = route.track.poseAt(distance);
+    return Number.isFinite(p.x) && Number.isFinite(p.z) ? proj.toGeo(p.x, p.z) : null;
+  };
+}
+
 /** Strada neutra, dritta, per i giri senza GPS: lo diciamo, non la spacciamo per vera. */
 function neutralRoute(samples: RideSample[]): LoadedRoute {
   const prof = hasAltitude(samples) ? profileFromSamples(samples) : [];
@@ -243,6 +253,8 @@ function RideSession({ setup }: { setup: RideSetup }) {
       crr: profile.crr,
       cw: profile.cda * 1.225,
       powerTarget: replay ? (elapsed) => powerAtTime(replay, elapsed) : undefined,
+      // la traccia GPS vera nel FIT: dalla posa sulla strada, riproiettata sull'origine del mondo
+      geoAt: geoFor(setup.route),
     });
     // ?at=metri: si parte da un punto della salita (per riprendere un tratto)
     const at = Number(params.get('at'));

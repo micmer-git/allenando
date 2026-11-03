@@ -215,12 +215,12 @@ export function MapSheet({ session, engine, far, track, onClose }: { session: Wo
     };
   }, [onClose]);
   const legs = session.planned ? session.plannedLegs : session.path.legs;
-  const overlays = useMemo<MapOverlay[]>(() => [{ legs, color: '#c8f031', width: 5 }], [legs]);
+  const overlays = useMemo<MapOverlay[]>(() => [{ legs, color: '#ffc814', width: 5 }], [legs]);
   const p = session.pose;
   const markers: MapMarker[] = [];
   for (const n of session.crowd.npcs) if (n.active) markers.push({ x: n.x, z: n.z, color: '#9aa0a8', small: true });
   for (const r of session.remoteNow.values()) markers.push({ x: r.x, z: r.z, color: RIDER_COLORS[r.color % RIDER_COLORS.length], label: r.nick });
-  markers.push({ x: p.x, z: p.z, color: '#c8f031', heading: p.heading, label: 'Tu' });
+  markers.push({ x: p.x, z: p.z, color: '#ffc814', heading: p.heading, label: 'Tu' });
   const where = [session.placeName(), session.roadLabel(engine.distance), `${formatNumber(engine.altitude, 0)} m`].filter(Boolean).join(' · ');
   const left = session.onRoute && track ? Math.max(0, track.length - engine.distance) : null;
   return (

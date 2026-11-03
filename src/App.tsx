@@ -86,7 +86,7 @@ function ThemeSync() {
     const root = document.documentElement;
     root.dataset.theme = settings.theme;
     root.lang = settings.locale;
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', settings.theme === 'light' ? '#f2f3f0' : '#0a0c0f');
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', settings.theme === 'light' ? '#f6f3ea' : '#0c0b09');
   }, [settings]);
   return null;
 }

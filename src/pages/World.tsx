@@ -30,7 +30,7 @@ const TABS: { value: Tab; label: string }[] = [
   { value: 'classifiche', label: 'Classifica' },
 ];
 
-const ROUTE_COLORS = ['#c8f031', '#ff6b4a', '#4ab8ff', '#ffc93c', '#c77dff', '#3ce0b0', '#ff5fa2'];
+const ROUTE_COLORS = ['#ffc814', '#ff6b4a', '#4ab8ff', '#c8f031', '#c77dff', '#3ce0b0', '#ff5fa2'];
 
 /** I punti di partenza del giro libero: i paesi grandi del mondo, presi dai dati. */
 const STARTS = ['Bergamo', 'Città Alta', 'Ponteranica', 'Alzano Lombardo', 'Nembro', 'Albino', 'Gazzaniga', 'Ponte Nossa', 'Clusone', 'Castione della Presolana', 'Villa d’Almè', 'Zogno', 'San Pellegrino Terme', 'San Giovanni Bianco', 'Piazza Brembana', 'Branzi', 'Serina', 'Selvino'];
@@ -137,7 +137,7 @@ function RidesTab({ data, far, progress, picked, setPicked }: { data: WorldData;
   const overlays = useMemo<MapOverlay[]>(
     () =>
       sel
-        ? [{ legs: sel.legs.map(([edge, dir]) => ({ edge, dir })), color: '#c8f031', width: 5 }]
+        ? [{ legs: sel.legs.map(([edge, dir]) => ({ edge, dir })), color: '#ffc814', width: 5 }]
         : data.rides.map((r, i) => ({ legs: r.legs.map(([edge, dir]) => ({ edge, dir })), color: ROUTE_COLORS[i % ROUTE_COLORS.length], width: 3 })),
     [data, sel],
   );
@@ -147,7 +147,7 @@ function RidesTab({ data, far, progress, picked, setPicked }: { data: WorldData;
     const out: MapMarker[] = [];
     for (const l of sel.landmarks) {
       const lm = data.features.landmarks.find((x) => x.id === l.id);
-      if (lm) out.push({ x: lm.x, z: lm.z, color: progress.visited[lm.id] ? '#c8f031' : '#ffffff', label: lm.name });
+      if (lm) out.push({ x: lm.x, z: lm.z, color: progress.visited[lm.id] ? '#ffc814' : '#ffffff', label: lm.name });
     }
     return out;
   }, [data, sel, progress]);
@@ -320,7 +320,7 @@ function FreeTab({ data, far }: { data: WorldData; far: Float32Array | null }) {
           data={data}
           far={far}
           height={320}
-          markers={point ? [{ x: point.x, z: point.z, color: '#c8f031', label: point.label, ring: true }] : []}
+          markers={point ? [{ x: point.x, z: point.z, color: '#ffc814', label: point.label, ring: true }] : []}
           onPick={(x, z) => {
             const hit = data.graph.nearest(x, z, 600, (e) => e.cls !== CLS.trunk);
             if (!hit) return;
@@ -470,7 +470,7 @@ function AbTab({ data, far }: { data: WorldData; far: Float32Array | null }) {
     return () => window.clearTimeout(id);
   }, [data, a, b, back, cycle]);
   const real = route && route !== 'none' ? route : null;
-  const overlays = useMemo<MapOverlay[]>(() => (real ? [{ legs: real.legs, color: '#c8f031', width: 5 }] : []), [real]);
+  const overlays = useMemo<MapOverlay[]>(() => (real ? [{ legs: real.legs, color: '#ffc814', width: 5 }] : []), [real]);
   const focus = useMemo(() => (real ? legsBounds(data, real.legs) : null), [data, real]);
   const markers = useMemo<MapMarker[]>(
     () => [...(a ? [{ x: a.x, z: a.z, color: '#5fe0a8', label: `A · ${a.label}`, ring: true }] : []), ...(b ? [{ x: b.x, z: b.z, color: '#ff6464', label: `B · ${b.label}`, ring: true }] : [])],

@@ -112,18 +112,61 @@ export interface ResultPost {
 
 export type Invalid = { ok: false; error: string };
 
+/**
+ * Le salite verificate: lunghezza e dislivello veri (dalle tracce, README). Il tempo minimo è
+ * quello di un professionista a 1900 m/h di velocità ascensionale, con il 15% di margine.
+ */
+export const CLIMB_BOARD: Record<string, { lengthM: number; gainM: number }> = {
+  'selvino-nembro': { lengthM: 11_600, gainM: 617 },
+  'mortirolo-mazzo': { lengthM: 11_300, gainM: 1288 },
+  'stelvio-prato': { lengthM: 25_200, gainM: 1842 },
+  'stelvio-bormio': { lengthM: 21_600, gainM: 1535 },
+};
+
+const SEG_RE = /^w:[a-z0-9-]{2,30}:(gpm|volata|crono)\d$/;
+const CLIMB_RE = /^salita:([a-z0-9-]{2,30})(:fine)?$/;
+const EVENT_RE = /^ev:(\d{5,9}):([a-z0-9-]{2,30})$/;
+
+/** Tempo minimo credibile per un tratto di `len` metri con `gain` metri di salita. */
+export function minSecFor(len: number, gain: number): number {
+  // in piano un professionista lanciato non supera i 72 km/h; in salita i 2160 m/h
+  return Math.max(len / 20, gain / 0.6) * 0.85;
+}
+
+/**
+ * Che classifica è? Un percorso del mondo, una sessione (ev:fascia:percorso), una salita
+ * verificata (salita:id, o salita:id:fine per gli ultimi 3 km), un tratto del mondo
+ * (w:percorso:gpm1 / volata1 / crono1). Ritorna il tempo minimo credibile, o null.
+ */
+export function boardLimit(id: string, len?: number, gain?: number): number | null {
+  if (id in WORLD_RIDES) return WORLD_RIDES[id].minSec;
+  const ev = EVENT_RE.exec(id);
+  if (ev) return ev[2] in WORLD_RIDES ? WORLD_RIDES[ev[2]].minSec : null;
+  const cl = CLIMB_RE.exec(id);
+  if (cl) {
+    const c = CLIMB_BOARD[cl[1]];
+    if (!c) return null;
+    return cl[2] ? minSecFor(3000, gain ?? 0) : (c.gainM / (1900 / 3600)) * 0.85;
+  }
+  if (SEG_RE.test(id) && len != null) return minSecFor(len, gain ?? 0);
+  return null;
+}
+
 export function parseResult(body: unknown): { ok: true; r: ResultPost } | Invalid {
   if (!body || typeof body !== 'object') return { ok: false, error: 'body' };
   const o = body as Record<string, unknown>;
   if (!isPid(o.pid)) return { ok: false, error: 'pid' };
   const nick = cleanNick(o.nick);
   if (!nick) return { ok: false, error: 'nick' };
-  if (typeof o.ride !== 'string' || !(o.ride in WORLD_RIDES)) return { ok: false, error: 'ride' };
-  const lim = WORLD_RIDES[o.ride];
+  if (typeof o.ride !== 'string') return { ok: false, error: 'ride' };
+  const len = finite(o.len, 100, 120_000) ?? undefined;
+  const gain = finite(o.gain, 0, 4000) ?? undefined;
+  const minSec = boardLimit(o.ride, len, gain);
+  if (minSec == null) return { ok: false, error: 'ride' };
   const sec = finite(o.sec, 1, 36_000);
   if (sec == null) return { ok: false, error: 'sec' };
   // sotto il tempo di un professionista non è un giro: è un errore o un trucco
-  if (sec < lim.minSec) return { ok: false, error: 'implausible' };
+  if (sec < minSec) return { ok: false, error: 'implausible' };
   const wkg = finite(o.wkg, 0, 12) ?? 0;
   return { ok: true, r: { pid: o.pid, nick, ride: o.ride, sec: Math.round(sec * 10) / 10, wkg: Math.round(wkg * 100) / 100, sim: o.sim === true } };
 }

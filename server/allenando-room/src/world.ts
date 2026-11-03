@@ -242,6 +242,21 @@ export class Board extends DurableObject<Env> {
       sql.exec('INSERT OR REPLACE INTO xp (pid, nick, xp, week, wxp, at) VALUES (?, ?, ?, ?, ?, ?)', x.pid, x.nick, x.xp, week, wxp, now);
       return json({ ok: true, xp: x.xp });
     }
+    // il primo di ogni classifica chiesta, in una volta: per le liste dei tratti e delle salite
+    if (request.method === 'GET' && url.pathname === '/board/leaders') {
+      const ids = (url.searchParams.get('ids') ?? '').split(',').filter((s) => s && s.length <= 64).slice(0, 80);
+      const sim = url.searchParams.get('sim') === '1' ? 1 : 0;
+      const pid = url.searchParams.get('pid') ?? '';
+      const out: Record<string, { nick: string; sec: number; total: number; me?: boolean; mine?: number }> = {};
+      for (const id of ids) {
+        const top = sql.exec<{ nick: string; sec: number; pid: string }>('SELECT nick, sec, pid FROM times WHERE ride = ? AND sim = ? ORDER BY sec ASC LIMIT 1', id, sim).toArray()[0];
+        if (!top) continue;
+        const total = sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM times WHERE ride = ? AND sim = ?', id, sim).toArray()[0]?.n ?? 0;
+        const mine = pid ? sql.exec<{ sec: number }>('SELECT sec FROM times WHERE ride = ? AND sim = ? AND pid = ?', id, sim, pid).toArray()[0] : undefined;
+        out[id] = { nick: top.nick, sec: top.sec, total, me: top.pid === pid || undefined, mine: mine?.sec };
+      }
+      return json({ sim: sim === 1, leaders: out });
+    }
     if (request.method === 'GET' && url.pathname.startsWith('/board/ride/')) {
       const ride = decodeURIComponent(url.pathname.slice('/board/ride/'.length));
       const sim = url.searchParams.get('sim') === '1' ? 1 : 0;

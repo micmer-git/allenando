@@ -147,7 +147,28 @@ export function applyRide(prev: WorldProgress, out: RideOutcome, now = new Date(
 
 const base = () => ROOMS_URL.replace(/\/$/, '');
 
-export async function postResult(r: { nick: string; ride: string; sec: number; wkg: number; sim: boolean }): Promise<{ ok: boolean; rank?: number; best?: boolean; error?: string }> {
+export interface Leader {
+  nick: string;
+  sec: number;
+  total: number;
+  me?: boolean;
+  /** il mio tempo in quella classifica, se ci sono */
+  mine?: number;
+}
+
+/** Il primo di ogni classifica (percorsi, salite, tratti), in una chiamata sola. */
+export async function fetchLeaders(ids: string[], sim: boolean): Promise<Record<string, Leader> | null> {
+  if (!ids.length) return {};
+  try {
+    const res = await fetch(`${base()}/board/leaders?ids=${encodeURIComponent(ids.slice(0, 80).join(','))}&sim=${sim ? 1 : 0}&pid=${devicePid()}`);
+    if (!res.ok) return null;
+    return ((await res.json()) as { leaders: Record<string, Leader> }).leaders;
+  } catch {
+    return null;
+  }
+}
+
+export async function postResult(r: { nick: string; ride: string; sec: number; wkg: number; sim: boolean; len?: number; gain?: number }): Promise<{ ok: boolean; rank?: number; best?: boolean; error?: string }> {
   try {
     const res = await fetch(`${base()}/board/result`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pid: devicePid(), ...r }) });
     return (await res.json()) as { ok: boolean; rank?: number; best?: boolean; error?: string };

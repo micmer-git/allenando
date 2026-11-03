@@ -107,7 +107,7 @@ export function InstallCard({ className }: { className?: string }) {
           className="mt-3 inline-flex h-12 w-full items-center justify-center rounded-full bg-accent font-semibold text-accent-ink"
           onClick={() => void install.prompt()}
         >
-          Installa ALLENANDO
+          Installa OROBIA
         </button>
       ) : install.ios ? (
         <ol className="mt-3 space-y-2 text-sm" data-testid="install-ios">
@@ -125,7 +125,7 @@ export function InstallCard({ className }: { className?: string }) {
           </li>
           <li className="flex items-center gap-3">
             <Step n={3} />
-            <span>Apri ALLENANDO dall’icona: niente barre del browser</span>
+            <span>icona Apri’icona: niente barre del browser</span>
           </li>
         </ol>
       ) : (
