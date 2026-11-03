@@ -1,0 +1,12 @@
+{
+  "name": "allenando-rooms",
+  "private": true,
+  "type": "module",
+  "description": "Worker Cloudflare con le stanze multiplayer di ALLENANDO (Durable Object SQLite, WebSocket in ibernazione).",
+  "scripts": {
+    "dev": "npx wrangler dev --port 8787",
+    "deploy": "npx wrangler deploy",
+    "types": "npx wrangler types",
+    "smoke": "node ../../scripts/room-smoke.mjs"
+  }
+}

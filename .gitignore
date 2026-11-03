@@ -9,3 +9,7 @@ playwright-report
 test-results
 .playwright
 .claude/worktrees
+
+# dati grezzi del mondo (OSM, DEM): si riscaricano con npm run world:fetch
+scripts/world/cache
+.wrangler

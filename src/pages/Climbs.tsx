@@ -30,22 +30,24 @@ export function ClimbsPage() {
         </p>
         <ul className="mt-4 divide-y divide-line overflow-hidden rounded-2xl border border-line bg-elev">
           {CATALOG.map((c) => (
-            <li key={`${c.name}-${c.side}`} className="flex items-center justify-between gap-3 px-4 py-3">
-              <span className="min-w-0">
-                <span className="block truncate font-semibold">{c.name}</span>
-                <span className="block truncate text-sm text-muted">
-                  {c.side} · {c.region}
+            <li key={`${c.name}-${c.side}`}>
+              {/* tutta la riga si tocca, non solo la pillola: bersaglio alto quanto la riga */}
+              <Link
+                to={c.routeId ? `/salite/${c.routeId}` : '/giri'}
+                className="flex min-h-14 items-center justify-between gap-3 px-4 py-3 transition hover:bg-elev2"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate font-semibold">{c.name}</span>
+                  <span className="block truncate text-sm text-muted">
+                    {c.side} · {c.region}
+                  </span>
                 </span>
-              </span>
-              {c.routeId ? (
-                <Link to={`/salite/${c.routeId}`} className="shrink-0 rounded-full bg-accent px-3 py-1 text-xs font-bold uppercase tracking-wide text-accent-ink">
-                  Traccia verificata
-                </Link>
-              ) : (
-                <Link to="/giri" className="shrink-0 rounded-full border border-line px-3 py-1 text-xs font-semibold uppercase tracking-wide text-muted">
-                  Traccia da acquisire
-                </Link>
-              )}
+                {c.routeId ? (
+                  <span className="shrink-0 rounded-full bg-accent px-3 py-1 text-xs font-bold uppercase tracking-wide text-accent-ink">Traccia verificata</span>
+                ) : (
+                  <span className="shrink-0 rounded-full border border-line px-3 py-1 text-xs font-semibold uppercase tracking-wide text-muted">Traccia da acquisire</span>
+                )}
+              </Link>
             </li>
           ))}
         </ul>

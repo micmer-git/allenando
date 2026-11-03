@@ -6,6 +6,7 @@ export const it = {
     memory: 'Salvataggio solo in questa sessione: il browser ha bloccato il database locale.',
   },
   nav: {
+    world: 'Mondo',
     home: 'Oggi',
     ride: 'Pedala',
     climbs: 'Salite',

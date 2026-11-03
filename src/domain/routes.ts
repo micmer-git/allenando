@@ -210,8 +210,29 @@ export function routeStats(track: RouteTrack): RouteStats {
 }
 
 /** Link ufficiale a Google Maps in modalità Street View: si apre fuori dall'app. */
-export function streetViewUrl(p: LatLon): string {
-  return `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${p.lat.toFixed(5)},${p.lon.toFixed(5)}`;
+/**
+ * Link al visore ufficiale di Google Street View (Maps URLs, apertura in una scheda nuova).
+ * Solo un collegamento: nessuna immagine viene scaricata, copiata o usata nel mondo 3D.
+ */
+export function streetViewUrl(p: LatLon, heading?: number): string {
+  const h = heading != null && Number.isFinite(heading) ? `&heading=${Math.round(((heading % 360) + 360) % 360)}&pitch=0&fov=90` : '';
+  return `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${p.lat.toFixed(5)},${p.lon.toFixed(5)}${h}`;
+}
+
+/** Lo stesso punto nel visore di Mapillary (foto CC BY-SA dei contributori). */
+export function mapillaryUrl(p: LatLon): string {
+  return `https://www.mapillary.com/app/?lat=${p.lat.toFixed(5)}&lng=${p.lon.toFixed(5)}&z=17`;
+}
+
+/**
+ * Da direzione del mondo 3D a rotta bussola (0 = nord, 90 = est). Nel mondo avanti è
+ * (sin h, cos h) su (x, z), x è est e z è sud.
+ */
+export function headingToBearing(heading: number): number {
+  const east = Math.sin(heading);
+  const north = -Math.cos(heading);
+  const deg = (Math.atan2(east, north) * 180) / Math.PI;
+  return (deg + 360) % 360;
 }
 
 export function osmUrl(p: LatLon, zoom = 14): string {

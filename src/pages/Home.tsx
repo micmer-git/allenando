@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Wordmark } from '@/components/ui';
+import { InstallCard } from '@/components/Install';
 import { formatDateTime, formatDuration, formatKm, formatNumber } from '@/domain/format';
 import { localDateKey, trainingLoad } from '@/domain/load';
 import { VERIFIED_ROUTES } from '@/domain/routes';
@@ -29,10 +30,18 @@ export function HomePage() {
       <h1 className="mt-6 font-display text-5xl uppercase leading-[0.9]">{t('home.hello', { name: profile.name || 'Atleta' })}</h1>
       <p className="mt-2 text-muted">{t('home.lead')}</p>
 
+      <InstallCard className="mt-5" />
+
+      <Link to="/mondo" data-testid="home-world" className="mt-5 block overflow-hidden rounded-3xl border border-accent/40 bg-elev p-4 transition hover:border-accent">
+        <span className="eyebrow text-accent">Mondo aperto</span>
+        <span className="mt-1 block font-display text-3xl uppercase leading-none">Bergamo e le valli</span>
+        <span className="mt-1.5 block text-sm leading-snug text-muted">Città Alta, Val Brembana e Val Seriana sulle strade vere: giri sinistra o destra a ogni incrocio, percorsi classici, anelli su misura, punti e classifica.</span>
+      </Link>
+
       <section className="mt-6">
         <div className="mb-2 flex items-baseline justify-between">
           <h2 className="eyebrow">{t('home.climbs')}</h2>
-          <Link to="/salite" className="text-sm font-semibold text-accent">{t('home.allClimbs')}</Link>
+          <Link to="/salite" className="-my-3 inline-flex h-11 items-center text-sm font-semibold text-accent">{t('home.allClimbs')}</Link>
         </div>
         <ul className="grid grid-cols-2 gap-2">
           {VERIFIED_ROUTES.map((r) => (
@@ -75,7 +84,7 @@ export function HomePage() {
       <section className="mt-6">
         <div className="mb-2 flex items-baseline justify-between">
           <h2 className="eyebrow">{t('home.recent')}</h2>
-          <Link to="/history" className="text-sm font-semibold text-accent">{t('home.seeAll')}</Link>
+          <Link to="/history" className="-my-3 inline-flex h-11 items-center text-sm font-semibold text-accent">{t('home.seeAll')}</Link>
         </div>
         {recent.length === 0 ? (
           <p className="rounded-2xl border border-dashed border-line p-4 text-muted">{t('home.empty')}</p>

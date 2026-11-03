@@ -18,7 +18,9 @@ import {
   sliceSection,
   type ReplayMode,
 } from '@/domain/replay';
-import { loadRouteFile, routeMeta, trackFromGeo, trackFromRouteFile, type LoadedRoute } from '@/domain/routes';
+import { headingToBearing, loadRouteFile, mapillaryUrl, routeMeta, streetViewUrl, trackFromGeo, trackFromRouteFile, type LoadedRoute } from '@/domain/routes';
+import { projector } from '@/domain/geo';
+import { RIDER_COLORS } from '@/multiplayer/protocol';
 import { createRouteTrack } from '@/domain/track';
 import type { Profile, Quality, RideSample, Workout, WorkoutStep } from '@/domain/types';
 import { estimateLthr, powerZone } from '@/domain/zones';
@@ -28,7 +30,17 @@ import { RideEngine } from '@/sim/engine';
 import { useApp } from '@/store/useApp';
 import { RideScene } from '@/world/Scene';
 import { decodeSection } from './ReplaySetup';
+import { RoomPanel, RoomSheet, useRoom } from './RideRoom';
 import { workoutTitle } from './Workouts';
+import { Terrain, loadWorld, type WorldData } from '@/open/world';
+import { createWorldField } from '@/open/field';
+import { WorldSession } from '@/open/session';
+import { WorldScene, npcCount, type RemoteWorldRider } from '@/open/WorldScene';
+import { loadPlan } from '@/open/plan';
+import { WorldClient } from '@/multiplayer/world-client';
+import { applyRide, levelOf, loadProgress, postResult, postXp, saveProgress, type XpLine } from '@/open/progress';
+import { AheadProfile, LoopSheet, Nearby, Toasts, TurnPicker, WorldMini, XpSummary } from './WorldHud';
+import type { Dir } from '@/open/graph';
 
 const DEFAULT_ROUTE = 'selvino-nembro';
 
@@ -41,6 +53,8 @@ interface RideSetup {
   ghostSamples?: RideSample[];
   label: string;
   note?: string;
+  /** mondo aperto: il grafo e la pedalata che lo percorre */
+  world?: { data: WorldData; session: WorldSession };
 }
 
 /** Strada neutra, dritta, per i giri senza GPS: lo diciamo, non la spacciamo per vera. */
@@ -71,13 +85,58 @@ function neutralRoute(samples: RideSample[]): LoadedRoute {
 function useRideSetup(): { setup: RideSetup | null; error: string | null } {
   const [params] = useSearchParams();
   const rides = useApp((s) => s.rides);
+  const quality = useApp((s) => s.settings.quality);
   const [state, setState] = useState<{ setup: RideSetup | null; error: string | null }>({ setup: null, error: null });
-  const key = params.toString();
+  // entrare o uscire da una stanza cambia ?room=, non la strada: non si ricarica niente
+  const key = useMemo(() => {
+    const p = new URLSearchParams(params);
+    p.delete('room');
+    return p.toString();
+  }, [params]);
   useEffect(() => {
     let alive = true;
     const done = (setup: RideSetup | null, error: string | null = null) => {
       if (alive) setState({ setup, error });
     };
+    if (params.get('world')) {
+      loadWorld()
+        .then((data) => {
+          const n = npcCount(quality);
+          const rideId = params.get('ride');
+          const planKey = params.get('plan');
+          let session: WorldSession;
+          let title: string;
+          let subtitle: string;
+          if (rideId) {
+            const ride = data.rides.find((r) => r.id === rideId);
+            if (!ride) throw new Error('Percorso sconosciuto.');
+            session = new WorldSession(data, { ride }, n);
+            title = ride.name;
+            subtitle = ride.side;
+          } else if (planKey) {
+            const plan = loadPlan(planKey);
+            if (!plan || plan.legs.length === 0) throw new Error('Anello non più disponibile: rifallo da Mondo.');
+            session = new WorldSession(data, { legs: plan.legs, name: plan.name }, n);
+            title = plan.name;
+            subtitle = 'anello suggerito';
+          } else {
+            const edge = Number(params.get('edge'));
+            const e = data.graph.edges[edge];
+            if (!e) throw new Error('Punto di partenza fuori dal mondo.');
+            const dir = (params.get('dir') === '-1' ? -1 : 1) as Dir;
+            const s0 = Math.min(e.length, Math.max(0, Number(params.get('s')) || 0));
+            session = new WorldSession(data, { edge, dir: data.graph.allowed(edge, dir) ? dir : ((-dir) as Dir), s: s0 }, n);
+            title = 'Giro libero';
+            subtitle = e.name || e.ref || 'Bergamo e le valli';
+          }
+          const route: LoadedRoute = { id: 'world', title, subtitle, track: session.path, dem: null, origin: data.graph.origin, attribution: data.graph.attribution, verified: true };
+          done({ route, label: subtitle && rideId ? `${title} ${subtitle}` : title, world: { data, session } });
+        })
+        .catch((err: unknown) => done(null, err instanceof Error ? err.message : 'Mondo non disponibile.'));
+      return () => {
+        alive = false;
+      };
+    }
     const replayId = params.get('replay');
     if (replayId) {
       const ride = rides.find((r) => r.id === replayId);
@@ -198,6 +257,7 @@ function RideSession({ setup }: { setup: RideSetup }) {
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       engine.tick(dt);
+      setup.world?.session.step(engine, dt);
       frame = requestAnimationFrame(loop);
     };
     frame = requestAnimationFrame(loop);
@@ -205,6 +265,7 @@ function RideSession({ setup }: { setup: RideSetup }) {
       cancelAnimationFrame(frame);
       trainer.disconnect();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine, trainer]);
 
   return <RideScreen engine={engine} trainer={trainer} profile={profile} workout={workout} quality={settings.quality} setup={setup} t={t} />;
@@ -275,12 +336,103 @@ function RideScreen({
   );
   const gap = ghostSamples && ghostSamples.length > 1 ? gapSeconds(ghostSamples, engine.distance / ghostScale, engine.elapsed) : null;
   const hairpinsDone = track.hairpins.filter((h) => h.distance <= engine.distance).length;
+  const room = useRoom(setup.routeId, engine, profile.name);
+  const riders = room.snap?.riders;
+  const riderKey = riders?.map((r) => `${r.id}:${r.color}:${r.nick}`).join('|') ?? '';
+  const remote = useMemo(() => {
+    const client = room.client;
+    if (!client || !riders) return undefined;
+    return {
+      source: { riders: () => client.remote(), colors: RIDER_COLORS },
+      list: riders.map((r) => ({ id: r.id, nick: r.nick, color: r.color })),
+    };
+    // la lista cambia solo quando qualcuno entra o esce, non a ogni aggiornamento
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [room.client, riderKey]);
+  // ---------- mondo aperto ----------
+  const world = setup.world;
+  const session = world?.session ?? null;
+  const [share, setShare] = useState(readShare);
+  const [loopOpen, setLoopOpen] = useState(false);
+  const [worldColor, setWorldColor] = useState<number | null>(null);
+  const [peers, setPeers] = useState<{ id: string; nick: string; color: number }[]>([]);
+  const [xp, setXp] = useState<{ lines: XpLine[]; total: number; level: ReturnType<typeof levelOf> & { xp: number }; rank: string | null; rankNote?: string } | null>(null);
+  const terrainField = useMemo(() => {
+    if (!world) return null;
+    const terrain = new Terrain(world.data.graph);
+    return { terrain, field: createWorldField(world.data.graph, terrain, world.data.features) };
+  }, [world]);
+  useEffect(() => {
+    if (!session || !share) return;
+    const client = new WorldClient({ world: 'bergamo', nick: profile.name || 'Ciclista' });
+    session.client = client;
+    let key = '';
+    const off = client.subscribe(() => {
+      const list = [...client.remote().values()].filter((r) => r.at > 0).map((r) => ({ id: r.id, nick: r.nick, color: r.color }));
+      const k = list.map((r) => `${r.id}:${r.color}:${r.nick}`).join('|');
+      if (k !== key) {
+        key = k;
+        setPeers(list);
+      }
+      setWorldColor(client.color);
+    });
+    client.connect();
+    return () => {
+      off();
+      client.leave();
+      session.client = null;
+      setPeers([]);
+    };
+  }, [session, share, profile.name]);
+  const worldRemote = useMemo<RemoteWorldRider[]>(
+    () => (session ? peers.map((p) => ({ id: p.id, nick: p.nick, color: RIDER_COLORS[p.color % RIDER_COLORS.length], pose: () => session.remoteNow.get(p.id) ?? null })) : []),
+    [session, peers],
+  );
+  const playerPose = useMemo(() => () => session?.pose ?? engine.pose(), [session, engine]);
+  const nextTurn = useMemo(() => () => session?.arrow(engine.distance) ?? null, [session, engine]);
+
+  /** I punti del giro e, se vale, il tempo in classifica. Una volta per riepilogo. */
+  async function commitWorld(): Promise<void> {
+    if (!session) return;
+    const completed = engine.arrived && session.rankable;
+    const prev = await loadProgress();
+    const out = applyRide(prev, {
+      rideId: session.ride?.id,
+      completed,
+      sec: completed ? engine.elapsed : undefined,
+      sim: snap.mode === 'simulator',
+      distanceM: engine.distance - session.committedM,
+      gainM: session.gainM - session.committedGain,
+      landmarks: [...session.passed].filter((id) => !session.committedLandmarks.has(id)),
+    });
+    session.markCommitted(engine.distance);
+    await saveProgress(out.next);
+    const total = out.lines.reduce((a, l) => a + l.xp, 0);
+    let rank: string | null = null;
+    let rankNote: string | undefined;
+    if (completed && session.ride && profile.name) {
+      const avg = engine.samples.length ? engine.samples.reduce((a, x) => a + x.power, 0) / engine.samples.length : engine.power3s;
+      const res = await postResult({ nick: profile.name, ride: session.ride.id, sec: engine.elapsed, wkg: profile.weightKg > 0 ? avg / profile.weightKg : 0, sim: snap.mode === 'simulator' });
+      if (res.ok && res.rank) rank = `${res.rank}° in classifica${snap.mode === 'simulator' ? ' (simulatore)' : ''}${res.best ? ', il tuo tempo migliore' : ''}`;
+      else if (res.error === 'implausible') rankNote = 'Tempo troppo veloce per essere vero: non va in classifica.';
+      else if (res.error === 'rete') rankNote = 'Senza rete: il tempo resta qui, non in classifica.';
+    } else if (session.ride && !completed) rankNote = session.offRoute || session.rejoined ? 'Sei uscito dal percorso: il tempo non va in classifica.' : 'Percorso non finito: niente tempo in classifica.';
+    if (profile.name) void postXp(out.next, profile.name);
+    setXp({ lines: out.lines, total, level: { ...levelOf(out.next.xp), xp: out.next.xp }, rank, rankNote });
+  }
+
+  // dove sei, per aprire la strada vera nel visore ufficiale (non per disegnarla nel 3D)
+  const pose = engine.pose();
+  const here = setup.route.id !== 'neutral' ? projector(setup.route.origin).toGeo(pose.x, pose.z) : null;
+  const bearing = headingToBearing(pose.heading);
 
   function finish() {
     engine.finish();
     const ride = engine.toRide(rideName);
     if (setup.routeId && !workout && !setup.replayMode) ride.routeId = setup.routeId;
+    if (session?.ride && session.rankable && engine.arrived) ride.routeId = `bergamo:${session.ride.id}`;
     setSummary(ride);
+    if (session) void commitWorld();
   }
 
   useEffect(() => {
@@ -292,124 +444,220 @@ function RideScreen({
     <div className="flex h-dvh flex-col bg-bg md:flex-row" data-testid="ride-screen">
       <div className="relative min-h-0 flex-1">
         <WorldBoundary onFail={() => setWebgl(false)}>
-          {webgl ? (
+          {webgl && world && session && terrainField ? (
+            <WorldScene
+              key={quality}
+              engine={engine}
+              data={world.data}
+              path={session.path}
+              field={terrainField.field}
+              terrain={terrainField.terrain}
+              quality={quality}
+              crowd={session.crowd}
+              remote={worldRemote}
+              selfColor={worldColor != null ? RIDER_COLORS[worldColor % RIDER_COLORS.length] : undefined}
+              nextTurn={nextTurn}
+              playerPose={playerPose}
+              onReady={() => setReady(true)}
+            />
+          ) : webgl ? (
             <RideScene
               key={quality}
               engine={engine}
               route={setup.route}
               quality={quality}
               ghostDistance={ghostDistance}
+              remote={remote}
+              selfColor={room.snap?.color != null ? RIDER_COLORS[room.snap.color % RIDER_COLORS.length] : undefined}
               onReady={() => setReady(true)}
             />
           ) : (
             <div className="grid h-full place-items-center bg-elev p-6 text-center text-muted">{t('ride.webgl')}</div>
           )}
         </WorldBoundary>
-        <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-3">
-          <button type="button" className="pointer-events-auto h-11 rounded-full bg-bg/70 px-4 text-sm font-semibold backdrop-blur" onClick={finish}>
-            {t('actions.back')}
-          </button>
-          <button
-            type="button"
-            className="pointer-events-auto h-11 rounded-full bg-bg/70 px-4 text-sm font-semibold backdrop-blur"
-            onClick={() => setSensorsOpen(true)}
-          >
-            {snap.mode === 'bluetooth' ? snap.deviceName || t('ride.connected') : t('ride.simulator')}
-          </button>
-        </div>
-        <div className="pointer-events-none absolute left-3 top-16 max-w-[62%] rounded-xl bg-bg/70 px-3 py-2 backdrop-blur" data-testid="ride-route">
-          <p className="font-display text-xl uppercase leading-none">{setup.route.title}</p>
-          <p className="text-xs text-muted">
-            {setup.route.subtitle}
-            {modeLabel ? ` · ${modeLabel}` : ''}
-            {!setup.route.verified ? ' · traccia non verificata' : ''}
-          </p>
-          {setup.note ? <p className="mt-1 text-xs text-warn">{setup.note}</p> : null}
-        </div>
-        <div className="pointer-events-none absolute right-3 top-16 flex flex-col items-end gap-1">
-          <p className="rounded-xl bg-bg/70 px-3 py-1.5 text-right backdrop-blur">
-            <span className="num font-display text-2xl leading-none">{formatKm(Math.max(0, track.length - engine.distance))}</span>
-            <span className="ml-1 text-xs text-muted">km all’arrivo</span>
-          </p>
-          <p className="rounded-xl bg-bg/70 px-3 py-1 text-sm backdrop-blur">
-            <span className="num font-semibold">{formatNumber(engine.altitude, 0)} m</span>
-            {track.hairpins.length > 0 ? (
-              <span className="ml-2 text-muted">
-                tornanti {hairpinsDone}/{track.hairpins.length}
-              </span>
-            ) : null}
-          </p>
-          {gap != null ? (
-            <p
-              className={`rounded-xl px-3 py-1 text-sm font-semibold backdrop-blur ${gap >= 0 ? 'bg-good/25 text-good' : 'bg-danger/25 text-danger'}`}
-              data-testid="ghost-gap"
+        {/* barra in alto: una riga sola, il mondo resta libero */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 bg-gradient-to-b from-black/35 to-transparent px-2.5 pb-6 pt-[max(0.5rem,env(safe-area-inset-top))]">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              aria-label={t('actions.back')}
+              className="pointer-events-auto grid h-11 w-11 shrink-0 place-items-center rounded-full bg-bg/70 backdrop-blur"
+              onClick={finish}
             >
-              fantasma {gap >= 0 ? '+' : '−'}
-              {formatDuration(Math.abs(gap))}
-            </p>
-          ) : null}
+              <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+            <div className="min-w-0 flex-1 rounded-full bg-bg/70 px-3.5 py-1.5 backdrop-blur" data-testid="ride-route">
+              <p className="truncate font-display text-lg uppercase leading-tight">
+                {setup.route.title} <span className="font-sans text-xs font-medium normal-case text-muted">{setup.route.subtitle}</span>
+              </p>
+              <p className="truncate text-[11px] leading-tight text-muted" data-testid="ride-where">
+                {session ? (
+                  <>
+                    {[session.placeName(), session.roadLabel(engine.distance), `${formatNumber(engine.altitude, 0)} m`].filter(Boolean).join(' · ')}
+                    {engine.aero < 0.93 ? <span className="font-semibold text-good"> · in scia −{Math.round((1 - engine.aero) * 100)}% aria</span> : null}
+                    {engine.rolling > 1.2 ? <span className="text-warn"> · {engine.rolling > 2 ? 'sterrato' : 'porfido'}</span> : null}
+                  </>
+                ) : (
+                  <>
+                    {modeLabel ? `${modeLabel} · ` : ''}
+                    {!setup.route.verified ? 'traccia non verificata' : `${formatNumber(engine.altitude, 0)} m`}
+                    {track.hairpins.length > 0 ? ` · tornanti ${hairpinsDone}/${track.hairpins.length}` : ''}
+                  </>
+                )}
+              </p>
+            </div>
+            {room.available ? (
+              <button
+                type="button"
+                aria-label="Pedala insieme"
+                data-testid="room-open"
+                className={`pointer-events-auto relative grid h-11 w-11 shrink-0 place-items-center rounded-full backdrop-blur ${room.client ? 'bg-accent text-accent-ink' : 'bg-bg/70'}`}
+                onClick={() => room.setSheet(true)}
+              >
+                <PeopleIcon />
+                {room.snap && room.snap.riders.length > 0 ? (
+                  <span className="absolute -right-0.5 -top-0.5 grid h-5 min-w-5 place-items-center rounded-full bg-bg px-1 text-[11px] font-bold text-ink">
+                    {room.snap.riders.length + 1}
+                  </span>
+                ) : null}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              aria-label={snap.mode === 'bluetooth' ? snap.deviceName || t('ride.connected') : t('ride.simulator')}
+              className={`pointer-events-auto grid h-11 w-11 shrink-0 place-items-center rounded-full backdrop-blur ${snap.mode === 'bluetooth' && snap.status === 'connected' ? 'bg-good/30 text-good' : 'bg-bg/70'}`}
+              onClick={() => setSensorsOpen(true)}
+              data-testid="ride-sensors"
+            >
+              {snap.mode === 'bluetooth' ? <BleIcon /> : <SimIcon />}
+            </button>
+          </div>
+          <div className="mt-1.5 flex items-start justify-between gap-2">
+            <div className="flex flex-col items-start gap-1.5">
+              {room.snap ? <RoomPanel snap={room.snap} myDistance={engine.distance} onOpen={() => room.setSheet(true)} /> : null}
+              {setup.note ? <p className="max-w-[60vw] rounded-xl bg-bg/70 px-2.5 py-1 text-xs text-warn backdrop-blur">{setup.note}</p> : null}
+              {session ? <Nearby session={session} /> : null}
+            </div>
+            <div className="flex shrink-0 flex-col items-end gap-1">
+              <p className="rounded-xl bg-bg/70 px-2.5 py-1 text-right leading-none backdrop-blur" data-testid="ride-km">
+                {session && !session.onRoute ? (
+                  <>
+                    <span className="num font-display text-[22px]">{formatKm(engine.distance)}</span>
+                    <span className="ml-1 text-[11px] text-muted">km fatti</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="num font-display text-[22px]">{formatKm(Math.max(0, track.length - engine.distance))}</span>
+                    <span className="ml-1 text-[11px] text-muted">km all’arrivo</span>
+                  </>
+                )}
+              </p>
+              {session && session.offRoute ? (
+                <button type="button" className="pointer-events-auto h-11 rounded-full bg-accent px-3.5 text-sm font-semibold text-accent-ink" onClick={() => session.rejoin(engine.distance)} data-testid="world-rejoin">
+                  Torna sul percorso
+                </button>
+              ) : null}
+              {session && !session.planned ? (
+                <button type="button" className="pointer-events-auto h-11 rounded-full bg-bg/75 px-3.5 text-sm font-semibold backdrop-blur" onClick={() => setLoopOpen(true)} data-testid="world-loop-here">
+                  Anello da qui
+                </button>
+              ) : null}
+              {gap != null ? (
+                <p
+                  className={`rounded-xl px-2.5 py-1 text-xs font-semibold backdrop-blur ${gap >= 0 ? 'bg-good/25 text-good' : 'bg-danger/25 text-danger'}`}
+                  data-testid="ghost-gap"
+                >
+                  fantasma {gap >= 0 ? '+' : '−'}
+                  {formatDuration(Math.abs(gap))}
+                </p>
+              ) : null}
+            </div>
+          </div>
         </div>
-        <div className="pointer-events-none absolute inset-x-3 bottom-3 rounded-xl bg-bg/60 p-1.5 backdrop-blur">
-          <ProfileChart
-            track={track}
-            className="block h-12 w-full"
-            height={48}
-            bin={Math.max(100, track.length / 80)}
-            position={engine.distance}
-            ghost={ghostDistance ? ghostDistance() : null}
-          />
+        {session ? (
+          <div className="pointer-events-none absolute inset-x-0 top-[6.4rem] flex justify-center px-14">
+            <Toasts session={session} />
+          </div>
+        ) : null}
+        {session ? (
+          <div className="pointer-events-none absolute inset-x-2.5 bottom-[3.6rem] flex items-end justify-between gap-2">
+            <div className="min-w-0">
+              <TurnPicker session={session} engine={engine} />
+            </div>
+            <div className="shrink-0">
+              <WorldMini session={session} size={118} />
+            </div>
+          </div>
+        ) : null}
+        <div className="pointer-events-none absolute inset-x-2.5 bottom-2 rounded-xl bg-bg/55 p-1 backdrop-blur">
+          {session && !session.onRoute ? (
+            <AheadProfile session={session} engine={engine} />
+          ) : (
+            <ProfileChart
+              key={session ? session.path.version : 0}
+              track={track}
+              className="block h-9 w-full"
+              height={36}
+              bin={Math.max(100, track.length / 80)}
+              position={engine.distance}
+              ghost={ghostDistance ? ghostDistance() : null}
+            />
+          )}
         </div>
 
         <span data-testid="world-ready" data-ready={ready ? 'yes' : 'no'} className="sr-only" />
+        <span data-testid="room-3d" data-count={remote?.list.length ?? 0} className="sr-only" />
       </div>
-      <aside className="max-h-[56%] overflow-auto border-t border-line bg-elev px-4 pb-[max(0.8rem,env(safe-area-inset-bottom))] pt-3 md:max-h-none md:w-[400px] md:shrink-0 md:border-l md:border-t-0">
+      <aside className="max-h-[50%] overflow-auto border-t border-line bg-elev px-4 pb-[max(0.6rem,env(safe-area-inset-bottom))] pt-2.5 md:max-h-none md:w-[400px] md:shrink-0 md:border-l md:border-t-0 md:pt-4">
         {progress && engine.workout ? (
-          <div className="mb-3">
+          <div className="mb-2.5">
             <div className="flex items-end justify-between gap-3">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-accent" data-testid="erg-target">
                   {t('ride.erg')} {formatNumber(engine.targetPower, 0)} {t('units.watt')}
                 </p>
-                <p className="font-display text-3xl leading-none">{step ? stepLabel(step, t) : ''}</p>
+                <p className="font-display text-2xl leading-none">{step ? stepLabel(step, t) : ''}</p>
               </div>
-              <p className="num font-display text-4xl" data-testid="interval-clock">{formatDuration(progress.stepRemaining)}</p>
+              <p className="num font-display text-3xl" data-testid="interval-clock">{formatDuration(progress.stepRemaining)}</p>
             </div>
-            <div className="mt-2">
+            <div className="mt-1.5">
               <WorkoutChart workout={engine.workout} ftp={engine.ftp} elapsed={engine.elapsed} />
             </div>
           </div>
         ) : null}
-        {engine.workoutDone ? <p className="mb-3 text-sm text-good">{t('ride.done')}</p> : null}
-        <div className="flex items-end justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-wide text-muted">{t('metrics.power3s')}</p>
-            <p className="num font-display text-6xl leading-none" data-testid="ride-power" style={{ color: zone.color }}>
+        {engine.workoutDone ? <p className="mb-2 text-sm text-good">{t('ride.done')}</p> : null}
+        <div className="flex items-end justify-between gap-3">
+          <div className="flex items-baseline gap-2">
+            <p className="num font-display text-[56px] leading-[0.85]" data-testid="ride-power" style={{ color: zone.color }}>
               {formatNumber(engine.power3s, 0)}
+            </p>
+            <p className="text-xs font-semibold uppercase leading-tight tracking-wide text-muted">
+              watt
+              <br />3 s
             </p>
           </div>
           <div className="text-right">
-            <p className="text-sm font-semibold" style={{ color: zone.color }}>
-              {t('metrics.zone')} {zone.zone} · {t(zone.nameKey)}
+            <p className="text-[13px] font-semibold leading-tight" style={{ color: zone.color }}>
+              Z{zone.zone} · {t(zone.nameKey)}
             </p>
-            <p className="num text-lg">{formatNumber(engine.wkg(), 1)} {t('metrics.wkg')}</p>
+            <p className="num text-base leading-tight">
+              {formatNumber(engine.wkg(), 1)} <span className="text-xs text-muted">{t('metrics.wkg')}</span>
+            </p>
           </div>
         </div>
-        <dl className="mt-3 grid grid-cols-3 gap-2 text-center">
+        <dl className="mt-2.5 grid grid-cols-3 gap-1.5 text-center">
+          <Cell label={t('metrics.speed')} value={formatNumber(msToKmh(engine.speed), 1)} unit={t('units.kmh')} strong />
+          <Cell label={t('metrics.grade')} value={formatGrade(engine.grade)} strong />
+          <Cell label={t('metrics.cadence')} value={formatNumber(engine.cadence, 0)} unit={t('units.rpm')} strong />
           <Cell label={t('metrics.hr')} value={formatNumber(engine.hr, 0)} unit={t('units.bpm')} />
-          <Cell label={t('metrics.cadence')} value={formatNumber(engine.cadence, 0)} unit={t('units.rpm')} />
-          <Cell label={t('metrics.speed')} value={formatNumber(msToKmh(engine.speed), 1)} unit={t('units.kmh')} />
-        </dl>
-        <dl className="mt-2 grid grid-cols-3 gap-2 text-center text-sm text-muted">
           <Cell label={t('metrics.distance')} value={formatKm(engine.distance)} unit="km" />
           <Cell label={t('metrics.time')} value={formatDuration(engine.elapsed)} />
-          <Cell label={t('metrics.grade')} value={formatGrade(engine.grade)} />
         </dl>
         {/* su telefono il pannello scorre: Pausa e Termina restano sempre a portata di dito */}
-        <div className="sticky bottom-0 z-10 -mx-4 mt-3 grid grid-cols-2 gap-2 bg-elev px-4 py-2 md:static md:mx-0 md:px-0 md:py-0">
-          <Button
-            variant="ghost"
-            onClick={() => (engine.phase === 'paused' ? engine.resume() : engine.pause())}
-          >
+        <div className="sticky bottom-0 z-10 -mx-4 mt-2.5 grid grid-cols-2 gap-2 bg-elev px-4 py-1.5 md:static md:mx-0 md:px-0 md:py-0">
+          <Button variant="ghost" onClick={() => (engine.phase === 'paused' ? engine.resume() : engine.pause())}>
             {engine.phase === 'paused' ? t('actions.resume') : t('actions.pause')}
           </Button>
           <Button data-testid="ride-finish" onClick={finish}>
@@ -417,14 +665,14 @@ function RideScreen({
           </Button>
         </div>
         {snap.mode === 'simulator' && engine.mode === 'free' ? (
-          <label className="mt-3 block">
+          <label className="mt-2.5 block">
             <span className="flex justify-between text-sm text-muted">
               <span>{t('ride.effort')}</span>
               <span className="num">{effort}%</span>
             </span>
             <input
               aria-label={t('a11y.effort')}
-              className="mt-1 w-full accent-[var(--accent)]"
+              className="mt-1 h-8 w-full accent-[var(--accent)]"
               type="range"
               min={0}
               max={160}
@@ -438,12 +686,13 @@ function RideScreen({
           </label>
         ) : null}
         {snap.mode === 'simulator' ? (
-          <div className="mt-3 flex gap-2">
+          <div className="mt-2 grid grid-cols-3 gap-1 rounded-full bg-elev2 p-1" role="group" aria-label="Velocità del simulatore">
             {[1, 4, 10].map((scale) => (
               <button
                 key={scale}
                 type="button"
-                className={`h-10 flex-1 rounded-full text-sm font-semibold ${engine.timeScale === scale ? 'bg-accent text-accent-ink' : 'bg-elev2'}`}
+                aria-pressed={engine.timeScale === scale}
+                className={`h-11 rounded-full text-sm font-semibold ${engine.timeScale === scale ? 'bg-accent text-accent-ink' : 'text-muted'}`}
                 onClick={() => {
                   engine.timeScale = scale;
                   bump((n) => n + 1);
@@ -454,29 +703,82 @@ function RideScreen({
             ))}
           </div>
         ) : null}
-        <div className="mt-3">
-          <Segmented<Quality>
-            label={t('ride.quality')}
-            value={quality}
-            onChange={(next) => void updateSettings({ quality: next })}
-            options={[
-              { value: 'low', label: t('quality.low') },
-              { value: 'medium', label: t('quality.medium') },
-              { value: 'high', label: t('quality.high') },
-            ]}
-          />
-        </div>
         {snap.mode === 'bluetooth' && snap.status === 'connected' && engine.power <= 0 ? (
           <p className="mt-2 text-sm text-warn">{t('ride.waiting')}</p>
         ) : null}
         {snap.mode === 'bluetooth' && snap.status === 'disconnected' ? (
           <p className="mt-2 flex items-center justify-between gap-3 text-sm text-warn" role="status">
             {t('ride.lost')}
-            <button type="button" className="font-semibold underline" onClick={() => setSensorsOpen(true)}>
+            <button type="button" className="h-11 font-semibold underline" onClick={() => setSensorsOpen(true)}>
               {t('ride.reconnect')}
             </button>
           </p>
         ) : null}
+        <details className="group mt-2.5 rounded-2xl border border-line">
+          <summary className="flex h-11 cursor-pointer list-none items-center justify-between px-3 text-sm font-semibold">
+            Grafica e strada vera
+            <span aria-hidden="true" className="text-muted transition group-open:rotate-180">
+              ▾
+            </span>
+          </summary>
+          <div className="px-3 pb-3">
+            {session ? (
+              <label className="mb-3 flex min-h-11 items-center justify-between gap-3 text-sm">
+                <span>
+                  <span className="font-semibold">Mostrami agli altri nel mondo</span>
+                  <span className="block text-xs text-muted">Passano il nome, la posizione sulla strada virtuale e i watt. Niente GPS.</span>
+                </span>
+                <input
+                  type="checkbox"
+                  className="h-6 w-6 accent-[var(--accent)]"
+                  checked={share}
+                  onChange={(e) => {
+                    setShare(e.target.checked);
+                    writeShare(e.target.checked);
+                  }}
+                  data-testid="world-share"
+                />
+              </label>
+            ) : null}
+            <Segmented<Quality>
+              label={t('ride.quality')}
+              value={quality}
+              onChange={(next) => void updateSettings({ quality: next })}
+              options={[
+                { value: 'low', label: t('quality.low') },
+                { value: 'medium', label: t('quality.medium') },
+                { value: 'high', label: t('quality.high') },
+              ]}
+            />
+            {here ? (
+              <>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <a
+                    href={streetViewUrl(here, bearing)}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="inline-flex h-11 items-center justify-center rounded-full bg-elev2 px-3 text-sm font-semibold"
+                    data-testid="street-view"
+                  >
+                    Guarda la strada vera ↗
+                  </a>
+                  <a
+                    href={mapillaryUrl(here)}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="inline-flex h-11 items-center justify-center rounded-full bg-elev2 px-3 text-sm font-semibold"
+                  >
+                    Mapillary ↗
+                  </a>
+                </div>
+                <p className="mt-2 text-xs leading-relaxed text-muted">
+                  Si apre in una scheda nuova, nel visore ufficiale di Google Street View o di Mapillary (foto © dei rispettivi autori), nel punto e nella
+                  direzione in cui sei. Il mondo 3D non usa quelle immagini: è costruito da OpenStreetMap e dal DEM.
+                </p>
+              </>
+            ) : null}
+          </div>
+        </details>
       </aside>
       {sensorsOpen ? (
         <SensorSheet
@@ -486,6 +788,8 @@ function RideScreen({
           t={t}
         />
       ) : null}
+      {loopOpen && session ? <LoopSheet session={session} engine={engine} onClose={() => setLoopOpen(false)} /> : null}
+      {room.sheet && room.available ? <RoomSheet handle={room} routeTitle={`${setup.route.title} ${setup.route.subtitle}`} onClose={() => room.setSheet(false)} /> : null}
       {summary ? (
         <div className="fixed inset-0 z-40 overflow-auto bg-bg/95 px-4 py-8 backdrop-blur" data-testid="ride-summary">
           <div className="mx-auto w-full max-w-lg">
@@ -513,7 +817,9 @@ function RideScreen({
                 )}
               </div>
             ) : null}
-            {engine.arrived ? <p className="mt-3 font-semibold text-accent">In cima: {setup.route.title} {setup.route.subtitle}.</p> : null}
+            {engine.arrived && !session ? <p className="mt-3 font-semibold text-accent">In cima: {setup.route.title} {setup.route.subtitle}.</p> : null}
+            {engine.arrived && session?.planned ? <p className="mt-3 font-semibold text-accent">Arrivato: {setup.route.title}.</p> : null}
+            {xp ? <XpSummary lines={xp.lines} total={xp.total} level={xp.level} rank={xp.rank} rankNote={xp.rankNote} /> : null}
             <div className="mt-6 flex flex-col gap-2">
               {saved ? (
                 <Button data-testid="ride-open-history" onClick={() => navigate(`/history/${summary.id}`)}>
@@ -637,15 +943,44 @@ function Service({ on, label }: { on: boolean; label: string }) {
   return <li className={`rounded-full px-3 py-1 ${on ? 'bg-good/20 text-good' : 'bg-elev2 text-muted'}`}>{label}</li>;
 }
 
-function Cell({ label, value, unit }: { label: string; value: string; unit?: string }) {
+function Cell({ label, value, unit, strong = false }: { label: string; value: string; unit?: string; strong?: boolean }) {
   return (
-    <div className="rounded-2xl bg-bg/60 px-2 py-2">
-      <dt className="text-[11px] uppercase tracking-wide text-muted">{label}</dt>
-      <dd className="num font-semibold">
+    <div className="rounded-xl bg-bg/60 px-1.5 py-1.5">
+      <dt className="text-[10px] font-semibold uppercase tracking-wider text-muted">{label}</dt>
+      <dd className={`num font-semibold leading-tight ${strong ? 'text-lg' : 'text-[15px] text-ink/85'}`}>
         {value}
-        {unit ? <span className="ml-1 text-xs font-medium text-muted">{unit}</span> : null}
+        {unit ? <span className="ml-0.5 text-[11px] font-medium text-muted">{unit}</span> : null}
       </dd>
     </div>
+  );
+}
+
+function PeopleIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="9" cy="8" r="3.2" stroke="currentColor" strokeWidth="1.9" />
+      <path d="M3 19.5c.6-3.3 3-5.2 6-5.2s5.4 1.9 6 5.2" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+      <circle cx="16.8" cy="9" r="2.5" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M16.5 13.6c2.4.1 4 1.7 4.5 4.4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function SimIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="6" cy="16.5" r="3.2" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="18" cy="16.5" r="3.2" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M6 16.5 9.5 9h4.5l4 7.5M9.5 9l2.5 7.5" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function BleIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M7 7l10 10-5 4V3l5 4L7 17" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 
@@ -665,6 +1000,24 @@ function stepLabel(step: WorkoutStep, t: Translate): string {
   if (name.startsWith('rec') || name.startsWith('rest') || name === 'easy' || name === 'spin') return t('workouts.stepRest');
   if (name.startsWith('ramp')) return t('workouts.stepRamp');
   return t('workouts.stepWork');
+}
+
+const SHARE_KEY = 'allenando.world.share';
+
+function readShare(): boolean {
+  try {
+    return localStorage.getItem(SHARE_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
+function writeShare(on: boolean): void {
+  try {
+    localStorage.setItem(SHARE_KEY, on ? '1' : '0');
+  } catch {
+    /* modalità privata */
+  }
 }
 
 function physicsFrom(profile: Profile): PhysicsParams {

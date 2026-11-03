@@ -5,6 +5,7 @@ import { cn } from '@/lib/cn';
 
 const items = [
   { to: '/', key: 'nav.home', icon: HomeIcon, end: true },
+  { to: '/mondo', key: 'nav.world', icon: WorldIcon, end: false },
   { to: '/salite', key: 'nav.climbs', icon: MountainIcon, end: false },
   { to: '/giri', key: 'nav.rides', icon: RideIcon, end: false },
   { to: '/workouts', key: 'nav.workouts', icon: PlanIcon, end: false },
@@ -47,7 +48,7 @@ export function BottomNav() {
       aria-label={t('nav.primary')}
       className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-bg/90 px-2 pb-[max(0.4rem,env(safe-area-inset-bottom))] pt-1 backdrop-blur-xl md:hidden"
     >
-      <ul className="grid grid-cols-5">
+      <ul className="grid grid-cols-6">
         {items.map((item) => (
           <li key={item.to}>
             <NavLink
@@ -67,6 +68,15 @@ export function BottomNav() {
         ))}
       </ul>
     </nav>
+  );
+}
+
+function WorldIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M3 6.5 8.5 4l7 2.5L21 4v13.5L15.5 20l-7-2.5L3 20V6.5Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M8.5 4v13.5M15.5 6.5V20" stroke="currentColor" strokeWidth="1.6" />
+    </svg>
   );
 }
 
