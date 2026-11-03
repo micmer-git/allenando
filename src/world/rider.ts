@@ -1,17 +1,17 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { limbMatrix, twoBoneIK, type V3 } from './riderGeo';
 
 /*
- * Bici da strada e ciclista, in metri. Assi locali: x a destra, y in alto, z avanti.
+ * Bici da strada e ciclista, in metri. Assi locali: y in alto, z avanti, e quindi x verso la
+ * SINISTRA del ciclista (three.js è destrorso): la destra, col lato della trasmissione, è −x.
  * Le proporzioni sono quelle di una bici taglia 54-56 (passo 1 m, ruote 700×25c,
  * pedivelle 172,5 mm) con un ciclista di circa 1,78 m sulle leve.
  *
- * Tutto ciò che non si muove è fuso in una geometria sola con i colori nei vertici
- * (telaio, catena, manubrio; busto, braccia e testa): un ciclista intero costa una
- * dozzina di chiamate di disegno, non una cinquantina.
+ * Il ciclista è UNA maglia con lo scheletro (SkinnedMesh): 23 ossa, dalla bici che dondola
+ * alle mani sulle leve. Qui stanno le misure, le ossa e il risolutore della posa — la stessa
+ * funzione dà la posa di riposo (su cui si costruisce la geometria, riderBuild.ts) e quella di
+ * ogni fotogramma (riderRig.ts): così la pelle combacia sempre con le ossa.
  */
-
-type V3 = readonly [number, number, number];
 
 export const BIKE = {
   wheelR: 0.335,
@@ -22,242 +22,140 @@ export const BIKE = {
   headTop: [0, 0.86, 0.47] as V3,
   headBottom: [0, 0.71, 0.51] as V3,
   saddle: [0, 0.965, -0.2] as V3,
+  /** centro del morsetto della piega */
+  bar: [0, 0.895, 0.578] as V3,
   crank: 0.1725,
   pedalX: 0.13,
 } as const;
 
 export const BODY = {
+  /** anca destra, seduto */
   hip: [0.095, 1.0, -0.17] as V3,
   thigh: 0.43,
   shin: 0.42,
-  /** caviglia sopra e dietro il pedale */
-  ankle: [0, 0.075, -0.035] as V3,
+  upperArm: 0.3,
+  forearm: 0.27,
+  /** perno del bacino (fra le anche), seduto */
+  pelvis: [0, 1.0, -0.17] as V3,
+  /** perno della schiena (lombare), dal bacino */
+  lumbar: [0, 0.12, 0.1] as V3,
+  /** spalla destra, dal perno lombare */
+  shoulder: [0.185, 0.235, 0.315] as V3,
+  /** base della testa (atlante), dal perno lombare */
+  neck: [0, 0.31, 0.43] as V3,
+  /** caviglia rispetto al perno del pedale, nel piano della scarpa */
+  ankleUp: 0.092,
+  ankleBack: 0.105,
+  /** caviglia media sopra e dietro il pedale (piede inclinato di 0,2 rad): per i conti alla buona */
+  ankle: [0, 0.111, -0.085] as V3,
+  /** palmo sulla leva destra (dalla bici) e polso */
+  hood: [0.205, 0.942, 0.685] as V3,
+  wrist: [0.2, 0.968, 0.62] as V3,
 } as const;
 
-const v = (p: V3) => new THREE.Vector3(p[0], p[1], p[2]);
+/** Le ossa, nell'ordine dello scheletro. R = destra del ciclista (lato −x, la trasmissione). */
+export const B = {
+  bike: 0,
+  steer: 1,
+  wheelF: 2,
+  wheelR: 3,
+  crank: 4,
+  pedalL: 5,
+  pedalR: 6,
+  pelvis: 7,
+  chest: 8,
+  head: 9,
+  glasses: 10,
+  upperArmL: 11,
+  forearmL: 12,
+  handL: 13,
+  upperArmR: 14,
+  forearmR: 15,
+  handR: 16,
+  thighL: 17,
+  shinL: 18,
+  footL: 19,
+  thighR: 20,
+  shinR: 21,
+  footR: 22,
+} as const;
+export const BONE_COUNT = 23;
 
-function paint(geo: THREE.BufferGeometry, color: string): THREE.BufferGeometry {
-  const c = new THREE.Color(color);
-  const n = geo.attributes.position.count;
-  const arr = new Float32Array(n * 3);
-  for (let i = 0; i < n; i++) c.toArray(arr, i * 3);
-  geo.setAttribute('color', new THREE.BufferAttribute(arr, 3));
-  return geo;
+/** Tutto quello che decide la posa in un istante. Angoli in radianti. */
+export interface PoseState {
+  /** pedivella destra: 0 in alto, cresce pedalando */
+  crank: number;
+  /** rotazione delle ruote */
+  wheel: number;
+  /** 0 seduto … 1 fuori sella */
+  stand: number;
+  /** 0 … 1 posizione raccolta (aero) */
+  tuck: number;
+  /** dondolio della bici sotto il corpo (fuori sella) */
+  bikeRoll: number;
+  /** piega in curva, tutto insieme intorno al contatto con l'asfalto */
+  lean: number;
+  steer: number;
+  /** il bacino che ondeggia sulla sella */
+  pelvisRoll: number;
+  /** il busto che ondeggia con lo sforzo */
+  sway: number;
+  /** spostamento laterale del bacino (fuori sella, sopra il pedale che spinge) */
+  shift: number;
+  headYaw: number;
+  headPitch: number;
+  /** su e giù del bacino */
+  bob: number;
+  /** spalle che si alzano col respiro e la fatica */
+  shrug: number;
+  glasses: boolean;
 }
 
-const UP = new THREE.Vector3(0, 1, 0);
+export const NEUTRAL: PoseState = {
+  crank: 0.9,
+  wheel: 0,
+  stand: 0,
+  tuck: 0,
+  bikeRoll: 0,
+  lean: 0,
+  steer: 0,
+  pelvisRoll: 0,
+  sway: 0,
+  shift: 0,
+  headYaw: 0,
+  headPitch: 0,
+  bob: 0,
+  shrug: 0,
+  glasses: true,
+};
 
-/** Un tubo tra due punti. */
-function tube(a: V3, b: V3, r: number, color: string, r2 = r, seg = 8): THREE.BufferGeometry {
-  const A = v(a);
-  const B = v(b);
-  const len = Math.max(0.005, A.distanceTo(B));
-  const g = new THREE.CylinderGeometry(r2, r, len, seg, 1);
-  const q = new THREE.Quaternion().setFromUnitVectors(UP, B.clone().sub(A).normalize());
-  g.applyMatrix4(new THREE.Matrix4().compose(A.clone().add(B).multiplyScalar(0.5), q, new THREE.Vector3(1, 1, 1)));
-  return paint(g, color);
-}
-
-function sphere(c: V3, r: number, color: string, scale: V3 = [1, 1, 1], seg = 10): THREE.BufferGeometry {
-  const g = new THREE.SphereGeometry(r, seg, Math.max(6, Math.round(seg * 0.7)));
-  g.scale(scale[0], scale[1], scale[2]);
-  g.translate(c[0], c[1], c[2]);
-  return paint(g, color);
-}
-
-function box(c: V3, size: V3, color: string, rotX = 0): THREE.BufferGeometry {
-  const g = new THREE.BoxGeometry(size[0], size[1], size[2]);
-  if (rotX) g.rotateX(rotX);
-  g.translate(c[0], c[1], c[2]);
-  return paint(g, color);
-}
-
-/** Un ovale lungo il segmento a→b (busto, bacino): capsula schiacciata. */
-function capsule(a: V3, b: V3, r: number, color: string, sx = 1, sz = 1): THREE.BufferGeometry {
-  const A = v(a);
-  const B = v(b);
-  const len = A.distanceTo(B);
-  const g = new THREE.CapsuleGeometry(r, Math.max(0.01, len), 4, 10);
-  g.scale(sx, 1, sz);
-  const q = new THREE.Quaternion().setFromUnitVectors(UP, B.clone().sub(A).normalize());
-  g.applyMatrix4(new THREE.Matrix4().compose(A.clone().add(B).multiplyScalar(0.5), q, new THREE.Vector3(1, 1, 1)));
-  return paint(g, color);
-}
-
-function merge(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
-  // tutte le primitive di three sono indicizzate e hanno position/normal/uv/color
-  const out = mergeGeometries(parts, false);
-  parts.forEach((p) => p.dispose());
-  if (!out) throw new Error('rider: geometrie non compatibili');
-  out.computeBoundingSphere();
-  return out;
-}
-
-export interface BikeColors {
-  frame: string;
-  accent: string;
-}
-
-/** Telaio, forcella, reggisella e sella, manubrio a corna di bue, catena e pignoni. */
-export function buildFrame({ frame, accent }: BikeColors): THREE.BufferGeometry {
-  const { rearAxle: R, frontAxle: F, bb: BB, seatTop: ST, headTop: HT, headBottom: HB, saddle: S } = BIKE;
-  const dark = '#1a1d22';
-  const metal = '#9aa1aa';
-  const p: THREE.BufferGeometry[] = [
-    tube(ST, HT, 0.017, frame),
-    tube(BB, HB, 0.024, frame, 0.02),
-    tube(BB, ST, 0.018, frame),
-    tube(HB, HT, 0.022, accent, 0.022),
-    // foderi orizzontali e verticali, a coppie
-    tube([0.045, BB[1], BB[2] - 0.02], [0.055, R[1], R[2]], 0.011, frame, 0.008),
-    tube([-0.045, BB[1], BB[2] - 0.02], [-0.055, R[1], R[2]], 0.011, frame, 0.008),
-    tube([0.02, ST[1] - 0.02, ST[2] - 0.01], [0.055, R[1], R[2]], 0.01, frame, 0.008),
-    tube([-0.02, ST[1] - 0.02, ST[2] - 0.01], [-0.055, R[1], R[2]], 0.01, frame, 0.008),
-    // forcella: due steli dalla testa del tubo sterzo al perno, con l'avanzamento
-    tube([0.03, HB[1] - 0.02, HB[2] + 0.005], [0.05, F[1], F[2]], 0.012, frame, 0.009),
-    tube([-0.03, HB[1] - 0.02, HB[2] + 0.005], [-0.05, F[1], F[2]], 0.012, frame, 0.009),
-    box([0, HB[1] - 0.02, HB[2] + 0.005], [0.08, 0.03, 0.05], frame),
-    // reggisella e sella
-    tube(ST, [S[0], S[1] - 0.025, S[2] + 0.01], 0.0135, metal),
-    capsule([0, S[1], S[2] - 0.11], [0, S[1], S[2] + 0.13], 0.022, dark, 2.6, 1),
-    // attacco e piega
-    tube(HT, [0, HT[1] + 0.03, HT[2] + 0.1], 0.016, dark),
-    tube([-0.21, 0.895, 0.575], [0.21, 0.895, 0.575], 0.0125, dark),
-    // borraccia sul tubo obliquo
-    tube([0, 0.42, 0.2], [0, 0.56, 0.33], 0.034, accent),
-  ];
-  for (const x of [-0.21, 0.21]) {
-    p.push(
-      tube([x, 0.895, 0.575], [x, 0.905, 0.655], 0.0125, dark),
-      // leva e corpo del comando (la «leva» su cui stanno le mani)
-      tube([x, 0.905, 0.655], [x, 0.94, 0.672], 0.016, dark, 0.014),
-      tube([x, 0.905, 0.66], [x, 0.81, 0.675], 0.0125, dark),
-      tube([x, 0.81, 0.675], [x, 0.765, 0.6], 0.0125, dark),
-    );
-  }
-  // trasmissione a destra: catena su e giù, pignoni, deragliatore posteriore
-  const cx = 0.072;
-  p.push(
-    tube([cx, BB[1] + 0.1, BB[2]], [cx - 0.01, R[1] + 0.045, R[2]], 0.004, '#4b4f56'),
-    tube([cx, BB[1] - 0.1, BB[2]], [cx - 0.01, R[1] - 0.075, R[2] + 0.03], 0.004, '#4b4f56'),
-    box([cx - 0.008, R[1] - 0.07, R[2] + 0.02], [0.012, 0.09, 0.03], dark),
-  );
-  const cog = new THREE.TorusGeometry(0.045, 0.012, 6, 16);
-  cog.rotateY(Math.PI / 2);
-  cog.translate(cx - 0.012, R[1], R[2]);
-  p.push(paint(cog, '#7d838b'));
-  return merge(p);
-}
-
-/** Copertone, cerchio, mozzo e 20 raggi (incrociati sulle due flange). */
-export function buildWheel(rimColor = '#22252b'): THREE.BufferGeometry {
-  const p: THREE.BufferGeometry[] = [];
-  const tyre = new THREE.TorusGeometry(BIKE.wheelR - 0.012, 0.0135, 8, 40);
-  tyre.rotateY(Math.PI / 2);
-  p.push(paint(tyre, '#141518'));
-  const rim = new THREE.TorusGeometry(BIKE.wheelR - 0.036, 0.013, 6, 40);
-  rim.scale(1, 1, 1.4);
-  rim.rotateY(Math.PI / 2);
-  p.push(paint(rim, rimColor));
-  const hub = new THREE.CylinderGeometry(0.02, 0.02, 0.1, 10);
-  hub.rotateZ(Math.PI / 2);
-  p.push(paint(hub, '#a8aeb6'));
-  const rr = BIKE.wheelR - 0.045;
-  for (let i = 0; i < 20; i++) {
-    const a = (i / 20) * Math.PI * 2;
-    const side = i % 2 ? 0.03 : -0.03;
-    // il raggio parte un po' fuori asse (tangente), come in una ruota vera
-    const a0 = a + (i % 4 < 2 ? 0.25 : -0.25);
-    p.push(tube([side, Math.cos(a0) * 0.022, Math.sin(a0) * 0.022], [0, Math.cos(a) * rr, Math.sin(a) * rr], 0.0018, '#c9ced5', 0.0018, 3));
-  }
-  return merge(p);
-}
-
-/** Guarnitura: corona, pedivelle a 180° e pedali. Ruota intorno a x, pedale destro in alto a 0. */
-export function buildCrankset(): THREE.BufferGeometry {
-  const L = BIKE.crank;
-  const p: THREE.BufferGeometry[] = [];
-  for (const [r, tub] of [
-    [0.105, 0.006],
-    [0.085, 0.006],
-  ] as const) {
-    const ring = new THREE.TorusGeometry(r, tub, 4, 36);
-    ring.rotateY(Math.PI / 2);
-    ring.translate(0.072, 0, 0);
-    p.push(paint(ring, '#2c3036'));
-  }
-  p.push(
-    box([0.085, L / 2, 0], [0.016, L + 0.03, 0.03], '#23262c'),
-    box([-0.085, -L / 2, 0], [0.016, L + 0.03, 0.03], '#23262c'),
-    box([BIKE.pedalX, L, 0], [0.08, 0.015, 0.065], '#15171a'),
-    box([-BIKE.pedalX, -L, 0], [0.08, 0.015, 0.065], '#15171a'),
-  );
-  const axle = new THREE.CylinderGeometry(0.02, 0.02, 0.17, 8);
-  axle.rotateZ(Math.PI / 2);
-  p.push(paint(axle, '#6c7179'));
-  return merge(p);
-}
-
-export interface KitColors {
-  jersey: string;
-  shorts: string;
-  skin: string;
-  helmet: string;
-}
-
-/** Bacino, busto, braccia sulle leve, collo, testa, casco e occhiali: le parti che non pedalano. */
-export function buildBody({ jersey, shorts, skin, helmet }: KitColors): THREE.BufferGeometry {
-  const pelvis: V3 = [0, 1.03, -0.16];
-  const chest: V3 = [0, 1.33, 0.25];
-  const p: THREE.BufferGeometry[] = [
-    capsule([0, 1.0, -0.2], [0, 1.06, -0.08], 0.105, shorts, 1.25, 1),
-    capsule(pelvis, chest, 0.12, jersey, 1.35, 0.78),
-    // spalle, una fascia larga
-    capsule([-0.17, 1.35, 0.25], [0.17, 1.35, 0.25], 0.065, jersey),
-    tube([0, 1.38, 0.29], [0, 1.45, 0.37], 0.045, skin),
-    sphere([0, 1.475, 0.405], 0.098, skin, [0.92, 1, 1.08], 12),
-    // casco: calotta allungata, con la tesa all'indietro
-    sphere([0, 1.505, 0.39], 0.125, helmet, [0.95, 0.72, 1.32], 12),
-    box([0, 1.47, 0.5], [0.15, 0.03, 0.03], '#0e1013'),
-  ];
-  for (const s of [-1, 1]) {
-    const shoulder: V3 = [s * 0.19, 1.35, 0.25];
-    const elbow: V3 = [s * 0.215, 1.15, 0.43];
-    const hand: V3 = [s * 0.21, 0.955, 0.66];
-    const mid: V3 = [(shoulder[0] + elbow[0]) / 2, (shoulder[1] + elbow[1]) / 2, (shoulder[2] + elbow[2]) / 2];
-    p.push(
-      tube(shoulder, mid, 0.048, jersey, 0.043),
-      tube(mid, elbow, 0.042, skin, 0.038),
-      tube(elbow, hand, 0.036, skin, 0.03),
-      sphere(hand, 0.036, '#15171b', [1, 0.8, 1.3], 8),
-    );
-  }
-  return merge(p);
-}
-
-/** Un segmento di arto lungo 1 verso −y, ristretto in fondo: si scala sulla lunghezza vera. */
-export function limbGeometry(rTop: number, rBottom: number): THREE.BufferGeometry {
-  const g = new THREE.CylinderGeometry(rTop, rBottom, 1, 8, 1);
-  g.translate(0, -0.5, 0);
-  return g;
-}
-
-export function shoeGeometry(): THREE.BufferGeometry {
-  const g = new THREE.BoxGeometry(0.075, 0.06, 0.25);
-  // punta in avanti rispetto alla caviglia
-  g.translate(0, -0.035, 0.07);
-  return g;
-}
+const v3 = (p: V3) => new THREE.Vector3(p[0], p[1], p[2]);
 
 /** Posizione del pedale per un angolo di pedivella (0 = destro in alto, cresce pedalando). */
 export function pedalAt(angle: number, right: boolean, out = new THREE.Vector3()): THREE.Vector3 {
   const a = right ? angle : angle + Math.PI;
-  return out.set(right ? BIKE.pedalX - 0.02 : -BIKE.pedalX + 0.02, BIKE.bb[1] + Math.cos(a) * BIKE.crank, BIKE.bb[2] + Math.sin(a) * BIKE.crank);
+  return out.set(right ? -BIKE.pedalX + 0.02 : BIKE.pedalX - 0.02, BIKE.bb[1] + Math.cos(a) * BIKE.crank, BIKE.bb[2] + Math.sin(a) * BIKE.crank);
+}
+
+/** Inclinazione del piede (punta in giù > 0): tallone basso in spinta, punta giù in risalita. */
+export function footAngle(crank: number, right: boolean): number {
+  const a = right ? crank : crank + Math.PI;
+  return 0.2 - 0.14 * Math.sin(a - 0.3);
+}
+
+/** Caviglia nel riferimento della bici, dal pedale e dall'inclinazione del piede. */
+export function ankleAt(crank: number, right: boolean, out = new THREE.Vector3()): THREE.Vector3 {
+  pedalAt(crank, right, out);
+  const t = footAngle(crank, right);
+  const up = BODY.ankleUp;
+  const back = BODY.ankleBack;
+  return out.set(out.x, out.y + up * Math.cos(t) + back * Math.sin(t), out.z + up * Math.sin(t) - back * Math.cos(t));
 }
 
 /**
- * Cinematica inversa a due segmenti nel piano della gamba: dati anca e caviglia, il
+ * Cinematica inversa a due segmenti nel piano della gamba (y-z): dati anca e caviglia, il
  * ginocchio sta sul lato in avanti. Se la caviglia è troppo lontana la gamba si stende.
+ * Il risolutore vero (solvePose) lavora in 3D; questa resta per i conti piani.
  */
 export function solveKnee(hip: THREE.Vector3, ankle: THREE.Vector3, thigh: number, shin: number, out = new THREE.Vector3()): THREE.Vector3 {
   const dz = ankle.z - hip.z;
@@ -265,9 +163,143 @@ export function solveKnee(hip: THREE.Vector3, ankle: THREE.Vector3, thigh: numbe
   const d = Math.min(thigh + shin - 1e-4, Math.max(Math.abs(thigh - shin) + 1e-4, Math.hypot(dz, dy)));
   const base = Math.atan2(dy, dz);
   const alpha = Math.acos(Math.min(1, Math.max(-1, (thigh * thigh + d * d - shin * shin) / (2 * thigh * d))));
-  // ruotare verso l'alto-avanti: con la caviglia sotto l'anca, base ≈ −90° e il ginocchio va avanti
   const a = base + alpha;
   return out.set(hip.x + (ankle.x - hip.x) * (thigh / (thigh + shin)), hip.y + Math.sin(a) * thigh, hip.z + Math.cos(a) * thigh);
+}
+
+// temporanei del risolutore (un fotogramma alla volta: nessuna rientranza)
+const M = {
+  root: new THREE.Matrix4(),
+  bike: new THREE.Matrix4(),
+  body: new THREE.Matrix4(),
+  t: new THREE.Matrix4(),
+  r: new THREE.Matrix4(),
+};
+const P = {
+  a: new THREE.Vector3(),
+  b: new THREE.Vector3(),
+  c: new THREE.Vector3(),
+  pole: new THREE.Vector3(),
+  ank: [new THREE.Vector3(), new THREE.Vector3()],
+};
+const HB = v3(BIKE.headBottom);
+const AXIS = v3(BIKE.headTop).sub(HB).normalize();
+const FRONT = v3(BIKE.frontAxle);
+const REAR = v3(BIKE.rearAxle);
+const BBV = v3(BIKE.bb);
+const Q = new THREE.Quaternion();
+
+function rx(m: THREE.Matrix4, a: number) {
+  return m.makeRotationX(a);
+}
+
+/** out = a · T(p) · R */
+function place(out: THREE.Matrix4, a: THREE.Matrix4, p: THREE.Vector3 | V3, r?: THREE.Matrix4) {
+  const x = 'x' in p ? p.x : p[0];
+  const y = 'x' in p ? p.y : p[1];
+  const z = 'x' in p ? p.z : p[2];
+  M.t.makeTranslation(x, y, z);
+  out.multiplyMatrices(a, M.t);
+  if (r) out.multiply(r);
+  return out;
+}
+
+export interface SolveInfo {
+  /** le gambe arrivano ai pedali e le braccia alle leve (nessun arto tirato oltre la sua lunghezza) */
+  reach: boolean;
+}
+
+/**
+ * Le matrici delle 23 ossa, nel riferimento del ciclista (origine a terra sotto il movimento
+ * centrale). Gambe e braccia per cinematica inversa: i piedi stanno sui pedali, le mani sulle leve.
+ */
+export function solvePose(s: PoseState, out: THREE.Matrix4[]): SolveInfo {
+  let reach = true;
+  const { root, bike, body, r } = M;
+  root.makeRotationZ(s.lean);
+  bike.multiplyMatrices(root, r.makeRotationZ(s.bikeRoll));
+  out[B.bike].copy(bike);
+
+  // sterzo: intorno all'asse del tubo sterzo
+  Q.setFromAxisAngle(AXIS, s.steer);
+  place(out[B.steer], bike, HB, r.makeRotationFromQuaternion(Q));
+  place(out[B.steer], out[B.steer], P.a.copy(HB).negate());
+  place(out[B.wheelF], out[B.steer], FRONT, rx(r, s.wheel));
+  place(out[B.wheelR], bike, REAR, rx(r, s.wheel));
+  place(out[B.crank], bike, BBV, rx(r, s.crank));
+
+  // piedi e pedali: il piede segue il pedale, inclinato come una caviglia vera
+  for (let i = 0; i < 2; i++) {
+    const right = i === 1;
+    const t = footAngle(s.crank, right);
+    pedalAt(s.crank, right, P.a);
+    place(out[right ? B.pedalR : B.pedalL], bike, P.a, rx(r, t));
+    ankleAt(s.crank, right, P.ank[i]);
+    place(out[right ? B.footR : B.footL], bike, P.ank[i], rx(r, t));
+  }
+
+  // bacino: sulla sella, o in avanti e in alto fuori sella; mai più in alto di dove le gambe arrivano
+  const st = s.stand;
+  const px = s.shift;
+  const pz = BODY.pelvis[2] + st * 0.16 + s.tuck * 0.03;
+  let py = BODY.pelvis[1] + st * 0.11 - s.tuck * 0.012 + s.bob;
+  const reachMax = (BODY.thigh + BODY.shin) * 0.975;
+  for (let i = 0; i < 2; i++) {
+    const a = P.ank[i];
+    const dx = px + (i === 1 ? -1 : 1) * BODY.hip[0] - a.x;
+    const dz = pz - a.z;
+    const h2 = reachMax * reachMax - dx * dx - dz * dz;
+    if (h2 > 0) py = Math.min(py, a.y + Math.sqrt(h2));
+  }
+  const pitch = s.tuck * 0.05 + st * 0.06;
+  body.multiplyMatrices(root, r.makeRotationZ(s.bikeRoll * (1 - 0.7 * st)));
+  place(out[B.pelvis], body, P.a.set(px, py, pz), r.makeRotationZ(s.pelvisRoll));
+  out[B.pelvis].multiply(rx(r, pitch));
+
+  // schiena: si piega sul perno lombare (più giù in aero, un po' in fuori sella)
+  const bend = s.tuck * 0.2 + st * 0.1;
+  place(out[B.chest], out[B.pelvis], BODY.lumbar, rx(r, bend));
+  out[B.chest].multiply(r.makeRotationZ(s.sway));
+
+  // testa: compensa la schiena per guardare la strada, più un'occhiata ogni tanto
+  place(out[B.head], out[B.chest], BODY.neck, r.makeRotationY(s.headYaw));
+  out[B.head].multiply(rx(r, s.headPitch - (bend + pitch) * 0.9));
+  out[B.head].multiply(r.makeRotationZ(-s.sway * 0.7));
+  out[B.glasses].copy(out[B.head]);
+  if (!s.glasses) out[B.glasses].multiply(r.makeScale(1e-3, 1e-3, 1e-3));
+
+  // braccia: dalla spalla al polso sulla leva, gomiti in fuori e un po' indietro
+  for (let i = 0; i < 2; i++) {
+    const right = i === 1;
+    const sx = right ? -1 : 1;
+    P.a.set(sx * BODY.shoulder[0], BODY.shoulder[1] + s.shrug, BODY.shoulder[2]).applyMatrix4(out[B.chest]);
+    P.c.set(sx * BODY.wrist[0], BODY.wrist[1], BODY.wrist[2]).applyMatrix4(out[B.steer]);
+    P.pole.set(sx * 0.8, -0.25, -0.55).transformDirection(bike);
+    if (!twoBoneIK(P.a, P.c, BODY.upperArm, BODY.forearm, P.pole, P.b)) reach = false;
+    limbMatrix(out[right ? B.upperArmR : B.upperArmL], P.a, P.b, P.pole);
+    limbMatrix(out[right ? B.forearmR : B.forearmL], P.b, P.c, P.pole);
+    place(out[right ? B.handR : B.handL], out[B.steer], [sx * BODY.hood[0], BODY.hood[1], BODY.hood[2]]);
+  }
+
+  // gambe: dall'anca alla caviglia, ginocchio in avanti
+  for (let i = 0; i < 2; i++) {
+    const right = i === 1;
+    const sx = right ? -1 : 1;
+    P.a.set(sx * BODY.hip[0], 0, 0).applyMatrix4(out[B.pelvis]);
+    P.c.copy(P.ank[i]).applyMatrix4(bike);
+    P.pole.set(sx * 0.05, 0.3, 1).transformDirection(bike);
+    if (!twoBoneIK(P.a, P.c, BODY.thigh, BODY.shin, P.pole, P.b)) reach = false;
+    limbMatrix(out[right ? B.thighR : B.thighL], P.a, P.b, P.pole);
+    limbMatrix(out[right ? B.shinR : B.shinL], P.b, P.c, P.pole);
+  }
+  return { reach };
+}
+
+/** Le matrici della posa di riposo: la geometria si costruisce qui sopra. */
+export function bindMatrices(): THREE.Matrix4[] {
+  const out = Array.from({ length: BONE_COUNT }, () => new THREE.Matrix4());
+  solvePose(NEUTRAL, out);
+  return out;
 }
 
 let shadowTex: THREE.Texture | null = null;
