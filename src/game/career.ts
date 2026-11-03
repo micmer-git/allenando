@@ -149,6 +149,8 @@ export interface RideFacts {
   together: boolean;
   /** livello dopo il giro (da progress.ts) */
   level: number;
+  /** oro in più deciso da chi chiama (per esempio i tratti doppi di una sessione) */
+  extra?: OroLine[];
 }
 
 export interface OroLine {
@@ -202,6 +204,7 @@ export function applyCareer(prev: Career, f: RideFacts, now = new Date()): Caree
       next.pbs[s.id] = { sec: Math.round(s.sec * 10) / 10, at: now.toISOString(), sim: f.sim, count: (old?.count ?? 0) + 1 };
     } else next.pbs[s.id] = { ...old, count: old.count + 1 };
   }
+  for (const l of f.extra ?? []) lines.push(l);
   if (f.pois.length) lines.push({ label: f.pois.length === 1 ? '1 punto caldo' : `${f.pois.length} punti caldi`, oro: f.pois.length * ORO_RULES.poi });
   if (f.session) {
     next.counts.sessions += f.session.finished ? 1 : 0;

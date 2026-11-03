@@ -38,10 +38,16 @@ import { WorldSession } from '@/open/session';
 import { WorldScene, npcCount, type RemoteWorldRider } from '@/open/WorldScene';
 import { loadPlan } from '@/open/plan';
 import { WorldClient } from '@/multiplayer/world-client';
-import { applyRide, levelOf, loadProgress, postResult, postXp, saveProgress, type XpLine } from '@/open/progress';
+import { applyRide, levelOf, loadProgress, postResult, postXp, type XpLine } from '@/open/progress';
 import { AheadProfile, LoopSheet, MapSheet, Nearby, Toasts, TurnPicker, WeatherChip, WorldMini, XpSummary } from './WorldHud';
 import type { Dir } from '@/open/graph';
 import { fetchWeather, type WeatherNow } from '@/open/weather';
+import { sunFor } from '@/open/sky';
+import { applyCareer, ORO_RULES, type CareerOutcome, type OroLine, type RideFacts, type SegmentResult } from '@/game/career';
+import { RideGame } from '@/game/rideGame';
+import { sessionById } from '@/game/sessions';
+import { useGame } from '@/game/useGame';
+import { RewardsSummary, SegmentHud, SessionHud } from './RideGameHud';
 
 const DEFAULT_ROUTE = 'selvino-nembro';
 
@@ -56,6 +62,27 @@ interface RideSetup {
   note?: string;
   /** mondo aperto: il grafo e la pedalata che lo percorre */
   world?: { data: WorldData; session: WorldSession };
+}
+
+/** La potenza media migliore su `n` campioni consecutivi (1 Hz). */
+function peakAvg(powers: number[], n: number): number {
+  if (powers.length < n) return 0;
+  let sum = 0;
+  for (let i = 0; i < n; i++) sum += powers[i];
+  let best = sum;
+  for (let i = n; i < powers.length; i++) {
+    sum += powers[i] - powers[i - n];
+    if (sum > best) best = sum;
+  }
+  return best / n;
+}
+
+/** Nelle sessioni «volate» e «salita» i tratti del loro tipo valgono doppio. */
+function sessionBonus(game: RideGame, results: SegmentResult[]): OroLine[] {
+  const kind = game.sessionDef?.kind;
+  if (kind !== 'volate' && kind !== 'salita') return [];
+  const want = kind === 'volate' ? 'volata' : 'gpm';
+  return results.filter((r) => r.kind === want).map((r) => ({ label: `Sessione, doppio: ${r.name}`, oro: ORO_RULES[want] }));
 }
 
 /** Da distanza sulla strada a latitudine e longitudine; null se la strada non è da nessuna parte. */
@@ -202,6 +229,12 @@ function useRideSetup(): { setup: RideSetup | null; error: string | null } {
 
 export function RidePage() {
   const { setup, error } = useRideSetup();
+  // i record e il guardaroba servono già al primo metro: si caricano insieme alla strada
+  const gameReady = useGame((s) => s.ready);
+  const hydrateGame = useGame((s) => s.hydrate);
+  useEffect(() => {
+    void hydrateGame();
+  }, [hydrateGame]);
   if (error) {
     return (
       <div className="grid min-h-dvh place-items-center px-6 text-center">
@@ -214,7 +247,7 @@ export function RidePage() {
       </div>
     );
   }
-  if (!setup) {
+  if (!setup || !gameReady) {
     return (
       <div className="grid min-h-dvh place-items-center px-6 text-center">
         <div>
@@ -235,7 +268,7 @@ function RideSession({ setup }: { setup: RideSetup }) {
   const custom = useApp((s) => s.workouts);
   const workoutId = params.get('workout');
   const workout = workoutId ? findWorkout(workoutId, custom) ?? null : null;
-  const session = useRef<{ engine: RideEngine; trainer: BluetoothTrainer } | null>(null);
+  const session = useRef<{ engine: RideEngine; trainer: BluetoothTrainer; game: RideGame } | null>(null);
   if (!session.current) {
     const trainer = new BluetoothTrainer();
     const replay = setup.replayMode === 'power' ? setup.replaySamples : undefined;
@@ -259,9 +292,26 @@ function RideSession({ setup }: { setup: RideSetup }) {
     // ?at=metri: si parte da un punto della salita (per riprendere un tratto)
     const at = Number(params.get('at'));
     if (Number.isFinite(at) && at > 0) engine.distance = Math.min(at, setup.route.track.length - 1);
-    session.current = { engine, trainer };
+    // la sessione vale solo sul suo percorso
+    const def = sessionById(params.get('session') ?? '');
+    const sessionDef = def && setup.world?.session.ride?.id === def.rideId ? def : null;
+    const climb = !setup.world && setup.routeId && !setup.replayMode ? routeMeta(setup.routeId) : undefined;
+    const game = new RideGame({
+      engine,
+      track: setup.route.track,
+      world: setup.world ?? null,
+      climb: climb ? { routeId: climb.id, name: `${climb.name} ${climb.side}` } : null,
+      sessionDef,
+      nick: profile.name,
+      weightKg: profile.weightKg,
+      pbs: useGame.getState().career.pbs,
+      sim: () => trainer.snapshot().mode === 'simulator',
+      scale: () => (trainer.snapshot().mode === 'simulator' ? engine.timeScale : 1),
+      ranked: !setup.replayMode && !workout,
+    });
+    session.current = { engine, trainer, game };
   }
-  const { engine, trainer } = session.current;
+  const { engine, trainer, game } = session.current;
 
   useEffect(() => {
     let frame = 0;
@@ -271,6 +321,7 @@ function RideSession({ setup }: { setup: RideSetup }) {
       last = now;
       engine.tick(dt);
       setup.world?.session.step(engine, dt);
+      game.tick(dt);
       frame = requestAnimationFrame(loop);
     };
     frame = requestAnimationFrame(loop);
@@ -281,12 +332,13 @@ function RideSession({ setup }: { setup: RideSetup }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine, trainer]);
 
-  return <RideScreen engine={engine} trainer={trainer} profile={profile} workout={workout} quality={settings.quality} setup={setup} t={t} />;
+  return <RideScreen engine={engine} trainer={trainer} game={game} profile={profile} workout={workout} quality={settings.quality} setup={setup} t={t} />;
 }
 
 function RideScreen({
   engine,
   trainer,
+  game,
   profile,
   workout,
   quality,
@@ -295,6 +347,7 @@ function RideScreen({
 }: {
   engine: RideEngine;
   trainer: BluetoothTrainer;
+  game: RideGame;
   profile: Profile;
   workout: Workout | null;
   quality: Quality;
@@ -419,41 +472,98 @@ function RideScreen({
       setPeers([]);
     };
   }, [session, share, profile.name]);
-  const worldRemote = useMemo<RemoteWorldRider[]>(
-    () => (session ? peers.map((p) => ({ id: p.id, nick: p.nick, color: RIDER_COLORS[p.color % RIDER_COLORS.length], pose: () => session.remoteNow.get(p.id) ?? null })) : []),
-    [session, peers],
-  );
+  const worldRemote = useMemo<RemoteWorldRider[]>(() => {
+    if (!session) return [];
+    const real = peers.map((p) => ({ id: p.id, nick: p.nick, color: RIDER_COLORS[p.color % RIDER_COLORS.length], pose: () => session.remoteNow.get(p.id) ?? null }));
+    // il gruppo della sessione pedala nel mondo come gli altri, col nome sopra
+    const pack = game.pack;
+    const pacers = pack ? pack.pacers.map((p) => ({ id: p.id, nick: p.name, color: p.color, pose: () => pack.pose(p) })) : [];
+    return [...real, ...pacers];
+  }, [session, peers, game]);
   const playerPose = useMemo(() => () => session?.pose ?? engine.pose(), [session, engine]);
   const nextTurn = useMemo(() => () => session?.arrow(engine.distance) ?? null, [session, engine]);
 
-  /** I punti del giro e, se vale, il tempo in classifica. Una volta per riepilogo. */
-  async function commitWorld(): Promise<void> {
-    if (!session) return;
-    const completed = engine.arrived && session.rankable;
+  // quanto è già stato contato: «Continua a pedalare» dopo il riepilogo non conta due volte
+  const committed = useRef({ distance: 0, sample: 0, elapsed: 0, results: 0, gain: 0 });
+  const [rewards, setRewards] = useState<{ outcome: CareerOutcome; results: SegmentResult[] } | null>(null);
+  const setGameProgress = useGame((s) => s.setProgress);
+  const setCareer = useGame((s) => s.setCareer);
+
+  /** Punti, livello e, se vale, il tempo del percorso in classifica. Poi oro e traguardi. */
+  async function commitProgress(): Promise<void> {
+    const c = committed.current;
+    const sim = snap.mode === 'simulator';
+    const climbId = !session && setup.routeId && engine.arrived && !setup.replayMode && !workout ? setup.routeId : undefined;
+    const completed = session ? engine.arrived && session.rankable : !!climbId;
+    // dislivello: il mondo lo conta da sé; sulle salite e nei replay dai campioni
+    const fresh = engine.samples.slice(c.sample);
+    let climbGain = 0;
+    for (let i = 1; i < fresh.length; i++) climbGain += Math.max(0, fresh[i].altitude - fresh[i - 1].altitude);
+    const gainM = session ? session.gainM - session.committedGain : climbGain;
+    const landmarks = session ? [...session.passed].filter((id) => !session.committedLandmarks.has(id)) : [];
     const prev = await loadProgress();
     const out = applyRide(prev, {
-      rideId: session.ride?.id,
+      rideId: session ? session.ride?.id : climbId ? `salita:${climbId}` : undefined,
       completed,
       sec: completed ? engine.elapsed : undefined,
-      sim: snap.mode === 'simulator',
-      distanceM: engine.distance - session.committedM,
-      gainM: session.gainM - session.committedGain,
-      landmarks: [...session.passed].filter((id) => !session.committedLandmarks.has(id)),
+      sim,
+      distanceM: engine.distance - c.distance,
+      gainM,
+      landmarks,
     });
-    session.markCommitted(engine.distance);
-    await saveProgress(out.next);
+    session?.markCommitted(engine.distance);
+    await setGameProgress(out.next);
     const total = out.lines.reduce((a, l) => a + l.xp, 0);
     let rank: string | null = null;
     let rankNote: string | undefined;
-    if (completed && session.ride && profile.name) {
+    if (session && completed && session.ride && profile.name) {
       const avg = engine.samples.length ? engine.samples.reduce((a, x) => a + x.power, 0) / engine.samples.length : engine.power3s;
-      const res = await postResult({ nick: profile.name, ride: session.ride.id, sec: engine.elapsed, wkg: profile.weightKg > 0 ? avg / profile.weightKg : 0, sim: snap.mode === 'simulator' });
-      if (res.ok && res.rank) rank = `${res.rank}° in classifica${snap.mode === 'simulator' ? ' (simulatore)' : ''}${res.best ? ', il tuo tempo migliore' : ''}`;
+      const res = await postResult({ nick: profile.name, ride: session.ride.id, sec: engine.elapsed, wkg: profile.weightKg > 0 ? avg / profile.weightKg : 0, sim });
+      if (res.ok && res.rank) rank = `${res.rank}° in classifica${sim ? ' (simulatore)' : ''}${res.best ? ', il tuo tempo migliore' : ''}`;
       else if (res.error === 'implausible') rankNote = 'Tempo troppo veloce per essere vero: non va in classifica.';
       else if (res.error === 'rete') rankNote = 'Senza rete: il tempo resta qui, non in classifica.';
-    } else if (session.ride && !completed) rankNote = session.offRoute || session.rejoined ? 'Sei uscito dal percorso: il tempo non va in classifica.' : 'Percorso non finito: niente tempo in classifica.';
+    } else if (session?.ride && !completed) rankNote = session.offRoute || session.rejoined ? 'Sei uscito dal percorso: il tempo non va in classifica.' : 'Percorso non finito: niente tempo in classifica.';
     if (profile.name) void postXp(out.next, profile.name);
     setXp({ lines: out.lines, total, level: { ...levelOf(out.next.xp), xp: out.next.xp }, rank, rankNote });
+
+    // la carriera: oro, record, missioni, traguardi
+    const powers = fresh.map((s) => s.power);
+    const results = game.results.slice(c.results);
+    const origin = world?.data.graph.origin;
+    const facts: RideFacts = {
+      distanceM: engine.distance - c.distance,
+      gainM,
+      durationSec: engine.elapsed - c.elapsed,
+      sim,
+      startedAt: engine.startedAt,
+      avgPower: powers.length ? powers.reduce((a, p) => a + p, 0) / powers.length : 0,
+      peak5s: peakAvg(powers, 5),
+      peak5min: peakAvg(powers, 300),
+      ftp: profile.ftp,
+      climbDone: climbId,
+      worldRideDone: session?.ride && completed ? session.ride.id : undefined,
+      segments: results,
+      pois: [],
+      landmarks,
+      discovered: Object.keys(out.next.visited).length,
+      rain: !!session && weatherMode === 'vero' && (weather?.rain ?? 0) >= 0.1,
+      night: !!origin && sunFor(daytime, new Date(), origin.lat, origin.lon).night,
+      session: game.sessionDef ? { id: game.sessionDef.id, kind: game.sessionDef.kind, finished: game.stage === 'arrivo', withPack: game.pack ? game.withPack : 1 } : undefined,
+      workoutDone: engine.workoutDone,
+      together: (room.snap?.riders.length ?? 0) > 0 || peers.length > 0,
+      level: levelOf(out.next.xp).level,
+      extra: sessionBonus(game, results),
+    };
+    const outcome = applyCareer(useGame.getState().career, facts);
+    // il tempo del percorso intero, per i record della pagina Classifiche
+    if (facts.worldRideDone) {
+      const key = `w:${facts.worldRideDone}`;
+      const old = outcome.next.pbs[key];
+      if (!old || engine.elapsed < old.sec) outcome.next.pbs[key] = { sec: Math.round(engine.elapsed), at: new Date().toISOString(), sim, count: (old?.count ?? 0) + 1 };
+    }
+    await setCareer(outcome.next);
+    committed.current = { distance: engine.distance, sample: engine.samples.length, elapsed: engine.elapsed, results: game.results.length, gain: 0 };
+    setRewards({ outcome, results });
   }
 
   // dove sei, per aprire la strada vera nel visore ufficiale (non per disegnarla nel 3D)
@@ -467,7 +577,8 @@ function RideScreen({
     if (setup.routeId && !workout && !setup.replayMode) ride.routeId = setup.routeId;
     if (session?.ride && session.rankable && engine.arrived) ride.routeId = `bergamo:${session.ride.id}`;
     setSummary(ride);
-    if (session) void commitWorld();
+    setRewards(null);
+    void commitProgress();
   }
 
   const closeMap = useCallback(() => setMapOpen(false), []);
@@ -625,11 +736,11 @@ function RideScreen({
             </div>
           </div>
         </div>
-        {session ? (
-          <div className="pointer-events-none absolute inset-x-0 top-[6.4rem] flex justify-center px-14">
-            <Toasts session={session} />
-          </div>
-        ) : null}
+        <div className="pointer-events-none absolute inset-x-0 top-[6.4rem] flex flex-col items-center gap-1.5 px-14">
+          <SessionHud game={game} />
+          <SegmentHud game={game} />
+          {session ? <Toasts session={session} /> : null}
+        </div>
         {session ? (
           <div className="pointer-events-none absolute inset-x-2.5 bottom-[3.6rem] flex items-end justify-between gap-2">
             <div className="min-w-0">
@@ -897,6 +1008,15 @@ function RideScreen({
             ) : null}
             {engine.arrived && !session ? <p className="mt-3 font-semibold text-accent">In cima: {setup.route.title} {setup.route.subtitle}.</p> : null}
             {engine.arrived && session?.planned ? <p className="mt-3 font-semibold text-accent">Arrivato: {setup.route.title}.</p> : null}
+            {game.sessionDef ? (
+              <p className="mt-3 rounded-2xl bg-elev px-4 py-2.5 text-sm">
+                <span className="font-semibold">{game.sessionDef.title}</span>
+                {game.stage === 'arrivo' ? ' · arrivato' : ' · non finita'}
+                {game.pack ? ` · ${Math.round(game.withPack * 100)}% col gruppo` : ''}
+                {game.sessionRank ? ` · ${game.sessionRank}` : ''}
+              </p>
+            ) : null}
+            {rewards ? <RewardsSummary outcome={rewards.outcome} results={rewards.results} /> : null}
             {xp ? <XpSummary lines={xp.lines} total={xp.total} level={xp.level} rank={xp.rank} rankNote={xp.rankNote} /> : null}
             <div className="mt-6 flex flex-col gap-2">
               {saved ? (
