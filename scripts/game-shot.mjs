@@ -100,8 +100,11 @@ try {
     await sleep(3000);
     await p.shot('g09-corsa-gpm');
     // sessione: la prossima, in griglia col conto alla rovescia
-    const slot = Math.floor(Date.now() / 1800000) + 1;
-    await p.go(`/ride?world=bergamo&ride=__RIDE__&session=ev-${slot}`.replace('__RIDE__', await p.evaluate(`(async () => (await import('/allenando/src/game/sessions.ts')).sessionAt(${slot}).rideId)()`)));
+    // il link della sessione dopo quella in corso: la pagina Sessioni lo scrive sulla carta
+    await p.go('/sessioni');
+    await p.waitFor(`!!document.querySelector('[data-testid=session-1]')`, 8000);
+    const href = await p.evaluate(`document.querySelector('[data-testid=session-1]').dataset.href`);
+    await p.go(href);
     check(await p.waitFor(`!!document.querySelector('[data-testid=session-grid]')`, 120000), 'sessione: griglia col conto alla rovescia');
     await sleep(2500);
     await p.shot('g10-sessione-griglia');

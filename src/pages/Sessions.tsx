@@ -56,6 +56,7 @@ export function SessionsPage() {
             <li
               key={s.id}
               data-testid={`session-${i}`}
+              data-href={sessionHref(s)}
               className={cn('relative overflow-hidden rounded-2xl border bg-elev', can ? 'border-accent/70' : 'border-line')}
             >
               <span className="absolute inset-y-0 left-0 w-1.5" style={{ background: st.color }} aria-hidden="true" />
