@@ -27,8 +27,8 @@ interface Attachment {
   rate: RateState;
 }
 
-export class World extends DurableObject {
-  constructor(ctx: DurableObjectState, env: unknown) {
+export class World extends DurableObject<Env> {
+  constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair(PING, PONG));
   }
@@ -185,10 +185,10 @@ export class World extends DurableObject {
  * ogni dispositivo (rullo e simulatore separati); per ogni dispositivo i punti esperienza.
  * L'id del dispositivo non esce mai: chi chiede la classifica col proprio id si vede segnato.
  */
-export class Board extends DurableObject {
+export class Board extends DurableObject<Env> {
   private recent = new Map<string, number[]>();
 
-  constructor(ctx: DurableObjectState, env: unknown) {
+  constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     ctx.blockConcurrencyWhile(async () => {
       this.ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS times (ride TEXT NOT NULL, pid TEXT NOT NULL, sim INTEGER NOT NULL, nick TEXT NOT NULL, sec REAL NOT NULL, wkg REAL NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (ride, pid, sim))`);
