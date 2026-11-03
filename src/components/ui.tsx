@@ -102,14 +102,18 @@ export function Segmented<T extends string>({
   options,
   onChange,
   label,
+  testId,
 }: {
   value: T;
   options: { value: T; label: string }[];
   onChange: (value: T) => void;
   label?: string;
+  testId?: string;
 }) {
   return (
-    <div role="group" aria-label={label} className="grid grid-cols-3 gap-1 rounded-full bg-elev2 p-1">
+    // una riga sola: ogni voce prende la sua parola più una parte uguale dello spazio che avanza,
+    // così con due opzioni non resta un buco e con cinque nessuna si tronca
+    <div role="group" aria-label={label} data-testid={testId} className="flex gap-1 rounded-full bg-elev2 p-1">
       {options.map((option) => (
         <button
           key={option.value}
@@ -117,7 +121,7 @@ export function Segmented<T extends string>({
           aria-pressed={option.value === value}
           onClick={() => onChange(option.value)}
           className={cn(
-            'h-11 rounded-full text-sm font-semibold',
+            'h-11 min-w-0 flex-auto truncate whitespace-nowrap rounded-full px-2 text-sm font-semibold',
             option.value === value ? 'bg-accent text-accent-ink' : 'text-muted',
           )}
         >

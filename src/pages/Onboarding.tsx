@@ -1,6 +1,7 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Button, Field, TextInput, Wordmark } from '@/components/ui';
+import { MountainIcon, RideIcon, WorldIcon } from '@/components/Nav';
 import { parseNumberInput } from '@/domain/format';
 import { DEFAULT_PROFILE, PROFILE_LIMITS as LIMITS } from '@/domain/types';
 import { useI18n } from '@/i18n';
@@ -31,12 +32,15 @@ export function OnboardingPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-lg flex-col px-5 py-8" data-testid="onboarding">
+    <main className="mx-auto flex min-h-dvh w-full max-w-lg flex-col px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.75rem,env(safe-area-inset-top))]" data-testid="onboarding">
       <Wordmark />
-      <p className="mt-10 text-sm font-semibold uppercase tracking-[0.18em] text-muted">{t('onboarding.kicker')}</p>
-      <h1 className="mt-2 font-display text-6xl leading-none tracking-tight">{t('onboarding.title')}</h1>
-      <p className="mt-4 text-lg leading-relaxed text-muted">{t('onboarding.lead')}</p>
-      <BikeMark />
+      <h1 className="mt-8 font-display text-[52px] leading-[0.92] tracking-tight">{t('onboarding.title')}</h1>
+      {/* cosa c'è dentro, in tre righe: è tutto quello che serve sapere per entrare */}
+      <ul className="mt-5 divide-y divide-line border-y border-line">
+        <Feature icon={<WorldIcon />} title="Bergamo e le valli" sub="Città Alta, Val Brembana e Val Seriana in 3D, incrocio per incrocio" />
+        <Feature icon={<MountainIcon />} title="Salite vere" sub="Selvino, Mortirolo, Stelvio: tornanti e pendenze della strada" />
+        <Feature icon={<RideIcon />} title="Col rullo o senza" sub="Rullo smart Bluetooth, o il simulatore" />
+      </ul>
       <form onSubmit={submit} className="mt-6 flex flex-col gap-4">
         <Field label={t('onboarding.name')}>
           <TextInput
@@ -44,6 +48,7 @@ export function OnboardingPage() {
             onChange={(event) => setName(event.target.value)}
             placeholder={t('onboarding.namePlaceholder')}
             autoComplete="given-name"
+            enterKeyHint="go"
             data-testid="onboarding-name"
           />
         </Field>
@@ -59,7 +64,7 @@ export function OnboardingPage() {
           </Field>
         </div>
         <p className="-mt-2 text-sm text-muted">{t('onboarding.ftpHint')}</p>
-        <Button type="submit" data-testid="onboarding-start" className="mt-2 w-full">
+        <Button type="submit" data-testid="onboarding-start" className="mt-1 w-full">
           {t('onboarding.enter')}
         </Button>
       </form>
@@ -67,12 +72,14 @@ export function OnboardingPage() {
   );
 }
 
-function BikeMark() {
-  // segno grafico astratto di una salita: non è il profilo di una strada vera
+function Feature({ icon, title, sub }: { icon: ReactNode; title: string; sub: string }) {
   return (
-    <svg viewBox="0 0 280 72" className="mt-6 h-20 w-full" aria-hidden="true">
-      <path d="M0 70 L28 68 L60 62 L92 54 L120 46 L150 36 L178 28 L206 18 L232 10 L256 4 L280 2 L280 72 L0 72Z" fill="color-mix(in oklab, var(--accent) 22%, transparent)" />
-      <path d="M0 70 L28 68 L60 62 L92 54 L120 46 L150 36 L178 28 L206 18 L232 10 L256 4 L280 2" fill="none" stroke="var(--accent)" strokeWidth="2.5" />
-    </svg>
+    <li className="flex items-center gap-3 py-2.5">
+      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-elev2 text-accent">{icon}</span>
+      <span className="min-w-0">
+        <span className="block font-semibold leading-tight">{title}</span>
+        <span className="block text-sm leading-snug text-muted">{sub}</span>
+      </span>
+    </li>
   );
 }

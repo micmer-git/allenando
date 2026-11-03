@@ -241,6 +241,8 @@ try {
   check(false, 'eccezione nel collaudo', String(err?.stack ?? err));
 } finally {
   writeFileSync(join(out, 'report.txt'), report.join('\n') + '\n');
+  // Browser.close prima: su Windows chrome.kill() ferma solo il lanciatore
+  await Promise.race([send('Browser.close').catch(() => null), sleep(3000)]);
   chrome.kill();
 }
 console.log(failures ? `\n${failures} controlli falliti` : '\nTutto verde');

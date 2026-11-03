@@ -99,6 +99,11 @@ export class WorldSession {
   remoteNow = new Map<string, WorldRemote & { x: number; y: number; z: number; heading: number; grade: number }>();
 
   /** c'è un percorso da seguire (scelto o suggerito) */
+  /** il percorso scelto, intero (vuoto nel giro libero) */
+  get plannedLegs(): Leg[] {
+    return this.routeLegs;
+  }
+
   get planned(): boolean {
     return this.routeLegs.length > 0;
   }

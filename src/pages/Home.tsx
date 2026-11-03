@@ -4,6 +4,7 @@ import { InstallCard } from '@/components/Install';
 import { formatDateTime, formatDuration, formatKm, formatNumber } from '@/domain/format';
 import { localDateKey, trainingLoad } from '@/domain/load';
 import { VERIFIED_ROUTES } from '@/domain/routes';
+import { WORLD_RIDES } from '@/multiplayer/world-rides';
 import { useI18n } from '@/i18n';
 import { useApp } from '@/store/useApp';
 
@@ -27,16 +28,34 @@ export function HomePage() {
           {(profile.name || 'A').slice(0, 1).toUpperCase()}
         </Link>
       </header>
-      <h1 className="mt-6 font-display text-5xl uppercase leading-[0.9]">{t('home.hello', { name: profile.name || 'Atleta' })}</h1>
-      <p className="mt-2 text-muted">{t('home.lead')}</p>
+      <h1 className="mt-5 font-display text-5xl uppercase leading-[0.9]">{t('home.hello', { name: profile.name || 'Atleta' })}</h1>
 
-      <InstallCard className="mt-5" />
+      {/* il mondo è la cosa da fare: una carta grande col suo ingresso, e tre scorciatoie */}
+      <section className="mt-5 overflow-hidden rounded-3xl border border-accent/50 bg-elev">
+        <Link to="/mondo" data-testid="home-world" className="flex items-center gap-3 p-4 transition hover:bg-elev2/50">
+          <span className="min-w-0 flex-1">
+            <span className="eyebrow text-accent">Mondo aperto</span>
+            <span className="mt-1 block font-display text-3xl uppercase leading-none">Bergamo e le valli</span>
+            <span className="num mt-1.5 block text-sm text-muted">{Object.keys(WORLD_RIDES).length} percorsi · Città Alta, Val Brembana, Val Seriana</span>
+          </span>
+          <span aria-hidden="true" className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-accent text-2xl text-accent-ink">
+            →
+          </span>
+        </Link>
+        <nav aria-label="Nel mondo" className="grid grid-cols-3 border-t border-line text-sm font-semibold">
+          <Link to="/mondo?tab=libero" className="flex h-12 items-center justify-center">
+            Giro libero
+          </Link>
+          <Link to="/mondo?tab=anello" className="flex h-12 items-center justify-center border-x border-line">
+            Anello
+          </Link>
+          <Link to="/mondo?tab=ab" className="flex h-12 items-center justify-center">
+            A → B
+          </Link>
+        </nav>
+      </section>
 
-      <Link to="/mondo" data-testid="home-world" className="mt-5 block overflow-hidden rounded-3xl border border-accent/40 bg-elev p-4 transition hover:border-accent">
-        <span className="eyebrow text-accent">Mondo aperto</span>
-        <span className="mt-1 block font-display text-3xl uppercase leading-none">Bergamo e le valli</span>
-        <span className="mt-1.5 block text-sm leading-snug text-muted">Città Alta, Val Brembana e Val Seriana sulle strade vere: giri sinistra o destra a ogni incrocio, percorsi classici, anelli su misura, punti e classifica.</span>
-      </Link>
+      <InstallCard className="mt-3" />
 
       <section className="mt-6">
         <div className="mb-2 flex items-baseline justify-between">
@@ -56,12 +75,12 @@ export function HomePage() {
       </section>
 
       <div className="mt-3 grid gap-2 sm:grid-cols-2">
-        <Link to="/giri" className="flex items-center justify-between rounded-2xl bg-accent px-4 py-4 text-accent-ink">
+        <Link to="/giri" className="flex items-center justify-between rounded-2xl border border-line bg-elev px-4 py-4">
           <span>
             <span className="block font-display text-2xl uppercase leading-none">{t('home.replay')}</span>
-            <span className="mt-1 block text-sm font-medium opacity-75">{t('home.replayHint')}</span>
+            <span className="mt-1 block text-sm text-muted">{t('home.replayHint')}</span>
           </span>
-          <span aria-hidden="true" className="text-2xl">→</span>
+          <span aria-hidden="true" className="text-2xl text-muted">→</span>
         </Link>
         <Link to="/workouts" className="flex items-center justify-between rounded-2xl border border-line bg-elev px-4 py-4">
           <span>

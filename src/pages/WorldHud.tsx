@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Segmented } from '@/components/ui';
-import { MiniMap } from '@/components/WorldMap';
-import { gradeColor } from '@/components/RouteViz';
+import { MiniMap, WorldMap, type MapMarker, type MapOverlay } from '@/components/WorldMap';
+import { gradeColor, PositionDot, ProfileChart } from '@/components/RouteViz';
+import type { Track } from '@/domain/track';
 import { formatKm, formatNumber } from '@/domain/format';
 import { RIDER_COLORS } from '@/multiplayer/protocol';
 import type { RideEngine } from '@/sim/engine';
@@ -48,7 +49,7 @@ export function TurnPicker({ session, engine }: { session: WorldSession; engine:
       <p className="px-1.5 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">
         Incrocio tra <span className="num text-ink">{Math.max(0, Math.round(j.dist))} m</span>
       </p>
-      <div className="flex gap-1.5">
+      <div className="flex gap-1">
         {j.options.map((o, i) => {
           const sel = i === j.selected;
           return (
@@ -58,11 +59,11 @@ export function TurnPicker({ session, engine }: { session: WorldSession; engine:
               onClick={() => session.choose(i)}
               aria-pressed={sel}
               data-testid={`turn-${i}`}
-              className={`flex min-h-12 min-w-[64px] max-w-[132px] flex-col items-center justify-center rounded-xl px-2 py-1 text-center ${sel ? 'bg-accent text-accent-ink' : 'bg-elev2 text-ink'} ${o.onRoute && !sel ? 'ring-2 ring-accent' : ''}`}
+              className={`flex min-h-12 w-[68px] min-w-0 flex-col items-center justify-center rounded-xl px-1 py-1 text-center ${sel ? 'bg-accent text-accent-ink' : 'bg-elev2 text-ink'} ${o.onRoute && !sel ? 'ring-2 ring-accent' : ''}`}
             >
               <TurnIcon deg={o.turn} uTurn={o.uTurn} />
-              <span className="mt-0.5 line-clamp-1 text-[11px] font-semibold leading-tight">{o.uTurn ? 'inversione' : o.toward ? `verso ${o.toward}` : turnWord(o.turn)}</span>
-              <span className={`line-clamp-1 text-[10px] leading-tight ${sel ? 'text-accent-ink/75' : 'text-muted'}`}>{o.label}</span>
+              <span className="mt-0.5 w-full truncate text-[11px] font-semibold leading-tight">{o.uTurn ? 'inversione' : o.toward || turnWord(o.turn)}</span>
+              <span className={`w-full truncate text-[10px] leading-tight ${sel ? 'text-accent-ink/75' : 'text-muted'}`}>{o.label}</span>
             </button>
           );
         })}
@@ -130,7 +131,7 @@ export function Nearby({ session }: { session: WorldSession }) {
   );
 }
 
-export function WorldMini({ session, size }: { session: WorldSession; size: number }) {
+export function WorldMini({ session, size, onOpen }: { session: WorldSession; size: number; onOpen?: () => void }) {
   const pose = useMemo(() => () => session.pose, [session]);
   const legs = useMemo(() => () => session.path.legs, [session]);
   const riders = useMemo(
@@ -142,19 +143,31 @@ export function WorldMini({ session, size }: { session: WorldSession; size: numb
     },
     [session],
   );
-  return <MiniMap data={session.data} pose={pose} legs={legs} riders={riders} size={size} />;
+  const map = <MiniMap data={session.data} pose={pose} legs={legs} riders={riders} size={size} />;
+  if (!onOpen) return map;
+  return (
+    <button type="button" onClick={onOpen} aria-label="Apri la carta: dove sei" data-testid="world-mini" className="pointer-events-auto relative block rounded-full">
+      {map}
+      <span aria-hidden="true" className="absolute bottom-1 left-1/2 -translate-x-1/2 rounded-full bg-bg/85 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink">
+        Carta
+      </span>
+    </button>
+  );
 }
 
-/** L'altimetria dei prossimi 3 km, colorata per pendenza: nel giro libero non si sa dove si arriva. */
-export function AheadProfile({ session, engine }: { session: WorldSession; engine: RideEngine }) {
+/**
+ * L'altimetria dei prossimi km, colorata per pendenza: nel giro libero non si sa dove si arriva.
+ * Comincia un po' prima di dove sei, così il pallino si vede.
+ */
+export function AheadProfile({ session, engine, span = 3000, height = 36, className = 'h-9' }: { session: WorldSession; engine: RideEngine; span?: number; height?: number; className?: string }) {
   const W = 1000;
-  const H = 36;
-  const span = 3000;
+  const H = height;
   const d0 = engine.distance;
+  const from = Math.max(0, d0 - span * 0.08);
   const pts: { d: number; y: number }[] = [];
   for (let i = 0; i <= 60; i++) {
-    const d = d0 + (i / 60) * span;
-    pts.push({ d: d - d0, y: session.path.poseAt(Math.min(session.path.length, d)).altitude });
+    const d = from + (i / 60) * span;
+    pts.push({ d: d - from, y: session.path.poseAt(Math.min(session.path.length, d)).altitude });
   }
   const minY = Math.min(...pts.map((p) => p.y));
   const maxY = Math.max(minY + 30, ...pts.map((p) => p.y));
@@ -168,11 +181,105 @@ export function AheadProfile({ session, engine }: { session: WorldSession; engin
     const x1 = (b.d / span) * W;
     bars.push(<path key={i} d={`M${x0} ${H}L${x0} ${y(a.y)}L${x1} ${y(b.y)}L${x1} ${H}Z`} fill={gradeColor(g)} opacity={0.9} />);
   }
+  const here = session.path.poseAt(Math.min(session.path.length, d0)).altitude;
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="block h-9 w-full" role="img" aria-label={`Prossimi 3 km: da ${Math.round(pts[0].y)} a ${Math.round(pts[60].y)} m`}>
-      {bars}
-    </svg>
+    <div className={`relative w-full ${className}`}>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="absolute inset-0 h-full w-full" role="img" aria-label={`Prossimi ${Math.round(span / 1000)} km: da ${Math.round(here)} a ${Math.round(pts[60].y)} m`}>
+        {bars}
+      </svg>
+      <PositionDot left={(d0 - from) / span} top={y(here) / H} />
+    </div>
   );
+}
+
+/**
+ * La carta grande, aperta toccando la cartina: dove sei nel mondo intero, il percorso, chi c'è
+ * intorno, e sotto l'altimetria col pallino. La pedalata continua: la carta si aggiorna da sola.
+ */
+export function MapSheet({ session, engine, far, track, onClose }: { session: WorldSession; engine: RideEngine; far: Float32Array | null; track: Track | null; onClose: () => void }) {
+  const [, setTick] = useState(0);
+  const [focus, setFocus] = useState(() => around(session.pose, 1400));
+  const [mapH, setMapH] = useState(() => mapHeight());
+  const close = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    close.current?.focus();
+    const t = window.setInterval(() => setTick((n) => n + 1), 500);
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const onResize = () => setMapH(mapHeight());
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('resize', onResize);
+    return () => {
+      window.clearInterval(t);
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [onClose]);
+  const legs = session.planned ? session.plannedLegs : session.path.legs;
+  const overlays = useMemo<MapOverlay[]>(() => [{ legs, color: '#c8f031', width: 5 }], [legs]);
+  const p = session.pose;
+  const markers: MapMarker[] = [];
+  for (const n of session.crowd.npcs) if (n.active) markers.push({ x: n.x, z: n.z, color: '#9aa0a8', small: true });
+  for (const r of session.remoteNow.values()) markers.push({ x: r.x, z: r.z, color: RIDER_COLORS[r.color % RIDER_COLORS.length], label: r.nick });
+  markers.push({ x: p.x, z: p.z, color: '#c8f031', heading: p.heading, label: 'Tu' });
+  const where = [session.placeName(), session.roadLabel(engine.distance), `${formatNumber(engine.altitude, 0)} m`].filter(Boolean).join(' · ');
+  const left = session.onRoute && track ? Math.max(0, track.length - engine.distance) : null;
+  return (
+    <div className="fixed inset-0 z-30 flex flex-col bg-bg" role="dialog" aria-modal="true" aria-label="Carta: dove sei" data-testid="map-sheet">
+      <header className="flex items-center gap-2 px-3 pb-2 pt-[max(0.6rem,env(safe-area-inset-top))]">
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-accent">Sei qui</p>
+          <p className="truncate font-semibold leading-tight" data-testid="map-where">
+            {where}
+          </p>
+        </div>
+        <button ref={close} type="button" onClick={onClose} className="h-11 shrink-0 rounded-full bg-elev2 px-4 text-sm font-semibold" data-testid="map-close">
+          Torna in strada
+        </button>
+      </header>
+      <div className="relative px-3">
+        <WorldMap data={session.data} far={far} overlays={overlays} markers={markers} focus={focus} height={mapH} />
+        <button
+          type="button"
+          onClick={() => setFocus(around(session.pose, 1400))}
+          className="absolute bottom-3 right-5 h-11 rounded-full bg-bg/85 px-3.5 text-sm font-semibold shadow backdrop-blur"
+          data-testid="map-center"
+        >
+          Centra su di me
+        </button>
+      </div>
+      <div className="mt-auto px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3">
+        <dl className="mb-2 grid grid-cols-3 gap-2 text-center">
+          <SheetStat label="Fatti" value={`${formatKm(engine.distance)} km`} />
+          <SheetStat label={left != null ? 'All’arrivo' : 'Quota'} value={left != null ? `${formatKm(left)} km` : `${formatNumber(engine.altitude, 0)} m`} />
+          <SheetStat label="Pendenza" value={`${engine.grade >= 0 ? '+' : '−'}${formatNumber(Math.abs(engine.grade * 100), 1)}%`} />
+        </dl>
+        <div className="rounded-xl bg-elev p-1.5">
+          {session.onRoute && track ? (
+            <ProfileChart key={session.path.version} track={track} className="block h-16 w-full" height={64} bin={Math.max(100, track.length / 80)} position={engine.distance} />
+          ) : (
+            <AheadProfile session={session} engine={engine} span={5000} height={64} className="h-16" />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SheetStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl bg-elev px-2 py-1.5">
+      <dt className="text-[10px] font-semibold uppercase tracking-wider text-muted">{label}</dt>
+      <dd className="num font-semibold">{value}</dd>
+    </div>
+  );
+}
+
+function around(p: { x: number; z: number }, r: number) {
+  return { x0: p.x - r, z0: p.z - r, x1: p.x + r, z1: p.z + r };
+}
+
+function mapHeight(): number {
+  return Math.max(240, Math.round(window.innerHeight - 250));
 }
 
 export function LoopSheet({ session, engine, onClose }: { session: WorldSession; engine: RideEngine; onClose: () => void }) {

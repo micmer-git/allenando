@@ -1,4 +1,4 @@
-import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { WorkoutChart } from '@/components/WorkoutChart';
 import { ProfileChart } from '@/components/RouteViz';
@@ -39,7 +39,7 @@ import { WorldScene, npcCount, type RemoteWorldRider } from '@/open/WorldScene';
 import { loadPlan } from '@/open/plan';
 import { WorldClient } from '@/multiplayer/world-client';
 import { applyRide, levelOf, loadProgress, postResult, postXp, saveProgress, type XpLine } from '@/open/progress';
-import { AheadProfile, LoopSheet, Nearby, Toasts, TurnPicker, WeatherChip, WorldMini, XpSummary } from './WorldHud';
+import { AheadProfile, LoopSheet, MapSheet, Nearby, Toasts, TurnPicker, WeatherChip, WorldMini, XpSummary } from './WorldHud';
 import type { Dir } from '@/open/graph';
 import { fetchWeather, type WeatherNow } from '@/open/weather';
 
@@ -355,6 +355,8 @@ function RideScreen({
   const session = world?.session ?? null;
   const [share, setShare] = useState(readShare);
   const [loopOpen, setLoopOpen] = useState(false);
+  const [mapOpen, setMapOpen] = useState(false);
+  const [far, setFar] = useState<Float32Array | null>(null);
   const [worldColor, setWorldColor] = useState<number | null>(null);
   const [peers, setPeers] = useState<{ id: string; nick: string; color: number }[]>([]);
   const [xp, setXp] = useState<{ lines: XpLine[]; total: number; level: ReturnType<typeof levelOf> & { xp: number }; rank: string | null; rankNote?: string } | null>(null);
@@ -455,6 +457,16 @@ function RideScreen({
     setSummary(ride);
     if (session) void commitWorld();
   }
+
+  const closeMap = useCallback(() => setMapOpen(false), []);
+  useEffect(() => {
+    if (!mapOpen || far || !terrainField) return;
+    let alive = true;
+    void terrainField.terrain.loadFar().then((h) => alive && setFar(h));
+    return () => {
+      alive = false;
+    };
+  }, [mapOpen, far, terrainField]);
 
   useEffect(() => {
     if (engine.arrived && !summary) finish();
@@ -612,7 +624,7 @@ function RideScreen({
               <TurnPicker session={session} engine={engine} />
             </div>
             <div className="shrink-0">
-              <WorldMini session={session} size={118} />
+              <WorldMini session={session} size={112} onOpen={() => setMapOpen(true)} />
             </div>
           </div>
         ) : null}
@@ -635,7 +647,7 @@ function RideScreen({
         <span data-testid="world-ready" data-ready={ready ? 'yes' : 'no'} className="sr-only" />
         <span data-testid="room-3d" data-count={remote?.list.length ?? 0} className="sr-only" />
       </div>
-      <aside className="max-h-[50%] overflow-auto border-t border-line bg-elev px-4 pb-[max(0.6rem,env(safe-area-inset-bottom))] pt-2.5 md:max-h-none md:w-[400px] md:shrink-0 md:border-l md:border-t-0 md:pt-4">
+      <aside className="max-h-[45%] overflow-auto border-t border-line bg-elev px-4 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 md:max-h-none md:w-[400px] md:shrink-0 md:border-l md:border-t-0 md:pt-4">
         {progress && engine.workout ? (
           <div className="mb-2.5">
             <div className="flex items-end justify-between gap-3">
@@ -653,79 +665,82 @@ function RideScreen({
           </div>
         ) : null}
         {engine.workoutDone ? <p className="mb-2 text-sm text-good">{t('ride.done')}</p> : null}
-        <div className="flex items-end justify-between gap-3">
-          <div className="flex items-baseline gap-2">
-            <p className="num font-display text-[56px] leading-[0.85]" data-testid="ride-power" style={{ color: zone.color }}>
-              {formatNumber(engine.power3s, 0)}
-            </p>
-            <p className="text-xs font-semibold uppercase leading-tight tracking-wide text-muted">
-              watt
-              <br />3 s
-            </p>
+        {/* una riga di numeri: i watt grandi, poi velocità, pendenza e cadenza; il resto in piccolo sotto */}
+        <dl className="flex items-stretch gap-1.5">
+          <div className="min-w-0 flex-[1.4] rounded-xl bg-bg/60 px-2 py-1">
+            <dt className="sr-only">{t('units.watt')} 3 s</dt>
+            <dd className="flex items-baseline gap-1">
+              <span className="num font-display text-[40px] leading-none" data-testid="ride-power" style={{ color: zone.color }}>
+                {formatNumber(engine.power3s, 0)}
+              </span>
+              <span className="text-[11px] font-semibold uppercase text-muted">W</span>
+            </dd>
+            <dd className="truncate text-[11px] font-semibold leading-tight" style={{ color: zone.color }}>
+              Z{zone.zone} · <span className="num text-ink/80">{formatNumber(engine.wkg(), 1)} W/kg</span>
+            </dd>
           </div>
-          <div className="text-right">
-            <p className="text-[13px] font-semibold leading-tight" style={{ color: zone.color }}>
-              Z{zone.zone} · {t(zone.nameKey)}
-            </p>
-            <p className="num text-base leading-tight">
-              {formatNumber(engine.wkg(), 1)} <span className="text-xs text-muted">{t('metrics.wkg')}</span>
-            </p>
-          </div>
-        </div>
-        <dl className="mt-2.5 grid grid-cols-3 gap-1.5 text-center">
           <Cell label={t('metrics.speed')} value={formatNumber(msToKmh(engine.speed), 1)} unit={t('units.kmh')} strong />
           <Cell label={t('metrics.grade')} value={formatGrade(engine.grade)} strong />
           <Cell label={t('metrics.cadence')} value={formatNumber(engine.cadence, 0)} unit={t('units.rpm')} strong />
-          <Cell label={t('metrics.hr')} value={formatNumber(engine.hr, 0)} unit={t('units.bpm')} />
-          <Cell label={t('metrics.distance')} value={formatKm(engine.distance)} unit="km" />
-          <Cell label={t('metrics.time')} value={formatDuration(engine.elapsed)} />
         </dl>
+        <p className="num mt-1 flex justify-between px-1 text-xs text-muted">
+          <span>
+            {t('metrics.hr')} <span className="font-semibold text-ink">{formatNumber(engine.hr, 0)}</span>
+          </span>
+          <span>
+            <span className="font-semibold text-ink">{formatKm(engine.distance)}</span> km
+          </span>
+          <span className="font-semibold text-ink">{formatDuration(engine.elapsed)}</span>
+          <span>{t(zone.nameKey)}</span>
+        </p>
         {/* su telefono il pannello scorre: Pausa e Termina restano sempre a portata di dito */}
-        <div className="sticky bottom-0 z-10 -mx-4 mt-2.5 grid grid-cols-2 gap-2 bg-elev px-4 py-1.5 md:static md:mx-0 md:px-0 md:py-0">
-          <Button variant="ghost" onClick={() => (engine.phase === 'paused' ? engine.resume() : engine.pause())}>
+        <div className="sticky bottom-0 z-10 -mx-4 mt-1.5 grid grid-cols-2 gap-2 bg-elev px-4 py-1 md:static md:mx-0 md:px-0 md:py-0">
+          <Button variant="ghost" className="h-11" onClick={() => (engine.phase === 'paused' ? engine.resume() : engine.pause())}>
             {engine.phase === 'paused' ? t('actions.resume') : t('actions.pause')}
           </Button>
-          <Button data-testid="ride-finish" onClick={finish}>
+          <Button data-testid="ride-finish" className="h-11" onClick={finish}>
             {t('actions.finish')}
           </Button>
         </div>
-        {snap.mode === 'simulator' && engine.mode === 'free' ? (
-          <label className="mt-2.5 block">
-            <span className="flex justify-between text-sm text-muted">
-              <span>{t('ride.effort')}</span>
-              <span className="num">{effort}%</span>
-            </span>
-            <input
-              aria-label={t('a11y.effort')}
-              className="mt-1 h-8 w-full accent-[var(--accent)]"
-              type="range"
-              min={0}
-              max={160}
-              value={effort}
-              onChange={(event) => {
-                const value = Number(event.target.value);
-                setEffort(value);
-                engine.effort = value / 100;
-              }}
-            />
-          </label>
-        ) : null}
         {snap.mode === 'simulator' ? (
-          <div className="mt-2 grid grid-cols-3 gap-1 rounded-full bg-elev2 p-1" role="group" aria-label="Velocità del simulatore">
-            {[1, 4, 10].map((scale) => (
-              <button
-                key={scale}
-                type="button"
-                aria-pressed={engine.timeScale === scale}
-                className={`h-11 rounded-full text-sm font-semibold ${engine.timeScale === scale ? 'bg-accent text-accent-ink' : 'text-muted'}`}
-                onClick={() => {
-                  engine.timeScale = scale;
-                  bump((n) => n + 1);
-                }}
-              >
-                {scale}×
-              </button>
-            ))}
+          <div className="mt-1.5 flex items-center gap-2">
+            {engine.mode === 'free' ? (
+              <label className="flex min-w-0 flex-1 items-center gap-2">
+                <span className="text-xs text-muted">{t('ride.effort')}</span>
+                <input
+                  aria-label={t('a11y.effort')}
+                  className="h-11 min-w-0 flex-1 accent-[var(--accent)]"
+                  type="range"
+                  min={0}
+                  max={160}
+                  value={effort}
+                  onChange={(event) => {
+                    const value = Number(event.target.value);
+                    setEffort(value);
+                    engine.effort = value / 100;
+                  }}
+                />
+                <span className="num w-9 text-right text-xs">{effort}%</span>
+              </label>
+            ) : (
+              <span className="flex-1 text-xs text-muted">{t('ride.simulator')}</span>
+            )}
+            <div className="grid shrink-0 grid-cols-3 gap-0.5 rounded-full bg-elev2 p-0.5" role="group" aria-label="Velocità del simulatore">
+              {[1, 4, 10].map((scale) => (
+                <button
+                  key={scale}
+                  type="button"
+                  aria-pressed={engine.timeScale === scale}
+                  className={`h-11 w-11 rounded-full text-sm font-semibold ${engine.timeScale === scale ? 'bg-accent text-accent-ink' : 'text-muted'}`}
+                  onClick={() => {
+                    engine.timeScale = scale;
+                    bump((n) => n + 1);
+                  }}
+                >
+                  {scale}×
+                </button>
+              ))}
+            </div>
           </div>
         ) : null}
         {snap.mode === 'bluetooth' && snap.status === 'connected' && engine.power <= 0 ? (
@@ -739,9 +754,9 @@ function RideScreen({
             </button>
           </p>
         ) : null}
-        <details className="group mt-2.5 rounded-2xl border border-line">
+        <details className="group mt-1.5 rounded-2xl border border-line">
           <summary className="flex h-11 cursor-pointer list-none items-center justify-between px-3 text-sm font-semibold">
-            Grafica e strada vera
+            Impostazioni
             <span aria-hidden="true" className="text-muted transition group-open:rotate-180">
               ▾
             </span>
@@ -751,7 +766,7 @@ function RideScreen({
               <label className="mb-3 flex min-h-11 items-center justify-between gap-3 text-sm">
                 <span>
                   <span className="font-semibold">Mostrami agli altri nel mondo</span>
-                  <span className="block text-xs text-muted">Passano il nome, la posizione sulla strada virtuale e i watt. Niente GPS.</span>
+                  <span className="block text-xs text-muted">Nome, posizione nel mondo e watt. Niente GPS.</span>
                 </span>
                 <input
                   type="checkbox"
@@ -824,10 +839,7 @@ function RideScreen({
                     Mapillary ↗
                   </a>
                 </div>
-                <p className="mt-2 text-xs leading-relaxed text-muted">
-                  Si apre in una scheda nuova, nel visore ufficiale di Google Street View o di Mapillary (foto © dei rispettivi autori), nel punto e nella
-                  direzione in cui sei. Il mondo 3D non usa quelle immagini: è costruito da OpenStreetMap e dal DEM.
-                </p>
+                <p className="mt-2 text-xs leading-relaxed text-muted">Nel punto e nella direzione in cui sei. Foto © Google e Mapillary; il 3D viene da OpenStreetMap e dal DEM.</p>
               </>
             ) : null}
           </div>
@@ -842,6 +854,7 @@ function RideScreen({
         />
       ) : null}
       {loopOpen && session ? <LoopSheet session={session} engine={engine} onClose={() => setLoopOpen(false)} /> : null}
+      {mapOpen && session ? <MapSheet session={session} engine={engine} far={far} track={track} onClose={closeMap} /> : null}
       {room.sheet && room.available ? <RoomSheet handle={room} routeTitle={`${setup.route.title} ${setup.route.subtitle}`} onClose={() => room.setSheet(false)} /> : null}
       {summary ? (
         <div className="fixed inset-0 z-40 overflow-auto bg-bg/95 px-4 py-8 backdrop-blur" data-testid="ride-summary">
@@ -998,9 +1011,9 @@ function Service({ on, label }: { on: boolean; label: string }) {
 
 function Cell({ label, value, unit, strong = false }: { label: string; value: string; unit?: string; strong?: boolean }) {
   return (
-    <div className="rounded-xl bg-bg/60 px-1.5 py-1.5">
-      <dt className="text-[10px] font-semibold uppercase tracking-wider text-muted">{label}</dt>
-      <dd className={`num font-semibold leading-tight ${strong ? 'text-lg' : 'text-[15px] text-ink/85'}`}>
+    <div className="min-w-0 flex-1 rounded-xl bg-bg/60 px-1 py-1.5 text-center">
+      <dt className="truncate text-[10px] font-semibold uppercase tracking-wide text-muted">{label}</dt>
+      <dd className={`num whitespace-nowrap font-semibold leading-tight ${strong ? 'text-lg' : 'text-[15px] text-ink/85'}`}>
         {value}
         {unit ? <span className="ml-0.5 text-[11px] font-medium text-muted">{unit}</span> : null}
       </dd>

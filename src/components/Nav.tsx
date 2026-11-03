@@ -71,7 +71,7 @@ export function BottomNav() {
   );
 }
 
-function WorldIcon() {
+export function WorldIcon() {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M3 6.5 8.5 4l7 2.5L21 4v13.5L15.5 20l-7-2.5L3 20V6.5Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
@@ -87,7 +87,7 @@ function HomeIcon() {
     </svg>
   );
 }
-function RideIcon() {
+export function RideIcon() {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <circle cx="6.5" cy="16.5" r="3" stroke="currentColor" strokeWidth="1.8" />
@@ -111,7 +111,7 @@ function BookIcon() {
     </svg>
   );
 }
-function MountainIcon() {
+export function MountainIcon() {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M2.5 19.5 9 8l3.6 6 2.4-3.6 6.5 9.1H2.5Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
