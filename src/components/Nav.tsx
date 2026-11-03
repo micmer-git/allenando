@@ -7,6 +7,15 @@ const items = [
   { to: '/', key: 'nav.home', icon: HomeIcon, end: true },
   { to: '/mondo', key: 'nav.world', icon: WorldIcon, end: false },
   { to: '/salite', key: 'nav.climbs', icon: MountainIcon, end: false },
+  { to: '/sessioni', key: 'nav.sessions', icon: SessionIcon, end: false },
+  { to: '/garage', key: 'nav.garage', icon: JerseyIcon, end: false },
+  { to: '/tu', key: 'nav.me', icon: MeIcon, end: false },
+] as const;
+
+/** Sul computer c'è posto: anche le sezioni che sul telefono stanno dentro «Tu». */
+const more = [
+  { to: '/traguardi', key: 'nav.achievements', icon: CupIcon, end: false },
+  { to: '/classifiche', key: 'nav.boards', icon: PodiumIcon, end: false },
   { to: '/giri', key: 'nav.rides', icon: RideIcon, end: false },
   { to: '/workouts', key: 'nav.workouts', icon: PlanIcon, end: false },
   { to: '/history', key: 'nav.history', icon: BookIcon, end: false },
@@ -20,7 +29,7 @@ export function SideNav() {
         <Wordmark />
       </p>
       <nav aria-label={t('nav.primary')} className="mt-6 flex flex-col gap-1">
-        {items.map((item) => (
+        {[...items, ...more].map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
@@ -108,6 +117,44 @@ function BookIcon() {
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M5 5.5A2.5 2.5 0 0 1 7.5 3H20v16H7.5A2.5 2.5 0 0 0 5 21.5V5.5Z" stroke="currentColor" strokeWidth="1.8" />
       <path d="M5 19.5A2.5 2.5 0 0 1 7.5 17H20" stroke="currentColor" strokeWidth="1.8" />
+    </svg>
+  );
+}
+function SessionIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="3.5" y="5" width="17" height="15" rx="2.5" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M3.5 9.5h17M8 3v4M16 3v4M12 13v3l2 1.2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+function JerseyIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M8.2 3.5 10 3q2 2 4 0l1.8.5L21 7.5 19 11l-2-1.4V21H7V9.6L5 11 3 7.5Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M7 12.5h10" stroke="currentColor" strokeWidth="1.6" />
+    </svg>
+  );
+}
+function MeIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="8.5" r="4" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M4.5 20.5c1-4 4-6 7.5-6s6.5 2 7.5 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+function CupIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M7 4h10v5a5 5 0 0 1-10 0Z M7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4M12 14v4M8 21h8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function PodiumIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M9 20V9h6v11M3 20v-6h6M15 20v-8h6v8M2 20h20" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
     </svg>
   );
 }

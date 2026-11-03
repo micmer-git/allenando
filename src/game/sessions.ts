@@ -18,6 +18,23 @@ export const SESSION_STYLE: Record<SessionKind, { name: string; color: string; b
   salita: { name: 'Salita', color: '#1f7fe0', blurb: 'Si va su: il GPM in cima vale doppio.' },
 };
 
+/** I nomi dei percorsi, per mostrare una sessione senza caricare il mondo (sono in rides.json). */
+export const WORLD_RIDE_NAMES: Record<string, string> = {
+  'citta-alta': 'Città Alta e San Vigilio',
+  maresana: 'Maresana',
+  selvino: 'Selvino',
+  'val-seriana': 'Val Seriana',
+  'colle-gallo': 'Colle Gallo',
+  presolana: 'Passo della Presolana',
+  'zambla-nossa': 'Colle di Zambla da Ponte Nossa',
+  'zambla-zogno': 'Colle di Zambla da Zogno',
+  'val-brembana': 'Val Brembana',
+  'ciclovia-brembana': 'Ciclovia della Val Brembana',
+  foppolo: 'Foppolo',
+  'san-marco': 'Passo San Marco',
+  'due-valli': 'Il giro delle due valli',
+};
+
 export const SLOT_MS = 30 * 60 * 1000;
 /** ci si iscrive da 15 minuti prima; si entra in corsa fino a 5 minuti dopo il via */
 export const OPEN_BEFORE_MS = 15 * 60 * 1000;

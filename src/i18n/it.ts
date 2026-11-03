@@ -14,6 +14,11 @@ export const it = {
     workouts: 'Allenamenti',
     history: 'Diario',
     primary: 'Sezioni',
+    sessions: 'Sessioni',
+    garage: 'Garage',
+    me: 'Tu',
+    achievements: 'Traguardi',
+    boards: 'Classifiche',
   },
   actions: {
     save: 'Salva',

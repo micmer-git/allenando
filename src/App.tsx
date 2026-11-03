@@ -16,6 +16,11 @@ import { RidesPage } from '@/pages/Rides';
 import { ReplaySetupPage } from '@/pages/ReplaySetup';
 import { ProfilePage } from '@/pages/Profile';
 import { WorldPage } from '@/pages/World';
+import { GaragePage } from '@/pages/Garage';
+import { AchievementsPage } from '@/pages/Achievements';
+import { LeaderboardsPage } from '@/pages/Leaderboards';
+import { SessionsPage } from '@/pages/Sessions';
+import { MePage } from '@/pages/Me';
 import { Wordmark } from '@/components/ui';
 import { OfflineBanner } from '@/components/Install';
 import { useApp } from '@/store/useApp';
@@ -49,6 +54,11 @@ export function App() {
           <Route path="/giri" element={<RidesPage />} />
           <Route path="/giri/:id" element={<ReplaySetupPage />} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/garage" element={<GaragePage />} />
+          <Route path="/traguardi" element={<AchievementsPage />} />
+          <Route path="/classifiche" element={<LeaderboardsPage />} />
+          <Route path="/sessioni" element={<SessionsPage />} />
+          <Route path="/tu" element={<MePage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
