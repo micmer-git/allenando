@@ -22,6 +22,10 @@ export interface MapMarker {
   color: string;
   label?: string;
   ring?: boolean;
+  /** pallino piccolo, senza nome (i ciclisti virtuali) */
+  small?: boolean;
+  /** freccia nel verso di marcia invece del pallino, radianti (0 = sud, come la pedalata) */
+  heading?: number;
 }
 
 interface View {
@@ -298,9 +302,46 @@ function draw(g: CanvasRenderingContext2D, data: WorldData, relief: HTMLCanvasEl
     g.setLineDash([]);
   }
 
-  // cime e paesi
+  // segnaposti, poi città, paesi e cime: un nome che si accavalla a uno già scritto non si scrive
+  const taken: { x0: number; y0: number; x1: number; y1: number }[] = [];
+  const room = (x: number, y: number, w: number, h: number) => {
+    const r = { x0: x - w / 2 - 2, y0: y - h - 1, x1: x + w / 2 + 2, y1: y + 1 };
+    for (const t of taken) if (r.x0 < t.x1 && r.x1 > t.x0 && r.y0 < t.y1 && r.y1 > t.y0) return false;
+    taken.push(r);
+    return true;
+  };
+  const halo = (text: string, x: number, y: number, font: string, fill: string, edge = 'rgba(255,255,255,0.88)') => {
+    g.font = font;
+    const w = g.measureText(text).width;
+    const h = parseInt(font.split(' ')[1], 10) || 11;
+    if (!room(x, y, w, h)) return false;
+    g.lineWidth = 3;
+    g.strokeStyle = edge;
+    g.strokeText(text, x, y);
+    g.fillStyle = fill;
+    g.fillText(text, x, y);
+    return true;
+  };
   g.textAlign = 'center';
   g.textBaseline = 'bottom';
+  // i segnaposti si disegnano sopra tutto, ma i loro nomi passano per primi
+  const order = [...markers].sort((a, b) => Number(b.heading != null) - Number(a.heading != null) || Number(!!b.ring) - Number(!!a.ring));
+  for (const m of order) {
+    if (!m.label || m.small) continue;
+    const x = sx(m.x);
+    const y = sz(m.z);
+    // prima il posto del segno stesso, poi il nome sopra, staccato quanto basta da non toccarlo
+    if (m.heading != null) room(x, y + 13, 26, 26);
+    else room(x, y + 6, 14, 12);
+    halo(m.label, x, y - (m.heading != null ? 15 : 9), '700 11px sans-serif', '#0a0c0f', 'rgba(255,255,255,0.92)');
+  }
+  const places = data.features.places
+    .filter((p) => p.kind === 'city' || (p.kind === 'town' && v.mpp < 90) || (p.kind === 'village' && v.mpp < 32) || ((p.kind === 'suburb' || p.kind === 'quarter') && v.mpp < 6))
+    .sort((a, b) => placeRank(a.kind) - placeRank(b.kind));
+  for (const p of places) {
+    if (!inView(p.x, p.z)) continue;
+    halo(p.name, sx(p.x), sz(p.z), p.kind === 'city' ? '800 14px sans-serif' : p.kind === 'town' ? '700 12px sans-serif' : '600 11px sans-serif', '#1d2026');
+  }
   for (const p of data.features.peaks) {
     if (p.pass || p.ele < (v.mpp > 60 ? 2200 : v.mpp > 25 ? 1700 : 1100) || !inView(p.x, p.z)) continue;
     const x = sx(p.x);
@@ -311,43 +352,44 @@ function draw(g: CanvasRenderingContext2D, data: WorldData, relief: HTMLCanvasEl
     g.lineTo(x + 4, y + 2);
     g.lineTo(x - 4, y + 2);
     g.fill();
-    if (v.mpp < 45) {
-      g.font = '600 10px sans-serif';
-      g.fillStyle = '#4a3c2f';
-      g.fillText(`${p.name} ${p.ele}`, x, y - 6);
-    }
-  }
-  for (const p of data.features.places) {
-    const show = p.kind === 'city' || (p.kind === 'town' && v.mpp < 90) || (p.kind === 'village' && v.mpp < 32) || ((p.kind === 'suburb' || p.kind === 'quarter') && v.mpp < 6);
-    if (!show || !inView(p.x, p.z)) continue;
-    const x = sx(p.x);
-    const y = sz(p.z);
-    g.font = p.kind === 'city' ? '800 14px sans-serif' : p.kind === 'town' ? '700 12px sans-serif' : '600 11px sans-serif';
-    g.lineWidth = 3;
-    g.strokeStyle = 'rgba(255,255,255,0.85)';
-    g.strokeText(p.name, x, y);
-    g.fillStyle = '#1d2026';
-    g.fillText(p.name, x, y);
+    if (v.mpp < 45) halo(`${p.name} ${p.ele}`, x, y - 6, '600 10px sans-serif', '#4a3c2f', 'rgba(255,255,255,0.7)');
   }
   for (const m of markers) {
     const x = sx(m.x);
     const y = sz(m.z);
     g.fillStyle = m.color;
     g.strokeStyle = '#0a0c0f';
-    g.lineWidth = 2;
+    g.lineWidth = m.small ? 1 : 2;
     g.beginPath();
-    g.arc(x, y, m.ring ? 7 : 5, 0, Math.PI * 2);
+    if (m.heading != null) {
+      // un alone, perché «sei qui» si trovi al primo sguardo
+      g.save();
+      g.fillStyle = 'rgba(200,240,49,0.28)';
+      g.beginPath();
+      g.arc(x, y, 17, 0, Math.PI * 2);
+      g.fill();
+      g.restore();
+      g.beginPath();
+      // freccia nel verso di marcia: avanti è (sin h, cos h) in x/z, e sullo schermo z scende
+      const fx = Math.sin(m.heading);
+      const fz = Math.cos(m.heading);
+      const tip = 12;
+      const back = 8;
+      const side = 8;
+      g.moveTo(x + fx * tip, y + fz * tip);
+      g.lineTo(x - fx * back + fz * side, y - fz * back - fx * side);
+      g.lineTo(x - fx * 3, y - fz * 3);
+      g.lineTo(x - fx * back - fz * side, y - fz * back + fx * side);
+      g.closePath();
+      g.lineWidth = 1.6;
+    } else g.arc(x, y, m.small ? 3 : m.ring ? 7 : 5, 0, Math.PI * 2);
     g.fill();
     g.stroke();
-    if (m.label) {
-      g.font = '700 11px sans-serif';
-      g.lineWidth = 3;
-      g.strokeStyle = 'rgba(255,255,255,0.9)';
-      g.strokeText(m.label, x, y - 9);
-      g.fillStyle = '#0a0c0f';
-      g.fillText(m.label, x, y - 9);
-    }
   }
+}
+
+function placeRank(kind: string): number {
+  return kind === 'city' ? 0 : kind === 'town' ? 1 : kind === 'village' ? 2 : 3;
 }
 
 function strokeLegs(g: CanvasRenderingContext2D, data: WorldData, legs: Leg[], sx: (x: number) => number, sz: (z: number) => number) {

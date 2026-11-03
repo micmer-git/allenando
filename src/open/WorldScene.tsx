@@ -101,6 +101,7 @@ function WorldContent(props: WorldSceneProps) {
   const q = QUALITY[quality];
   const farRect = useRef({ value: new THREE.Vector3(0, 0, -1) });
   const mats = useMaterials(farRect.current);
+  const names = useMemo(() => new Set<THREE.Sprite>(), []);
   return (
     <group>
       <Atmosphere weather={props.weather} daytime={props.daytime} data={data} far={q.far} mats={mats} />
@@ -109,8 +110,9 @@ function WorldContent(props: WorldSceneProps) {
       <NearTiles {...props} mats={mats} rect={farRect.current} />
       <Lakes data={data} />
       <Walls data={data} field={field} />
-      <Labels data={data} engine={props.engine} playerPose={props.playerPose} />
-      <Landmarks data={data} playerPose={props.playerPose} />
+      <Labels data={data} engine={props.engine} playerPose={props.playerPose} names={names} />
+      <Landmarks data={data} playerPose={props.playerPose} names={names} />
+      <Declutter names={names} />
       {props.ride ? <RideSigns data={data} ride={props.ride} /> : null}
       <PlayerRider {...props} />
       <NpcRiders crowd={props.crowd} />
@@ -916,7 +918,7 @@ function labelTex(name: string, sub: string, peak: boolean): THREE.CanvasTexture
   });
 }
 
-function Labels({ data, playerPose }: { data: WorldData; engine: RideEngine; playerPose: () => TrackPose }) {
+function Labels({ data, playerPose, names }: { data: WorldData; engine: RideEngine; playerPose: () => TrackPose; names: Set<THREE.Sprite> }) {
   const items = useMemo<LabelItem[]>(() => {
     const out: LabelItem[] = [];
     for (const p of data.features.peaks) {
@@ -937,12 +939,13 @@ function Labels({ data, playerPose }: { data: WorldData; engine: RideEngine; pla
     const map = live.current;
     return () => {
       for (const s of map.values()) {
+        names.delete(s);
         s.material.map?.dispose();
         s.material.dispose();
       }
       map.clear();
     };
-  }, []);
+  }, [names]);
   useFrame((_, dt) => {
     clock.current -= dt;
     const g = group.current;
@@ -960,6 +963,7 @@ function Labels({ data, playerPose }: { data: WorldData; engine: RideEngine; pla
       const want = new Set(near.slice(0, 26).map((n) => n.i));
       for (const [i, s] of live.current) {
         if (!want.has(i)) {
+          names.delete(s);
           g.remove(s);
           s.material.map?.dispose();
           s.material.dispose();
@@ -969,12 +973,14 @@ function Labels({ data, playerPose }: { data: WorldData; engine: RideEngine; pla
       for (const i of want) {
         if (live.current.has(i)) continue;
         const it = items[i];
-        const mat = new THREE.SpriteMaterial({ map: labelTex(it.name, it.sub, it.peak), transparent: true, depthTest: true, depthWrite: false, fog: false, sizeAttenuation: false });
+        const mat = new THREE.SpriteMaterial({ map: labelTex(it.name, it.sub, it.peak), transparent: true, opacity: 0, depthTest: true, depthWrite: false, fog: false, sizeAttenuation: false });
         const s = new THREE.Sprite(mat);
         s.position.set(it.x, it.y, it.z);
         s.center.set(0.5, 0);
         s.renderOrder = 5;
+        s.userData.prio = it.peak ? 2 : 1;
         live.current.set(i, s);
+        names.add(s);
         g.add(s);
       }
     }
@@ -991,7 +997,7 @@ function Labels({ data, playerPose }: { data: WorldData; engine: RideEngine; pla
 
 // ---------- luoghi da riconoscere ----------
 
-function Landmarks({ data, playerPose }: { data: WorldData; playerPose: () => TrackPose }) {
+function Landmarks({ data, playerPose, names }: { data: WorldData; playerPose: () => TrackPose; names: Set<THREE.Sprite> }) {
   const group = useRef<THREE.Group>(null);
   const built = useRef(false);
   useEffect(() => {
@@ -1003,13 +1009,14 @@ function Landmarks({ data, playerPose }: { data: WorldData; playerPose: () => Tr
     const poleMat = new THREE.MeshLambertMaterial({ color: '#20242b' });
     for (const l of data.features.landmarks) {
       const tex = labelTex(l.name, kindLabel(l.kind), l.kind === 'cima' || l.kind === 'passo');
-      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, fog: false, sizeAttenuation: false }));
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0, depthWrite: false, fog: false, sizeAttenuation: false }));
       const tall = l.kind === 'cima' || l.kind === 'passo' || l.kind === 'fiume' || l.kind === 'paese' || l.kind === 'citta';
       s.position.set(l.x, l.y + (tall ? 30 : 16), l.z);
       s.center.set(0.5, 0);
       s.scale.set(0.38, 0.095, 1);
-      s.userData = { range: tall ? 6000 : 1600 };
+      s.userData = { range: tall ? 6000 : 1600, prio: 0 };
       s.visible = false;
+      names.add(s);
       g.add(s);
       if (!tall) {
         const m = new THREE.Mesh(pole, poleMat);
@@ -1020,6 +1027,7 @@ function Landmarks({ data, playerPose }: { data: WorldData; playerPose: () => Tr
     return () => {
       g.traverse((o) => {
         if (o instanceof THREE.Sprite) {
+          names.delete(o);
           o.material.map?.dispose();
           o.material.dispose();
         }
@@ -1029,7 +1037,7 @@ function Landmarks({ data, playerPose }: { data: WorldData; playerPose: () => Tr
       g.clear();
       built.current = false;
     };
-  }, [data]);
+  }, [data, names]);
   useFrame(() => {
     const g = group.current;
     if (!g) return;
@@ -1039,6 +1047,55 @@ function Landmarks({ data, playerPose }: { data: WorldData; playerPose: () => Tr
     }
   });
   return <group ref={group} />;
+}
+
+/**
+ * I nomi nel 3D non si accavallano. Cinque volte al secondo si proiettano sullo schermo e, dal più
+ * importante (i luoghi da riconoscere, poi i paesi, poi le cime) e dal più vicino, si spegne chi
+ * copre un nome già acceso o finisce sotto la barra in alto. Si accendono e si spengono sfumando.
+ */
+function Declutter({ names }: { names: Set<THREE.Sprite> }) {
+  const { camera } = useThree();
+  const clock = useRef(0);
+  const want = useRef(new WeakMap<THREE.Sprite, number>());
+  const v = useMemo(() => new THREE.Vector3(), []);
+  useFrame((_, dt) => {
+    clock.current -= dt;
+    if (clock.current <= 0) {
+      clock.current = 0.2;
+      const P = camera.projectionMatrix.elements;
+      const list: { s: THREE.Sprite; d: number; prio: number }[] = [];
+      for (const s of names) if (s.visible) list.push({ s, d: camera.position.distanceToSquared(s.position), prio: (s.userData.prio as number | undefined) ?? 1 });
+      list.sort((a, b) => a.prio - b.prio || a.d - b.d);
+      const taken: [number, number, number, number][] = [];
+      for (const { s } of list) {
+        v.copy(s.position).project(camera);
+        let ok = v.z < 1 && Math.abs(v.x) < 1.2 && v.y < 1;
+        if (ok) {
+          // misure in coordinate di schermo (-1…1): il testo occupa circa tre quarti della tela
+          const w = s.scale.x * P[0] * 0.78;
+          const h = s.scale.y * P[5] * 0.85;
+          const r: [number, number, number, number] = [v.x - w / 2, v.y, v.x + w / 2, v.y + h];
+          // sotto il titolo in alto, e sotto la colonna di km e meteo a destra, un nome non si legge
+          if (r[3] > 0.78 || (r[3] > 0.56 && r[2] > 0.28)) ok = false;
+          else
+            for (const t of taken)
+              if (r[0] < t[2] && r[2] > t[0] && r[1] < t[3] && r[3] > t[1]) {
+                ok = false;
+                break;
+              }
+          if (ok) taken.push(r);
+        }
+        want.current.set(s, ok ? 1 : 0);
+      }
+    }
+    const k = Math.min(1, dt * 6);
+    for (const s of names) {
+      const t = want.current.get(s) ?? 0;
+      s.material.opacity += (t - s.material.opacity) * k;
+    }
+  });
+  return null;
 }
 
 // ---------- cartelli del percorso ----------

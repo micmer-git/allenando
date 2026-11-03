@@ -185,9 +185,9 @@ try {
   await sleep(6000);
   await a.shot('ride-citta-alta-start-390');
   if (process.env.LOOK) {
-    // la luce: tramonto e mezzogiorno, dal pannello «Grafica e strada vera»
+    // la luce: tramonto e mezzogiorno, dal pannello «Impostazioni»
     for (const [label, name] of [['Tramonto', 'sera'], ['Mezzodì', 'mezzodi']]) {
-      await a.evaluate(`(() => { const d = [...document.querySelectorAll('details')].find((x) => x.textContent.includes('Grafica e strada vera')); if (d) d.open = true;
+      await a.evaluate(`(() => { const d = [...document.querySelectorAll('details')].find((x) => x.textContent.includes('Impostazioni')); if (d) d.open = true;
         [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === ${JSON.stringify(label)})?.click(); return true; })()`);
       await sleep(4000);
       await a.shot(`ride-citta-alta-${name}-390`);
@@ -227,6 +227,8 @@ try {
   check(false, 'eccezione nel collaudo', String(err?.stack ?? err));
 } finally {
   writeFileSync(join(out, 'report.txt'), report.join('\n') + '\n');
+  // Browser.close prima: su Windows chrome.kill() ferma solo il lanciatore
+  await Promise.race([send('Browser.close').catch(() => null), sleep(3000)]);
   chrome.kill();
 }
 console.log(failures ? `\n${failures} controlli falliti` : '\nTutto verde');

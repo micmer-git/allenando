@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button, Segmented } from '@/components/ui';
 import { WorldMap, legsBounds, type MapMarker, type MapOverlay } from '@/components/WorldMap';
 import { formatDuration, formatKm, formatNumber } from '@/domain/format';
@@ -21,6 +21,15 @@ const AREAS: { id: RideDef['area']; label: string }[] = [
   { id: 'valli', label: 'Fra le due valli' },
 ];
 
+type Tab = 'percorsi' | 'libero' | 'anello' | 'ab' | 'classifiche';
+const TABS: { value: Tab; label: string }[] = [
+  { value: 'percorsi', label: 'Percorsi' },
+  { value: 'libero', label: 'Libero' },
+  { value: 'anello', label: 'Anello' },
+  { value: 'ab', label: 'A → B' },
+  { value: 'classifiche', label: 'Classifica' },
+];
+
 const ROUTE_COLORS = ['#c8f031', '#ff6b4a', '#4ab8ff', '#ffc93c', '#c77dff', '#3ce0b0', '#ff5fa2'];
 
 /** I punti di partenza del giro libero: i paesi grandi del mondo, presi dai dati. */
@@ -32,7 +41,8 @@ export function WorldPage() {
   const [far, setFar] = useState<Float32Array | null>(null);
   const [progress, setProgress] = useState<WorldProgress>(EMPTY_PROGRESS);
   const [online, setOnline] = useState<number | null>(null);
-  const [tab, setTab] = useState<'percorsi' | 'libero' | 'anello' | 'ab' | 'classifiche'>('percorsi');
+  const [params] = useSearchParams();
+  const [tab, setTab] = useState<Tab>(() => (TABS.some((t) => t.value === params.get('tab')) ? (params.get('tab') as Tab) : 'percorsi'));
   const [picked, setPicked] = useState<string | null>(null);
 
   useEffect(() => {
@@ -75,28 +85,16 @@ export function WorldPage() {
         </p>
       </div>
       <LevelCard progress={progress} level={lv} discovered={discovered} total={data.features.landmarks.length} />
-      <div className="mt-4">
-        <Segmented<typeof tab>
-          label="Sezione"
-          value={tab}
-          onChange={setTab}
-          options={[
-            { value: 'percorsi', label: 'Percorsi' },
-            { value: 'libero', label: 'Libero' },
-            { value: 'anello', label: 'Anello' },
-            { value: 'ab', label: 'Da A a B' },
-            { value: 'classifiche', label: 'Classifiche' },
-          ]}
-        />
+      <div className="mt-3">
+        <Segmented<Tab> label="Sezione" value={tab} onChange={setTab} options={TABS} testId="world-tabs" />
       </div>
       {tab === 'percorsi' ? <RidesTab data={data} far={far} progress={progress} picked={picked} setPicked={setPicked} /> : null}
       {tab === 'libero' ? <FreeTab data={data} far={far} /> : null}
       {tab === 'anello' ? <LoopTab data={data} far={far} /> : null}
       {tab === 'ab' ? <AbTab data={data} far={far} /> : null}
-      {tab === 'classifiche' ? <BoardsTab data={data} /> : null}
+      {tab === 'classifiche' ? <BoardsTab /> : null}
       <p className="mt-8 text-xs leading-relaxed text-muted">
-        Strade, edifici, fiumi, cime e paesi: © OpenStreetMap contributors (ODbL), dati del {data.graph.builtAt}. Quote: EU-DEM © Copernicus, livellate lungo la strada. I ciclisti
-        «virtuali» sono simulati; le persone vere hanno il nome sopra la testa.
+        © OpenStreetMap contributors (ODbL), dati del {data.graph.builtAt} · quote EU-DEM © Copernicus. I ciclisti grigi sono simulati, le persone vere hanno il nome.
       </p>
     </main>
   );
@@ -105,20 +103,20 @@ export function WorldPage() {
 function LevelCard({ progress, level, discovered, total }: { progress: WorldProgress; level: ReturnType<typeof levelOf>; discovered: number; total: number }) {
   const pct = Math.min(100, ((progress.xp - level.from) / Math.max(1, level.to - level.from)) * 100);
   return (
-    <section className="mt-4 rounded-3xl bg-elev p-4" data-testid="world-level">
+    <section className="mt-3 rounded-2xl bg-elev px-3.5 py-3" data-testid="world-level">
       <div className="flex items-baseline justify-between gap-3">
-        <p className="font-display text-2xl leading-none">
+        <p className="min-w-0 truncate font-display text-xl leading-none">
           Livello {level.level} <span className="font-sans text-sm font-medium text-muted">{level.title}</span>
         </p>
-        <p className="num text-sm text-muted">{formatNumber(progress.xp, 0)} XP</p>
+        <p className="num shrink-0 text-sm font-semibold">{formatNumber(progress.xp, 0)} XP</p>
       </div>
-      <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-elev2" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct)} aria-label="Verso il prossimo livello">
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-elev2" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct)} aria-label="Verso il prossimo livello">
         <div className="h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
       </div>
-      <dl className="mt-3 grid grid-cols-3 gap-2 text-center">
-        <Stat label="Questa settimana" value={`${formatNumber(progress.weekXp, 0)} XP`} />
-        <Stat label="Luoghi scoperti" value={`${discovered}/${total}`} />
-        <Stat label="Nel mondo" value={`${formatKm(progress.km * 1000)} km`} />
+      <dl className="num mt-2 flex justify-between text-xs text-muted">
+        <Stat label="settimana" value={`${formatNumber(progress.weekXp, 0)} XP`} />
+        <Stat label="luoghi" value={`${discovered}/${total}`} />
+        <Stat label="nel mondo" value={`${formatKm(progress.km * 1000)} km`} />
       </dl>
     </section>
   );
@@ -126,9 +124,9 @@ function LevelCard({ progress, level, discovered, total }: { progress: WorldProg
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl bg-bg/60 px-2 py-2">
-      <dt className="text-[10px] font-semibold uppercase tracking-wider text-muted">{label}</dt>
-      <dd className="num text-[15px] font-semibold">{value}</dd>
+    <div className="flex items-baseline gap-1">
+      <dd className="font-semibold text-ink">{value}</dd>
+      <dt>{label}</dt>
     </div>
   );
 }
@@ -316,10 +314,8 @@ function FreeTab({ data, far }: { data: WorldData; far: Float32Array | null }) {
   }
   return (
     <section className="mt-4">
-      <p className="text-[15px] leading-relaxed">
-        Parti da dove vuoi e gira dove vuoi: a ogni incrocio scegli sinistra, dritto o destra (frecce della tastiera o i pulsanti sullo schermo). Tocca la carta per scegliere il punto, o un paese qui sotto.
-      </p>
-      <div className="mt-3">
+      <p className="text-sm text-muted">Tocca la carta o scegli un paese. Agli incroci decidi tu.</p>
+      <div className="mt-2">
         <WorldMap
           data={data}
           far={far}
@@ -384,8 +380,7 @@ function LoopTab({ data, far }: { data: WorldData; far: Float32Array | null }) {
   }
   return (
     <section className="mt-4">
-      <p className="text-[15px] leading-relaxed">Scegli da dove parti, quanti chilometri e che strade: ti propongo tre anelli diversi che tornano al punto di partenza.</p>
-      <label className="mt-3 block text-sm font-semibold">
+      <label className="block text-sm font-semibold">
         Partenza
         <select className="mt-1 h-12 w-full rounded-2xl border border-line bg-elev px-3 text-[15px]" value={start} onChange={(e) => setStart(e.target.value)}>
           {starts.map((s) => (
@@ -484,7 +479,6 @@ function AbTab({ data, far }: { data: WorldData; far: Float32Array | null }) {
   const select = (value: string, set: (p: AbPoint | null) => void) => set(fromName(value));
   return (
     <section className="mt-4">
-      <p className="text-[15px] leading-relaxed">Scegli da dove parti e dove vuoi arrivare: un paese qui sotto o un punto sulla carta. Ti porto per la strada più adatta alla bici.</p>
       <div className="mt-3 grid grid-cols-2 gap-2">
         {(['a', 'b'] as const).map((k) => {
           const cur = k === 'a' ? a : b;
@@ -564,7 +558,7 @@ function AbTab({ data, far }: { data: WorldData; far: Float32Array | null }) {
   );
 }
 
-function BoardsTab({ data }: { data: WorldData }) {
+function BoardsTab() {
   const [scope, setScope] = useState<'week' | 'all'>('week');
   const [rows, setRows] = useState<XpRow[] | null | 'loading'>('loading');
   useEffect(() => {
@@ -602,9 +596,7 @@ function BoardsTab({ data }: { data: WorldData }) {
           ))}
         </ol>
       ) : null}
-      <p className="mt-4 text-sm text-muted">
-        I tempi di ognuno dei {data.rides.length} percorsi stanno nella sua scheda, in Percorsi; quelli del simulatore in una classifica a parte.
-      </p>
+      <p className="mt-4 text-sm text-muted">I tempi di ogni percorso stanno nella sua scheda.</p>
     </section>
   );
 }

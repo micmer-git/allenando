@@ -107,7 +107,7 @@ export function ProfileChart({
 }) {
   const W = 1000;
   const H = height;
-  const { bars, line, minA, maxA } = useMemo(() => {
+  const { bars, line, minA, maxA, y } = useMemo(() => {
     const L = track.length;
     let minA = Infinity;
     let maxA = -Infinity;
@@ -133,18 +133,35 @@ export function ProfileChart({
       const p = track.poseAt((i / steps) * L);
       line += `${i ? 'L' : 'M'}${((i / steps) * W).toFixed(1)} ${y(p.y).toFixed(1)}`;
     }
-    return { bars, line, minA, maxA };
+    return { bars, line, minA, maxA, y };
   }, [track, bin, H]);
-  const px = position != null ? (Math.min(track.length, position) / track.length) * W : null;
+  const at = position != null ? Math.max(0, Math.min(track.length, position)) : null;
+  const px = at != null ? (at / track.length) * W : null;
+  const py = at != null ? y(track.poseAt(at).y) : null;
   const gx = ghost != null ? (Math.min(track.length, ghost) / track.length) * W : null;
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className={className} role="img" aria-label={`Altimetria, da ${Math.round(minA + track.altitudeBase)} a ${Math.round(maxA + track.altitudeBase)} m`}>
-      {bars.map((b, i) => (
-        <path key={i} d={b.d} fill={b.color} opacity={0.9} />
-      ))}
-      <path d={line} fill="none" stroke="var(--ink)" strokeWidth={1.6} vectorEffect="non-scaling-stroke" />
-      {gx != null ? <line x1={gx} x2={gx} y1={0} y2={H} stroke="#8fd8ff" strokeWidth={2} strokeDasharray="4 4" vectorEffect="non-scaling-stroke" /> : null}
-      {px != null ? <line x1={px} x2={px} y1={0} y2={H} stroke="var(--ink)" strokeWidth={2.5} vectorEffect="non-scaling-stroke" /> : null}
-    </svg>
+    <div className={`relative ${className ?? ''}`}>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="absolute inset-0 h-full w-full" role="img" aria-label={`Altimetria, da ${Math.round(minA + track.altitudeBase)} a ${Math.round(maxA + track.altitudeBase)} m`}>
+        {bars.map((b, i) => (
+          <path key={i} d={b.d} fill={b.color} opacity={0.9} />
+        ))}
+        <path d={line} fill="none" stroke="var(--ink)" strokeWidth={1.6} vectorEffect="non-scaling-stroke" />
+        {gx != null ? <line x1={gx} x2={gx} y1={0} y2={H} stroke="#8fd8ff" strokeWidth={2} strokeDasharray="4 4" vectorEffect="non-scaling-stroke" /> : null}
+        {px != null ? <line x1={px} x2={px} y1={0} y2={H} stroke="var(--ink)" strokeOpacity={0.4} strokeWidth={1.5} vectorEffect="non-scaling-stroke" /> : null}
+      </svg>
+      {px != null && py != null ? <PositionDot left={px / W} top={py / H} /> : null}
+    </div>
+  );
+}
+
+/** Il pallino di dove sei sopra un'altimetria: in HTML e non in SVG, così resta tondo anche col grafico stirato. */
+export function PositionDot({ left, top }: { left: number; top: number }) {
+  return (
+    <span
+      data-testid="profile-dot"
+      aria-hidden="true"
+      className="pointer-events-none absolute h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[#0a0c0f] bg-accent shadow-[0_0_0_3px_rgba(200,240,49,0.35)]"
+      style={{ left: `${(Math.min(1, Math.max(0, left)) * 100).toFixed(2)}%`, top: `${(Math.min(1, Math.max(0, top)) * 100).toFixed(2)}%` }}
+    />
   );
 }
