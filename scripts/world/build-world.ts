@@ -16,6 +16,8 @@ import { CITY, DEM_STEP, FAR_STEP, HORIZON, ORIGIN, REGION, TILE } from './confi
 import { loadDem } from './dem.mjs';
 import { CLS, FLAG, WorldGraph, type WorldGraphFile } from '../../src/open/graph';
 import { buildRides, resolveWaypoints } from './rides';
+import { isPaintedCrossing, poiKind, POI_BUILT, POI_REACH, snapSignals, snapToRoad } from '../../src/open/snap';
+import type { PoiKind } from '../../src/open/world';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..', '..');
@@ -158,6 +160,7 @@ function wayFlags(t: Tags): number {
   if (!bikeBoth && ow === '-1') f |= FLAG.onewayRev;
   if (COBBLES.has(t.surface ?? '')) f |= FLAG.cobbles;
   if (UNPAVED.has(t.surface ?? '')) f |= FLAG.unpaved;
+  if (t.junction === 'roundabout' || t.junction === 'circular') f |= FLAG.roundabout;
   return f;
 }
 
@@ -1421,6 +1424,105 @@ const delta2 = (xz: [number, number][]) => {
 };
 
 const r1 = (v: number) => Math.round(v * 10) / 10;
+
+// ---------- semafori, strisce, precedenze e luoghi da passare (cache/osm/points.json) ----------
+
+const pointsRaw = existsSync(join(OSM, 'points.json')) ? read<OsmNode>('points') : [];
+const signals = snapSignals(
+  graph,
+  pointsRaw.filter((p) => p.tags.highway === 'traffic_signals').map((p) => {
+    const [x, z] = toLocal(p.lat, p.lon);
+    return { x, z };
+  }),
+);
+const crossingFlat: number[] = [];
+const yieldFlat: number[] = [];
+const miniNodes: number[] = [];
+{
+  const seen = new Map<number, number[]>();
+  const close = (edge: number, s: number, gap: number) => {
+    const l = seen.get(edge);
+    if (l?.some((q) => Math.abs(q - s) < gap)) return true;
+    if (l) l.push(s);
+    else seen.set(edge, [s]);
+    return false;
+  };
+  for (const p of pointsRaw) {
+    const [x, z] = toLocal(p.lat, p.lon);
+    if (isPaintedCrossing(p.tags)) {
+      const hit = snapToRoad(graph, x, z, 4);
+      if (!hit) continue;
+      const e = graph.edges[hit.edge];
+      // non sopra un incrocio: lì le strisce finirebbero di traverso sull'altra strada
+      if (hit.s < 3 || e.length - hit.s < 3 || close(hit.edge, hit.s, 6)) continue;
+      crossingFlat.push(hit.edge, dm(hit.s));
+    } else if (p.tags.highway === 'give_way' || p.tags.highway === 'stop') {
+      const hit = snapToRoad(graph, x, z, 5);
+      if (!hit) continue;
+      const e = graph.edges[hit.edge];
+      // il segnale guarda l'incrocio più vicino lungo la strada (entro 40 m)
+      const toward = hit.s <= e.length - hit.s ? -1 : 1;
+      if (Math.min(hit.s, e.length - hit.s) > 40) continue;
+      yieldFlat.push(hit.edge, dm(hit.s), toward, p.tags.highway === 'stop' ? 1 : 0);
+    } else if (p.tags.highway === 'mini_roundabout') {
+      const n = graph.nearestNode(x, z, 10);
+      if (n != null && Math.hypot(graph.nodeX[n] - x, graph.nodeZ[n] - z) < 10 && !miniNodes.includes(n)) miniNodes.push(n);
+    }
+  }
+}
+
+interface PoiOut {
+  id: string;
+  kind: PoiKind;
+  name: string;
+  x: number;
+  z: number;
+  edge: number;
+  s: number;
+  off: number;
+  building: boolean;
+}
+const poiList: PoiOut[] = [];
+{
+  const inCity = (x: number, z: number) => {
+    const g = toGeo(x, z);
+    return g.lat >= CITY.s && g.lat <= CITY.n && g.lon >= CITY.w && g.lon <= CITY.e;
+  };
+  const seenId = new Set<string>();
+  const add = (id: string, tags: Tags, lat: number, lon: number, isArea: boolean) => {
+    if (seenId.has(id)) return;
+    const kind = poiKind(tags);
+    if (!kind) return;
+    const [x, z] = toLocal(lat, lon);
+    // i bar di città sono centinaia: contano quelli dei paesi, dove ci si ferma in bici
+    if (kind === 'bar' && inCity(x, z)) return;
+    const hit = graph.nearest(x, z, POI_REACH[kind]);
+    if (!hit) return;
+    seenId.add(id);
+    poiList.push({ id, kind, name: (tags.name ?? '').slice(0, 60), x, z, edge: hit.edge, s: hit.s, off: hit.d, building: isArea && POI_BUILT.has(kind) });
+  };
+  // prima le aree (l'edificio vero), poi i nodi: un nodo accanto a un'area con lo stesso nome è un doppione
+  for (const p of poisRaw) if (p.type !== 'node') add(`${p.type === 'way' ? 'w' : 'a'}${p.id}`, p.tags, p.center.lat, p.center.lon, true);
+  for (const p of poisRaw) if (p.type === 'node') add(`n${p.id}`, p.tags, p.center.lat, p.center.lon, false);
+  for (const p of pointsRaw) add(`n${p.id}`, p.tags, p.lat, p.lon, false);
+  // doppioni vicini: stesso tipo (e stesso nome, se c'è) entro 35 m
+  const keep: PoiOut[] = [];
+  for (const p of poiList) {
+    const twin = keep.find((q) => q.kind === p.kind && (!p.name || !q.name || q.name === p.name) && Math.hypot(q.x - p.x, q.z - p.z) < 35);
+    if (twin) {
+      if (!twin.name && p.name) twin.name = p.name;
+      continue;
+    }
+    keep.push(p);
+  }
+  poiList.length = 0;
+  poiList.push(...keep);
+}
+const poiCount = new Map<string, number>();
+for (const p of poiList) poiCount.set(p.kind, (poiCount.get(p.kind) ?? 0) + 1);
+log(`punti: ${signals.length} semafori (${signals.filter((s) => s.node >= 0).length} agli incroci), ${crossingFlat.length / 2} strisce, ${yieldFlat.length / 4} precedenze/stop, ${miniNodes.length} mini rotatorie`);
+log(`luoghi da passare: ${poiList.length} — ${[...poiCount].map(([k, n]) => `${k} ${n}`).join(', ')}`);
+
 const majorPeaks = peaks.filter((p) => p.ele > 900 || p.pass);
 const features = {
   rivers: riverOut.map(({ r, ys }) => ({ n: r.name, k: r.kind, hw: r.hw, p: delta3(r.xz, ys) })),
@@ -1431,6 +1533,9 @@ const features = {
   rails,
   cables,
   landmarks,
+  pois: poiList.map((p) => [p.id, p.kind, p.name, r1(p.x), r1(p.z), Math.round(demAt(p.x, p.z)), p.edge, r1(p.s), r1(p.off), p.building ? 1 : 0]),
+  signals: signals.map((g) => [g.node, g.edge, r1(g.s), r1(g.x), r1(g.z), r1(g.y)]),
+  marks: { c: crossingFlat, y: yieldFlat, m: miniNodes },
 };
 writeFileSync(join(OUT, 'features.json'), JSON.stringify(features));
 writeFileSync(join(OUT, 'rides.json'), JSON.stringify(rides));

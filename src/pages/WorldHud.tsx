@@ -47,7 +47,7 @@ export function TurnPicker({ session, engine }: { session: WorldSession; engine:
   return (
     <div className="pointer-events-auto rounded-2xl bg-bg/80 p-1.5 backdrop-blur" data-testid="turn-picker" role="group" aria-label="Svolta al prossimo incrocio">
       <p className="px-1.5 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">
-        Incrocio tra <span className="num text-ink">{Math.max(0, Math.round(j.dist))} m</span>
+        {j.roundabout ? 'Rotatoria tra' : 'Incrocio tra'} <span className="num text-ink">{Math.max(0, Math.round(j.dist))} m</span>
       </p>
       <div className="flex gap-1">
         {j.options.map((o, i) => {
@@ -61,8 +61,8 @@ export function TurnPicker({ session, engine }: { session: WorldSession; engine:
               data-testid={`turn-${i}`}
               className={`flex min-h-12 w-[68px] min-w-0 flex-col items-center justify-center rounded-xl px-1 py-1 text-center ${sel ? 'bg-accent text-accent-ink' : 'bg-elev2 text-ink'} ${o.onRoute && !sel ? 'ring-2 ring-accent' : ''}`}
             >
-              <TurnIcon deg={o.turn} uTurn={o.uTurn} />
-              <span className="mt-0.5 w-full truncate text-[11px] font-semibold leading-tight">{o.uTurn ? 'inversione' : o.toward || turnWord(o.turn)}</span>
+              {o.exit ? <span className="num font-display text-xl leading-none">{o.exit}ª</span> : <TurnIcon deg={o.turn} uTurn={o.uTurn} />}
+              <span className="mt-0.5 w-full truncate text-[11px] font-semibold leading-tight">{o.uTurn ? 'inversione' : o.toward || (o.exit ? `${o.exit}ª uscita` : turnWord(o.turn))}</span>
               <span className={`w-full truncate text-[10px] leading-tight ${sel ? 'text-accent-ink/75' : 'text-muted'}`}>{o.label}</span>
             </button>
           );

@@ -7,7 +7,8 @@ import { WorldGraph, type WorldGraphFile } from './graph';
  *
  * - graph.json     strade (incroci e tratti), con pianta e quota livellata
  * - rides.json     i percorsi scelti, con i luoghi da riconoscere lungo la strada
- * - features.json  fiumi, laghi, cime, paesi, mura, ferrovie, funivie
+ * - features.json  fiumi, laghi, cime, paesi, mura, ferrovie, funivie, e (facoltativi, dal
+ *                  03/11/2026) semafori, segnaletica orizzontale e luoghi da passare in bici
  * - dem/x_z.bin    terreno a 25 m in mattonelle da 2 km (quota in dm + uso del suolo)
  * - b/x_z.json     edifici della mattonella
  * - far.bin        terreno lontano a 250 m, oltre i bordi del mondo pedalabile
@@ -120,6 +121,91 @@ export interface Lake {
   ring: Float32Array;
 }
 
+/**
+ * I luoghi da passare in bici, presi da OSM anche senza nome: fontanelle, belvederi, chiese,
+ * campanili, edicole votive, castelli, negozi di bici, bar di paese. Sono vicino alla strada
+ * (entro qualche decina di metri, un belvedere o un castello un po' di più).
+ */
+export type PoiKind =
+  | 'fontanella'
+  | 'fontana'
+  | 'belvedere'
+  | 'chiesa'
+  | 'santuario'
+  | 'campanile'
+  | 'castello'
+  | 'torre'
+  | 'edicola'
+  | 'croce'
+  | 'ponte'
+  | 'bici'
+  | 'bar'
+  | 'rifugio';
+
+export const POI_KINDS: readonly PoiKind[] = ['fontanella', 'fontana', 'belvedere', 'chiesa', 'santuario', 'campanile', 'castello', 'torre', 'edicola', 'croce', 'ponte', 'bici', 'bar', 'rifugio'];
+
+/** Come si chiama un luogo senza nome, e il tipo sotto un nome. */
+export const POI_LABEL: Record<PoiKind, string> = {
+  fontanella: 'Fontanella',
+  fontana: 'Fontana',
+  belvedere: 'Belvedere',
+  chiesa: 'Chiesa',
+  santuario: 'Santuario',
+  campanile: 'Campanile',
+  castello: 'Castello',
+  torre: 'Torre',
+  edicola: 'Edicola votiva',
+  croce: 'Croce',
+  ponte: 'Ponte storico',
+  bici: 'Negozio di bici',
+  bar: 'Bar',
+  rifugio: 'Rifugio',
+};
+
+export interface Poi {
+  /** stabile fra una costruzione e l'altra: «n», «w» o «a» (nodo, via, area OSM) + id OSM */
+  id: string;
+  kind: PoiKind;
+  /** nome OSM, '' se non c'è (si mostra POI_LABEL[kind]) */
+  name: string;
+  x: number;
+  z: number;
+  /** quota del terreno, metri */
+  y: number;
+  /** il punto di strada più vicino: arco del grafo, distanza da `a` lungo l'arco, distanza in pianta */
+  edge: number;
+  s: number;
+  off: number;
+  /** in OSM è un edificio: il 3D c'è già con la sua impronta, niente modellino */
+  building: boolean;
+}
+
+/**
+ * Un semaforo. Sempre verde: è un punto di riferimento, non ferma nessuno. A un incrocio
+ * (`node` ≥ 0) ce n'è uno per ogni strada che ci arriva; a metà strada (`node` = −1, semaforo
+ * pedonale) due, uno per verso.
+ */
+export interface TrafficSignal {
+  /** incrocio del grafo servito, o −1 */
+  node: number;
+  /** l'arco su cui sta il semaforo OSM, e la distanza da `a` lungo l'arco */
+  edge: number;
+  s: number;
+  x: number;
+  z: number;
+  y: number;
+}
+
+/** Segnaletica orizzontale da OSM, agganciata al grafo. */
+export interface RoadMarks {
+  /** strisce pedonali: arco e distanza da `a` */
+  crossings: { edge: number; s: number }[];
+  /** dare precedenza (denti di squalo) e stop: arco, distanza, verso dell'incrocio (1 = verso b) */
+  yields: { edge: number; s: number; toward: 1 | -1; stop: boolean }[];
+  /** mini rotatorie dipinte: nodi del grafo */
+  mini: number[];
+}
+
 export interface WorldFeatures {
   rivers: RiverLine[];
   lakes: Lake[];
@@ -129,6 +215,11 @@ export interface WorldFeatures {
   rails: Polyline[];
   cables: Polyline[];
   landmarks: Landmark[];
+  /** luoghi da passare (vuoto nei dati prima del 03/11/2026) */
+  pois: Poi[];
+  /** semafori, uno per incrocio o per attraversamento */
+  signals: TrafficSignal[];
+  marks: RoadMarks;
 }
 
 export interface WorldData {
@@ -139,7 +230,7 @@ export interface WorldData {
   toGeo(x: number, z: number): LatLon;
 }
 
-interface FeaturesFile {
+export interface FeaturesFile {
   rivers: { n: string; k: RiverLine['kind']; hw: number; p: number[] }[];
   lakes: { n: string; y: number; r: number[] }[];
   peaks: [string, number, number, number, number][];
@@ -148,6 +239,12 @@ interface FeaturesFile {
   rails: { k: string; n?: string; p: number[] }[];
   cables: { k: string; n?: string; p: number[] }[];
   landmarks: Landmark[];
+  /** [id, tipo, nome, x, z, y, arco, s, scostamento, edificio 0/1] */
+  pois?: [string, string, string, number, number, number, number, number, number, number][];
+  /** [nodo, arco, s, x, z, y] */
+  signals?: [number, number, number, number, number, number][];
+  /** strisce: [arco, s dm] in fila; precedenze: [arco, s dm, verso, stop] in fila; mini rotatorie: nodi */
+  marks?: { c: number[]; y: number[]; m: number[] };
 }
 
 /** decimetri delta → metri */
@@ -162,8 +259,22 @@ function undelta(arr: number[], dims: number): Float32Array {
   return out;
 }
 
+const POI_SET = new Set<string>(POI_KINDS);
+
+/** I campi del 03/11/2026 sono facoltativi: un features.json più vecchio dà liste vuote. */
 export function decodeFeatures(f: FeaturesFile): WorldFeatures {
+  const c = f.marks?.c ?? [];
+  const y = f.marks?.y ?? [];
+  const crossings: RoadMarks['crossings'] = [];
+  for (let i = 0; i + 1 < c.length; i += 2) crossings.push({ edge: c[i], s: c[i + 1] / 10 });
+  const yields: RoadMarks['yields'] = [];
+  for (let i = 0; i + 3 < y.length; i += 4) yields.push({ edge: y[i], s: y[i + 1] / 10, toward: y[i + 2] < 0 ? -1 : 1, stop: y[i + 3] === 1 });
   return {
+    pois: (f.pois ?? [])
+      .filter((p) => POI_SET.has(p[1]))
+      .map(([id, kind, name, x, z, py, edge, s, off, building]) => ({ id, kind: kind as PoiKind, name, x, z, y: py, edge, s, off, building: building === 1 })),
+    signals: (f.signals ?? []).map(([node, edge, s, x, z, sy]) => ({ node, edge, s, x, z, y: sy })),
+    marks: { crossings, yields, mini: f.marks?.m ?? [] },
     rivers: f.rivers.map((r) => ({ name: r.n, kind: r.k, hw: r.hw, pts: undelta(r.p, 3) })),
     lakes: f.lakes.map((l) => ({ name: l.n, level: l.y, ring: undelta(l.r, 2) })),
     peaks: f.peaks.map(([name, x, z, ele, pass]) => ({ name, x, z, ele, pass: pass === 1 })),

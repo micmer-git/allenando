@@ -1,7 +1,7 @@
 import type { Track } from '@/domain/track';
 import type { RideEngine } from '@/sim/engine';
 import type { WorldSession } from '@/open/session';
-import type { WorldData } from '@/open/world';
+import { POI_LABEL, type PoiKind, type WorldData } from '@/open/world';
 import { postResult } from '@/open/progress';
 import { archSpecs, type ArchSpec, type Segment } from './arches';
 import type { PersonalBest, SegmentResult } from './career';
@@ -14,6 +14,9 @@ import { sessionBoardId, type SessionDef } from './sessions';
  * sulla strada, fa correre il gruppo di una sessione e manda i tempi alle classifiche.
  * Non è React: gira nello stesso ciclo del motore, e la pagina ne legge lo stato.
  */
+
+/** I punti caldi che contano: le edicole no, si passano troppo spesso per essere una scoperta. */
+const HOT = new Set<PoiKind>(['fontanella', 'fontana', 'belvedere', 'chiesa', 'santuario', 'campanile', 'castello', 'torre', 'croce', 'ponte', 'bici', 'bar', 'rifugio']);
 
 export interface FinishBanner {
   seg: Segment;
@@ -62,6 +65,11 @@ export class RideGame {
   withPackSec = 0;
   raceSec = 0;
   sessionRank: string | null = null;
+  /** punti caldi passati (fontanelle, belvederi, campanili…), in ordine */
+  poisPassed: string[] = [];
+  /** l'ultimo punto caldo, per una riga sopra la strada */
+  poiToast: { name: string; kind: PoiKind; at: number } | null = null;
+  private poiClock = 0;
   private pathVersion = -1;
   private anchors = null as ReturnType<typeof worldSegments>['anchors'] | null;
   private readonly opts: RideGameOptions;
@@ -152,6 +160,23 @@ export class RideGame {
       }
     }
     if (this.banner && performance.now() - this.banner.at > 9000) this.banner = null;
+    // punti caldi: due volte al secondo, chi è a meno di 40 m dalla strada che si fa
+    this.poiClock -= dt;
+    if (this.world && this.poiClock <= 0 && e.phase === 'riding') {
+      this.poiClock = 0.5;
+      const p = this.world.session.pose;
+      const seen = new Set(this.poisPassed);
+      for (const poi of this.world.data.features.pois ?? []) {
+        if (!HOT.has(poi.kind) || seen.has(poi.id)) continue;
+        const dx = poi.x - p.x;
+        const dz = poi.z - p.z;
+        if (dx * dx + dz * dz < 40 * 40) {
+          this.poisPassed.push(poi.id);
+          this.poiToast = { name: poi.name || POI_LABEL[poi.kind], kind: poi.kind, at: performance.now() };
+        }
+      }
+    }
+    if (this.poiToast && performance.now() - this.poiToast.at > 5000) this.poiToast = null;
     // il gruppo e la sua scia
     if (this.pack && this.stage === 'corsa' && e.phase !== 'finished') {
       const sdt = e.phase === 'riding' ? dt * this.opts.scale() : 0;

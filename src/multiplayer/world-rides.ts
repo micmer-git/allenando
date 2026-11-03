@@ -3,7 +3,7 @@
 // (un professionista a 6,8 W/kg, con il 15% di margine). Li usa il server della classifica.
 
 export const WORLD_ID = 'bergamo';
-export const WORLD_EDGES = 28600;
+export const WORLD_EDGES = 28602;
 export const WORLD_RIDES: Record<string, { timedM: number; minSec: number }> = {
   "citta-alta": {
     "timedM": 4977,

@@ -7,9 +7,9 @@ import type { Quality } from '@/domain/types';
 import type { RideEngine } from '@/sim/engine';
 import { estimateDistance, type RemoteRider } from '@/multiplayer/room';
 import {
+  ASPHALT_REPEAT_M,
   asphaltTexture,
   buildFarTerrain,
-  buildGuardrails,
   centerDashes,
   farTerrainMaterial,
   runToEnd,
@@ -20,8 +20,11 @@ import {
   type TileSpec,
 } from './builders';
 import { createHeightField, type HeightField } from './heightfield';
-import { DEFAULT_LOOK, lookFromColor } from '@/game/look';
+import { DEFAULT_LOOK, lookFromColor, type Look } from '@/game/look';
 import { Rider } from './RiderMesh';
+import type { ArchSpec } from '@/game/arches';
+import { Arches } from './Arches';
+import { ClimbRoadside } from './ClimbRoadside';
 
 // il ciclista vive in RiderMesh.tsx: lo si riesporta per chi lo prendeva da qui
 export { Rider };
@@ -32,7 +35,7 @@ const QUALITY = {
   high: { tile: 2400, spacing: 8, density: 1.6, far: 11000, dpr: [1, 1.6] as [number, number] },
 } satisfies Record<Quality, unknown>;
 
-const BRAND = '#c8f031';
+const BRAND = '#ffc814';
 const HAZE = '#cfdbe5';
 const SUN: [number, number, number] = [-700, 760, 520];
 
@@ -44,6 +47,8 @@ export function RideScene({
   remote,
   selfColor,
   onReady,
+  arches,
+  look,
 }: {
   engine: RideEngine;
   route: LoadedRoute;
@@ -55,6 +60,10 @@ export function RideScene({
   /** in una stanza, il colore che gli altri vedono addosso a te */
   selfColor?: string;
   onReady: () => void;
+  /** archi e cartelli dei traguardi (volata, GPM, crono), calcolati dal gioco */
+  arches?: ArchSpec[];
+  /** quello che indossi nel garage */
+  look?: Look;
 }) {
   const q = QUALITY[quality];
   const fogFar = route.dem ? q.far * 0.9 : 1400;
@@ -74,7 +83,7 @@ export function RideScene({
       <hemisphereLight args={['#e6f0fb', '#4f5a3c', 0.62]} />
       {/* sole da sud-ovest, non troppo alto: i versanti del DEM prendono rilievo */}
       <directionalLight position={SUN} intensity={1.85} color="#fff0d6" />
-      <World engine={engine} route={route} quality={quality} ghostDistance={ghostDistance} remote={remote} selfColor={selfColor} />
+      <World engine={engine} route={route} quality={quality} ghostDistance={ghostDistance} remote={remote} selfColor={selfColor} arches={arches} look={look} />
       <Ready onReady={onReady} />
     </Canvas>
   );
@@ -98,6 +107,8 @@ function World({
   ghostDistance,
   remote,
   selfColor,
+  arches,
+  look,
 }: {
   engine: RideEngine;
   route: LoadedRoute;
@@ -105,6 +116,8 @@ function World({
   ghostDistance?: () => number | null;
   remote?: { source: RemoteSource; list: { id: string; nick: string; color: number }[] };
   selfColor?: string;
+  arches?: ArchSpec[];
+  look?: Look;
 }) {
   const track = route.track;
   const q = QUALITY[quality];
@@ -115,10 +128,12 @@ function World({
       <Sky />
       {route.dem ? <FarTerrain route={route} tile={tile.current} /> : null}
       <NearTerrain engine={engine} field={field} track={track} size={q.tile} spacing={q.spacing} tile={tile.current} />
-      <Road track={track} field={field} />
+      <Road track={track} />
+      <ClimbRoadside track={track} field={field} />
+      {arches && arches.length > 0 ? <Arches specs={arches} /> : null}
       <Props track={track} field={field} density={q.density} />
       <Signs track={track} title={route.title} />
-      <Rider getPose={() => engine.pose()} getCadence={() => engine.cadence} getSpeed={() => engine.speed} getPower={() => engine.power} look={selfColor ? lookFromColor(selfColor) : DEFAULT_LOOK} />
+      <Rider getPose={() => engine.pose()} getCadence={() => engine.cadence} getSpeed={() => engine.speed} getPower={() => engine.power} look={look ?? (selfColor ? lookFromColor(selfColor) : DEFAULT_LOOK)} />
       {ghostDistance ? <Ghost track={track} ghostDistance={ghostDistance} /> : null}
       {remote && remote.list.length > 0 ? <RemoteRiders track={track} source={remote.source} list={remote.list} /> : null}
       <FollowCam engine={engine} field={field} />
@@ -257,13 +272,13 @@ function NearTerrain({
 
 // ---------- strada ----------
 
-function Road({ track, field }: { track: Track; field: HeightField }) {
+function Road({ track }: { track: Track }) {
   const hw = track.halfWidth;
   const parts = useMemo(() => {
     const pts = track.points;
     const wide = hw >= 2.7;
     return {
-      asphalt: strip(pts, hw, 0, -hw, 0, { uvLength: 10 }),
+      asphalt: strip(pts, hw, 0, -hw, 0, { uvLength: ASPHALT_REPEAT_M }),
       edgeL: strip(pts, hw - 0.12, 0.012, hw - 0.24, 0.012),
       edgeR: strip(pts, -hw + 0.24, 0.012, -hw + 0.12, 0.012),
       dashes: wide ? centerDashes(track) : null,
@@ -272,29 +287,12 @@ function Road({ track, field }: { track: Track; field: HeightField }) {
       // scarpate: dal ciglio giù di 3 m, a chiudere qualunque salto tra asfalto e terreno
       skirtL: strip(pts, hw + 1.8, -3.2, hw + 0.7, -0.08),
       skirtR: strip(pts, -hw - 0.7, -0.08, -hw - 1.8, -3.2),
-      rails: buildGuardrails(track, field),
     };
-  }, [track, field, hw]);
+  }, [track, hw]);
   const asphalt = useMemo(() => asphaltTexture(), []);
-  const posts = useRef<THREE.InstancedMesh>(null);
-  useLayoutEffect(() => {
-    const m = posts.current;
-    if (!m) return;
-    const d = new THREE.Object3D();
-    parts.rails.posts.forEach((p, i) => {
-      d.position.set(p.x, p.y + 0.4, p.z);
-      d.rotation.set(0, p.h, 0);
-      d.updateMatrix();
-      m.setMatrixAt(i, d.matrix);
-    });
-    m.instanceMatrix.needsUpdate = true;
-  }, [parts]);
   useEffect(
     () => () => {
-      for (const g of Object.values(parts)) {
-        if (g && 'dispose' in g) g.dispose();
-      }
-      parts.rails.geometry.dispose();
+      for (const g of Object.values(parts)) g?.dispose();
       asphalt.dispose();
     },
     [parts, asphalt],
@@ -327,15 +325,6 @@ function Road({ track, field }: { track: Track; field: HeightField }) {
       <mesh geometry={parts.skirtR}>
         <meshLambertMaterial color="#7b7468" side={THREE.DoubleSide} />
       </mesh>
-      <mesh geometry={parts.rails.geometry}>
-        <meshLambertMaterial color="#b9bec4" side={THREE.DoubleSide} />
-      </mesh>
-      {parts.rails.posts.length > 0 ? (
-        <instancedMesh ref={posts} args={[undefined, undefined, parts.rails.posts.length]} frustumCulled={false}>
-          <boxGeometry args={[0.09, 0.8, 0.09]} />
-          <meshLambertMaterial color="#8e949b" />
-        </instancedMesh>
-      ) : null}
     </group>
   );
 }

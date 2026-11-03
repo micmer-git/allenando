@@ -5,6 +5,10 @@
 // orizzontale, bersagli tattili sotto 44 px. Con --room apre due «telefoni» in due contesti
 // separati nella stessa stanza e controlla che ognuno veda l'altro.
 // Esce con 1 se ci sono errori di pagina o controlli falliti.
+//
+// SPOTS="nome|/ride?...;nome2|/ride?..." visita solo quei punti del mondo (dopo l'accesso) e ne
+// fa una schermata quando il 3D è pronto: serve a guardare l'arredo stradale in un posto preciso
+// (es. /ride?world=bergamo&edge=27&dir=-1&s=70). WIDE=1: telefono in orizzontale (844×390).
 
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync, mkdtempSync } from 'node:fs';
@@ -84,7 +88,15 @@ async function phone(label, isolated = true) {
   await s('Runtime.enable');
   await s('Log.enable');
   await s('Page.enable');
-  await s('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
+  const view = /^(\d+)x(\d+)$/.exec(process.env.VIEW ?? '');
+  await s(
+    'Emulation.setDeviceMetricsOverride',
+    view
+      ? { width: Number(view[1]), height: Number(view[2]), deviceScaleFactor: 1, mobile: false }
+      : process.env.WIDE
+        ? { width: 844, height: 390, deviceScaleFactor: 2, mobile: true }
+        : { width: 390, height: 844, deviceScaleFactor: 2, mobile: true },
+  );
   await s('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
   await s('Emulation.setUserAgentOverride', {
     userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36',
@@ -143,6 +155,28 @@ async function onboard(p, name) {
 try {
   const a = await phone('mondo', false);
   await onboard(a, 'Anna');
+
+  if (process.env.SPOTS) {
+    for (const spot of process.env.SPOTS.split(';').filter(Boolean)) {
+      const [name, path] = spot.split('|');
+      await a.go(path);
+      const t0 = Date.now();
+      const ok = await a.waitFor(`document.querySelector('[data-testid=world-ready]')?.dataset.ready === 'yes'`, 120000);
+      check(ok, `${name}: mondo 3D pronto`, `${((Date.now() - t0) / 1000).toFixed(1)} s`);
+      // NOON=1: luce di mezzogiorno (dal pannello «Impostazioni»), per vedere i colori veri
+      if (process.env.NOON) {
+        await a.evaluate(`(() => { const d = [...document.querySelectorAll('details')].find((x) => x.textContent.includes('Impostazioni')); if (d) d.open = true;
+          [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Mezzodì')?.click(); return true; })()`);
+      }
+      await sleep(Number(process.env.SETTLE ?? 9000));
+      // CLEAN=1: solo il 3D, senza i pannelli sopra (per guardare la strada)
+      if (process.env.CLEAN) await a.evaluate(`(() => { const st = document.createElement('style'); st.textContent = '* { visibility: hidden !important } canvas { visibility: visible !important }'; document.head.appendChild(st); return true; })()`);
+      await sleep(300);
+      await a.shot(`spot-${name}`);
+    }
+    check(a.errors.length === 0, 'punti: nessun errore di pagina', a.errors.join(' | '));
+    throw Object.assign(new Error('fine dei punti'), { done: true });
+  }
 
   if (!process.env.ONLY_RIDE) {
   await a.go('/mondo');
@@ -224,7 +258,7 @@ try {
 
   check(a.errors.length === 0, 'mondo: nessun errore di pagina', a.errors.join(' | '));
 } catch (err) {
-  check(false, 'eccezione nel collaudo', String(err?.stack ?? err));
+  if (!err?.done) check(false, 'eccezione nel collaudo', String(err?.stack ?? err));
 } finally {
   writeFileSync(join(out, 'report.txt'), report.join('\n') + '\n');
   // Browser.close prima: su Windows chrome.kill() ferma solo il lanciatore

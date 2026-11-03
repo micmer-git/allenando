@@ -5,7 +5,13 @@ Overpass (elementi con type, id, tags, nodes, geometry), più le aree già ricom
 (type "area": anelli esterni e interni) per edifici, uso del suolo e acque.
 
   curl -L -o scripts/world/cache/pbf/nord-ovest.osm.pbf https://download.geofabrik.de/europe/italy/nord-ovest-latest.osm.pbf
-  python scripts/world/extract-pbf.py
+  python scripts/world/extract-pbf.py            # tutto (mezz'ora: indice delle posizioni su disco)
+  python scripts/world/extract-pbf.py --points   # solo i punti (semafori, strisce, fontanelle...): pochi minuti
+
+I punti (cache/osm/points.json) sono nodi isolati: semafori, attraversamenti pedonali, dare
+precedenza e stop, e i luoghi da passare in bici anche senza nome (fontanelle, belvederi,
+edicole, campanili, negozi di bici, bar). Non servono le posizioni delle vie, quindi si leggono
+in un giro a parte, solo nodi, senza l'indice su disco.
 
 Serve pyosmium (pip install osmium). Le posizioni dei nodi stanno in un file su disco, non
 in memoria: l'estratto ha decine di milioni di nodi.
@@ -50,6 +56,55 @@ POI_TAGS = {
 }
 
 
+# nodi «punto» per la strada e per i luoghi da passare: chiave → valori ammessi (None = tutti)
+POINT_TAGS = {
+    "highway": {"traffic_signals", "crossing", "give_way", "stop", "mini_roundabout"},
+    "crossing": {"traffic_signals", "zebra", "marked", "uncontrolled"},
+    "amenity": {"drinking_water", "fountain", "place_of_worship", "cafe", "bicycle_repair_station"},
+    "tourism": {"viewpoint", "alpine_hut"},
+    "historic": {"wayside_shrine", "wayside_cross", "castle", "tower", "bridge", "church", "chapel"},
+    "man_made": {"campanile", "tower"},
+    "building": {"church", "chapel", "bell_tower", "campanile"},
+    "shop": {"bicycle"},
+}
+POINT_KEEP = {"highway", "crossing", "crossing_ref", "crossing:markings", "traffic_signals", "traffic_signals:direction", "direction",
+              "amenity", "tourism", "historic", "man_made", "tower:type", "building", "shop", "name", "religion", "drinking_water", "ele"}
+
+
+def is_point(tags):
+    for k, allowed in POINT_TAGS.items():
+        v = tags.get(k)
+        if v is not None and (allowed is None or v in allowed):
+            # una torre qualunque (antenne, tralicci) non è un luogo: solo i campanili e quelle storiche
+            if k == "man_made" and v == "tower" and tags.get("tower:type") not in ("bell_tower", "defensive", "observation") and "historic" not in tags:
+                continue
+            return True
+    return False
+
+
+def extract_points():
+    """Solo nodi, senza indice delle posizioni: semafori, strisce, fontanelle, belvederi..."""
+    t0 = time.time()
+    out = []
+    n = 0
+    fp = osmium.FileProcessor(PBF, osmium.osm.NODE).with_filter(osmium.filter.KeyFilter(*POINT_TAGS.keys()))
+    for obj in fp:
+        n += 1
+        loc = obj.location
+        if not loc.valid():
+            continue
+        lat, lon = loc.lat, loc.lon
+        if not inside(REGION, lat, lon):
+            continue
+        tags = {t.k: t.v for t in obj.tags}
+        if not is_point(tags):
+            continue
+        out.append({"type": "node", "id": obj.id, "lat": r6(lat), "lon": r6(lon), "tags": {k: v for k, v in tags.items() if k in POINT_KEEP}})
+    with open(os.path.join(OUT, "points.json"), "w", encoding="utf-8") as f:
+        json.dump({"source": "Geofabrik nord-ovest " + time.strftime("%Y-%m-%d", time.gmtime(os.path.getmtime(PBF))), "elements": out}, f, ensure_ascii=False, separators=(",", ":"))
+    print(f"points: {len(out)} (su {n} nodi con le chiavi giuste) in {time.time() - t0:.0f} s", flush=True)
+
+
 def inside(b, lat, lon):
     return b["s"] <= lat <= b["n"] and b["w"] <= lon <= b["e"]
 
@@ -87,6 +142,9 @@ def main():
     if not os.path.exists(PBF):
         sys.exit(f"manca {PBF}")
     os.makedirs(OUT, exist_ok=True)
+    if "--points" in sys.argv:
+        extract_points()
+        return
     t0 = time.time()
     idx = os.path.join(HERE, "cache", "pbf", "locations.idx")
     if os.path.exists(idx):
@@ -216,6 +274,7 @@ def main():
         os.remove(idx)
     except OSError:
         pass
+    extract_points()
 
 
 if __name__ == "__main__":

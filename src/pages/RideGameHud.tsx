@@ -84,6 +84,21 @@ export function SegmentHud({ game }: { game: RideGame }) {
   return null;
 }
 
+/** Un punto caldo appena passato: una riga, cinque secondi, e quattro monete. */
+export function PoiToast({ game }: { game: RideGame }) {
+  const t = game.poiToast;
+  if (!t) return null;
+  return (
+    <p className="rise-in pointer-events-none inline-flex items-center gap-2 rounded-full bg-bg/80 px-3 py-1.5 text-xs font-semibold backdrop-blur" data-testid="poi-toast">
+      <Glyph name={t.kind === 'fontanella' || t.kind === 'fontana' ? 'goccia' : t.kind === 'belvedere' ? 'mappa' : 'campana'} size={15} />
+      {t.name}
+      <span className="num inline-flex items-center gap-1 text-accent">
+        +4 <Coin size={12} />
+      </span>
+    </p>
+  );
+}
+
 /** La sessione: il conto alla rovescia in griglia, poi dov'è il gruppo. */
 export function SessionHud({ game }: { game: RideGame }) {
   const def = game.sessionDef;

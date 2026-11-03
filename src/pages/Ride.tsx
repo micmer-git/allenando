@@ -47,8 +47,8 @@ import { applyCareer, ORO_RULES, type CareerOutcome, type OroLine, type RideFact
 import { RideGame } from '@/game/rideGame';
 import { SEGMENT_STYLE } from '@/game/arches';
 import { sessionById } from '@/game/sessions';
-import { useGame } from '@/game/useGame';
-import { LevelUp, RewardsSummary, SegmentHud, SessionHud } from './RideGameHud';
+import { useGame, useLook } from '@/game/useGame';
+import { LevelUp, PoiToast, RewardsSummary, SegmentHud, SessionHud } from './RideGameHud';
 
 const DEFAULT_ROUTE = 'selvino-nembro';
 
@@ -360,6 +360,7 @@ function RideScreen({
   const saveRide = useApp((s) => s.saveRide);
   const updateProfile = useApp((s) => s.updateProfile);
   const [, bump] = useState(0);
+  const look = useLook();
   const [ready, setReady] = useState(false);
   const [webgl, setWebgl] = useState(true);
   const [sensorsOpen, setSensorsOpen] = useState(false);
@@ -485,7 +486,7 @@ function RideScreen({
   const nextTurn = useMemo(() => () => session?.arrow(engine.distance) ?? null, [session, engine]);
 
   // quanto è già stato contato: «Continua a pedalare» dopo il riepilogo non conta due volte
-  const committed = useRef({ distance: 0, sample: 0, elapsed: 0, results: 0, gain: 0 });
+  const committed = useRef({ distance: 0, sample: 0, elapsed: 0, results: 0, gain: 0, pois: 0 });
   const [rewards, setRewards] = useState<{ outcome: CareerOutcome; results: SegmentResult[] } | null>(null);
   const setGameProgress = useGame((s) => s.setProgress);
   const setCareer = useGame((s) => s.setCareer);
@@ -544,7 +545,7 @@ function RideScreen({
       climbDone: climbId,
       worldRideDone: session?.ride && completed ? session.ride.id : undefined,
       segments: results,
-      pois: [],
+      pois: game.poisPassed.slice(c.pois),
       landmarks,
       discovered: Object.keys(out.next.visited).length,
       rain: !!session && weatherMode === 'vero' && (weather?.rain ?? 0) >= 0.1,
@@ -563,7 +564,7 @@ function RideScreen({
       if (!old || engine.elapsed < old.sec) outcome.next.pbs[key] = { sec: Math.round(engine.elapsed), at: new Date().toISOString(), sim, count: (old?.count ?? 0) + 1 };
     }
     await setCareer(outcome.next);
-    committed.current = { distance: engine.distance, sample: engine.samples.length, elapsed: engine.elapsed, results: game.results.length, gain: 0 };
+    committed.current = { distance: engine.distance, sample: engine.samples.length, elapsed: engine.elapsed, results: game.results.length, gain: 0, pois: game.poisPassed.length };
     setRewards({ outcome, results });
   }
 
@@ -619,6 +620,8 @@ function RideScreen({
               weather={weather}
               daytime={daytime}
               ride={session.onRoute ? session.ride : null}
+              arches={game.arches}
+              look={look}
             />
           ) : webgl ? (
             <RideScene
@@ -630,6 +633,8 @@ function RideScreen({
               remote={remote}
               selfColor={room.snap?.color != null ? RIDER_COLORS[room.snap.color % RIDER_COLORS.length] : undefined}
               onReady={() => setReady(true)}
+              arches={game.arches}
+              look={look}
             />
           ) : (
             <div className="grid h-full place-items-center bg-elev p-6 text-center text-muted">{t('ride.webgl')}</div>
@@ -740,6 +745,7 @@ function RideScreen({
         <div className="pointer-events-none absolute inset-x-0 top-[8rem] flex flex-col items-center gap-1.5 px-14">
           <SessionHud game={game} />
           <SegmentHud game={game} />
+          <PoiToast game={game} />
           {session ? <Toasts session={session} /> : null}
         </div>
         {session ? (
