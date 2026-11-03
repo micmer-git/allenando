@@ -48,7 +48,7 @@ import { RideGame } from '@/game/rideGame';
 import { SEGMENT_STYLE } from '@/game/arches';
 import { sessionById } from '@/game/sessions';
 import { useGame } from '@/game/useGame';
-import { RewardsSummary, SegmentHud, SessionHud } from './RideGameHud';
+import { LevelUp, RewardsSummary, SegmentHud, SessionHud } from './RideGameHud';
 
 const DEFAULT_ROUTE = 'selvino-nembro';
 
@@ -1018,6 +1018,7 @@ function RideScreen({
                 {game.sessionRank ? ` · ${game.sessionRank}` : ''}
               </p>
             ) : null}
+            {xp ? <LevelUp xp={xp.level.xp} gained={xp.total} /> : null}
             {rewards ? <RewardsSummary outcome={rewards.outcome} results={rewards.results} /> : null}
             {xp ? <XpSummary lines={xp.lines} total={xp.total} level={xp.level} rank={xp.rank} rankNote={xp.rankNote} /> : null}
             <div className="mt-6 flex flex-col gap-2">

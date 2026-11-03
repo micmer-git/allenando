@@ -3,7 +3,8 @@ import { Coin, Glyph } from '@/components/Glyph';
 import { formatDuration, formatKm } from '@/domain/format';
 import { SEGMENT_STYLE } from '@/game/arches';
 import type { CareerOutcome, SegmentResult } from '@/game/career';
-import { ITEM_BY_ID } from '@/game/kit';
+import { ITEM_BY_ID, ITEMS } from '@/game/kit';
+import { levelOf } from '@/open/progress';
 import type { RideGame } from '@/game/rideGame';
 import { SESSION_STYLE } from '@/game/sessions';
 import { cn } from '@/lib/cn';
@@ -122,6 +123,28 @@ export function SessionHud({ game }: { game: RideGame }) {
       {inPack ? 'Nel gruppo' : gap > 0 ? `${Math.round(gap)} m davanti al gruppo` : `Gruppo a ${Math.round(-gap)} m`}
       <span className="num text-muted">· {Math.round(game.withPack * 100)}% col gruppo</span>
     </p>
+  );
+}
+
+/** Sali di livello: il numero nuovo e i pezzi del garage che si aprono. */
+export function LevelUp({ xp, gained }: { xp: number; gained: number }) {
+  const now = levelOf(xp);
+  const before = levelOf(Math.max(0, xp - gained));
+  if (now.level <= before.level) return null;
+  const opened = ITEMS.filter((i) => i.level && i.level > before.level && i.level <= now.level);
+  return (
+    <div className="pop-in mt-4 flex items-center gap-4 rounded-3xl bg-accent p-4 text-accent-ink" data-testid="level-up">
+      <span className="num grid h-16 w-16 shrink-0 place-items-center rounded-full bg-accent-ink font-display text-4xl text-accent">{now.level}</span>
+      <span className="min-w-0">
+        <span className="block text-xs font-bold uppercase tracking-[0.14em]">Livello {now.level}</span>
+        <span className="block font-display text-2xl uppercase leading-tight">{now.title}</span>
+        {opened.length ? (
+          <Link to="/garage" className="mt-0.5 block text-sm font-semibold underline">
+            Si aprono: {opened.map((i) => i.name).join(', ')}
+          </Link>
+        ) : null}
+      </span>
+    </div>
   );
 }
 
