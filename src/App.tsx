@@ -15,6 +15,7 @@ import { ClimbDetailPage } from '@/pages/ClimbDetail';
 import { RidesPage } from '@/pages/Rides';
 import { ReplaySetupPage } from '@/pages/ReplaySetup';
 import { ProfilePage } from '@/pages/Profile';
+import { WorldPage } from '@/pages/World';
 import { Wordmark } from '@/components/ui';
 import { OfflineBanner } from '@/components/Install';
 import { useApp } from '@/store/useApp';
@@ -42,6 +43,7 @@ export function App() {
           <Route path="/history/:id" element={<RideDetailPage />} />
           <Route path="/load" element={<LoadPage />} />
           <Route path="/import" element={<ImportPage />} />
+          <Route path="/mondo" element={<WorldPage />} />
           <Route path="/salite" element={<ClimbsPage />} />
           <Route path="/salite/:id" element={<ClimbDetailPage />} />
           <Route path="/giri" element={<RidesPage />} />

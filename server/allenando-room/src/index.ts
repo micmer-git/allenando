@@ -17,6 +17,10 @@ import {
   type RoomRoute,
   type ServerMessage,
 } from '../../../src/multiplayer/protocol';
+import { parseWorldJoin } from '../../../src/multiplayer/world-protocol';
+import { Board, World } from './world';
+
+export { Board, World };
 
 /**
  * Stanze «Pedala insieme».
@@ -29,6 +33,8 @@ import {
 
 interface Env {
   ROOMS: DurableObjectNamespace<Room>;
+  WORLDS: DurableObjectNamespace<World>;
+  BOARD: DurableObjectNamespace<Board>;
   ALLOWED_ORIGINS: string;
 }
 
@@ -45,7 +51,9 @@ function json(body: unknown, status: number, origin: string | null): Response {
 }
 
 function cors(origin: string | null): Record<string, string> {
-  return origin ? { 'access-control-allow-origin': origin, vary: 'Origin', 'access-control-allow-methods': 'GET, OPTIONS' } : {};
+  return origin
+    ? { 'access-control-allow-origin': origin, vary: 'Origin', 'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-allow-headers': 'content-type', 'access-control-max-age': '86400' }
+    : {};
 }
 
 export default {
@@ -58,7 +66,32 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors(okOrigin) });
 
     if (url.pathname === '/health') {
-      return json({ ok: true, service: 'allenando-rooms', maxRiders: MAX_RIDERS }, 200, okOrigin);
+      return json({ ok: true, service: 'allenando-rooms', maxRiders: MAX_RIDERS, world: true, board: true }, 200, okOrigin);
+    }
+
+    // il mondo aperto: chi pedala adesso, e quanti sono
+    if (url.pathname.startsWith('/world/')) {
+      const m = url.pathname.match(/^\/world\/([a-z0-9-]+)\/(ws|count)$/);
+      if (!m) return json({ error: 'not found' }, 404, okOrigin);
+      if (m[2] === 'count') {
+        const res = await env.WORLDS.get(env.WORLDS.idFromName(m[1])).fetch(request);
+        return new Response(res.body, { status: res.status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store', ...cors(okOrigin) } });
+      }
+      if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') return json({ error: 'websocket' }, 426, okOrigin);
+      if (!okOrigin) return json({ error: 'origin' }, 403, null);
+      const parsed = parseWorldJoin(url);
+      if (!parsed.ok) return json({ error: parsed.error }, 400, okOrigin);
+      return env.WORLDS.get(env.WORLDS.idFromName(parsed.join.world)).fetch(request);
+    }
+
+    // la classifica: scrivere solo dal sito, leggere da chiunque
+    if (url.pathname.startsWith('/board/')) {
+      if (request.method === 'POST' && !okOrigin) return json({ error: 'origin' }, 403, null);
+      if (request.method !== 'GET' && request.method !== 'POST') return json({ error: 'method' }, 405, okOrigin);
+      const len = Number(request.headers.get('content-length') ?? 0);
+      if (len > 2000) return json({ error: 'body' }, 413, okOrigin);
+      const res = await env.BOARD.get(env.BOARD.idFromName('bergamo')).fetch(request);
+      return new Response(res.body, { status: res.status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...cors(okOrigin) } });
     }
 
     if (url.pathname.startsWith('/rooms/')) {

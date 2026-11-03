@@ -11,7 +11,9 @@
     "test": "vitest run",
     "samples": "vite-node scripts/make-samples.ts",
     "climbs": "node scripts/fetch-climbs.mjs",
-    "climbs:stats": "vite-node scripts/route-stats.ts"
+    "climbs:stats": "vite-node scripts/route-stats.ts",
+    "world:extract": "python scripts/world/extract-pbf.py",
+    "world:build": "vite-node scripts/world/build-world.ts"
   },
   "dependencies": {
     "@fontsource/barlow-condensed": "^5.3.0",

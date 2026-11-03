@@ -137,7 +137,7 @@ function World({
 
 // ---------- cielo ----------
 
-function Sky() {
+export function Sky() {
   const ref = useRef<THREE.Mesh>(null);
   const { camera } = useThree();
   useFrame(() => {
@@ -514,7 +514,7 @@ function Gate({ pose, texture, hw }: { pose: TrackPose; texture: THREE.Texture; 
   );
 }
 
-function canvasTex(w: number, h: number, draw: (g: CanvasRenderingContext2D) => void): THREE.CanvasTexture {
+export function canvasTex(w: number, h: number, draw: (g: CanvasRenderingContext2D) => void): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
@@ -657,7 +657,7 @@ function RemoteRiderView({ id, nick, color, track, source }: { id: string; nick:
 
 const GHOST_MAT = new THREE.MeshBasicMaterial({ color: '#8fd8ff', transparent: true, opacity: 0.36, depthWrite: false });
 
-function Rider({
+export function Rider({
   getPose,
   getCadence,
   getSpeed,

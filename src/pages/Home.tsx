@@ -32,6 +32,12 @@ export function HomePage() {
 
       <InstallCard className="mt-5" />
 
+      <Link to="/mondo" data-testid="home-world" className="mt-5 block overflow-hidden rounded-3xl border border-accent/40 bg-elev p-4 transition hover:border-accent">
+        <span className="eyebrow text-accent">Mondo aperto</span>
+        <span className="mt-1 block font-display text-3xl uppercase leading-none">Bergamo e le valli</span>
+        <span className="mt-1.5 block text-sm leading-snug text-muted">Città Alta, Val Brembana e Val Seriana sulle strade vere: giri sinistra o destra a ogni incrocio, percorsi classici, anelli su misura, punti e classifica.</span>
+      </Link>
+
       <section className="mt-6">
         <div className="mb-2 flex items-baseline justify-between">
           <h2 className="eyebrow">{t('home.climbs')}</h2>

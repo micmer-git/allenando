@@ -32,6 +32,15 @@ import { RideScene } from '@/world/Scene';
 import { decodeSection } from './ReplaySetup';
 import { RoomPanel, RoomSheet, useRoom } from './RideRoom';
 import { workoutTitle } from './Workouts';
+import { Terrain, loadWorld, type WorldData } from '@/open/world';
+import { createWorldField } from '@/open/field';
+import { WorldSession } from '@/open/session';
+import { WorldScene, npcCount, type RemoteWorldRider } from '@/open/WorldScene';
+import { loadPlan } from '@/open/plan';
+import { WorldClient } from '@/multiplayer/world-client';
+import { applyRide, levelOf, loadProgress, postResult, postXp, saveProgress, type XpLine } from '@/open/progress';
+import { AheadProfile, LoopSheet, Nearby, Toasts, TurnPicker, WorldMini, XpSummary } from './WorldHud';
+import type { Dir } from '@/open/graph';
 
 const DEFAULT_ROUTE = 'selvino-nembro';
 
@@ -44,6 +53,8 @@ interface RideSetup {
   ghostSamples?: RideSample[];
   label: string;
   note?: string;
+  /** mondo aperto: il grafo e la pedalata che lo percorre */
+  world?: { data: WorldData; session: WorldSession };
 }
 
 /** Strada neutra, dritta, per i giri senza GPS: lo diciamo, non la spacciamo per vera. */
@@ -74,6 +85,7 @@ function neutralRoute(samples: RideSample[]): LoadedRoute {
 function useRideSetup(): { setup: RideSetup | null; error: string | null } {
   const [params] = useSearchParams();
   const rides = useApp((s) => s.rides);
+  const quality = useApp((s) => s.settings.quality);
   const [state, setState] = useState<{ setup: RideSetup | null; error: string | null }>({ setup: null, error: null });
   // entrare o uscire da una stanza cambia ?room=, non la strada: non si ricarica niente
   const key = useMemo(() => {
@@ -86,6 +98,45 @@ function useRideSetup(): { setup: RideSetup | null; error: string | null } {
     const done = (setup: RideSetup | null, error: string | null = null) => {
       if (alive) setState({ setup, error });
     };
+    if (params.get('world')) {
+      loadWorld()
+        .then((data) => {
+          const n = npcCount(quality);
+          const rideId = params.get('ride');
+          const planKey = params.get('plan');
+          let session: WorldSession;
+          let title: string;
+          let subtitle: string;
+          if (rideId) {
+            const ride = data.rides.find((r) => r.id === rideId);
+            if (!ride) throw new Error('Percorso sconosciuto.');
+            session = new WorldSession(data, { ride }, n);
+            title = ride.name;
+            subtitle = ride.side;
+          } else if (planKey) {
+            const plan = loadPlan(planKey);
+            if (!plan || plan.legs.length === 0) throw new Error('Anello non più disponibile: rifallo da Mondo.');
+            session = new WorldSession(data, { legs: plan.legs, name: plan.name }, n);
+            title = plan.name;
+            subtitle = 'anello suggerito';
+          } else {
+            const edge = Number(params.get('edge'));
+            const e = data.graph.edges[edge];
+            if (!e) throw new Error('Punto di partenza fuori dal mondo.');
+            const dir = (params.get('dir') === '-1' ? -1 : 1) as Dir;
+            const s0 = Math.min(e.length, Math.max(0, Number(params.get('s')) || 0));
+            session = new WorldSession(data, { edge, dir: data.graph.allowed(edge, dir) ? dir : ((-dir) as Dir), s: s0 }, n);
+            title = 'Giro libero';
+            subtitle = e.name || e.ref || 'Bergamo e le valli';
+          }
+          const route: LoadedRoute = { id: 'world', title, subtitle, track: session.path, dem: null, origin: data.graph.origin, attribution: data.graph.attribution, verified: true };
+          done({ route, label: subtitle && rideId ? `${title} ${subtitle}` : title, world: { data, session } });
+        })
+        .catch((err: unknown) => done(null, err instanceof Error ? err.message : 'Mondo non disponibile.'));
+      return () => {
+        alive = false;
+      };
+    }
     const replayId = params.get('replay');
     if (replayId) {
       const ride = rides.find((r) => r.id === replayId);
@@ -206,6 +257,7 @@ function RideSession({ setup }: { setup: RideSetup }) {
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       engine.tick(dt);
+      setup.world?.session.step(engine, dt);
       frame = requestAnimationFrame(loop);
     };
     frame = requestAnimationFrame(loop);
@@ -213,6 +265,7 @@ function RideSession({ setup }: { setup: RideSetup }) {
       cancelAnimationFrame(frame);
       trainer.disconnect();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine, trainer]);
 
   return <RideScreen engine={engine} trainer={trainer} profile={profile} workout={workout} quality={settings.quality} setup={setup} t={t} />;
@@ -296,6 +349,78 @@ function RideScreen({
     // la lista cambia solo quando qualcuno entra o esce, non a ogni aggiornamento
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [room.client, riderKey]);
+  // ---------- mondo aperto ----------
+  const world = setup.world;
+  const session = world?.session ?? null;
+  const [share, setShare] = useState(readShare);
+  const [loopOpen, setLoopOpen] = useState(false);
+  const [worldColor, setWorldColor] = useState<number | null>(null);
+  const [peers, setPeers] = useState<{ id: string; nick: string; color: number }[]>([]);
+  const [xp, setXp] = useState<{ lines: XpLine[]; total: number; level: ReturnType<typeof levelOf> & { xp: number }; rank: string | null; rankNote?: string } | null>(null);
+  const terrainField = useMemo(() => {
+    if (!world) return null;
+    const terrain = new Terrain(world.data.graph);
+    return { terrain, field: createWorldField(world.data.graph, terrain, world.data.features) };
+  }, [world]);
+  useEffect(() => {
+    if (!session || !share) return;
+    const client = new WorldClient({ world: 'bergamo', nick: profile.name || 'Ciclista' });
+    session.client = client;
+    let key = '';
+    const off = client.subscribe(() => {
+      const list = [...client.remote().values()].filter((r) => r.at > 0).map((r) => ({ id: r.id, nick: r.nick, color: r.color }));
+      const k = list.map((r) => `${r.id}:${r.color}:${r.nick}`).join('|');
+      if (k !== key) {
+        key = k;
+        setPeers(list);
+      }
+      setWorldColor(client.color);
+    });
+    client.connect();
+    return () => {
+      off();
+      client.leave();
+      session.client = null;
+      setPeers([]);
+    };
+  }, [session, share, profile.name]);
+  const worldRemote = useMemo<RemoteWorldRider[]>(
+    () => (session ? peers.map((p) => ({ id: p.id, nick: p.nick, color: RIDER_COLORS[p.color % RIDER_COLORS.length], pose: () => session.remoteNow.get(p.id) ?? null })) : []),
+    [session, peers],
+  );
+  const playerPose = useMemo(() => () => session?.pose ?? engine.pose(), [session, engine]);
+  const nextTurn = useMemo(() => () => session?.arrow(engine.distance) ?? null, [session, engine]);
+
+  /** I punti del giro e, se vale, il tempo in classifica. Una volta per riepilogo. */
+  async function commitWorld(): Promise<void> {
+    if (!session) return;
+    const completed = engine.arrived && session.rankable;
+    const prev = await loadProgress();
+    const out = applyRide(prev, {
+      rideId: session.ride?.id,
+      completed,
+      sec: completed ? engine.elapsed : undefined,
+      sim: snap.mode === 'simulator',
+      distanceM: engine.distance - session.committedM,
+      gainM: session.gainM - session.committedGain,
+      landmarks: [...session.passed].filter((id) => !session.committedLandmarks.has(id)),
+    });
+    session.markCommitted(engine.distance);
+    await saveProgress(out.next);
+    const total = out.lines.reduce((a, l) => a + l.xp, 0);
+    let rank: string | null = null;
+    let rankNote: string | undefined;
+    if (completed && session.ride && profile.name) {
+      const avg = engine.samples.length ? engine.samples.reduce((a, x) => a + x.power, 0) / engine.samples.length : engine.power3s;
+      const res = await postResult({ nick: profile.name, ride: session.ride.id, sec: engine.elapsed, wkg: profile.weightKg > 0 ? avg / profile.weightKg : 0, sim: snap.mode === 'simulator' });
+      if (res.ok && res.rank) rank = `${res.rank}° in classifica${snap.mode === 'simulator' ? ' (simulatore)' : ''}${res.best ? ', il tuo tempo migliore' : ''}`;
+      else if (res.error === 'implausible') rankNote = 'Tempo troppo veloce per essere vero: non va in classifica.';
+      else if (res.error === 'rete') rankNote = 'Senza rete: il tempo resta qui, non in classifica.';
+    } else if (session.ride && !completed) rankNote = session.offRoute || session.rejoined ? 'Sei uscito dal percorso: il tempo non va in classifica.' : 'Percorso non finito: niente tempo in classifica.';
+    if (profile.name) void postXp(out.next, profile.name);
+    setXp({ lines: out.lines, total, level: { ...levelOf(out.next.xp), xp: out.next.xp }, rank, rankNote });
+  }
+
   // dove sei, per aprire la strada vera nel visore ufficiale (non per disegnarla nel 3D)
   const pose = engine.pose();
   const here = setup.route.id !== 'neutral' ? projector(setup.route.origin).toGeo(pose.x, pose.z) : null;
@@ -305,7 +430,9 @@ function RideScreen({
     engine.finish();
     const ride = engine.toRide(rideName);
     if (setup.routeId && !workout && !setup.replayMode) ride.routeId = setup.routeId;
+    if (session?.ride && session.rankable && engine.arrived) ride.routeId = `bergamo:${session.ride.id}`;
     setSummary(ride);
+    if (session) void commitWorld();
   }
 
   useEffect(() => {
@@ -317,7 +444,23 @@ function RideScreen({
     <div className="flex h-dvh flex-col bg-bg md:flex-row" data-testid="ride-screen">
       <div className="relative min-h-0 flex-1">
         <WorldBoundary onFail={() => setWebgl(false)}>
-          {webgl ? (
+          {webgl && world && session && terrainField ? (
+            <WorldScene
+              key={quality}
+              engine={engine}
+              data={world.data}
+              path={session.path}
+              field={terrainField.field}
+              terrain={terrainField.terrain}
+              quality={quality}
+              crowd={session.crowd}
+              remote={worldRemote}
+              selfColor={worldColor != null ? RIDER_COLORS[worldColor % RIDER_COLORS.length] : undefined}
+              nextTurn={nextTurn}
+              playerPose={playerPose}
+              onReady={() => setReady(true)}
+            />
+          ) : webgl ? (
             <RideScene
               key={quality}
               engine={engine}
@@ -349,10 +492,20 @@ function RideScreen({
               <p className="truncate font-display text-lg uppercase leading-tight">
                 {setup.route.title} <span className="font-sans text-xs font-medium normal-case text-muted">{setup.route.subtitle}</span>
               </p>
-              <p className="truncate text-[11px] leading-tight text-muted">
-                {modeLabel ? `${modeLabel} · ` : ''}
-                {!setup.route.verified ? 'traccia non verificata' : `${formatNumber(engine.altitude, 0)} m`}
-                {track.hairpins.length > 0 ? ` · tornanti ${hairpinsDone}/${track.hairpins.length}` : ''}
+              <p className="truncate text-[11px] leading-tight text-muted" data-testid="ride-where">
+                {session ? (
+                  <>
+                    {[session.placeName(), session.roadLabel(engine.distance), `${formatNumber(engine.altitude, 0)} m`].filter(Boolean).join(' · ')}
+                    {engine.aero < 0.93 ? <span className="font-semibold text-good"> · in scia −{Math.round((1 - engine.aero) * 100)}% aria</span> : null}
+                    {engine.rolling > 1.2 ? <span className="text-warn"> · {engine.rolling > 2 ? 'sterrato' : 'porfido'}</span> : null}
+                  </>
+                ) : (
+                  <>
+                    {modeLabel ? `${modeLabel} · ` : ''}
+                    {!setup.route.verified ? 'traccia non verificata' : `${formatNumber(engine.altitude, 0)} m`}
+                    {track.hairpins.length > 0 ? ` · tornanti ${hairpinsDone}/${track.hairpins.length}` : ''}
+                  </>
+                )}
               </p>
             </div>
             {room.available ? (
@@ -385,12 +538,32 @@ function RideScreen({
             <div className="flex flex-col items-start gap-1.5">
               {room.snap ? <RoomPanel snap={room.snap} myDistance={engine.distance} onOpen={() => room.setSheet(true)} /> : null}
               {setup.note ? <p className="max-w-[60vw] rounded-xl bg-bg/70 px-2.5 py-1 text-xs text-warn backdrop-blur">{setup.note}</p> : null}
+              {session ? <Nearby session={session} /> : null}
             </div>
             <div className="flex shrink-0 flex-col items-end gap-1">
-              <p className="rounded-xl bg-bg/70 px-2.5 py-1 text-right leading-none backdrop-blur">
-                <span className="num font-display text-[22px]">{formatKm(Math.max(0, track.length - engine.distance))}</span>
-                <span className="ml-1 text-[11px] text-muted">km all’arrivo</span>
+              <p className="rounded-xl bg-bg/70 px-2.5 py-1 text-right leading-none backdrop-blur" data-testid="ride-km">
+                {session && !session.onRoute ? (
+                  <>
+                    <span className="num font-display text-[22px]">{formatKm(engine.distance)}</span>
+                    <span className="ml-1 text-[11px] text-muted">km fatti</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="num font-display text-[22px]">{formatKm(Math.max(0, track.length - engine.distance))}</span>
+                    <span className="ml-1 text-[11px] text-muted">km all’arrivo</span>
+                  </>
+                )}
               </p>
+              {session && session.offRoute ? (
+                <button type="button" className="pointer-events-auto h-11 rounded-full bg-accent px-3.5 text-sm font-semibold text-accent-ink" onClick={() => session.rejoin(engine.distance)} data-testid="world-rejoin">
+                  Torna sul percorso
+                </button>
+              ) : null}
+              {session && !session.planned ? (
+                <button type="button" className="pointer-events-auto h-11 rounded-full bg-bg/75 px-3.5 text-sm font-semibold backdrop-blur" onClick={() => setLoopOpen(true)} data-testid="world-loop-here">
+                  Anello da qui
+                </button>
+              ) : null}
               {gap != null ? (
                 <p
                   className={`rounded-xl px-2.5 py-1 text-xs font-semibold backdrop-blur ${gap >= 0 ? 'bg-good/25 text-good' : 'bg-danger/25 text-danger'}`}
@@ -403,15 +576,35 @@ function RideScreen({
             </div>
           </div>
         </div>
+        {session ? (
+          <div className="pointer-events-none absolute inset-x-0 top-[6.4rem] flex justify-center px-14">
+            <Toasts session={session} />
+          </div>
+        ) : null}
+        {session ? (
+          <div className="pointer-events-none absolute inset-x-2.5 bottom-[3.6rem] flex items-end justify-between gap-2">
+            <div className="min-w-0">
+              <TurnPicker session={session} engine={engine} />
+            </div>
+            <div className="shrink-0">
+              <WorldMini session={session} size={118} />
+            </div>
+          </div>
+        ) : null}
         <div className="pointer-events-none absolute inset-x-2.5 bottom-2 rounded-xl bg-bg/55 p-1 backdrop-blur">
-          <ProfileChart
-            track={track}
-            className="block h-9 w-full"
-            height={36}
-            bin={Math.max(100, track.length / 80)}
-            position={engine.distance}
-            ghost={ghostDistance ? ghostDistance() : null}
-          />
+          {session && !session.onRoute ? (
+            <AheadProfile session={session} engine={engine} />
+          ) : (
+            <ProfileChart
+              key={session ? session.path.version : 0}
+              track={track}
+              className="block h-9 w-full"
+              height={36}
+              bin={Math.max(100, track.length / 80)}
+              position={engine.distance}
+              ghost={ghostDistance ? ghostDistance() : null}
+            />
+          )}
         </div>
 
         <span data-testid="world-ready" data-ready={ready ? 'yes' : 'no'} className="sr-only" />
@@ -529,6 +722,24 @@ function RideScreen({
             </span>
           </summary>
           <div className="px-3 pb-3">
+            {session ? (
+              <label className="mb-3 flex min-h-11 items-center justify-between gap-3 text-sm">
+                <span>
+                  <span className="font-semibold">Mostrami agli altri nel mondo</span>
+                  <span className="block text-xs text-muted">Passano il nome, la posizione sulla strada virtuale e i watt. Niente GPS.</span>
+                </span>
+                <input
+                  type="checkbox"
+                  className="h-6 w-6 accent-[var(--accent)]"
+                  checked={share}
+                  onChange={(e) => {
+                    setShare(e.target.checked);
+                    writeShare(e.target.checked);
+                  }}
+                  data-testid="world-share"
+                />
+              </label>
+            ) : null}
             <Segmented<Quality>
               label={t('ride.quality')}
               value={quality}
@@ -577,6 +788,7 @@ function RideScreen({
           t={t}
         />
       ) : null}
+      {loopOpen && session ? <LoopSheet session={session} engine={engine} onClose={() => setLoopOpen(false)} /> : null}
       {room.sheet && room.available ? <RoomSheet handle={room} routeTitle={`${setup.route.title} ${setup.route.subtitle}`} onClose={() => room.setSheet(false)} /> : null}
       {summary ? (
         <div className="fixed inset-0 z-40 overflow-auto bg-bg/95 px-4 py-8 backdrop-blur" data-testid="ride-summary">
@@ -605,7 +817,9 @@ function RideScreen({
                 )}
               </div>
             ) : null}
-            {engine.arrived ? <p className="mt-3 font-semibold text-accent">In cima: {setup.route.title} {setup.route.subtitle}.</p> : null}
+            {engine.arrived && !session ? <p className="mt-3 font-semibold text-accent">In cima: {setup.route.title} {setup.route.subtitle}.</p> : null}
+            {engine.arrived && session?.planned ? <p className="mt-3 font-semibold text-accent">Arrivato: {setup.route.title}.</p> : null}
+            {xp ? <XpSummary lines={xp.lines} total={xp.total} level={xp.level} rank={xp.rank} rankNote={xp.rankNote} /> : null}
             <div className="mt-6 flex flex-col gap-2">
               {saved ? (
                 <Button data-testid="ride-open-history" onClick={() => navigate(`/history/${summary.id}`)}>
@@ -786,6 +1000,24 @@ function stepLabel(step: WorkoutStep, t: Translate): string {
   if (name.startsWith('rec') || name.startsWith('rest') || name === 'easy' || name === 'spin') return t('workouts.stepRest');
   if (name.startsWith('ramp')) return t('workouts.stepRamp');
   return t('workouts.stepWork');
+}
+
+const SHARE_KEY = 'allenando.world.share';
+
+function readShare(): boolean {
+  try {
+    return localStorage.getItem(SHARE_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
+function writeShare(on: boolean): void {
+  try {
+    localStorage.setItem(SHARE_KEY, on ? '1' : '0');
+  } catch {
+    /* modalità privata */
+  }
 }
 
 function physicsFrom(profile: Profile): PhysicsParams {
