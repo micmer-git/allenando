@@ -46,6 +46,8 @@ export const FLAG = {
   cobbles: 16,
   /** sterrato */
   unpaved: 32,
+  /** anello di una rotatoria (junction=roundabout o circular in OSM): ci si gira in senso antiorario */
+  roundabout: 64,
 } as const;
 
 export type Dir = 1 | -1;
@@ -113,6 +115,18 @@ export interface TurnOption {
   turn: number;
   uTurn: boolean;
   label: string;
+  /** in una rotatoria: il numero dell'uscita, 1 = la prima dopo l'ingresso */
+  exit?: number;
+  roundabout?: true;
+  /** in una rotatoria: gli archi dell'anello da percorrere prima di uscire su `edge` */
+  via?: Leg[];
+}
+
+/** Un'uscita di rotatoria: dove si esce (edge, dir) e il pezzo d'anello per arrivarci. */
+export interface RoundaboutExit extends TurnOption {
+  exit: number;
+  roundabout: true;
+  via: Leg[];
 }
 
 export interface Leg {
@@ -382,25 +396,67 @@ export class WorldGraph {
     return out.sort((p, q) => q.turn - p.turn);
   }
 
+  /** È un arco dell'anello di una rotatoria. */
+  isRing(edge: number): boolean {
+    return (this.edges[edge].flags & FLAG.roundabout) !== 0;
+  }
+
+  /**
+   * Arrivando in fondo a (edge, dir): se lì comincia (o continua) l'anello di una rotatoria, le
+   * uscite in ordine, ognuna col pezzo d'anello da fare. Null se non c'è una rotatoria.
+   *
+   * Da fuori si entra nel nodo d'ingresso e le uscite si contano dal nodo dopo; l'ultima, se la
+   * strada d'ingresso è a doppio senso, è tornare indietro (il giro completo). Se si è già
+   * sull'anello, le uscite del nodo in cui si arriva valgono subito.
+   */
+  roundaboutExits(edge: number, dir: Dir): RoundaboutExit[] | null {
+    const start = this.endNode(edge, dir);
+    const onRing = this.isRing(edge);
+    const inH = this.exitHeading(edge, dir);
+    const ringOut = (v: number): Leg | null => {
+      for (const id of this.edgesAt(v)) {
+        if (!this.isRing(id)) continue;
+        for (const d of [1, -1] as Dir[]) if (this.startNode(id, d) === v && this.allowed(id, d) && !(id === edge && d === -dir)) return { edge: id, dir: d };
+      }
+      return null;
+    };
+    if (!ringOut(start)) return null;
+    const out: RoundaboutExit[] = [];
+    const via: Leg[] = [];
+    let v = start;
+    const seen = new Set<number>();
+    for (let step = 0; step < 64; step++) {
+      if (step > 0 || onRing) {
+        for (const id of this.edgesAt(v)) {
+          if (this.isRing(id)) continue;
+          for (const d of [1, -1] as Dir[]) {
+            if (this.startNode(id, d) !== v || !this.allowed(id, d)) continue;
+            const e = this.edges[id];
+            const turn = (wrap(this.entryHeading(id, d) - inH) * 180) / Math.PI;
+            const uTurn = id === edge && d === -dir;
+            out.push({ edge: id, dir: d, turn, uTurn, label: e.name || e.ref || CLASS_LABEL[e.cls], exit: out.length + 1, roundabout: true, via: via.slice() });
+          }
+        }
+      }
+      if (step > 0 && v === start) break;
+      if (seen.has(v)) break;
+      seen.add(v);
+      const next = ringOut(v);
+      if (!next) break;
+      via.push(next);
+      v = this.endNode(next.edge, next.dir);
+    }
+    return out.length ? out : null;
+  }
+
+  /** Fra le uscite di una rotatoria, quella che va più dritta (come straightest). */
+  straightestExit(edge: number, exits: RoundaboutExit[]): RoundaboutExit {
+    return pickStraight(this, edge, exits);
+  }
+
   /** La strada più dritta all'incrocio: a parità, quella con lo stesso nome o la stessa classe. */
   straightest(edge: number, dir: Dir): TurnOption {
-    const opts = this.options(edge, dir);
-    const here = this.edges[edge];
-    let best = opts[0];
-    let bestScore = Infinity;
-    for (const o of opts) {
-      const e = this.edges[o.edge];
-      let score = Math.abs(o.turn);
-      if (o.uTurn) score += 1000;
-      if (here.name && e.name === here.name) score -= 25;
-      else if (here.ref && e.ref === here.ref) score -= 25;
-      score += Math.abs(e.cls - here.cls) * 6;
-      if (score < bestScore) {
-        bestScore = score;
-        best = o;
-      }
-    }
-    return best;
+    return pickStraight(this, edge, this.options(edge, dir));
   }
 
   /** Costo di un arco per il navigatore: metri, pesati per quanto la strada è adatta a una bici. */
@@ -518,6 +574,25 @@ export class WorldGraph {
     }
     return gain;
   }
+}
+
+function pickStraight<T extends TurnOption>(g: WorldGraph, edge: number, opts: T[]): T {
+  const here = g.edges[edge];
+  let best = opts[0];
+  let bestScore = Infinity;
+  for (const o of opts) {
+    const e = g.edges[o.edge];
+    let score = Math.abs(o.turn);
+    if (o.uTurn) score += 1000;
+    if (here.name && e.name === here.name) score -= 25;
+    else if (here.ref && e.ref === here.ref) score -= 25;
+    score += Math.abs(e.cls - here.cls) * 6;
+    if (score < bestScore) {
+      bestScore = score;
+      best = o;
+    }
+  }
+  return best;
 }
 
 export interface RoutePrefs {
