@@ -18,6 +18,8 @@ const PATHS: Record<G, string[]> = {
   coppa: ['M7 4h10v5a5 5 0 0 1-10 0Z', 'M7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4M12 14v4M8 21h8'],
   goccia: ['M12 3c3 4 6 7.5 6 11a6 6 0 0 1-12 0c0-3.5 3-7 6-11Z'],
   campana: ['M6 17V11a6 6 0 0 1 12 0v6l1.5 2h-15Z', 'M10 21h4M12 3v2'],
+  maglia: ['M8.2 3.5 10 3q2 2 4 0l1.8.5L21 7.5 19 11l-2-1.4V21H7V9.6L5 11 3 7.5Z', 'M7 12.5h10'],
+  ingranaggio: ['M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z', 'M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1'],
 };
 
 export function Glyph({ name, className, size = 24 }: { name: G; className?: string; size?: number }) {

@@ -70,12 +70,12 @@ export function MePage() {
       <nav aria-label="Le tue cose" className="mt-5 grid grid-cols-2 gap-2">
         <Hub to="/traguardi" glyph="coppa" title="Traguardi" sub={`${done} di ${ACHIEVEMENTS.length}`} testId="me-achievements" />
         <Hub to="/classifiche" glyph="stella" title="Classifiche" sub="Salite, percorsi, tratti" testId="me-boards" />
-        <Hub to="/garage" glyph="km" title="Garage" sub="Maglie, caschi, bici" />
+        <Hub to="/garage" glyph="maglia" title="Garage" sub="Maglie, caschi, bici" />
         <Hub to="/history" glyph="mappa" title="Diario" sub={`${rides.length} giri, FIT e GPX`} />
         <Hub to="/workouts" glyph="fulmine" title="Allenamenti" sub="ERG e test a rampa" />
         <Hub to="/giri" glyph="crono" title="Rifai un giro" sub="Intervals.icu, FIT, GPX" />
         <Hub to="/load" glyph="fiamma" title="Carico" sub="Forma, fatica, equilibrio" />
-        <Hub to="/profile" glyph="campana" title="Profilo" sub="Peso, FTP, grafica" />
+        <Hub to="/profile" glyph="ingranaggio" title="Profilo" sub="Peso, FTP, grafica" />
       </nav>
     </main>
   );

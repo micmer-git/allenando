@@ -6,7 +6,7 @@ import type { Career, RideFacts } from './career';
  * dicono anche a che punto si è, così la pagina mostra la barra.
  */
 
-export type Glyph = 'km' | 'salita' | 'volata' | 'gpm' | 'crono' | 'gruppo' | 'luna' | 'pioggia' | 'alba' | 'fiamma' | 'stella' | 'mappa' | 'fulmine' | 'coppa' | 'goccia' | 'campana';
+export type Glyph = 'km' | 'salita' | 'volata' | 'gpm' | 'crono' | 'gruppo' | 'luna' | 'pioggia' | 'alba' | 'fiamma' | 'stella' | 'mappa' | 'fulmine' | 'coppa' | 'goccia' | 'campana' | 'maglia' | 'ingranaggio';
 
 export type AchievementGroup = 'strada' | 'salite' | 'traguardi' | 'mondo' | 'costanza' | 'motore';
 
