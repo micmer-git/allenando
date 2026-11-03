@@ -227,6 +227,9 @@ const POI_SETBACK: Partial<Record<PoiKind, number>> = {
   rifugio: 5,
 };
 
+/** I luoghi che si vedono dalla strada solo davanti alla porta: a quanti metri dal ciglio. */
+const POI_FRONT: Partial<Record<PoiKind, number>> = { bar: 3.4, bici: 2.6 };
+
 const poiGeoCache = new Map<PoiKind, THREE.BufferGeometry | null>();
 const plateCache = new Map<string, THREE.BufferGeometry>();
 const m4 = new THREE.Matrix4();
@@ -541,11 +544,12 @@ export function* streetJob(graph: WorldGraph, field: WorldField, features: World
       }
 
       // --- cippi delle statali e delle provinciali, uno ogni chilometro ---
-      const ref = /^(S[PSR])\s*([0-9]+[a-z]?)/i.exec(e.ref);
+      const ref = /^(S[PSR])\s*([0-9]+(?:\s*bis|[a-z])?)/i.exec(e.ref);
       if (ref && L > 500) {
         for (let s = 400 + Math.floor(hash2(id, 1) * 200); s < L - 60; s += 1000) {
           const p = graph.pose(id, s, 1);
-          const off = e.hw + 1.1;
+          // sul ciglio, come i delineatori: più in là il terreno a maglie di 10 m lo seppellisce
+          const off = e.hw + 0.8;
           const x = p.x - Math.cos(p.heading) * off;
           const z = p.z + Math.sin(p.heading) * off;
           if (!own(x, z)) continue;
@@ -626,14 +630,19 @@ export function* streetJob(graph: WorldGraph, field: WorldField, features: World
       triUp(island, d2, d3, c3, undefined, BED);
       triUp(island, c3, d3, { x: r.cx, y: mound, z: r.cz }, undefined, i % 2 ? GRASS : GRASS2);
     }
-    // cespugli e fiori lungo l'aiuola, ogni 2,2 m circa
+    // cespugli e fiori lungo l'aiuola, ogni 2,2 m circa, seguendo il bordo vero (le rotatorie
+    // allungate non sono cerchi)
     if (meanR > 3) {
-      const rr = meanR - 0.25 - 0.55;
-      const count2 = Math.max(6, Math.floor((2 * Math.PI * rr) / 2.2));
-      for (let i = 0; i < count2; i++) {
-        const a = (i / count2) * Math.PI * 2;
+      let run = 0;
+      for (let i = 0; i < n; i++) {
+        const p = inner[i];
+        const q = inner[(i + 1) % n];
+        run += Math.hypot(q.x - p.x, q.z - p.z) * Math.max(0, p.rr - 0.8) / Math.max(1, p.rr + r.hw);
+        if (run < 2.2) continue;
+        run = 0;
+        const rr = Math.max(0.5, p.rr - 0.25 - 0.55);
         const h = hash2(r.cx + i, r.cz - i);
-        items.shrub.push({ x: r.cx + Math.cos(a) * rr, y: cy + top, z: r.cz + Math.sin(a) * rr, ry: h * 6.28, s: 0.7 + h * 0.6, c: FLOWERS[Math.floor(h * FLOWERS.length) % FLOWERS.length] });
+        items.shrub.push({ x: r.cx + p.ux * rr, y: p.y + top, z: r.cz + p.uz * rr, ry: h * 6.28, s: 0.55 + h * 0.4, c: FLOWERS[Math.floor(h * FLOWERS.length) % FLOWERS.length] });
       }
     }
     // in mezzo: un albero, o sulle grandi una ruota di bicicletta in corten
@@ -663,7 +672,10 @@ export function* streetJob(graph: WorldGraph, field: WorldField, features: World
       d = 1;
     }
     const min = e.hw + (POI_SETBACK[poi.kind] ?? 2);
-    const k = d < min ? min / d : 1;
+    // bar e negozi di bici stanno DENTRO un edificio: ombrelloni e rastrelliera si mettono fuori,
+    // davanti, a bordo strada dalla parte del locale
+    const max = POI_FRONT[poi.kind];
+    const k = d < min ? min / d : max != null && d > e.hw + max ? (e.hw + max) / d : 1;
     const x = road.x + dx * k;
     const z = road.z + dz * k;
     // +z del modellino lontano dalla strada: la facciata (−z) guarda chi passa

@@ -19,6 +19,8 @@ import { loadBuildings, type Building, type RideDef, type Terrain, type WorldDat
 import { WorldPath } from './path';
 import type { ArchSpec } from '@/game/arches';
 import { Arches } from '@/world/Arches';
+import { HairpinSigns, hairpinSigns } from '@/world/HairpinSigns';
+import { findHairpins } from '@/domain/geo';
 import {
   bridgePostGeometry,
   delineatorEyesGeometry,
@@ -556,6 +558,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; rect: { value: THREE.V
   const dirtyTrees = useRef(false);
   /** l'arredo piccolo (paletti, cartelli, semafori) si rifà anche quando il centro si sposta */
   const dirtyProps = useRef(false);
+  const riderTile = useRef<[number, number] | null>(null);
   const T = q.tile;
   const b = data.graph.bounds;
 
@@ -709,6 +712,14 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; rect: { value: THREE.V
     const az = pose.z + Math.cos(pose.heading) * T * 0.4;
     const cx = Math.floor((ax - b.x0) / T);
     const cz = Math.floor((az - b.z0) / T);
+    // la mattonella sotto le ruote: l'arredo vicino parte da lì (il centro sta 200 m avanti)
+    const rx = Math.floor((pose.x - b.x0) / T);
+    const rz = Math.floor((pose.z - b.z0) / T);
+    const near = (t: TileEntry) => Math.min(Math.max(Math.abs(t.ix - cx), Math.abs(t.iz - cz)), Math.max(Math.abs(t.ix - rx), Math.abs(t.iz - rz)));
+    if (!riderTile.current || riderTile.current[0] !== rx || riderTile.current[1] !== rz) {
+      riderTile.current = [rx, rz];
+      dirtyProps.current = true;
+    }
     const map = tiles.current;
     if (!center.current || center.current[0] !== cx || center.current[1] !== cz) {
       center.current = [cx, cz];
@@ -749,8 +760,9 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; rect: { value: THREE.V
             detail = true;
             break;
           }
-          if (t.detail === 'none' && d <= DETAIL_RING && d + 0.5 < best) {
-            best = d + 0.5;
+          const dn = near(t);
+          if (t.detail === 'none' && dn <= DETAIL_RING && dn + 0.5 < best) {
+            best = dn + 0.5;
             job = t;
             detail = true;
           }
@@ -823,9 +835,9 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; rect: { value: THREE.V
     if (dirtyProps.current && roadside.current) {
       dirtyProps.current = false;
       // solo le mattonelle intorno al ciclista: a più di un anello un paletto è meno di un pixel
-      const near: RoadsideItems[] = [];
-      for (const t of map.values()) if (t.items && Math.max(Math.abs(t.ix - cx), Math.abs(t.iz - cz)) <= PROP_RING) near.push(t.items);
-      roadside.current.set(near);
+      const list: RoadsideItems[] = [];
+      for (const t of map.values()) if (t.items && near(t) <= PROP_RING) list.push(t.items);
+      roadside.current.set(list);
     }
   });
 
@@ -1328,7 +1340,14 @@ function RideSigns({ data, ride }: { data: WorldData; ride: RideDef }) {
     }
     const startTex = bannerTexture(climb ? 'INIZIO SALITA' : 'PARTENZA', ride.name);
     const finishTex = bannerTexture('ARRIVO', ride.name);
+    // tornanti numerati sulle salite, contati dall'alto come i cartelli veri (Selvino ne ha venti)
+    const pts = path.points;
+    // il giro di una rotatoria non è un tornante
+    const nearRing = (d: number) => [-40, -20, 0, 20, 40].some((o) => g.isRing(path.edgeAt(Math.min(path.length, Math.max(0, d + o))).edge));
+    const bends = climb ? findHairpins(pts.map((p) => p.distance), pts.map((p) => p.heading)).filter((h) => h.distance > from + 20 && h.distance < to - 20 && !nearRing(h.distance)) : [];
+    const hairpins = hairpinSigns(bends, (d) => path.poseAt(d), (d) => g.edges[path.edgeAt(d).edge].hw);
     return {
+      hairpins,
       km,
       start: { pose: path.poseAt(Math.min(path.length, from + 4)), tex: startTex, hw: g.edges[path.edgeAt(from + 4).edge].hw },
       finish: { pose: path.poseAt(Math.max(0, to - 2)), tex: finishTex, hw: g.edges[path.edgeAt(Math.max(0, to - 2)).edge].hw },
@@ -1346,6 +1365,7 @@ function RideSigns({ data, ride }: { data: WorldData; ride: RideDef }) {
     <group>
       <Gate pose={signs.start.pose} texture={signs.start.tex} hw={signs.start.hw} />
       <Gate pose={signs.finish.pose} texture={signs.finish.tex} hw={signs.finish.hw} />
+      <HairpinSigns items={signs.hairpins} />
       {signs.km.map((k, i) => {
         // a destra di chi sale
         const off = k.hw + 1.3;

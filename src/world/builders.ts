@@ -252,7 +252,7 @@ export function asphaltTexture(): THREE.CanvasTexture {
         for (const t of tracks) wear = Math.max(wear, Math.max(0, 1 - Math.abs(ux - t) / 0.055));
         const oil = Math.max(0, 1 - Math.abs(Math.abs(ux - 0.5) - 0.25) / 0.03) * 0.5;
         const grain = (rnd() - 0.5) * (34 - wear * 16);
-        let l = 78 + big + grain - wear * 7 - oil * 6;
+        let l = 90 + big + grain - wear * 7 - oil * 6;
         // sassolini dell'inerte, più radi nelle tracce consumate
         if (rnd() < 0.035 * (1 - wear * 0.6)) l += 26 + rnd() * 22;
         const o = (y * W + x) * 4;
@@ -269,9 +269,9 @@ export function asphaltTexture(): THREE.CanvasTexture {
       const h = 50 + rnd() * 120;
       const x = rnd() * (W - w);
       const y = rnd() * (H - h);
-      g.fillStyle = `rgba(30,32,35,${0.12 + rnd() * 0.08})`;
+      g.fillStyle = `rgba(30,32,35,${0.08 + rnd() * 0.07})`;
       g.fillRect(x, y, w, h);
-      g.strokeStyle = 'rgba(18,19,21,0.35)';
+      g.strokeStyle = 'rgba(18,19,21,0.18)';
       g.lineWidth = 2;
       g.strokeRect(x, y, w, h);
     }
