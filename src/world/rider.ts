@@ -274,7 +274,7 @@ export function solvePose(s: PoseState, out: THREE.Matrix4[]): SolveInfo {
     const sx = right ? -1 : 1;
     P.a.set(sx * BODY.shoulder[0], BODY.shoulder[1] + s.shrug, BODY.shoulder[2]).applyMatrix4(out[B.chest]);
     P.c.set(sx * BODY.wrist[0], BODY.wrist[1], BODY.wrist[2]).applyMatrix4(out[B.steer]);
-    P.pole.set(sx * 0.8, -0.25, -0.55).transformDirection(bike);
+    P.pole.set(sx * 0.55, -0.35, -0.6).transformDirection(bike);
     if (!twoBoneIK(P.a, P.c, BODY.upperArm, BODY.forearm, P.pole, P.b)) reach = false;
     limbMatrix(out[right ? B.upperArmR : B.upperArmL], P.a, P.b, P.pole);
     limbMatrix(out[right ? B.forearmR : B.forearmL], P.b, P.c, P.pole);

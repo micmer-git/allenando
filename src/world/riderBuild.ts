@@ -49,7 +49,7 @@ interface Lod {
 const LOD: Record<RiderDetail, Lod> = {
   alta: { tube: 10, thin: 8, small: 8, bar: 16, barSeg: 6, limb: 12, torso: 24, dome: 3, head: 16, helmet: [12, 12], wheel: 36, tyre: 6, hub: 10, spokes: [20, 24], chain: 52, cassette: 3, ring: 0, teeth: 36, fine: true, mid: true },
   media: { tube: 6, thin: 5, small: 6, bar: 7, barSeg: 4, limb: 7, torso: 12, dome: 2, head: 9, helmet: [6, 6], wheel: 16, tyre: 4, hub: 6, spokes: [0, 0], chain: 0, cassette: 1, ring: 16, teeth: 0, fine: false, mid: true },
-  bassa: { tube: 4, thin: 3, small: 4, bar: 3, barSeg: 3, limb: 5, torso: 8, dome: 1, head: 6, helmet: [4, 4], wheel: 10, tyre: 3, hub: 0, spokes: [0, 0], chain: 0, cassette: 0, ring: 8, teeth: 0, fine: false, mid: false },
+  bassa: { tube: 4, thin: 3, small: 4, bar: 3, barSeg: 3, limb: 5, torso: 8, dome: 1, head: 6, helmet: [4, 4], wheel: 14, tyre: 3, hub: 0, spokes: [0, 0], chain: 0, cassette: 0, ring: 8, teeth: 0, fine: false, mid: false },
 };
 
 const X = new THREE.Vector3(1, 0, 0);
@@ -873,12 +873,12 @@ function buildHead(P: Parts, L: Lod) {
   const [nu, na] = L.helmet;
   const key = [
     // s, z, y bordo, semilarghezza, altezza
-    [0, 0.168, 0.122, 0.066, 0.012],
-    [0.12, 0.143, 0.12, 0.09, 0.058],
-    [0.35, 0.072, 0.106, 0.1, 0.098],
-    [0.6, -0.02, 0.082, 0.098, 0.112],
-    [0.85, -0.112, 0.046, 0.082, 0.087],
-    [1, -0.165, 0.034, 0.046, 0.032],
+    [0, 0.16, 0.118, 0.06, 0.01],
+    [0.12, 0.138, 0.114, 0.082, 0.05],
+    [0.35, 0.07, 0.1, 0.091, 0.092],
+    [0.6, -0.02, 0.078, 0.09, 0.104],
+    [0.85, -0.108, 0.045, 0.077, 0.082],
+    [1, -0.155, 0.035, 0.044, 0.03],
   ];
   const at = (s: number) => {
     for (let i = 1; i < key.length; i++)
@@ -892,8 +892,9 @@ function buildHead(P: Parts, L: Lod) {
   const hp: number[] = [];
   const huv: number[] = [];
   const hi: number[] = [];
-  const a0 = -0.14;
-  const a1 = Math.PI + 0.14;
+  // il guscio scende un po' sotto il bordo ai lati: avvolge le tempie invece di posarsi sopra
+  const a0 = -0.3;
+  const a1 = Math.PI + 0.3;
   for (let i = 0; i <= nu; i++) {
     const [, z, yr, w, h] = at(i / nu);
     for (let j = 0; j <= na; j++) {
@@ -919,9 +920,9 @@ function buildHead(P: Parts, L: Lod) {
   if (L.fine) {
     // cinghietti sotto il mento
     for (const s of [-1, 1]) {
-      const under = vec([s * 0.064, 0.035, 0.07]);
-      P.local(pathTube([vec([s * 0.078, 0.112, 0.105]), under, vec([s * 0.03, -0.012, 0.118]), vec([0, -0.022, 0.122])], () => 0.0035, 3, 6), B.head, 'strap');
-      P.local(pathTube([vec([s * 0.078, 0.07, -0.01]), under], () => 0.0035, 3, 2), B.head, 'strap');
+      const under2 = vec([s * 0.06, 0.03, 0.065]);
+      P.local(pathTube([vec([s * 0.08, 0.085, 0.1]), under2, vec([s * 0.03, -0.01, 0.11]), vec([0, -0.02, 0.114])], () => 0.0026, 3, 6), B.head, 'strap');
+      P.local(pathTube([vec([s * 0.082, 0.06, -0.01]), under2], () => 0.0026, 3, 2), B.head, 'strap');
     }
   }
 
@@ -934,7 +935,7 @@ function buildHead(P: Parts, L: Lod) {
   for (let r = 0; r <= rows; r++) {
     for (let c = 0; c <= cols; c++) {
       const a = -1.32 + (2.64 * c) / cols;
-      const yb = 0.072 + (0.044 * r) / rows;
+      const yb = 0.075 + (0.036 * r) / rows;
       const bulge = 1 + 0.03 * Math.sin((Math.PI * r) / rows);
       gl.push(Math.sin(a) * 0.086 * bulge, yb - 0.006 * Math.cos(a), 0.047 + Math.cos(a) * 0.126 * bulge);
       guv.push(c / cols, r / rows);
@@ -955,10 +956,10 @@ function buildHead(P: Parts, L: Lod) {
     const top: THREE.Vector3[] = [];
     for (let c = 0; c <= 8; c++) {
       const a = -1.32 + (2.64 * c) / 8;
-      top.push(new THREE.Vector3(Math.sin(a) * 0.088, 0.118 - 0.006 * Math.cos(a), 0.047 + Math.cos(a) * 0.128));
+      top.push(new THREE.Vector3(Math.sin(a) * 0.088, 0.113 - 0.006 * Math.cos(a), 0.047 + Math.cos(a) * 0.128));
     }
     P.local(pathTube(top, () => 0.0042, L.fine ? 4 : 3, L.fine ? 12 : 6), B.glasses, 'glassesFrame');
-    if (L.fine) for (const s of [-1, 1]) P.local(pathTube([vec([s * 0.084, 0.112, 0.068]), vec([s * 0.08, 0.1, 0.0]), vec([s * 0.072, 0.085, -0.03])], () => 0.003, 3, 3), B.glasses, 'glassesFrame');
+    if (L.fine) for (const s of [-1, 1]) P.local(pathTube([vec([s * 0.084, 0.108, 0.068]), vec([s * 0.08, 0.1, 0.0]), vec([s * 0.072, 0.085, -0.03])], () => 0.003, 3, 3), B.glasses, 'glassesFrame');
   }
 }
 

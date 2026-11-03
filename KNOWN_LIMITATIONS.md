@@ -37,7 +37,7 @@ Passa i test (geometria, terreno sotto la strada, replay, Intervals con API simu
 
 - FTMS/BLE coperti da test su pacchetti, non provati su hardware in questa versione.
 - Il bundle del mondo 3D è ~1 MB (260 kB gzip). Su telefoni modesti usare la grafica **Bassa**.
-- Il ciclista 3D è costruito a mano in proporzione (bici taglia 54-56, pedivelle 172,5 mm, gambe a cinematica inversa sui pedali), una dozzina di chiamate di disegno a testa: non è un modello anatomico né un rig animato. Braccia ferme sulle leve, busto fermo.
+- Il ciclista 3D è costruito in codice, non scolpito: una maglia con 23 ossa (una chiamata di disegno a testa), gambe e braccia a cinematica inversa su pedali e leve, tre dettagli (alta ≤ 11,8k triangoli, media ≤ 3,9k, bassa ≤ 1,2k). Si alza sui pedali sulle rampe e negli scatti, si raccoglie in aero, piega in curva. Non ha dita articolate né stoffa che si muove; i ciclisti degli altri in rete hanno una divisa semplice dal loro colore, perché la stanza non trasmette ancora l'aspetto completo. Laboratorio visivo: `lab/rider.html` (solo `vite dev`).
 - Il prompt di installazione esiste solo su Chrome/Edge; su iPhone si installa a mano da Safari, come spiega il riquadro in Oggi.
 - Safari/iPhone: niente Web Bluetooth, serve Bluefy.
 

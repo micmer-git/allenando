@@ -67,8 +67,12 @@ export function Rider({
   const group = useRef<THREE.Group>(null);
   const sprite = useRef<THREE.Sprite>(null);
   const { camera } = useThree();
-  const rig = useMemo(() => new RiderRig(), []);
-  const mesh = useMemo(() => riderMesh(riderGeometry(detail, look.rim), GHOST_MAT, rig), [rig]); // eslint-disable-line react-hooks/exhaustive-deps
+  // scheletro e maglia nascono insieme: in StrictMode React chiama questa funzione due volte, e
+  // una maglia creata a parte si porterebbe via le ossa dell'altra (restando ferma all'origine)
+  const { rig, mesh } = useMemo(() => {
+    const r = new RiderRig();
+    return { rig: r, mesh: riderMesh(riderGeometry(detail, look.rim), GHOST_MAT, r) };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const far = useRef(false);
   const last = useRef<{ heading: number | null }>({ heading: null });
 
@@ -82,12 +86,6 @@ export function Rider({
 
   const labelTex = useMemo(() => (label ? labelTexture(label, look.jersey) : null), [label, look.jersey]);
   useEffect(() => () => labelTex?.dispose(), [labelTex]);
-  useEffect(
-    () => () => {
-      mesh.removeFromParent();
-    },
-    [mesh],
-  );
 
   useFrame((_, dt) => {
     const pose = getPose();
