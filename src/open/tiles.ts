@@ -1,11 +1,12 @@
 import * as THREE from 'three';
-import { ASPHALT_REPEAT_M, groundColor, hash2 } from '@/world/builders';
+import { ASPHALT_REPEAT_M, groundColor, hash2, smoothNoise } from '@/world/builders';
 import { CLS, FLAG, type Edge, type EdgePose, type WorldGraph } from './graph';
 import type { WorldField } from './field';
 import { BUILDING_KIND, COVER, type Building, type Place, type WorldFeatures } from './world';
 import { addBuilding, BLANK_UV, earcut, ringArea, Tris } from './buildings';
 import { ringAt, ringBranch, ringsIn, smoothRingOf, type Pt, type RingGeo } from './rings';
 import { portalClear, tunnelGeometry } from './tunnels';
+import { pavedWeight } from './urban';
 
 /*
  * Le mattonelle del mondo vicino al ciclista: terreno raccordato alle strade, nastri d'asfalto
@@ -145,8 +146,14 @@ const COVER_COLOR: Record<number, THREE.Color> = {
   [COVER.glacier]: new THREE.Color('#e9eef3'),
 };
 
-/** Il terreno della mattonella, con un bordo che scende di 25 m per chiudere le fessure col terreno lontano. */
-export function* terrainJob(field: WorldField, spec: TileSpec): Generator<void, THREE.BufferGeometry, void> {
+/** Il suolo pavimentato delle città: piazze, piazzali, cortili (urban.ts). */
+const PAVED = ['#a6a197', '#9d988e', '#aca69b'].map((h) => new THREE.Color(h));
+
+/**
+ * Il terreno della mattonella, con un bordo che scende di 25 m per chiudere le fessure col terreno
+ * lontano. `urban` (densità delle case intorno, urban.ts) pavimenta il suolo aperto delle città.
+ */
+export function* terrainJob(field: WorldField, spec: TileSpec, urban?: (x: number, z: number) => number): Generator<void, THREE.BufferGeometry, void> {
   const n = Math.round(spec.size / spec.spacing);
   const side = n + 1;
   const pos = new Float32Array((side * side + side * 4) * 3);
@@ -217,13 +224,19 @@ export function* terrainJob(field: WorldField, spec: TileSpec): Generator<void, 
     const x = pos[k * 3];
     const z = pos[k * 3 + 2];
     const y = pos[k * 3 + 1];
-    const noise = hash2(Math.floor(x / 23), Math.floor(z / 23));
+    // rumore liscio: con hash2 per celle di 23 m il pendio veniva a quadretti (M6)
+    const noise = smoothNoise(x / 23, z / 23);
     groundColor(c, y, nrm.getY(k), nrm.getZ(k), noise, 99);
     uv[k * 2] = x / DETAIL_M;
     uv[k * 2 + 1] = z / DETAIL_M;
     const cov = field.terrain.cover(x, z);
     const cc = cov === COVER.farmland || cov === COVER.open ? parcelColor(x, z, cov) : COVER_COLOR[cov];
     if (cc && cov !== COVER.water) c.lerp(tmpC.copy(cc).offsetHSL(0, 0, (noise - 0.5) * 0.06), cov === COVER.rock ? 0.5 : cov === COVER.open ? 0.45 : 0.72);
+    // in città il suolo aperto è una piazza o un cortile, non un prato (i parchi restano verdi)
+    if (urban && (cov === COVER.open || URBAN.has(cov))) {
+      const pv = pavedWeight(urban(x, z), dist[k]);
+      if (pv > 0.01) c.lerp(tmpC.copy(PAVED[Math.floor(noise * 7) % 3]), pv * 0.92);
+    }
     if (wet[k]) c.copy(COVER_COLOR[COVER.water]);
     // terra battuta e marciapiede ai bordi della carreggiata
     if (dist[k] < 5) c.lerp(tmpC.set(cov === COVER.residential || cov === COVER.industrial ? '#a7a39a' : '#9c8b6c'), 1 - dist[k] / 5);
@@ -352,6 +365,99 @@ function centerLine(paint: Mesh, graph: WorldGraph, field: WorldField, e: Edge, 
   }
 }
 
+/** Lo scivolo alla fine di un marciapiede: in tanti metri il piano scende alla quota della strada. */
+export const WALK_RAMP = 4;
+
+/**
+ * Quanto è alto il marciapiede in ogni punto, da 0 (alla quota della strada) a 1 (cordolo pieno):
+ * dove il marciapiede comincia o finisce davvero (il punto prima o dopo è senza), scende in
+ * WALK_RAMP metri invece di finire con un gradino. Dove la corsa finisce al bordo della mattonella
+ * il marciapiede continua nella vicina: lì niente scivolo.
+ */
+export function walkHeights(pts: { d: number }[], on: boolean[]): Float32Array {
+  const n = pts.length;
+  const gap = new Float32Array(n).fill(Infinity);
+  let last = -Infinity;
+  for (let i = 0; i < n; i++) {
+    if (!on[i]) last = pts[i].d;
+    else gap[i] = pts[i].d - last;
+  }
+  last = Infinity;
+  for (let i = n - 1; i >= 0; i--) {
+    if (!on[i]) last = pts[i].d;
+    else gap[i] = Math.min(gap[i], last - pts[i].d);
+  }
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    if (!on[i]) continue;
+    // il primo punto col marciapiede sta a un passo (2,5-3 m) da quello senza: lì comincia a salire
+    const t = Math.min(1, Math.max(0, (gap[i] - 3) / WALK_RAMP));
+    out[i] = t * t * (3 - 2 * t);
+  }
+  return out;
+}
+
+/** Un marciapiede più corto di così (fra due punti senza) non si fa: sarebbe un gradino isolato. */
+export const WALK_MIN = 15;
+
+/**
+ * Toglie i pezzi di marciapiede più corti di `min` metri che cominciano e finiscono dentro la corsa.
+ * Quelli che toccano il bordo della corsa restano: continuano nella mattonella vicina.
+ */
+export function trimWalk(pts: { d: number }[], on: boolean[], min = WALK_MIN): boolean[] {
+  const out = on.slice();
+  let i = 0;
+  while (i < on.length) {
+    if (!on[i]) {
+      i++;
+      continue;
+    }
+    let j = i;
+    while (j + 1 < on.length && on[j + 1]) j++;
+    if (i > 0 && j < on.length - 1 && pts[j].d - pts[i].d < min) for (let k = i; k <= j; k++) out[k] = false;
+    i = j + 1;
+  }
+  return out;
+}
+
+/** Il marciapiede di un lato: il fianco del cordolo chiaro, il piano in masselli, il fianco esterno che scende. */
+function walkStrips(kerb: Mesh, pts: P[], hw: number, lift: number, top: number, s: number, on: boolean[], tone: THREE.Color): void {
+  const k = walkHeights(pts, on);
+  let prev = -1;
+  for (let i = 0; i < pts.length; i++) {
+    if (!on[i]) {
+      prev = -1;
+      continue;
+    }
+    const p = pts[i];
+    const lx = Math.cos(p.h);
+    const lz = -Math.sin(p.h);
+    const y = lift - 0.02 + (top - lift + 0.02) * k[i];
+    const v = p.d / 8;
+    const at = (off: number, h: number, u: number, c: THREE.Color) => kerb.vertex(p.x + lx * off, p.y + h, p.z + lz * off, u, v, c);
+    // sei vertici per sezione: fianco del cordolo (2), piano (2), fianco esterno (2)
+    const i0 = at(s * hw, lift - 0.02, 0, KERB);
+    at(s * hw, y, 1, KERB);
+    at(s * (hw + 1.75), y, 0, tone);
+    at(s * hw, y, 1, tone);
+    at(s * (hw + 1.75), y, 0, WALK_EDGE);
+    at(s * (hw + 2.1), -2.8, 1, WALK_EDGE);
+    if (prev >= 0) {
+      for (const [a, b] of [
+        [0, 1],
+        [2, 3],
+        [4, 5],
+      ]) {
+        // la stessa regola di strip() (b < a): la faccia in su, o verso fuori, secondo il lato
+        const flip = a === 2 ? s > 0 : a === 4 ? s < 0 : false;
+        if (flip) kerb.idx.push(prev + a, prev + b, i0 + a, prev + b, i0 + b, i0 + a);
+        else kerb.idx.push(prev + a, i0 + a, prev + b, prev + b, i0 + a, i0 + b);
+      }
+    }
+    prev = i0;
+  }
+}
+
 /** Strade, ponti, gallerie, cordoli e marciapiedi della mattonella. Il guardrail sta nell'arredo vicino. */
 export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec): Generator<void, Omit<TileMeshes, 'terrain' | 'buildings' | 'trees' | 'water' | 'rails'>, void> {
   const asphalt = new Mesh();
@@ -441,22 +547,21 @@ export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec):
           pier(concrete, p, Math.max(1.2, hw * 0.45), p.y - 1.6, ground - 2);
         }
       } else {
-        const noWalk = (p: P) => !walkAt(p);
-        strip(verge, pts, hw + 0.8, lift - 0.1, hw, lift - 0.02, 8, noWalk);
-        strip(verge, pts, -hw, lift - 0.02, -hw - 0.8, lift - 0.1, 8, noWalk);
-        strip(verge, pts, hw + 2, -3.4, hw + 0.8, lift - 0.1, 8, noWalk);
-        strip(verge, pts, -hw - 0.8, lift - 0.1, -hw - 2, -3.4, 8, noWalk);
-        if (walkable) {
+        // dove c'è il marciapiede, lato per lato; i pezzi più corti di WALK_MIN non si fanno (erano
+        // i gradini isolati del punto M5), e lì resta la banchina
+        const sides = walkable ? [1, -1].map((side) => trimWalk(pts, pts.map(walkSide(side)))) : null;
+        const onWalk = sides ? sides.map((on) => new Set(pts.filter((_, i) => on[i]))) : null;
+        const bank = (i: number) => (p: P) => !onWalk || !onWalk[i].has(p);
+        strip(verge, pts, hw + 0.8, lift - 0.1, hw, lift - 0.02, 8, bank(0));
+        strip(verge, pts, -hw, lift - 0.02, -hw - 0.8, lift - 0.1, 8, bank(1));
+        strip(verge, pts, hw + 2, -3.4, hw + 0.8, lift - 0.1, 8, bank(0));
+        strip(verge, pts, -hw - 0.8, lift - 0.1, -hw - 2, -3.4, 8, bank(1));
+        if (sides) {
           // cordolo alto 14 cm, marciapiede di 1,6 m in masselli, e il fianco che scende nel terreno
           const top = lift + 0.14;
           const tone = WALK[Math.floor(hash2(e.id, 3) * WALK.length) % WALK.length];
-          for (const s of [1, -1]) {
-            // il fianco del cordolo chiaro, il piano del marciapiede, il fianco esterno che scende
-            const keep = walkSide(s);
-            strip(kerb, pts, s * hw, lift - 0.02, s * hw, top, 8, keep, KERB);
-            strip(kerb, pts, s * (hw + 1.75), top, s * hw, top, 8, keep, tone);
-            strip(kerb, pts, s * (hw + 1.75), top, s * (hw + 2.1), -2.8, 8, keep, WALK_EDGE);
-          }
+          walkStrips(kerb, pts, hw, lift, top, 1, sides[0], tone);
+          walkStrips(kerb, pts, hw, lift, top, -1, sides[1], tone);
         }
       }
     }
@@ -700,7 +805,10 @@ function collectEdges(graph: WorldGraph, x: number, z: number, out: Set<number>)
 
 const WALLS = ['#d9c9a8', '#e3d4b5', '#cfb894', '#e8ddc8', '#d6b98f', '#c9b6a0', '#e0cfae', '#bfae97', '#e6c99a', '#d2c3ad'];
 const WALL_STONE = '#b9ad98';
-const WALL_INDUSTRIAL = ['#b8b8b2', '#a9aba8', '#c4c1b7'];
+// i capannoni della valle: pannelli chiari, beige, sabbia, grigio azzurro; non tutti grigi
+const WALL_INDUSTRIAL = ['#c9c3b4', '#b9c0c4', '#d2c8ad', '#b8bdb1', '#c4bcae', '#aeb4b6'];
+/** il vetro delle finestre a nastro dei capannoni */
+const RIBBON = new THREE.Color('#4d5a66');
 const ROOFS = [
   ['#a4553a', '#9a4c34', '#b0603f', '#8f4a33'],
   ['#7d7f80', '#8a8b88', '#6f7173'],
@@ -744,7 +852,7 @@ export function* buildingsJob(field: WorldField, list: Building[], spec: TileSpe
     const ground = Math.max(plinth, Math.min(high - 1, low + 12));
     const seed = hash2(Math.floor(cx), Math.floor(cz));
     const stone = b.kind === BUILDING_KIND.church || b.kind === BUILDING_KIND.tower || b.kind === BUILDING_KIND.castle;
-    if (b.kind === BUILDING_KIND.industrial) wall.set(WALL_INDUSTRIAL[Math.floor(seed * 3) % 3]);
+    if (b.kind === BUILDING_KIND.industrial) wall.set(WALL_INDUSTRIAL[Math.floor(seed * WALL_INDUSTRIAL.length) % WALL_INDUSTRIAL.length]);
     else if (stone) wall.set(WALL_STONE).offsetHSL(0, 0, (seed - 0.5) * 0.08);
     else wall.set(WALLS[Math.floor(seed * WALLS.length) % WALLS.length]);
     const roofSet = ROOFS[b.roof] ?? ROOFS[0];
@@ -752,7 +860,7 @@ export function* buildingsJob(field: WorldField, list: Building[], spec: TileSpe
     base.copy(wall).multiplyScalar(0.84);
     // i tetti in coppi sono quasi tutti rossi: il grigio dei dati OSM resta ai tetti piani
     const pitchedRoof = b.roof === 0 || b.kind === BUILDING_KIND.house ? roof : tmpC.set(ROOFS[0][Math.floor(seed * 4) % 4]);
-    const { top, shape } = addBuilding(walls, roofs, b, ground, { wall, base, roof, tiles: pitchedRoof, blind: stone || b.kind === BUILDING_KIND.industrial }, plinth);
+    const { top, shape } = addBuilding(walls, roofs, b, ground, { wall, base, roof, tiles: pitchedRoof, blind: stone || b.kind === BUILDING_KIND.industrial, ribbon: b.kind === BUILDING_KIND.industrial ? RIBBON : undefined }, plinth);
     if (b.kind === BUILDING_KIND.tower && m <= 8 && shape === 'flat') {
       // cuspide dei campanili
       const apex = top + Math.min(9, Math.sqrt(Math.abs(ringArea(r))) * 0.9);
@@ -824,7 +932,12 @@ function species(alt: number, r: number): TreeKind | null {
   return r < 0.3 ? 'rock' : null;
 }
 
-export function* treesJob(field: WorldField, spec: TileSpec): Generator<void, TileMeshes['trees'], void> {
+/**
+ * Gli alberi della mattonella, per cella di 25 m secondo l'uso del suolo. `forestOnly` (con un
+ * `seed` diverso da 0) fa il bosco fitto delle mattonelle vicine: solo dove il suolo è bosco, in
+ * altri punti della cella, e senza ripetere i sassi.
+ */
+export function* treesJob(field: WorldField, spec: TileSpec, seed = 0, forestOnly = false): Generator<void, TileMeshes['trees'], void> {
   const out: TileMeshes['trees'] = [];
   const cell = 25;
   const n = Math.round(spec.size / cell);
@@ -833,25 +946,26 @@ export function* treesJob(field: WorldField, spec: TileSpec): Generator<void, Ti
       const cx = spec.x0 + (i + 0.5) * cell;
       const cz = spec.z0 + (j + 0.5) * cell;
       const cov = field.terrain.cover(cx, cz);
+      if (forestOnly && cov !== COVER.forest) continue;
       const per =
         cov === COVER.forest ? spec.trees : cov === COVER.open || cov === COVER.farmland ? spec.trees * 0.07 : cov === COVER.park ? spec.trees * 0.25 : cov === COVER.residential ? spec.trees * 0.05 : cov === COVER.rock ? 0.15 : 0;
       let k = Math.floor(per);
-      if (hash2(cx * 0.37, cz * 0.91) < per - k) k++;
+      if (hash2(cx * 0.37 + seed, cz * 0.91 - seed) < per - k) k++;
       for (let t = 0; t < k; t++) {
-        const rx = hash2(cx + t * 13.1, cz - t * 7.7);
-        const rz = hash2(cz + t * 3.3, cx + t * 5.9);
+        const rx = hash2(cx + t * 13.1 + seed * 1.7, cz - t * 7.7);
+        const rz = hash2(cz + t * 3.3, cx + t * 5.9 - seed * 2.3);
         const x = cx + (rx - 0.5) * cell;
         const z = cz + (rz - 0.5) * cell;
         const y = field.height(x, z, spec.spacing);
         if (field.lastRoadDist() < 4 || field.lastWater() || field.inTube(x, z, y)) continue;
         const kind = cov === COVER.rock ? 'rock' : species(y, hash2(x * 1.7, z * 2.3));
         if (!kind) continue;
-        // pendenza dal terreno: sulle pareti non cresce un bosco
+        // pendenza dal terreno: sulle pareti non cresce un bosco (sui versanti ripidi sì)
         const sx = field.height(x + 4, z, spec.spacing) - y;
         const sz = field.height(x, z + 4, spec.spacing) - y;
-        if (kind !== 'rock' && Math.hypot(sx, sz) / 4 > 1.15) continue;
+        if (kind !== 'rock' && Math.hypot(sx, sz) / 4 > (cov === COVER.forest ? 1.7 : 1.15)) continue;
         const r = hash2(x * 3.1, z * 0.7);
-        out.push({ kind, x, y: y - 0.15, z, s: kind === 'rock' ? 0.6 + r * 1.6 : 0.7 + r * 0.75, r: r * Math.PI * 2, tint: hash2(z, x) });
+        out.push({ kind, x, y: y - 0.15, z, s: kind === 'rock' ? 0.6 + r * 1.6 : 0.62 + r * 0.9, r: r * Math.PI * 2, tint: hash2(z, x) });
       }
     }
     if (j % 4 === 3) yield;

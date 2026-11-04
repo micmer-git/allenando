@@ -147,6 +147,11 @@ export interface BuildingColors {
   tiles: Rgb;
   /** muro senza finestre */
   blind: boolean;
+  /**
+   * i capannoni: la fascia delle finestre a nastro sotto la gronda (questo colore, il vetro) e uno
+   * zoccolo più scuro, sui muri ciechi abbastanza alti e lunghi
+   */
+  ribbon?: Rgb;
 }
 
 /**
@@ -201,8 +206,20 @@ export function addBuilding(walls: Tris, roofs: Tris, b: Building, ground: numbe
     walls.facing(v(ax, face, az, u0, vv(face)), v(bx, face, bz, u1, vv(face)), v(ax, mid, az, u0, vv(mid)), out, c.base);
     walls.facing(v(bx, face, bz, u1, vv(face)), v(bx, mid, bz, u1, vv(mid)), v(ax, mid, az, u0, vv(mid)), out, c.base);
     if (wallTop > mid + 0.01) {
-      walls.facing(v(ax, mid, az, u0, vv(mid)), v(bx, mid, bz, u1, vv(mid)), v(ax, wallTop, az, u0, vv(wallTop)), out, c.wall);
-      walls.facing(v(bx, mid, bz, u1, vv(mid)), v(bx, wallTop, bz, u1, vv(wallTop)), v(ax, wallTop, az, u0, vv(wallTop)), out, c.wall);
+      // il capannone: pannelli, poi il nastro delle finestre (1,2 m, a 0,7 m dalla gronda), poi la lamiera
+      // (anche sui capannoni bassi, da 6 m: sono la maggior parte della valle)
+      const band = c.ribbon && blind && len >= 6 && wallTop - mid > 2.2 ? c.ribbon : null;
+      const b0 = band ? wallTop - 1.9 : wallTop;
+      const b1 = band ? wallTop - 0.7 : wallTop;
+      const quad = (y0: number, y1: number, col: Rgb) => {
+        walls.facing(v(ax, y0, az, u0, vv(y0)), v(bx, y0, bz, u1, vv(y0)), v(ax, y1, az, u0, vv(y1)), out, col);
+        walls.facing(v(bx, y0, bz, u1, vv(y0)), v(bx, y1, bz, u1, vv(y1)), v(ax, y1, az, u0, vv(y1)), out, col);
+      };
+      quad(mid, b0, c.wall);
+      if (band) {
+        quad(b0, b1, band);
+        quad(b1, wallTop, c.base);
+      }
     }
   }
   if (shape === 'flat') {

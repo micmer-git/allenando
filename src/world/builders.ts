@@ -49,6 +49,24 @@ export function hash2(x: number, z: number): number {
   return s - Math.floor(s);
 }
 
+/**
+ * Rumore di valore liscio, 0…1: hash2 ai nodi di una griglia di passo 1, raccordato fra un nodo e
+ * l'altro. Al posto di hash2(floor(x), floor(z)), che sul terreno faceva i quadretti (M6).
+ */
+export function smoothNoise(x: number, z: number): number {
+  const ix = Math.floor(x);
+  const iz = Math.floor(z);
+  const fx = x - ix;
+  const fz = z - iz;
+  const u = fx * fx * (3 - 2 * fx);
+  const w = fz * fz * (3 - 2 * fz);
+  const a = hash2(ix, iz);
+  const b = hash2(ix + 1, iz);
+  const c = hash2(ix, iz + 1);
+  const d = hash2(ix + 1, iz + 1);
+  return a + (b - a) * u + (c - a) * w + (a - b - c + d) * u * w;
+}
+
 // ---------- terreno vicino, ricostruito a pezzi intorno al ciclista ----------
 
 export interface TileSpec {
@@ -103,7 +121,7 @@ export function* tileJob(field: HeightField, spec: TileSpec): Generator<number, 
   for (let k = 0; k < verts * verts; k++) {
     const x = pos[k * 3];
     const z = pos[k * 3 + 2];
-    groundColor(c, pos[k * 3 + 1] + field.altitudeBase, nrm.getY(k), nrm.getZ(k), hash2(Math.floor(x / 23), Math.floor(z / 23)), dist[k]);
+    groundColor(c, pos[k * 3 + 1] + field.altitudeBase, nrm.getY(k), nrm.getZ(k), smoothNoise(x / 23, z / 23), dist[k]);
     col[k * 3] = c.r;
     col[k * 3 + 1] = c.g;
     col[k * 3 + 2] = c.b;
@@ -140,7 +158,7 @@ export function buildFarTerrain(dem: DemGrid, altitudeBase: number, sink: number
   const col = new Float32Array(pos.count * 3);
   const c = new THREE.Color();
   for (let k = 0; k < pos.count; k++) {
-    groundColor(c, pos.getY(k) + altitudeBase + sink, nrm.getY(k), nrm.getZ(k), hash2(Math.floor(pos.getX(k) / 120), Math.floor(pos.getZ(k) / 120)), 99);
+    groundColor(c, pos.getY(k) + altitudeBase + sink, nrm.getY(k), nrm.getZ(k), smoothNoise(pos.getX(k) / 120, pos.getZ(k) / 120), 99);
     c.toArray(col, k * 3);
   }
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));

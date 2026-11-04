@@ -5,7 +5,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import type { TrackPose } from '@/domain/track';
 import type { Quality } from '@/domain/types';
 import type { RideEngine } from '@/sim/engine';
-import { asphaltTexture, groundColor, hash2 } from '@/world/builders';
+import { asphaltTexture, groundColor, smoothNoise } from '@/world/builders';
 import { Gate, Rider, bannerTexture, canvasTex } from '@/world/Scene';
 import { FLAG, type Dir } from './graph';
 import type { WorldField } from './field';
@@ -43,11 +43,22 @@ import {
 } from '@/world/roadside';
 import { ROADSIDE_KINDS, streetJob, type RoadsideItems, type RoadsideKind } from './streets';
 import { Monumenti } from './MonumentiScene';
+import { StatsProbe, statsWanted, type TileCounts } from './StatsProbe';
+import { Declutter, Labels, Landmarks, type Occluders } from './WorldLabels';
+import { boxVolume, volumeOf, type Volume } from './labels';
+import { monumentiPronti } from './monumenti';
+import { loadProgress, READY_RADIUS, readyReason, tileDist, tileStage } from './pronto';
+import { URBAN_R, urbanDensity } from './urban';
 
+/**
+ * Per qualità: lato e anelli delle mattonelle, passo del terreno, alberi per cella di bosco e il
+ * tetto degli alberi con le geometrie piene (`nearTrees`, i più vicini al ciclista: gli altri hanno
+ * la chioma povera, 4-8 triangoli e niente tronco).
+ */
 const QUALITY = {
-  low: { tile: 500, ring: 2, spacing: 16, trees: 0.9, far: 6000, farStride: 2, npcs: 6, dpr: 1 as number | [number, number] },
-  medium: { tile: 500, ring: 3, spacing: 10, trees: 1.6, far: 9000, farStride: 1, npcs: 10, dpr: [1, 1.25] as [number, number] },
-  high: { tile: 500, ring: 4, spacing: 8, trees: 2.4, far: 13000, farStride: 1, npcs: 14, dpr: [1, 1.6] as [number, number] },
+  low: { tile: 500, ring: 2, spacing: 16, trees: 0.9, nearTrees: 900, far: 6000, farStride: 2, npcs: 6, dpr: 1 as number | [number, number] },
+  medium: { tile: 500, ring: 3, spacing: 10, trees: 1.6, nearTrees: 2200, far: 9000, farStride: 1, npcs: 10, dpr: [1, 1.25] as [number, number] },
+  high: { tile: 500, ring: 4, spacing: 8, trees: 2.4, nearTrees: 3600, far: 13000, farStride: 1, npcs: 14, dpr: [1, 1.6] as [number, number] },
 } satisfies Record<Quality, unknown>;
 
 export function npcCount(quality: Quality): number {
@@ -79,6 +90,11 @@ export interface WorldSceneProps {
   /** posa del giocatore con lo scostamento di corsia: la usano anche HUD e scia */
   playerPose: () => TrackPose;
   onReady: () => void;
+  /**
+   * Avanzamento del caricamento del mondo intorno al ciclista, da 0 a 1 (il velo della corsa):
+   * il terreno lontano e le mattonelle entro READY_RADIUS. Arriva a 1 insieme a onReady.
+   */
+  onProgress?: (p: number) => void;
   /** meteo vero (null: sereno) e ora del giorno */
   weather: WeatherNow | null;
   daytime: Daytime;
@@ -88,10 +104,28 @@ export interface WorldSceneProps {
   arches?: ArchSpec[];
   /** quello che indossi nel garage */
   look?: Look;
+  /**
+   * Ciclisti in più, disegnati come il giocatore: il punto d'aggancio del fantasma del record
+   * (`ghost: true` lo fa trasparente). La posa si legge a ogni fotogramma; null lo nasconde.
+   */
+  extraRiders?: ExtraWorldRider[];
+}
+
+export interface ExtraWorldRider {
+  id: string;
+  pose: () => TrackPose | null;
+  ghost?: boolean;
+  look?: Look;
+  /** velocità (m/s) e cadenza, per le gambe; senza, pedala piano */
+  speed?: () => number;
+  cadence?: () => number;
 }
 
 export function WorldScene(props: WorldSceneProps) {
   const q = QUALITY[props.quality];
+  // le mattonelle contate da NearTiles: le leggono il «pronto», l'avanzamento e le misure (?stats=1)
+  const counts = useMemo<TileCounts>(() => ({ ready: 0, pending: 0, detail: 0, near: 0, nearReady: 0, nearPartial: 0, late: 0, lateMin: -1 }), []);
+  const status = useMemo<LoadStatus>(() => ({ ready: false }), []);
   return (
     <Canvas
       dpr={q.dpr}
@@ -104,29 +138,74 @@ export function WorldScene(props: WorldSceneProps) {
     >
       <color attach="background" args={[HAZE]} />
       <fog attach="fog" args={[HAZE, 350, q.far * 0.92]} />
-      <WorldContent {...props} />
-      <ReadyWhenTiles onReady={props.onReady} />
+      <WorldContent {...props} counts={counts} status={status} />
+      <ReadyWhenTiles onReady={props.onReady} onProgress={props.onProgress} counts={counts} status={status} terrain={props.terrain} playerPose={props.playerPose} />
     </Canvas>
   );
 }
 
-const readyFlag = { tiles: 0 };
+/** Lo stato del caricamento, condiviso fra il «pronto» e le mattonelle. */
+interface LoadStatus {
+  ready: boolean;
+}
 
-function ReadyWhenTiles({ onReady }: { onReady: () => void }) {
+/**
+ * Il tetto: dopo READY_TIMEOUT ms si dice «pronto» comunque (meglio un mondo a metà che un velo per
+ * sempre). Prima solo per un errore (una mattonella del DEM o il terreno lontano che non arrivano).
+ * Un caricamento lento non è un errore: su un telefono lento il velo dura di più, e dietro non c'è
+ * un mondo vuoto.
+ */
+const READY_TIMEOUT = 60000;
+
+/**
+ * «Pronto» vuol dire che intorno al ciclista c'è il mondo: il terreno lontano e tutte le mattonelle
+ * entro READY_RADIUS (suolo, strade, case) sono in scena. Prima, l'avanzamento va al velo.
+ */
+function ReadyWhenTiles({
+  onReady,
+  onProgress,
+  counts,
+  status,
+  terrain,
+  playerPose,
+}: {
+  onReady: () => void;
+  onProgress?: (p: number) => void;
+  counts: TileCounts;
+  status: LoadStatus;
+  terrain: Terrain;
+  playerPose: () => TrackPose;
+}) {
   const sent = useRef(false);
-  const frames = useRef(0);
+  const t0 = useRef<number | null>(null);
+  const shown = useRef(-1);
   useFrame(() => {
-    frames.current++;
-    // pronto quando c'è il terreno sotto le ruote (o dopo 4 s comunque: meglio un mondo a metà che uno schermo nero)
-    if (!sent.current && (readyFlag.tiles > 0 || frames.current > 240)) {
+    if (sent.current) return;
+    const now = performance.now();
+    if (t0.current == null) t0.current = now;
+    const far = terrain.farHeights ? 1 : 0;
+    const p = loadProgress(counts, far === 1);
+    // a scatti di 2 punti, e mai indietro: chi disegna il velo non ridisegna a ogni fotogramma
+    if (p < 1 && p - shown.current >= 0.02) {
+      shown.current = p;
+      onProgress?.(p);
+    }
+    const pose = playerPose();
+    const error = terrain.farFailed || terrain.failedAround(pose.x, pose.z, READY_RADIUS + 100);
+    const reason = readyReason(p, error, now - t0.current, READY_TIMEOUT);
+    if (reason) {
       sent.current = true;
+      status.ready = true;
+      // per il collaudo (?stats=1): com'era il mondo intorno nell'istante del «pronto»
+      if (statsWanted()) window.__orobiaReady = { reason, ms: Math.round(now - t0.current), near: counts.near, nearReady: counts.nearReady };
+      onProgress?.(1);
       onReady();
     }
   });
   return null;
 }
 
-function WorldContent(props: WorldSceneProps) {
+function WorldContent(props: WorldSceneProps & { counts: TileCounts; status: LoadStatus }) {
   const { data, field, terrain, quality } = props;
   const q = QUALITY[quality];
   // le mattonelle vicine possono essere fino a ring + 1 dal centro: tante per lato nella maschera
@@ -136,20 +215,29 @@ function WorldContent(props: WorldSceneProps) {
   const cut = useMemo(() => createTunnelCut(), []);
   const mats = useMaterials(farMask, cut);
   const names = useMemo(() => new Set<THREE.Sprite>(), []);
+  const { counts } = props;
+  // le case e i monumenti intorno al ciclista: coprono i nomi (WorldLabels)
+  const occluders = useMemo<Occluders>(() => ({ list: [] }), []);
+  const stats = useMemo(() => statsWanted(), []);
   return (
     <group>
+      {stats ? <StatsProbe tiles={() => ({ ...counts, treesNear: treeCount.near, treesFar: treeCount.far })} /> : null}
       <Atmosphere weather={props.weather} daytime={props.daytime} data={data} far={q.far} mats={mats} />
       {props.weather && props.weather.rain >= 0.1 ? <Rain mmh={props.weather.rain} weather={props.weather} /> : null}
       <FarTerrain terrain={terrain} stride={q.farStride} material={mats.far} />
-      <NearTiles {...props} mats={mats} mask={farMask} cut={cut} />
+      <NearTiles {...props} mats={mats} mask={farMask} cut={cut} occluders={occluders} />
       <Lakes data={data} />
       <Walls data={data} field={field} />
       <Monumenti playerPose={props.playerPose} />
-      <Labels data={data} engine={props.engine} playerPose={props.playerPose} names={names} />
+      <Labels data={data} playerPose={props.playerPose} names={names} />
       <Landmarks data={data} playerPose={props.playerPose} names={names} />
-      <Declutter names={names} />
+      <Declutter names={names} terrain={terrain} playerPose={props.playerPose} occluders={occluders} />
       {props.ride ? <RideSigns data={data} ride={props.ride} /> : null}
       <PlayerRider {...props} />
+      <ContactShadow playerPose={props.playerPose} />
+      {props.extraRiders?.map((r) => (
+        <ExtraRider key={r.id} rider={r} />
+      ))}
       <NpcRiders crowd={props.crowd} />
       {props.remote.map((r) => (
         <RemoteRiderView key={r.id} rider={r} />
@@ -526,7 +614,7 @@ function FarTerrain({ terrain, stride, material }: { terrain: Terrain; stride: n
       const col = new Float32Array(pos.count * 3);
       const c = new THREE.Color();
       for (let k = 0; k < pos.count; k++) {
-        groundColor(c, pos.getY(k), nrm.getY(k), nrm.getZ(k), hash2(Math.floor(pos.getX(k) / 300), Math.floor(pos.getZ(k) / 300)), 99);
+        groundColor(c, pos.getY(k), nrm.getY(k), nrm.getZ(k), smoothNoise(pos.getX(k) / 300, pos.getZ(k) / 300), 99);
         c.toArray(col, k * 3);
       }
       geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
@@ -556,10 +644,22 @@ interface TileEntry {
   detail: 'none' | 'build' | 'ready';
   djob: Generator<void, void, void> | null;
   items: RoadsideItems | null;
+  /** la mattonella è entrata del tutto (dissolvenza finita): sotto, il terreno lontano si nasconde */
+  shown: boolean;
+  /** passi fatti del lavoro della mattonella e di quello dell'arredo (l'avanzamento del velo) */
+  steps: number;
+  dsteps: number;
+  /** e il suo arredo vicino */
+  dshown: boolean;
+  /** il bosco fitto delle mattonelle intorno al ciclista */
+  dense: 'none' | 'build' | 'ready';
+  xjob: Generator<void, TileMeshes['trees'], void> | null;
 }
 
-function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: TunnelCut }) {
-  const { data, field, terrain, quality, mats, mask, cut, playerPose } = props;
+function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: TunnelCut; counts: TileCounts; status: LoadStatus; occluders: Occluders }) {
+  const { data, field, terrain, quality, mats, mask, cut, playerPose, counts, status, occluders } = props;
+  /** dove e con quante liste di case si sono raccolti gli ultimi volumi che coprono i nomi */
+  const occAt = useRef({ x: Infinity, z: Infinity, lists: -1, mon: -1 });
   const q = QUALITY[quality];
   const root = useRef<THREE.Group>(null);
   const tiles = useRef(new Map<string, TileEntry>());
@@ -571,13 +671,18 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
   /** l'arredo piccolo (paletti, cartelli, semafori) si rifà anche quando il centro si sposta */
   const dirtyProps = useRef(false);
   const riderTile = useRef<[number, number] | null>(null);
+  /** le mattonelle (e l'arredo) che stanno entrando in dissolvenza */
+  const fades = useRef<Fade[]>([]);
   const T = q.tile;
   const b = data.graph.bounds;
 
   useEffect(() => {
     const map = tiles.current;
     const grp = root.current;
+    const fading = fades.current;
     return () => {
+      for (const f of fading) endFade(f);
+      fading.length = 0;
       for (const t of map.values()) disposeGroup(t.group);
       map.clear();
       grp?.clear();
@@ -598,6 +703,10 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
 
   function buildingsFor(spec: TileSpec): Building[] | null {
     const [dx0, dz0] = terrain.tileOf(spec.x0 + 1, spec.z0 + 1);
+    return buildingsAt(dx0, dz0);
+  }
+
+  function buildingsAt(dx0: number, dz0: number): Building[] | null {
     const key = `${dx0}_${dz0}`;
     const have = buildings.current.get(key);
     if (Array.isArray(have)) return have;
@@ -611,8 +720,29 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
     return null;
   }
 
+  /** Le case di tutte le mattonelle del DEM che toccano il rettangolo, o null se ne manca ancora qualcuna. */
+  function buildingsAround(x0: number, z0: number, x1: number, z1: number): Building[][] | null {
+    const [a0, b0] = terrain.tileOf(x0, z0);
+    const [a1, b1] = terrain.tileOf(x1, z1);
+    const out: Building[][] = [];
+    let ok = true;
+    for (let i = a0; i <= a1; i++) {
+      for (let j = b0; j <= b1; j++) {
+        if (!terrain.inBounds(i, j)) continue;
+        const list = buildingsAt(i, j);
+        if (list) out.push(list);
+        else ok = false;
+      }
+    }
+    return ok ? out : null;
+  }
+
   function* tileJob(entry: TileEntry, spec: TileSpec): Generator<void, void, void> {
-    const terrainGeo = yield* terrainJob(field, spec);
+    // prima le case (anche delle mattonelle del DEM vicine): dicono dove il suolo è città
+    let near: Building[][] | null = null;
+    while (!(near = buildingsAround(spec.x0 - URBAN_R, spec.z0 - URBAN_R, spec.x0 + T + URBAN_R, spec.z0 + T + URBAN_R))) yield;
+    const urban = urbanDensity(near, spec.x0, spec.z0, spec.x0 + T, spec.z0 + T, URBAN_R);
+    const terrainGeo = yield* terrainJob(field, spec, urban);
     const roads = yield* roadsJob(data.graph, field, spec);
     let bGeo: BuildingMeshes = { walls: null, roofs: null };
     for (;;) {
@@ -714,11 +844,12 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
       g.add(sign);
     }
     entry.group?.add(g);
+    fades.current.push(startFade(g, entry, 'detail'));
     entry.items = street.items;
     if (street.trees.length) entry.trees = [...entry.trees, ...street.trees];
   }
 
-  useFrame(() => {
+  useFrame((_, dt) => {
     const pose = playerPose();
     // il centro sta un po' avanti: si vede più strada davanti che dietro
     const ax = pose.x + Math.sin(pose.heading) * T * 0.4;
@@ -732,6 +863,8 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
     if (!riderTile.current || riderTile.current[0] !== rx || riderTile.current[1] !== rz) {
       riderTile.current = [rx, rz];
       dirtyProps.current = true;
+      // quali mattonelle hanno gli alberi pieni dipende da dove sta il ciclista
+      dirtyTrees.current = true;
     }
     const map = tiles.current;
     if (!center.current || center.current[0] !== cx || center.current[1] !== cz) {
@@ -742,48 +875,72 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
           const ix = cx + dx;
           const iz = cz + dz;
           const key = `${ix}_${iz}`;
-          if (!map.has(key)) map.set(key, { key, ix, iz, state: 'wait', job: null, group: null, trees: [], detail: 'none', djob: null, items: null });
+          if (!map.has(key)) map.set(key, { key, ix, iz, state: 'wait', job: null, group: null, trees: [], detail: 'none', djob: null, items: null, shown: false, dshown: false, steps: 0, dsteps: 0, dense: 'none', xjob: null });
         }
       }
       for (const [key, t] of map) {
         if (Math.max(Math.abs(t.ix - cx), Math.abs(t.iz - cz)) > q.ring + 1) {
+          // una mattonella che se ne va mentre entrava: prima si chiude la dissolvenza
+          fades.current = fades.current.filter((f) => {
+            if (f.tile !== t) return true;
+            endFade(f);
+            return false;
+          });
           if (t.group) root.current?.remove(t.group);
           disposeGroup(t.group);
           map.delete(key);
           dirtyTrees.current = true;
         }
       }
-      // le mattonelle del DEM: quelle intorno, e via quelle lontane
+      // le mattonelle del DEM: prima quelle sotto le ruote (il «pronto» aspetta quelle), poi le altre
+      void terrain.around(pose.x, pose.z, READY_RADIUS + 100);
       void terrain.around(pose.x, pose.z, (q.ring + 1.5) * T);
+      // e le case, che il suolo delle mattonelle aspetta: si chiedono subito, tutte insieme
+      buildingsAround(pose.x - READY_RADIUS - URBAN_R, pose.z - READY_RADIUS - URBAN_R, pose.x + READY_RADIUS + URBAN_R, pose.z + READY_RADIUS + URBAN_R);
+      buildingsAround(b.x0 + (cx - q.ring) * T - URBAN_R, b.z0 + (cz - q.ring) * T - URBAN_R, b.x0 + (cx + q.ring + 1) * T + URBAN_R, b.z0 + (cz + q.ring + 1) * T + URBAN_R);
       terrain.prune(pose.x, pose.z, (q.ring + 3) * T);
     }
-    // un lavoro alla volta, il più vicino, per non più di 6 ms a fotogramma
+    // un lavoro alla volta, il più vicino, per non più di 6 ms a fotogramma; mentre si carica
+    // il velo copre la scena e un fotogramma lento non si vede: 24 ms
     const t0 = performance.now();
+    // e su un telefono lento (fotogrammi lunghi) almeno tre quarti del fotogramma: altrimenti il
+    // caricamento va a passo di fotogramma, e con il velo davanti non serve disegnare in fretta
+    const budget = status.ready ? 6 : Math.min(400, Math.max(24, dt * 750));
     let guard = 0;
-    while (performance.now() - t0 < 6 && guard++ < 50) {
+    while (performance.now() - t0 < budget && guard++ < (status.ready ? 80 : 600)) {
       let job: TileEntry | null = null;
       let best = Infinity;
-      let detail = false;
+      let kind: 'tile' | 'detail' | 'dense' = 'tile';
       for (const t of map.values()) {
         const d = Math.max(Math.abs(t.ix - cx), Math.abs(t.iz - cz));
         if (t.state === 'ready') {
           // l'arredo vicino: entro due anelli, dopo le mattonelle che mancano ancora alla stessa distanza
           if (t.detail === 'build') {
             job = t;
-            detail = true;
+            kind = 'detail';
+            break;
+          }
+          if (t.dense === 'build') {
+            job = t;
+            kind = 'dense';
             break;
           }
           const dn = near(t);
           if (t.detail === 'none' && dn <= DETAIL_RING && dn + 0.5 < best) {
             best = dn + 0.5;
             job = t;
-            detail = true;
+            kind = 'detail';
+          } else if (t.detail === 'ready' && t.dense === 'none' && dn <= DENSE_RING && dn + 0.6 < best) {
+            // e il bosco fitto, dopo l'arredo
+            best = dn + 0.6;
+            job = t;
+            kind = 'dense';
           }
           continue;
         }
         if (t.state === 'build') {
           job = t;
-          detail = false;
+          kind = 'tile';
           break;
         }
         // si comincia solo quando il DEM sotto la mattonella (e il bordo) è arrivato
@@ -793,23 +950,41 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
         let ok = true;
         for (let i = a0; i <= a1 && ok; i++) for (let j = b0; j <= b1 && ok; j++) if (terrain.inBounds(i, j) && !terrain.has(i, j)) ok = false;
         if (!ok) continue;
-        if (d < best) {
-          best = d;
+        // prima le mattonelle entro READY_RADIUS dal ciclista, poi le altre dal centro in fuori
+        const k = tileDist(t, b.x0, b.z0, T, pose.x, pose.z) <= READY_RADIUS ? -1 : d;
+        if (k < best) {
+          best = k;
           job = t;
-          detail = false;
+          kind = 'tile';
         }
       }
       if (!job) break;
-      if (detail) {
+      if (kind === 'dense') {
+        if (job.dense === 'none') {
+          job.xjob = treesJob(field, { ...specOf(job.ix, job.iz, 0), trees: q.trees * DENSE_EXTRA }, 7.3, true);
+          job.dense = 'build';
+        }
+        const r = job.xjob!.next();
+        if (r.done) {
+          job.dense = 'ready';
+          job.xjob = null;
+          if (r.value.length) job.trees = [...job.trees, ...r.value];
+          dirtyTrees.current = true;
+        }
+        continue;
+      }
+      if (kind === 'detail') {
         if (job.detail === 'none') {
           const d = Math.max(Math.abs(job.ix - cx), Math.abs(job.iz - cz));
           job.djob = detailJob(job, specOf(job.ix, job.iz, d));
           job.detail = 'build';
         }
+        job.dsteps++;
         const r = job.djob!.next();
         if (r.done) {
           job.detail = 'ready';
           job.djob = null;
+          if (status.ready) noteLate(counts, tileDist(job, b.x0, b.z0, T, pose.x, pose.z));
           dirtyTrees.current = true;
           dirtyProps.current = true;
         }
@@ -820,23 +995,54 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
         job.job = tileJob(job, specOf(job.ix, job.iz, d));
         job.state = 'build';
       }
+      job.steps++;
       const r = job.job!.next();
       if (r.done) {
         job.state = 'ready';
         job.job = null;
-        if (job.group) root.current?.add(job.group);
+        if (job.group) {
+          root.current?.add(job.group);
+          fades.current.push(startFade(job.group, job, 'tile'));
+        }
         dirtyTrees.current = true;
-        readyFlag.tiles++;
+        if (status.ready) noteLate(counts, tileDist(job, b.x0, b.z0, T, pose.x, pose.z));
+      }
+    }
+    countTiles(counts, map, b.x0, b.z0, T, pose.x, pose.z, terrain);
+    // i volumi che coprono i nomi: ogni 25 m, o quando arrivano case o monumenti nuovi
+    {
+      const o = occAt.current;
+      let lists = 0;
+      for (const v of buildings.current.values()) if (Array.isArray(v)) lists++;
+      const mon = monumentiPronti().length;
+      if (Math.hypot(pose.x - o.x, pose.z - o.z) > 25 || lists !== o.lists || mon !== o.mon) {
+        occAt.current = { x: pose.x, z: pose.z, lists, mon };
+        occluders.list = nearVolumes(buildings.current, monumentiPronti(), terrain, pose.x, pose.z, OCC_R);
       }
     }
     updateTunnelCut(cut, data.graph, pose.x, pose.z);
     // il terreno lontano si nasconde sotto ogni mattonella pronta (farMask.ts)
-    updateFarMask(mask, b.x0, b.z0, T, cx, cz, (ix, iz) => map.get(`${ix}_${iz}`)?.state === 'ready');
+    // le dissolvenze: 300 ms, poi i materiali condivisi tornano al loro posto
+    if (fades.current.length) {
+      const now = performance.now();
+      fades.current = fades.current.filter((f) => {
+        const k = (now - f.t0) / FADE_MS;
+        if (k < 1) {
+          f.group.position.y = -RISE_M * (1 - k) * (1 - k);
+          return true;
+        }
+        endFade(f);
+        if (f.part === 'tile') f.tile.shown = true;
+        else f.tile.dshown = true;
+        return false;
+      });
+    }
+    updateFarMask(mask, b.x0, b.z0, T, cx, cz, (ix, iz) => !!map.get(`${ix}_${iz}`)?.shown);
     if (dirtyTrees.current && forest.current) {
       dirtyTrees.current = false;
-      const all: TileMeshes['trees'] = [];
-      for (const t of map.values()) if (t.state === 'ready') all.push(...t.trees);
-      forest.current.set(all);
+      const all: ForestPatch[] = [];
+      for (const t of map.values()) if (t.state === 'ready') all.push({ trees: t.trees, near: near(t) <= DENSE_RING });
+      forest.current.set(all, pose.x, pose.z, q.nearTrees);
     }
     if (dirtyProps.current && roadside.current) {
       dirtyProps.current = false;
@@ -856,6 +1062,99 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
   );
 }
 
+/** Fin dove case e monumenti possono coprire un nome, metri dal ciclista. */
+const OCC_R = 120;
+
+/** Il riquadro delle case già lette, per non ricalcolarlo a ogni giro. */
+const bboxOf = new WeakMap<Building, [number, number, number, number]>();
+
+/** Case e monumenti entro `r` da (x, z), come volumi che coprono la vista. */
+function nearVolumes(lists: Map<string, Building[] | Promise<Building[]>>, mons: readonly { x: number; z: number; w: number; d: number; yaw: number; yMin: number; y: number; h: number }[], terrain: Terrain, x: number, z: number, r: number): Volume[] {
+  const out: Volume[] = [];
+  // solo le liste delle mattonelle del DEM che toccano il quadrato intorno
+  const [a0, b0] = terrain.tileOf(x - r, z - r);
+  const [a1, b1] = terrain.tileOf(x + r, z + r);
+  for (let i = a0; i <= a1; i++) for (let j = b0; j <= b1; j++) {
+    const list = lists.get(`${i}_${j}`);
+    if (!Array.isArray(list)) continue;
+    for (const bd of list) {
+      let bb = bboxOf.get(bd);
+      if (!bb) {
+        const v = volumeOf(bd.ring, 0, 0);
+        bb = [v.minX, v.minZ, v.maxX, v.maxZ];
+        bboxOf.set(bd, bb);
+      }
+      if (bb[2] < x - r || bb[0] > x + r || bb[3] < z - r || bb[1] > z + r) continue;
+      const ground = terrain.height((bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2);
+      out.push(volumeOf(bd.ring, ground - 3, ground + Math.max(3, bd.h) + 1));
+    }
+  }
+  for (const m of mons) {
+    if (Math.abs(m.x - x) > r + m.w || Math.abs(m.z - z) > r + m.d) continue;
+    out.push(boxVolume(m.x, m.z, m.w, m.d, m.yaw, m.yMin - 1, m.y + m.h));
+  }
+  return out;
+}
+
+/** Sotto questa distanza, una mattonella o il suo arredo che entra in scena dopo il «pronto» si vede comparire. */
+const POP_NEAR = 150;
+
+/** Una mattonella (o il suo arredo) entrata in scena dopo il «pronto»: per le misure del pop-in. */
+function noteLate(c: TileCounts, d: number): void {
+  if (d < POP_NEAR) c.late++;
+  if (c.lateMin < 0 || d < c.lateMin) c.lateMin = Math.round(d);
+}
+
+/** Conta le mattonelle in scena, in attesa, e quelle entro READY_RADIUS dal ciclista. */
+function countTiles(c: TileCounts, map: Map<string, TileEntry>, x0: number, z0: number, T: number, px: number, pz: number, terrain: Terrain): void {
+  c.ready = 0;
+  c.pending = 0;
+  c.detail = 0;
+  c.near = 0;
+  c.nearReady = 0;
+  c.nearPartial = 0;
+  for (const t of map.values()) {
+    if (t.state === 'ready') c.ready++;
+    else c.pending++;
+    if (t.detail === 'ready') c.detail++;
+    if (tileDist(t, x0, z0, T, px, pz) <= READY_RADIUS) {
+      c.near++;
+      // in scena davvero: la mattonella e il suo arredo, salita finita (startFade)
+      if (t.shown && t.dshown) c.nearReady++;
+      const [dx, dz] = terrain.tileOf(x0 + (t.ix + 0.5) * T, z0 + (t.iz + 0.5) * T);
+      c.nearPartial += tileStage(t, terrain.has(dx, dz));
+    }
+  }
+}
+
+/** Quanto dura l'entrata di una mattonella o del suo arredo, millisecondi. */
+const FADE_MS = 300;
+/** Da quanto sotto sale: abbastanza da stare sotto il terreno lontano, che la copre finché non arriva. */
+const RISE_M = 8;
+
+interface Fade {
+  group: THREE.Group;
+  tile: TileEntry;
+  /** la mattonella o il suo arredo */
+  part: 'tile' | 'detail';
+  t0: number;
+}
+
+/**
+ * Una mattonella (o il suo arredo) entra in scena salendo da sotto il terreno lontano in 300 ms,
+ * invece di comparire di colpo: il terreno lontano resta finché non è arrivata. Niente trasparenza
+ * (alphaHash): voleva un programma in più per ogni materiale, e con la grafica software il «pronto»
+ * arrivava 20 s dopo.
+ */
+function startFade(group: THREE.Group, tile: TileEntry, part: Fade['part']): Fade {
+  group.position.y = -RISE_M;
+  return { group, tile, part, t0: performance.now() };
+}
+
+function endFade(f: Fade): void {
+  f.group.position.y = 0;
+}
+
 function disposeGroup(g: THREE.Group | null): void {
   if (!g) return;
   g.traverse((o) => {
@@ -866,7 +1165,8 @@ function disposeGroup(g: THREE.Group | null): void {
 // ---------- bosco: un'istanza per specie per tutto il mondo vicino ----------
 
 interface ForestHandle {
-  set(list: TileMeshes['trees']): void;
+  /** gli alberi di tutte le mattonelle; i più vicini a (px, pz), al più `cap`, con le geometrie piene */
+  set(list: ForestPatch[], px: number, pz: number, cap: number): void;
 }
 
 const TREE_COLORS: Record<TreeKind, string[]> = {
@@ -877,65 +1177,167 @@ const TREE_COLORS: Record<TreeKind, string[]> = {
   rock: ['#8b877f', '#7a766f', '#9b968c'],
 };
 
+/** Una corona di latifoglia: due sfere basse fuse e sfalsate, non un icosaedro solo (40 triangoli). */
+function broadleafCrown(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  const blobs: [number, number, number, number][] = [
+    [0, 5.4, 0.2, 2.8],
+    [-0.9, 6.5, -0.5, 2.1],
+  ];
+  for (const [x, y, z, r] of blobs) {
+    const g = new THREE.IcosahedronGeometry(r, 0);
+    g.scale(1, 0.82, 1);
+    g.translate(x, y, z);
+    parts.push(g);
+  }
+  const out = mergeGeometries(parts, false)!;
+  parts.forEach((g) => g.dispose());
+  return out;
+}
+
+/** Un abete a due palchi, aperto sotto: più abete di un cono solo, con pochi triangoli in più. */
+function spruceTiers(): THREE.BufferGeometry {
+  const a = new THREE.ConeGeometry(2.3, 6, 7, 1, true);
+  a.translate(0, 5.2, 0);
+  const b = new THREE.ConeGeometry(1.6, 5, 7, 1, true);
+  b.translate(0, 8.4, 0);
+  const out = mergeGeometries([a, b], false)!;
+  a.dispose();
+  b.dispose();
+  return out;
+}
+
+/**
+ * Le chiome lontane: quattro facce bastano, e il tronco non si vede. Abeti, larici e cipressi
+ * lontani sono un'istanza sola (un cono, allargato o stretto per specie: FAR_CONE), le latifoglie
+ * un ottaedro: due chiamate di disegno per tutto il bosco lontano.
+ */
+function farGeometries(): { conifer: THREE.BufferGeometry; broadleaf: THREE.BufferGeometry } {
+  const conifer = new THREE.ConeGeometry(2.2, 9.5, 4, 1, true);
+  conifer.translate(0, 6.1, 0);
+  const broadleaf = new THREE.OctahedronGeometry(3.2, 0);
+  broadleaf.scale(1, 0.9, 1);
+  broadleaf.translate(0, 5.6, 0);
+  return { conifer, broadleaf };
+}
+
+/** Larghezza e altezza del cono lontano per specie, rispetto all'abete. */
+const FAR_CONE: Partial<Record<TreeKind, [number, number]>> = { spruce: [1, 1], larch: [2.4 / 2.2, 8 / 9.5], cypress: [0.5, 1.05] };
+
+/** La chiave dell'istanza di un albero: piena per specie, lontana per forma (i sassi sono sempre pieni). */
+function treeKey(kind: TreeKind, full: boolean): string {
+  if (full || kind === 'rock') return `${kind}:n`;
+  return kind === 'broadleaf' ? 'broadleaf:f' : 'conifer:f';
+}
+
+/** Gli alberi in scena con le geometrie piene e con quelle povere (per le misure, ?stats=1). */
+export const treeCount = { near: 0, far: 0 };
+
+/** Gli alberi di una mattonella, e se la mattonella è vicina (geometrie piene) o lontana (povere). */
+interface ForestPatch {
+  trees: TileMeshes['trees'];
+  near: boolean;
+}
+
 function Forest({ handle, mats }: { handle: React.MutableRefObject<ForestHandle | null>; mats: Mats }) {
   const group = useRef<THREE.Group>(null);
   const geos = useMemo(() => {
-    const spruce = new THREE.ConeGeometry(2.2, 9, 7);
-    spruce.translate(0, 6.3, 0);
-    const larch = new THREE.ConeGeometry(2.4, 8, 6);
+    const larch = new THREE.ConeGeometry(2.4, 8, 6, 1, true);
     larch.translate(0, 6, 0);
-    const broadleaf = new THREE.IcosahedronGeometry(3.2, 0);
-    broadleaf.scale(1, 0.85, 1);
-    broadleaf.translate(0, 5.6, 0);
-    const cypress = new THREE.ConeGeometry(1.1, 10, 6);
+    const cypress = new THREE.ConeGeometry(1.1, 10, 6, 1, true);
     cypress.translate(0, 6.2, 0);
-    const trunk = new THREE.CylinderGeometry(0.18, 0.3, 3.2, 5);
+    const trunk = new THREE.CylinderGeometry(0.18, 0.3, 3.2, 5, 1, true);
     trunk.translate(0, 1.4, 0);
     const rock = new THREE.DodecahedronGeometry(1, 0);
     rock.scale(1.3, 0.7, 1);
-    return { spruce, larch, broadleaf, cypress, trunk, rock };
+    const near: Record<TreeKind, THREE.BufferGeometry> = { spruce: spruceTiers(), larch, broadleaf: broadleafCrown(), cypress, rock };
+    return { near, far: farGeometries(), trunk };
   }, []);
-  const meshes = useRef<Partial<Record<TreeKind | 'trunk', THREE.InstancedMesh>>>({});
+  const meshes = useRef(new Map<string, THREE.InstancedMesh>());
   useEffect(() => {
     const g = group.current;
     const current = meshes.current;
+    const KINDS: TreeKind[] = ['spruce', 'larch', 'broadleaf', 'cypress', 'rock'];
     handle.current = {
-      set(list) {
+      set(patches, px, pz, cap) {
         if (!g) return;
-        const by: Record<TreeKind, TileMeshes['trees']> = { spruce: [], larch: [], broadleaf: [], cypress: [], rock: [] };
-        for (const t of list) by[t.kind].push(t);
+        const by = new Map<string, TileMeshes['trees']>();
+        const push = (key: string, t: TileMeshes['trees'][number]) => {
+          const l = by.get(key);
+          if (l) l.push(t);
+          else by.set(key, [t]);
+        };
+        // le geometrie piene alle mattonelle vicine, e fra i loro alberi ai `cap` più vicini
+        const near: TileMeshes['trees'] = [];
+        for (const p of patches) for (const t of p.trees) if (p.near) near.push(t);
+        let limit = Infinity;
+        if (near.length > cap) {
+          const d = near.map((t) => (t.x - px) ** 2 + (t.z - pz) ** 2).sort((a, b) => a - b);
+          limit = d[cap - 1];
+        }
+        let nNear = 0;
+        let nFar = 0;
+        for (const p of patches) {
+          for (const t of p.trees) {
+            const full = p.near && (t.x - px) ** 2 + (t.z - pz) ** 2 <= limit;
+            push(treeKey(t.kind, full), t);
+            // il tronco solo vicino: da lontano è meno di un pixel
+            if (full && t.kind !== 'rock') push('trunk', t);
+            if (full) nNear++;
+            else nFar++;
+          }
+        }
+        treeCount.near = nNear;
+        treeCount.far = nFar;
         const d = new THREE.Object3D();
         const c = new THREE.Color();
-        const make = (key: TreeKind | 'trunk', items: TileMeshes['trees'], geo: THREE.BufferGeometry, mat: THREE.Material, colors?: string[]) => {
-          const old = current[key];
+        const make = (key: string, geo: THREE.BufferGeometry, mat: THREE.Material, colored = true) => {
+          const old = current.get(key);
           if (old) {
             g.remove(old);
             old.dispose();
+            current.delete(key);
           }
+          const items = by.get(key) ?? [];
           if (items.length === 0) return;
           const m = new THREE.InstancedMesh(geo, mat, items.length);
+          const rock = key.startsWith('rock');
+          const cone = key === 'conifer:f';
           items.forEach((it, i) => {
             d.position.set(it.x, it.y, it.z);
-            d.rotation.set(key === 'rock' ? it.tint : 0, it.r, 0);
-            d.scale.setScalar(it.s);
+            d.rotation.set(rock ? it.tint : 0, it.r, 0);
+            // chiome più alte o più tozze, e colori un po' diversi da un albero all'altro
+            const tall = rock ? 1 : 0.85 + ((it.tint * 7.31) % 1) * 0.35;
+            const [wide, high] = (cone && FAR_CONE[it.kind]) || [1, 1];
+            d.scale.set(it.s * wide, it.s * tall * high, it.s * wide);
             d.updateMatrix();
             m.setMatrixAt(i, d.matrix);
-            if (colors) m.setColorAt(i, c.set(colors[Math.floor(it.tint * colors.length) % colors.length]));
+            if (colored) {
+              const colors = TREE_COLORS[it.kind];
+              c.set(colors[Math.floor(it.tint * colors.length) % colors.length]);
+              c.offsetHSL(0, (((it.tint * 13.7) % 1) - 0.5) * 0.08, (((it.tint * 29.3) % 1) - 0.5) * 0.07);
+              m.setColorAt(i, c);
+            }
           });
           m.instanceMatrix.needsUpdate = true;
           if (m.instanceColor) m.instanceColor.needsUpdate = true;
           m.frustumCulled = false;
-          current[key] = m;
+          current.set(key, m);
           g.add(m);
         };
-        (['spruce', 'larch', 'broadleaf', 'cypress', 'rock'] as TreeKind[]).forEach((k) => make(k, by[k], geos[k], mats.trees[k], TREE_COLORS[k]));
-        make('trunk', [...by.spruce, ...by.larch, ...by.broadleaf, ...by.cypress], geos.trunk, mats.trees.trunk);
+        for (const k of KINDS) make(`${k}:n`, geos.near[k], mats.trees[k]);
+        make('conifer:f', geos.far.conifer, mats.trees.spruce);
+        make('broadleaf:f', geos.far.broadleaf, mats.trees.broadleaf);
+        make('trunk', geos.trunk, mats.trees.trunk, false);
       },
     };
     return () => {
       handle.current = null;
-      for (const m of Object.values(current)) m?.dispose();
-      Object.values(geos).forEach((x) => x.dispose());
+      for (const m of current.values()) m.dispose();
+      current.clear();
+      Object.values(geos.near).forEach((x) => x.dispose());
+      Object.values(geos.far).forEach((x) => x.dispose());
+      geos.trunk.dispose();
     };
   }, [handle, geos, mats]);
   return <group ref={group} />;
@@ -947,6 +1349,10 @@ function Forest({ handle, mats }: { handle: React.MutableRefObject<ForestHandle 
 const DETAIL_RING = 2;
 /** Le mattonelle entro questo anello mostrano l'arredo piccolo (istanze): paletti, cartelli, semafori. */
 const PROP_RING = 1;
+/** Le mattonelle entro questo anello hanno il bosco fitto e gli alberi con le geometrie piene. */
+const DENSE_RING = 1;
+/** Quanti alberi in più per cella di bosco nelle mattonelle vicine, rispetto alla qualità. */
+const DENSE_EXTRA = 0.9;
 
 interface RoadsideHandle {
   set(list: RoadsideItems[]): void;
@@ -1111,218 +1517,6 @@ function Walls({ data, field }: { data: WorldData; field: WorldField }) {
   );
 }
 
-// ---------- nomi di cime e paesi ----------
-
-interface LabelItem {
-  name: string;
-  sub: string;
-  x: number;
-  y: number;
-  z: number;
-  range: number;
-  peak: boolean;
-}
-
-function labelTex(name: string, sub: string, peak: boolean): THREE.CanvasTexture {
-  return canvasTex(512, 128, (g) => {
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    g.font = '700 44px sans-serif';
-    g.lineWidth = 9;
-    g.strokeStyle = 'rgba(10,12,15,0.72)';
-    g.fillStyle = peak ? '#fff7e8' : '#ffffff';
-    g.strokeText(name, 256, 50);
-    g.fillText(name, 256, 50);
-    if (sub) {
-      g.font = '600 30px sans-serif';
-      g.lineWidth = 7;
-      g.strokeText(sub, 256, 98);
-      g.fillStyle = peak ? '#ffd27a' : '#ffc814';
-      g.fillText(sub, 256, 98);
-    }
-  });
-}
-
-function Labels({ data, playerPose, names }: { data: WorldData; engine: RideEngine; playerPose: () => TrackPose; names: Set<THREE.Sprite> }) {
-  const items = useMemo<LabelItem[]>(() => {
-    const out: LabelItem[] = [];
-    for (const p of data.features.peaks) {
-      if (p.pass) out.push({ name: p.name, sub: `${p.ele} m`, x: p.x, y: p.ele + 12, z: p.z, range: 7000, peak: false });
-      else if (p.ele >= 1400) out.push({ name: p.name, sub: `${p.ele} m`, x: p.x, y: p.ele + 25, z: p.z, range: p.ele > 2300 ? 22000 : 13000, peak: true });
-    }
-    for (const p of data.features.places) {
-      const range = p.kind === 'city' ? 30000 : p.kind === 'town' ? 9000 : p.kind === 'village' ? 4500 : p.kind === 'suburb' || p.kind === 'quarter' ? 1500 : 1200;
-      out.push({ name: p.name, sub: '', x: p.x, y: p.y + (p.kind === 'city' ? 120 : 45), z: p.z, range, peak: false });
-    }
-    return out;
-  }, [data]);
-  const group = useRef<THREE.Group>(null);
-  const live = useRef(new Map<number, THREE.Sprite>());
-  const clock = useRef(0);
-  const { camera } = useThree();
-  useEffect(() => {
-    const map = live.current;
-    return () => {
-      for (const s of map.values()) {
-        names.delete(s);
-        s.material.map?.dispose();
-        s.material.dispose();
-      }
-      map.clear();
-    };
-  }, [names]);
-  useFrame((_, dt) => {
-    clock.current -= dt;
-    const g = group.current;
-    if (!g) return;
-    if (clock.current <= 0) {
-      clock.current = 0.6;
-      const p = playerPose();
-      // al più 26 nomi alla volta, i più vicini per la loro portata
-      const near: { i: number; k: number }[] = [];
-      items.forEach((it, i) => {
-        const d = Math.hypot(it.x - p.x, it.z - p.z);
-        if (d < it.range && d > 60) near.push({ i, k: d / it.range });
-      });
-      near.sort((a, b) => a.k - b.k);
-      const want = new Set(near.slice(0, 26).map((n) => n.i));
-      for (const [i, s] of live.current) {
-        if (!want.has(i)) {
-          names.delete(s);
-          g.remove(s);
-          s.material.map?.dispose();
-          s.material.dispose();
-          live.current.delete(i);
-        }
-      }
-      for (const i of want) {
-        if (live.current.has(i)) continue;
-        const it = items[i];
-        const mat = new THREE.SpriteMaterial({ map: labelTex(it.name, it.sub, it.peak), transparent: true, opacity: 0, depthTest: true, depthWrite: false, fog: false, sizeAttenuation: false });
-        const s = new THREE.Sprite(mat);
-        s.position.set(it.x, it.y, it.z);
-        s.center.set(0.5, 0);
-        s.renderOrder = 5;
-        s.userData.prio = it.peak ? 2 : 1;
-        live.current.set(i, s);
-        names.add(s);
-        g.add(s);
-      }
-    }
-    // dimensione fissa sullo schermo, un po' più piccola per i lontani
-    for (const [i, s] of live.current) {
-      const it = items[i];
-      const d = camera.position.distanceTo(s.position);
-      const k = THREE.MathUtils.clamp(1 - d / (it.range * 1.4), 0.55, 1) * 0.105;
-      s.scale.set(k * 4, k, 1);
-    }
-  });
-  return <group ref={group} />;
-}
-
-// ---------- luoghi da riconoscere ----------
-
-function Landmarks({ data, playerPose, names }: { data: WorldData; playerPose: () => TrackPose; names: Set<THREE.Sprite> }) {
-  const group = useRef<THREE.Group>(null);
-  const built = useRef(false);
-  useEffect(() => {
-    const g = group.current;
-    if (!g || built.current) return;
-    built.current = true;
-    const pole = new THREE.CylinderGeometry(0.12, 0.12, 9, 6);
-    pole.translate(0, 4.5, 0);
-    const poleMat = new THREE.MeshLambertMaterial({ color: '#20242b' });
-    for (const l of data.features.landmarks) {
-      const tex = labelTex(l.name, kindLabel(l.kind), l.kind === 'cima' || l.kind === 'passo');
-      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0, depthWrite: false, fog: false, sizeAttenuation: false }));
-      const tall = l.kind === 'cima' || l.kind === 'passo' || l.kind === 'fiume' || l.kind === 'paese' || l.kind === 'citta';
-      s.position.set(l.x, l.y + (tall ? 30 : 16), l.z);
-      s.center.set(0.5, 0);
-      s.scale.set(0.38, 0.095, 1);
-      s.userData = { range: tall ? 6000 : 1600, prio: 0 };
-      s.visible = false;
-      names.add(s);
-      g.add(s);
-      if (!tall) {
-        const m = new THREE.Mesh(pole, poleMat);
-        m.position.set(l.x, l.y - 1, l.z);
-        g.add(m);
-      }
-    }
-    return () => {
-      g.traverse((o) => {
-        if (o instanceof THREE.Sprite) {
-          names.delete(o);
-          o.material.map?.dispose();
-          o.material.dispose();
-        }
-      });
-      pole.dispose();
-      poleMat.dispose();
-      g.clear();
-      built.current = false;
-    };
-  }, [data, names]);
-  useFrame(() => {
-    const g = group.current;
-    if (!g) return;
-    const p = playerPose();
-    for (const o of g.children) {
-      if (o instanceof THREE.Sprite) o.visible = Math.hypot(o.position.x - p.x, o.position.z - p.z) < (o.userData.range as number);
-    }
-  });
-  return <group ref={group} />;
-}
-
-/**
- * I nomi nel 3D non si accavallano. Cinque volte al secondo si proiettano sullo schermo e, dal più
- * importante (i luoghi da riconoscere, poi i paesi, poi le cime) e dal più vicino, si spegne chi
- * copre un nome già acceso o finisce sotto la barra in alto. Si accendono e si spengono sfumando.
- */
-function Declutter({ names }: { names: Set<THREE.Sprite> }) {
-  const { camera } = useThree();
-  const clock = useRef(0);
-  const want = useRef(new WeakMap<THREE.Sprite, number>());
-  const v = useMemo(() => new THREE.Vector3(), []);
-  useFrame((_, dt) => {
-    clock.current -= dt;
-    if (clock.current <= 0) {
-      clock.current = 0.2;
-      const P = camera.projectionMatrix.elements;
-      const list: { s: THREE.Sprite; d: number; prio: number }[] = [];
-      for (const s of names) if (s.visible) list.push({ s, d: camera.position.distanceToSquared(s.position), prio: (s.userData.prio as number | undefined) ?? 1 });
-      list.sort((a, b) => a.prio - b.prio || a.d - b.d);
-      const taken: [number, number, number, number][] = [];
-      for (const { s } of list) {
-        v.copy(s.position).project(camera);
-        let ok = v.z < 1 && Math.abs(v.x) < 1.2 && v.y < 1;
-        if (ok) {
-          // misure in coordinate di schermo (-1…1): il testo occupa circa tre quarti della tela
-          const w = s.scale.x * P[0] * 0.78;
-          const h = s.scale.y * P[5] * 0.85;
-          const r: [number, number, number, number] = [v.x - w / 2, v.y, v.x + w / 2, v.y + h];
-          // sotto il titolo in alto, e sotto la colonna di km e meteo a destra, un nome non si legge
-          if (r[3] > 0.78 || (r[3] > 0.56 && r[2] > 0.28)) ok = false;
-          else
-            for (const t of taken)
-              if (r[0] < t[2] && r[2] > t[0] && r[1] < t[3] && r[3] > t[1]) {
-                ok = false;
-                break;
-              }
-          if (ok) taken.push(r);
-        }
-        want.current.set(s, ok ? 1 : 0);
-      }
-    }
-    const k = Math.min(1, dt * 6);
-    for (const s of names) {
-      const t = want.current.get(s) ?? 0;
-      s.material.opacity += (t - s.material.opacity) * k;
-    }
-  });
-  return null;
-}
-
 // ---------- cartelli del percorso ----------
 
 /**
@@ -1370,32 +1564,68 @@ function RideSigns({ data, ride }: { data: WorldData; ride: RideDef }) {
   );
 }
 
-export function kindLabel(kind: string): string {
-  const map: Record<string, string> = {
-    citta: 'città',
-    paese: 'paese',
-    chiesa: 'chiesa',
-    santuario: 'santuario',
-    torre: 'torre',
-    porta: 'porta delle Mura',
-    mura: 'Mura venete',
-    ponte: 'ponte',
-    fiume: 'fiume',
-    cima: 'cima',
-    passo: 'passo',
-    lago: 'lago',
-    castello: 'castello',
-    luogo: 'luogo',
-    funivia: 'funivia',
-    stazione: 'stazione',
-  };
-  return map[kind] ?? kind;
-}
-
 // ---------- ciclisti ----------
 
 function PlayerRider({ engine, playerPose, selfColor, look }: WorldSceneProps) {
   return <Rider side={0} look={look ?? (selfColor ? lookFromColor(selfColor) : undefined)} getPose={playerPose} getCadence={() => engine.cadence} getSpeed={() => engine.speed} getPower={() => engine.power} />;
+}
+
+/**
+ * L'ombra di contatto del ciclista: una macchia morbida sotto le ruote, inclinata con la strada.
+ * Lo appoggia sull'asfalto anche col cielo coperto, quando il sole non fa ombre (due triangoli).
+ */
+function ContactShadow({ playerPose }: { playerPose: () => TrackPose }) {
+  const ref = useRef<THREE.Group>(null);
+  const { geo, mat } = useMemo(() => {
+    const tex = canvasTex(64, 64, (g) => {
+      const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+      grd.addColorStop(0, 'rgba(0,0,0,0.85)');
+      grd.addColorStop(0.55, 'rgba(0,0,0,0.45)');
+      grd.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = grd;
+      g.fillRect(0, 0, 64, 64);
+    });
+    const geo = new THREE.PlaneGeometry(0.95, 2.3);
+    geo.rotateX(-Math.PI / 2);
+    const mat = new THREE.MeshBasicMaterial({ map: tex, color: '#000000', transparent: true, opacity: 0.5, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 });
+    return { geo, mat };
+  }, []);
+  useEffect(
+    () => () => {
+      geo.dispose();
+      mat.map?.dispose();
+      mat.dispose();
+    },
+    [geo, mat],
+  );
+  useFrame(() => {
+    const g = ref.current;
+    if (!g) return;
+    const p = playerPose();
+    g.position.set(p.x, p.y + 0.06, p.z);
+    g.rotation.set(-Math.atan(p.grade), p.heading, 0, 'YXZ');
+  });
+  return (
+    <group ref={ref}>
+      <mesh geometry={geo} material={mat} renderOrder={1} />
+    </group>
+  );
+}
+
+/** Un ciclista in più (ExtraWorldRider): fuori scena quando non ha una posa. */
+function ExtraRider({ rider }: { rider: ExtraWorldRider }) {
+  const hidden: TrackPose = { x: 0, y: -5000, z: 0, heading: 0, grade: 0, altitude: 0, distance: 0 };
+  return (
+    <Rider
+      side={0}
+      ghost={rider.ghost}
+      look={rider.look}
+      detail="media"
+      getPose={() => rider.pose() ?? hidden}
+      getCadence={() => rider.cadence?.() ?? 80}
+      getSpeed={() => rider.speed?.() ?? 6}
+    />
+  );
 }
 
 function NpcRiders({ crowd }: { crowd: NpcCrowd }) {
