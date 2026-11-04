@@ -1,4 +1,5 @@
-import { useId, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { BRAND, MARK } from '@/brand';
 import { cn } from '@/lib/cn';
 
@@ -19,6 +20,86 @@ export function Button({
       )}
       {...props}
     />
+  );
+}
+
+/** Il ritorno alla pagina madre: testo leggero, ma alto 44 px per il dito. */
+export function BackLink({ to, label }: { to: string; label: string }) {
+  return (
+    <Link to={to} className="-ml-2 inline-flex h-11 min-w-11 items-center gap-1.5 rounded-full px-2 text-sm font-semibold text-muted transition hover:text-ink" data-testid="back-link">
+      <span aria-hidden="true">←</span>
+      {label}
+    </Link>
+  );
+}
+
+/**
+ * La testata di ogni pagina: il ritorno (se la pagina sta dentro un'altra), l'occhiello, il
+ * titolo in maiuscolo nel carattere del marchio e, a destra, un numero o un tasto.
+ */
+export function PageHeader({
+  title,
+  eyebrow,
+  back,
+  aside,
+  sub,
+  size = 'lg',
+}: {
+  title: ReactNode;
+  eyebrow?: ReactNode;
+  back?: { to: string; label: string };
+  aside?: ReactNode;
+  sub?: ReactNode;
+  size?: 'lg' | 'md';
+}) {
+  return (
+    <header data-testid="page-header">
+      {back ? <BackLink to={back.to} label={back.label} /> : null}
+      <div className={cn('flex items-end justify-between gap-3', back ? 'mt-1' : '')}>
+        <div className="min-w-0">
+          {eyebrow ? <p className="eyebrow">{eyebrow}</p> : null}
+          <h1 className={cn('font-display uppercase leading-[0.9]', size === 'lg' ? 'text-5xl' : 'text-4xl', eyebrow ? 'mt-1' : '')}>{title}</h1>
+        </div>
+        {aside ? <div className="shrink-0 pb-0.5">{aside}</div> : null}
+      </div>
+      {sub ? <p className="mt-1.5 text-lg text-muted">{sub}</p> : null}
+    </header>
+  );
+}
+
+/**
+ * Un foglio che sale dal basso (al centro sul computer). Resta montato anche chiuso, nascosto:
+ * i controlli dentro tengono il loro stato e la pagina non salta quando si apre.
+ */
+export function Sheet({ open, onClose, title, children, testId }: { open: boolean; onClose: () => void; title: string; children: ReactNode; testId?: string }) {
+  const panel = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    panel.current?.focus();
+    const key = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', key);
+    return () => window.removeEventListener('keydown', key);
+  }, [open, onClose]);
+  return (
+    <div className={cn('fixed inset-0 z-40', open ? '' : 'hidden')} role="dialog" aria-modal="true" aria-label={title} data-testid={testId}>
+      <div className="absolute inset-0 bg-black/55" onClick={onClose} aria-hidden="true" />
+      <div
+        ref={panel}
+        tabIndex={-1}
+        className="absolute inset-x-0 bottom-0 mx-auto max-h-[88dvh] w-full max-w-lg overflow-auto rounded-t-3xl border border-line bg-elev px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2 outline-none wide:bottom-auto wide:top-1/2 wide:-translate-y-1/2 wide:rounded-3xl"
+      >
+        <div className="mx-auto mb-1 h-1 w-10 rounded-full bg-line" aria-hidden="true" />
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="font-display text-2xl uppercase">{title}</h2>
+          <button type="button" className="-mr-2 h-11 rounded-full px-4 font-semibold text-accent" onClick={onClose}>
+            Fatto
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
   );
 }
 
@@ -123,7 +204,7 @@ export function Segmented<T extends string>({
           onClick={() => onChange(option.value)}
           className={cn(
             'h-11 min-w-0 flex-auto truncate whitespace-nowrap rounded-full px-2 text-sm font-semibold',
-            option.value === value ? 'bg-accent text-accent-ink' : 'text-muted',
+            option.value === value ? 'bg-[var(--thumb)] text-ink shadow-[0_1px_2px_rgba(0,0,0,0.35)]' : 'text-muted',
           )}
         >
           {option.label}

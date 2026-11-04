@@ -46,18 +46,19 @@ export function MePage() {
           <JerseyArt look={lookOf(career.equipped)} className="h-16 w-16" />
         </span>
         <div className="min-w-0 flex-1">
-          <h1 className="truncate font-display text-4xl uppercase leading-none">{profile.name || 'Tu'}</h1>
+          <h1 className="break-words font-display text-4xl uppercase leading-none">{profile.name || 'Tu'}</h1>
           <p className="mt-1 text-sm text-muted">{lv.title}</p>
         </div>
-        <LevelRing xp={progress.xp} />
+        <span className="flex shrink-0 items-center gap-1.5" data-testid="me-level">
+          <span className="text-sm font-semibold text-muted">Liv.</span>
+          <LevelRing xp={progress.xp} />
+        </span>
       </header>
       <div className="mt-3">
         <div className="h-2 overflow-hidden rounded-full bg-elev2">
           <div className="gold-sheen h-full rounded-full" style={{ width: `${Math.min(100, ((progress.xp - lv.from) / Math.max(1, lv.to - lv.from)) * 100)}%` }} />
         </div>
-        <p className="num mt-1 text-xs text-muted">
-          {formatNumber(progress.xp, 0)} punti · {formatNumber(lv.to - progress.xp, 0)} al livello {lv.level + 1}
-        </p>
+        <p className="num mt-1 text-xs text-muted">{`${formatNumber(progress.xp, 0)} punti · ${formatNumber(lv.to - progress.xp, 0)} al livello ${lv.level + 1}`}</p>
       </div>
 
       <dl className="mt-4 grid grid-cols-4 gap-2 text-center">
@@ -69,13 +70,13 @@ export function MePage() {
 
       <nav aria-label="Le tue cose" className="mt-5 grid grid-cols-2 gap-2">
         <Hub to="/traguardi" glyph="coppa" title="Traguardi" sub={`${done} di ${ACHIEVEMENTS.length}`} testId="me-achievements" />
-        <Hub to="/classifiche" glyph="stella" title="Classifiche" sub="Salite, percorsi, tratti" testId="me-boards" />
-        <Hub to="/garage" glyph="maglia" title="Garage" sub="Maglie, caschi, bici" />
-        <Hub to="/history" glyph="mappa" title="Diario" sub={`${rides.length} giri, FIT e GPX`} />
-        <Hub to="/workouts" glyph="fulmine" title="Allenamenti" sub="ERG e test a rampa" />
-        <Hub to="/giri" glyph="crono" title="Rifai un giro" sub="Intervals.icu, FIT, GPX" />
-        <Hub to="/load" glyph="fiamma" title="Carico" sub="Forma, fatica, equilibrio" />
-        <Hub to="/profile" glyph="ingranaggio" title="Profilo" sub="Peso, FTP, grafica" />
+        <Hub to="/classifiche" glyph="stella" title="Classifiche" sub="Salite, tratti" testId="me-boards" />
+        <Hub to="/garage" glyph="maglia" title="Garage" sub="Maglie e bici" />
+        <Hub to="/history" glyph="mappa" title="Diario" sub={rides.length === 1 ? '1 giro' : `${rides.length} giri`} />
+        <Hub to="/workouts" glyph="fulmine" title="Allenamenti" sub="ERG e test" />
+        <Hub to="/giri" glyph="crono" title="Rifai un giro" sub="FIT, GPX" />
+        <Hub to="/load" glyph="fiamma" title="Carico" sub="Forma e fatica" />
+        <Hub to="/profile" glyph="ingranaggio" title="Profilo" sub="Peso, FTP" />
       </nav>
     </main>
   );
@@ -98,7 +99,7 @@ function Hub({ to, glyph, title, sub, testId }: { to: string; glyph: Parameters<
       </span>
       <span className="min-w-0">
         <span className="block font-semibold leading-tight">{title}</span>
-        <span className="block truncate text-xs text-muted">{sub}</span>
+        <span className="block text-xs leading-snug text-muted">{sub}</span>
       </span>
     </Link>
   );

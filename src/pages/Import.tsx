@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Button } from '@/components/ui';
+import { Button, PageHeader } from '@/components/ui';
 import { estimateLthr } from '@/domain/zones';
 import { fileActivitySource } from '@/io/sources';
 import type { Ride } from '@/domain/types';
-import { formatNumber } from '@/domain/format';
+import { formatTss } from '@/domain/format';
 import { useI18n } from '@/i18n';
 import { useApp } from '@/store/useApp';
 
@@ -58,8 +58,7 @@ export function ImportPage() {
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 pb-nav pt-6 md:px-8 md:pt-10" data-testid="import-page">
-      <Link to="/history" className="text-sm font-semibold text-muted">{t('import.back')}</Link>
-      <h1 className="mt-3 font-display text-5xl tracking-tight">{t('import.title')}</h1>
+      <PageHeader back={{ to: '/history', label: t('history.title') }} title={t('import.title')} />
       <p className="mt-3 max-w-xl text-lg text-muted">{t('import.lead')}</p>
       <label className="mt-6 flex min-h-40 cursor-pointer flex-col items-center justify-center rounded-3xl border border-dashed border-line bg-elev px-4 py-8 text-center">
         <span className="font-display text-2xl">{t('import.pick')}</span>
@@ -91,7 +90,7 @@ export function ImportPage() {
                     <span className="block font-semibold">{ride.name}</span>
                     <span className="text-xs uppercase tracking-wide text-muted">{ride.fileType}</span>
                   </span>
-                  <span className="num text-sm">{ride.tss != null ? `${formatNumber(ride.tss, 0)} TSS` : '–'}</span>
+                  <span className="num text-sm">{ride.tss != null ? `${formatTss(ride.tss)} TSS` : '–'}</span>
                 </Link>
               </li>
             ))}

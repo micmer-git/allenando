@@ -144,7 +144,7 @@ export function ProfileChart({
   const gx = ghost != null ? (Math.min(track.length, ghost) / track.length) * W : null;
   return (
     <div className={`relative ${className ?? ''}`}>
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="absolute inset-0 h-full w-full" role="img" aria-label={`Altimetria, da ${Math.round(minA + track.altitudeBase)} a ${Math.round(maxA + track.altitudeBase)} m`}>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="absolute inset-0 h-full w-full" role="img" aria-label={`Altimetria, da ${Math.round(minA + track.altitudeBase)} a ${Math.round(maxA + track.altitudeBase)}\u00a0m`}>
         {bars.map((b, i) => (
           <path key={i} d={b.d} fill={b.color} opacity={0.9} />
         ))}

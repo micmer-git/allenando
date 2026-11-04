@@ -52,7 +52,7 @@ export function BoardRows({ board, limit = 10 }: { board: BoardData | null | 'lo
             <span className="truncate">{r.nick}</span>
           </span>
           <span className="num shrink-0">
-            {formatDuration(r.sec)} <span className="text-xs text-muted">{r.wkg ? `${formatNumber(r.wkg, 1)} W/kg` : ''}</span>
+            {formatDuration(r.sec)} <span className="text-xs text-muted">{r.wkg ? `${formatNumber(r.wkg, 1)}\u00a0W/kg` : ''}</span>
           </span>
         </li>
       ))}

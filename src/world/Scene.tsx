@@ -25,6 +25,7 @@ import { Rider } from './RiderMesh';
 import type { ArchSpec } from '@/game/arches';
 import { Arches } from './Arches';
 import { ClimbRoadside } from './ClimbRoadside';
+import { StatsProbe, statsWanted } from '@/open/StatsProbe';
 
 // il ciclista vive in RiderMesh.tsx: lo si riesporta per chi lo prendeva da qui
 export { Rider };
@@ -85,6 +86,7 @@ export function RideScene({
       <directionalLight position={SUN} intensity={1.85} color="#fff0d6" />
       <World engine={engine} route={route} quality={quality} ghostDistance={ghostDistance} remote={remote} selfColor={selfColor} arches={arches} look={look} />
       <Ready onReady={onReady} />
+      {statsWanted() ? <StatsProbe /> : null}
     </Canvas>
   );
 }

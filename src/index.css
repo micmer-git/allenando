@@ -7,6 +7,14 @@
 @import "@fontsource/barlow-condensed/latin-700.css";
 @import "@fontsource/barlow-condensed/latin-800.css";
 
+/*
+ * Due navigazioni oltre la barra in basso. «wide»: il computer e il tablet grande, menu laterale
+ * con le voci. «rail»: il telefono (o una finestra bassa) in orizzontale, una colonna di sole
+ * icone: in 390 px di altezza la barra in basso si mangerebbe un sesto dello schermo.
+ */
+@custom-variant wide (@media (min-width: 1024px) and (min-height: 600px));
+@custom-variant rail (@media (orientation: landscape) and (max-height: 599.98px));
+
 @theme inline {
   --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Barlow Condensed", "Arial Narrow", ui-sans-serif, sans-serif;
@@ -46,6 +54,8 @@
   --danger: #ff6464;
   --volata: #d6267a;
   --gpm: #1f7fe0;
+  /* la scelta fatta in un gruppo di opzioni: chiara sul binario, non gialla */
+  --thumb: #3d382c;
 }
 
 :root[data-theme="light"] {
@@ -67,6 +77,7 @@
   --danger: #b42323;
   --volata: #b01863;
   --gpm: #1565c0;
+  --thumb: #fffdf6;
 }
 
 html,
@@ -119,14 +130,50 @@ textarea {
   color: var(--muted);
 }
 
-.pb-nav {
-  padding-bottom: calc(6.4rem + env(safe-area-inset-bottom));
+/* quanto spazio prende la navigazione: in basso (--nav-h) o a sinistra (--nav-w) */
+:root {
+  --nav-h: calc(4.3rem + env(safe-area-inset-bottom));
+  --nav-w: 0px;
 }
 
-@media (min-width: 768px) {
-  .pb-nav {
-    padding-bottom: 2.5rem;
+@media (min-width: 1024px) and (min-height: 600px) {
+  :root {
+    --nav-h: 0px;
+    --nav-w: 240px;
   }
+}
+
+@media (orientation: landscape) and (max-height: 599.98px) {
+  :root {
+    --nav-h: 0px;
+    --nav-w: 76px;
+  }
+}
+
+.pb-nav {
+  padding-bottom: calc(var(--nav-h) + 2.1rem);
+}
+
+/* una pagina con un tasto fisso in fondo: il contenuto non ci finisce sotto */
+.pb-nav-cta {
+  padding-bottom: calc(var(--nav-h) + 6.5rem);
+}
+
+/* il tasto fisso sopra la barra in basso, allineato alla colonna della pagina */
+.cta-bar {
+  position: fixed;
+  left: var(--nav-w);
+  right: 0;
+  bottom: var(--nav-h);
+  z-index: 25;
+}
+
+/* una fila di filtri che scorre col dito, senza la barra grigia sotto */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
 
 /* l'oro che si accende: barre di livello, monete, traguardi appena presi */

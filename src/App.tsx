@@ -26,6 +26,7 @@ import { OfflineBanner } from '@/components/Install';
 import { useApp } from '@/store/useApp';
 
 const RidePage = lazy(() => import('@/pages/Ride').then((mod) => ({ default: mod.RidePage })));
+const PlansPage = lazy(() => import('@/pages/Plans').then((mod) => ({ default: mod.PlansPage })));
 
 export function App() {
   const hydrate = useApp((s) => s.hydrate);
@@ -59,6 +60,7 @@ export function App() {
           <Route path="/classifiche" element={<LeaderboardsPage />} />
           <Route path="/sessioni" element={<SessionsPage />} />
           <Route path="/tu" element={<MePage />} />
+          <Route path="/programmi" element={<Suspense fallback={<Splash />}><PlansPage /></Suspense>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
@@ -78,7 +80,7 @@ function Shell() {
   const bare = location.pathname === '/start' || location.pathname.startsWith('/ride');
   if (bare) return <Outlet />;
   return (
-    <div className="md:grid md:grid-cols-[240px_1fr]">
+    <div className="rail:grid rail:grid-cols-[76px_minmax(0,1fr)] wide:grid wide:grid-cols-[240px_minmax(0,1fr)]">
       <SideNav />
       <div>
         <OfflineBanner />

@@ -221,6 +221,12 @@ export class RideGame {
     }
   }
 
+  /** Dopo una ripresa: i tratti cronometrati e i punti caldi di prima contano ancora. */
+  restore(saved: { results: SegmentResult[]; pois: string[] }): void {
+    this.results = saved.results.slice();
+    this.poisPassed = saved.pois.slice();
+  }
+
   /** I tratti che stanno correndo adesso, il più recente per primo. */
   get live() {
     return [...this.tracker.live].reverse();
@@ -295,4 +301,19 @@ export class RideGame {
     const c = this.ergCur;
     return c ? { d: c.d, label: c.gate.label, role: c.gate.role } : null;
   }
+}
+
+/**
+ * Un fotogramma della corsa. Finché il mondo non è pronto si mette solo il ciclista al suo posto
+ * (il 3D carica le mattonelle intorno a lui): il tempo non corre, i tratti non partono, i punti
+ * caldi non suonano. Poi motore, mondo e gioco, in quest'ordine.
+ */
+export function rideFrame(engine: RideEngine, world: { session: WorldSession } | null | undefined, game: RideGame, dt: number, ready: boolean): void {
+  if (!ready) {
+    if (world) world.session.pose = world.session.playerPose(engine.distance);
+    return;
+  }
+  engine.tick(dt);
+  world?.session.step(engine, dt);
+  game.tick(dt);
 }

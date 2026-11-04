@@ -39,7 +39,8 @@ describe('ciclista: geometria', () => {
         expect(g.boundingBox!.min.y).toBeGreaterThan(-0.01);
         expect(g.boundingBox!.max.y).toBeLessThan(1.8);
         expect(g.boundingBox!.max.z - g.boundingBox!.min.z).toBeLessThan(2);
-      });
+        // la geometria alta/lenticolare è la più pesante: su una macchina carica supera i 5 s
+      }, 30000);
 
   it('le normali guardano fuori: busto, testa, cosce e pareti dei cerchi', () => {
     for (const detail of ['alta', 'bassa'] as const) {

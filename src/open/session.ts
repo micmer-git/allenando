@@ -526,7 +526,7 @@ export class WorldSession {
       if (!n.active) continue;
       const d = Math.hypot(n.x - pose.x, n.z - pose.z);
       if (d > 400) continue;
-      list.push({ name: 'ciclista virtuale', real: false, ahead: (n.x - pose.x) * fx + (n.z - pose.z) * fz, w: Math.round(n.wkg * n.mass), d });
+      list.push({ name: 'Ciclista virtuale', real: false, ahead: (n.x - pose.x) * fx + (n.z - pose.z) * fz, w: Math.round(n.wkg * n.mass), d });
     }
     list.sort((a, b) => Number(b.real) - Number(a.real) || a.d - b.d);
     return list.slice(0, 6);
@@ -537,7 +537,7 @@ export class WorldSession {
     const at = this.path.edgeAt(distance);
     const e = this.graph.edges[at.edge];
     const parts = [e.name, e.ref].filter(Boolean);
-    if (parts.length === 0) return e.cls === CLS.cycleway ? 'pista ciclabile' : '';
+    if (parts.length === 0) return e.cls === CLS.cycleway ? 'Pista ciclabile' : '';
     return parts.join(' · ');
   }
 }

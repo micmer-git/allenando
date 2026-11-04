@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type Ref } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Button, Segmented } from '@/components/ui';
+import { Button, PageHeader, Segmented } from '@/components/ui';
 import { WorldMap, legsBounds, type MapMarker, type MapOverlay } from '@/components/WorldMap';
-import { formatDuration, formatKm, formatNumber } from '@/domain/format';
+import { cap, formatDuration, formatKm, formatKmText, formatMetersText, formatNumber } from '@/domain/format';
 import { worldCount } from '@/multiplayer/world-client';
 import type { BoardRow, XpRow } from '@/multiplayer/world-protocol';
 import type { Leg } from '@/open/graph';
@@ -13,7 +13,7 @@ import { worldSegments } from '@/game/segments';
 import { SEGMENT_STYLE } from '@/game/arches';
 import { useGame } from '@/game/useGame';
 import { Terrain, loadWorld, type RideDef, type WorldData } from '@/open/world';
-import { kindLabel } from '@/open/WorldScene';
+import { kindLabel } from '@/open/labels';
 import { savePlan } from '@/open/plan';
 import { planAB, type AbRoute } from '@/open/ab';
 import { pickRoute } from '@/open/pick';
@@ -70,27 +70,29 @@ export function WorldPage() {
   if (error) return <main className="mx-auto max-w-3xl px-4 py-8 text-danger">{error}</main>;
   if (!data) {
     return (
-      <main className="mx-auto max-w-3xl px-4 py-8">
-        <h1 className="font-display text-4xl">Mondo</h1>
-        <p className="mt-2 text-muted">Carico le strade di Bergamo e delle valli…</p>
+      <main className="mx-auto w-full max-w-3xl px-4 pb-nav pt-6">
+        <PageHeader eyebrow="Mondo aperto" title="Bergamo e le valli" size="md" />
+        <p className="mt-3 text-muted">Carico le strade di Bergamo e delle valli…</p>
       </main>
     );
   }
-  const lv = levelOf(progress.xp);
   const discovered = Object.keys(progress.visited).length;
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 pb-28 pt-6 md:pb-10" data-testid="world-page">
-      <div className="flex items-end justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-accent">Mondo aperto</p>
-          <h1 className="font-display text-4xl leading-none">Bergamo e le valli</h1>
-        </div>
-        <p className="text-right text-sm text-muted" data-testid="world-online">
-          {online == null ? 'in rete: –' : online === 0 ? 'nessuno in strada adesso' : online === 1 ? '1 in strada adesso' : `${online} in strada adesso`}
-        </p>
-      </div>
-      <LevelCard progress={progress} level={lv} discovered={discovered} total={data.features.landmarks.length} />
-      <div className="mt-3">
+    <main className="mx-auto w-full max-w-3xl px-4 pb-nav pt-5 md:px-8 md:pt-10" data-testid="world-page">
+      <PageHeader
+        eyebrow="Mondo aperto"
+        title="Bergamo e le valli"
+        size="md"
+        aside={
+          <p className="num text-right text-sm leading-snug text-muted">
+            {online != null && online > 0 ? (
+              <span className="block font-semibold text-good" data-testid="world-online">{`In strada ora: ${online}`}</span>
+            ) : null}
+            <span className="block" data-testid="world-places">{`Luoghi ${discovered}/${data.features.landmarks.length}`}</span>
+          </p>
+        }
+      />
+      <div className="mt-4">
         <Segmented<Tab> label="Sezione" value={tab} onChange={setTab} options={TABS} testId="world-tabs" />
       </div>
       {tab === 'percorsi' ? <RidesTab data={data} far={far} progress={progress} picked={picked} setPicked={setPicked} /> : null}
@@ -98,32 +100,8 @@ export function WorldPage() {
       {tab === 'anello' ? <LoopTab data={data} far={far} /> : null}
       {tab === 'ab' ? <AbTab data={data} far={far} /> : null}
       {tab === 'classifiche' ? <BoardsTab /> : null}
-      <p className="mt-8 text-xs leading-relaxed text-muted">
-        © OpenStreetMap contributors (ODbL), dati del {data.graph.builtAt} · quote EU-DEM © Copernicus. I ciclisti grigi sono simulati, le persone vere hanno il nome.
-      </p>
+      <p className="mt-8 text-xs leading-relaxed text-muted">{`© OpenStreetMap contributors (ODbL), dati del ${data.graph.builtAt} · Quote EU-DEM © Copernicus.`}</p>
     </main>
-  );
-}
-
-function LevelCard({ progress, level, discovered, total }: { progress: WorldProgress; level: ReturnType<typeof levelOf>; discovered: number; total: number }) {
-  const pct = Math.min(100, ((progress.xp - level.from) / Math.max(1, level.to - level.from)) * 100);
-  return (
-    <section className="mt-3 rounded-2xl bg-elev px-3.5 py-3" data-testid="world-level">
-      <div className="flex items-baseline justify-between gap-3">
-        <p className="min-w-0 truncate font-display text-xl leading-none">
-          Livello {level.level} <span className="font-sans text-sm font-medium text-muted">{level.title}</span>
-        </p>
-        <p className="num shrink-0 text-sm font-semibold">{formatNumber(progress.xp, 0)} XP</p>
-      </div>
-      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-elev2" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct)} aria-label="Verso il prossimo livello">
-        <div className="h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
-      </div>
-      <dl className="num mt-2 flex justify-between text-xs text-muted">
-        <Stat label="settimana" value={`${formatNumber(progress.weekXp, 0)} XP`} />
-        <Stat label="luoghi" value={`${discovered}/${total}`} />
-        <Stat label="nel mondo" value={`${formatKm(progress.km * 1000)} km`} />
-      </dl>
-    </section>
   );
 }
 
@@ -177,7 +155,6 @@ function RidesTab({ data, far, progress, picked, setPicked }: { data: WorldData;
   }, [data, sel, progress]);
   return (
     <section className="mt-4">
-      <p className="mb-2 text-sm text-muted">Tocca una linea sulla carta, o scegli dalla lista.</p>
       <WorldMap
         data={data}
         far={far}
@@ -211,13 +188,18 @@ function RidesTab({ data, far, progress, picked, setPicked }: { data: WorldData;
                       data-testid={`world-ride-${r.id}`}
                     >
                       <div className="flex items-baseline justify-between gap-2">
-                        <p className="font-display text-xl leading-tight">
-                          {r.name} <span className="font-sans text-sm font-medium text-muted">{r.side}</span>
+                        <p className="min-w-0">
+                          <span className="block font-display text-xl leading-tight" data-testid="world-ride-name">
+                            {r.name}
+                          </span>
+                          <span className="block text-sm font-medium text-muted" data-testid="world-ride-side">
+                            {cap(r.side)}
+                          </span>
                         </p>
                         {rec?.bestSec != null ? <span className="num shrink-0 text-xs font-semibold text-good">{formatDuration(rec.bestSec)}</span> : null}
                       </div>
                       <p className="num mt-0.5 text-sm text-muted">
-                        {formatKm(r.lengthM)} km · D+ {formatNumber(r.gainM, 0)} m · {r.kind === 'salita' ? `media ${pctStr(r.climbGrade)}` : `fino a ${formatNumber(r.maxAlt, 0)} m`} · {r.landmarks.length} luoghi
+                        {`${formatKmText(r.lengthM)} · D+ ${formatMetersText(r.gainM)} · ${r.kind === 'salita' ? `Media ${pctStr(r.climbGrade)}` : `Fino a ${formatMetersText(r.maxAlt)}`} · ${r.landmarks.length} luoghi`}
                       </p>
                     </button>
                   </li>
@@ -251,7 +233,7 @@ function RideCard({ data, ride, progress, onClose, onRide, startRef }: { data: W
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="font-display text-3xl leading-none">{ride.name}</h2>
-          <p className="mt-1 text-sm text-muted">{ride.side}</p>
+          <p className="mt-1 text-sm text-muted">{cap(ride.side)}</p>
         </div>
         <button type="button" className="h-11 rounded-full px-3 text-sm font-semibold text-muted" onClick={onClose}>
           Chiudi
@@ -260,7 +242,7 @@ function RideCard({ data, ride, progress, onClose, onRide, startRef }: { data: W
       <p className="mt-2 text-[15px] leading-relaxed">{ride.blurb}</p>
       <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-4">
         <Stat label="Km" value={formatKm(ride.lengthM)} />
-        <Stat label="D+" value={`${formatNumber(ride.gainM, 0)} m`} />
+        <Stat label="D+" value={`${formatMetersText(ride.gainM)}`} />
         <Stat label="Quote" value={`${ride.startAlt}→${ride.endAlt}`} />
         <Stat label="Max 200 m" value={pctStr(ride.maxGrade)} />
       </dl>
@@ -276,11 +258,11 @@ function RideCard({ data, ride, progress, onClose, onRide, startRef }: { data: W
           if (!lm) return null;
           return (
             <li key={l.id} className="flex gap-2.5 rounded-xl bg-bg/50 px-3 py-2">
-              <span className="num w-12 shrink-0 text-xs font-semibold text-muted">km {formatKm(l.at)}</span>
+              <span className="num w-12 shrink-0 text-xs font-semibold text-muted">{`Km ${formatKm(l.at)}`}</span>
               <span className="min-w-0">
-                <span className="font-semibold">{lm.name}</span> <span className="text-xs text-muted">{kindLabel(lm.kind)}</span>
-                {progress.visited[lm.id] ? <span className="ml-1 text-xs font-semibold text-good">✓ visto</span> : null}
-                <span className="block text-[13px] leading-snug text-muted">{lm.note}</span>
+                <span className="font-semibold">{lm.name}</span> <span className="text-xs text-muted">{cap(kindLabel(lm.kind))}</span>
+                {progress.visited[lm.id] ? <span className="ml-1 text-xs font-semibold text-good">✓ Visto</span> : null}
+                <span className="block text-[13px] leading-snug text-muted">{cap(lm.note)}</span>
               </span>
             </li>
           );
@@ -337,12 +319,9 @@ function RideSegments({ data, ride }: { data: WorldData; ride: RideDef }) {
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-semibold">{s.name}</span>
-                <span className="num block text-xs text-muted">
-                  km {formatKm(s.from)} → {formatKm(s.to)}
-                  {lead ? ` · 1° ${lead.nick} ${formatDuration(lead.sec)}` : ''}
-                </span>
+                <span className="num block text-xs text-muted">{`Km ${formatKm(s.from)} → ${formatKm(s.to)}${lead ? ` · 1° ${lead.nick} ${formatDuration(lead.sec)}` : ''}`}</span>
               </span>
-              {pbs[s.id] ? <span className="num shrink-0 text-xs font-semibold text-accent">tu {formatDuration(pbs[s.id].sec)}</span> : null}
+              {pbs[s.id] ? <span className="num shrink-0 text-xs font-semibold text-accent">{`Tu ${formatDuration(pbs[s.id].sec)}`}</span> : null}
             </li>
           );
         })}
@@ -364,13 +343,13 @@ function BoardList({ board }:{ board: { total: number; rows: BoardRow[]; mine: {
             {r.nick}
           </span>
           <span className="num">
-            {formatDuration(r.sec)} <span className="text-xs text-muted">{r.wkg ? `${formatNumber(r.wkg, 1)} W/kg` : ''}</span>
+            {formatDuration(r.sec)} <span className="text-xs text-muted">{r.wkg ? `${formatNumber(r.wkg, 1)}\u00a0W/kg` : ''}</span>
           </span>
         </li>
       ))}
       {board.mine ? (
         <li className="flex items-center justify-between rounded-xl bg-accent/20 px-3 py-1.5 text-sm font-semibold">
-          <span>Tu: {board.mine.rank}° su {board.total}</span>
+          <span>{`Tu: ${board.mine.rank}° su ${board.total}`}</span>
           <span className="num">{formatDuration(board.mine.sec)}</span>
         </li>
       ) : null}
@@ -391,8 +370,7 @@ function FreeTab({ data, far }: { data: WorldData; far: Float32Array | null }) {
   }
   return (
     <section className="mt-4">
-      <p className="text-sm text-muted">Tocca la carta o scegli un paese. Agli incroci decidi tu.</p>
-      <div className="mt-2">
+      <div>
         <WorldMap
           data={data}
           far={far}
@@ -403,7 +381,7 @@ function FreeTab({ data, far }: { data: WorldData; far: Float32Array | null }) {
             if (!hit) return;
             const p = data.graph.pose(hit.edge, hit.s);
             const e = data.graph.edges[hit.edge];
-            setPoint({ x: p.x, z: p.z, label: e.name || e.ref || 'qui' });
+            setPoint({ x: p.x, z: p.z, label: e.name || e.ref || 'Qui' });
           }}
         />
       </div>
@@ -504,9 +482,7 @@ function LoopTab({ data, far }: { data: WorldData; far: Float32Array | null }) {
                     <span className="inline-block h-3 w-3 rounded-full" style={{ background: ROUTE_COLORS[i] }} />
                     {l.via.slice(0, 4).join(' · ') || `Anello ${i + 1}`}
                   </p>
-                  <p className="num mt-0.5 text-sm text-muted">
-                    {formatKm(l.lengthM)} km · D+ {formatNumber(l.gainM, 0)} m · {Math.round(l.overlap * 100)}% di strada ripetuta
-                  </p>
+                  <p className="num mt-0.5 text-sm text-muted">{`${formatKmText(l.lengthM)} · D+ ${formatMetersText(l.gainM)} · ${Math.round(l.overlap * 100)}% di strada ripetuta`}</p>
                 </button>
               </li>
             ))}
@@ -569,7 +545,7 @@ function AbTab({ data, far }: { data: WorldData; far: Float32Array | null }) {
                 data-testid={`world-ab-${k}`}
               >
                 <option value="" disabled>
-                  {cur ? cur.label : 'scegli'}
+                  {cur ? cur.label : 'Scegli'}
                 </option>
                 {starts.map((s) => (
                   <option key={s.name}>{s.name}</option>
@@ -585,8 +561,8 @@ function AbTab({ data, far }: { data: WorldData; far: Float32Array | null }) {
           value={picking}
           onChange={setPicking}
           options={[
-            { value: 'a', label: 'la partenza' },
-            { value: 'b', label: 'l’arrivo' },
+            { value: 'a', label: 'Tocca la partenza' },
+            { value: 'b', label: 'Tocca l’arrivo' },
           ]}
         />
       </div>
@@ -603,7 +579,7 @@ function AbTab({ data, far }: { data: WorldData; far: Float32Array | null }) {
             if (!hit) return;
             const p = data.graph.pose(hit.edge, hit.s);
             const e = data.graph.edges[hit.edge];
-            const pt = { x: p.x, z: p.z, label: e.name || e.ref || 'punto sulla carta' };
+            const pt = { x: p.x, z: p.z, label: e.name || e.ref || 'Punto sulla carta' };
             if (picking === 'a') {
               setA(pt);
               setPicking('b');
@@ -623,9 +599,7 @@ function AbTab({ data, far }: { data: WorldData; far: Float32Array | null }) {
       {real ? (
         <div className="mt-2 rounded-2xl bg-elev px-3.5 py-3" data-testid="world-ab-route">
           <p className="font-semibold">{real.via.slice(0, 5).join(' · ') || `${a?.label} → ${b?.label}`}</p>
-          <p className="num mt-0.5 text-sm text-muted">
-            {formatKm(real.lengthM)} km · D+ {formatNumber(real.gainM, 0)} m{back ? ` · ${Math.round(real.overlap * 100)}% di ritorno sulla stessa strada` : ''}
-          </p>
+          <p className="num mt-0.5 text-sm text-muted">{`${formatKmText(real.lengthM)} · D+ ${formatMetersText(real.gainM)}${back ? ` · ${Math.round(real.overlap * 100)}% di ritorno sulla stessa strada` : ''}`}</p>
           <Button className="mt-3 w-full" onClick={() => navigate(`/ride?world=bergamo&plan=${savePlan({ legs: real.legs, name: `${a?.label} → ${b?.label}${back ? ' e ritorno' : ''}` })}`)} data-testid="world-ab-ride">
             Pedala da A a B
           </Button>
@@ -666,9 +640,9 @@ function BoardsTab() {
             <li key={i} className={`flex items-center justify-between rounded-xl px-3 py-2 text-sm ${r.me ? 'bg-accent/20 font-semibold' : 'bg-elev'}`}>
               <span className="flex items-center gap-2">
                 <span className="num w-6 text-muted">{i + 1}</span>
-                {r.nick} <span className="text-xs text-muted">liv. {levelOf(r.xp).level}</span>
+                {r.nick} <span className="text-xs text-muted">{`Liv. ${levelOf(r.xp).level}`}</span>
               </span>
-              <span className="num">{formatNumber(r.xp, 0)} XP</span>
+              <span className="num">{`${formatNumber(r.xp, 0)} punti`}</span>
             </li>
           ))}
         </ol>

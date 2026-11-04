@@ -93,7 +93,9 @@ export interface Atmosphere {
 const DAY = { zenith: '#4f88c6', mid: '#a3c4e2', horizon: '#cfdbe5', glow: '#fff4dc', sun: '#fff0d6' };
 const GOLD = { zenith: '#3f6497', mid: '#c4b3a6', horizon: '#f1bf8c', glow: '#ffd29a', sun: '#ffb46e' };
 const BLUE = { zenith: '#1e2d52', mid: '#59608a', horizon: '#c98d74', glow: '#f2a07a', sun: '#ff9c72' };
-const OVERCAST = { zenith: '#8e98a3', mid: '#aab2ba', horizon: '#c3c8cc' };
+// coperto: lo zenit resta più scuro e un filo più azzurro dell'orizzonte, che è chiaro (la nebbia
+// prende quel colore: col grigio medio di prima sembrava fumo)
+const OVERCAST = { zenith: '#8794a3', mid: '#b0b8c1', horizon: '#d3d7da' };
 const RAINY = { zenith: '#6c747c', mid: '#848b92', horizon: '#9ea4a8' };
 
 const smooth = (a: number, b: number, x: number) => {
@@ -121,7 +123,8 @@ export function atmosphere(sun: SunPos, w: WeatherLook): Atmosphere {
   zenith.lerp(grey('zenith'), kc);
   mid.lerp(grey('mid'), kc);
   horizon.lerp(grey('horizon'), kc);
-  glow.lerp(horizon, cloud * 0.8);
+  // anche col cielo coperto si capisce da che parte sta il sole
+  glow.lerp(horizon, cloud * 0.6);
   // col coperto il sole sparisce ma la luce diffusa resta forte: la si sposta sul cielo
   const sunIntensity = (0.35 + 1.5 * smooth(-3, 25, el)) * (1 - 0.6 * cloud) * (1 - 0.3 * wet);
   const hemiIntensity = (0.42 + 0.3 * smooth(-4, 20, el)) * (1 + 0.85 * cloud);

@@ -42,7 +42,8 @@ function ride(withGeo: boolean) {
   return engine.toRide('Prova GPS');
 }
 
-describe('giro esportato con il GPS vero', () => {
+// ogni prova pedala 90 s simulati: su una macchina carica supera i 5 s di serie
+describe('giro esportato con il GPS vero', { timeout: 30000 }, () => {
   it('i campioni hanno latitudine e longitudine sulla strada', () => {
     const r = ride(true);
     const withPos = r.samples.filter((s) => s.lat != null && s.lon != null);

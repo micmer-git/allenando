@@ -374,6 +374,10 @@ export class Terrain {
   private tiles = new Map<string, DemTile>();
   private pending = new Map<string, Promise<DemTile | null>>();
   private farH: Float32Array | null = null;
+  /** mattonelle del DEM che non sono arrivate (404, rete giù): un errore, non un caricamento lento */
+  private failed = new Set<string>();
+  /** il terreno lontano non è arrivato */
+  farFailed = false;
   readonly n: number;
 
   constructor(
@@ -411,12 +415,18 @@ export class Terrain {
     if (!p) {
       p = fetch(`${this.base}dem/${key}.bin`)
         .then(async (res) => {
-          if (!res.ok) return null;
+          if (!res.ok) {
+            this.failed.add(key);
+            return null;
+          }
           const tile = decodeDemTile(new Uint8Array(await res.arrayBuffer()), this.n, tx, tz);
           this.tiles.set(key, tile);
           return tile;
         })
-        .catch(() => null)
+        .catch(() => {
+          this.failed.add(key);
+          return null;
+        })
         .finally(() => this.pending.delete(key));
       this.pending.set(key, p);
     }
@@ -446,12 +456,28 @@ export class Terrain {
     const f = this.graph.far;
     try {
       const res = await fetch(`${this.base}far.bin`);
-      if (!res.ok) return null;
+      if (!res.ok) {
+        this.farFailed = true;
+        return null;
+      }
       this.farH = decodeFar(new Uint8Array(await res.arrayBuffer()), f.nx, f.nz);
       return this.farH;
     } catch {
+      this.farFailed = true;
       return null;
     }
+  }
+
+  /** Una mattonella del DEM entro `radius` da (x, z) non è arrivata. */
+  failedAround(x: number, z: number, radius: number): boolean {
+    if (this.failed.size === 0) return false;
+    const [a0, b0] = this.tileOf(x - radius, z - radius);
+    const [a1, b1] = this.tileOf(x + radius, z + radius);
+    for (const key of this.failed) {
+      const [tx, tz] = key.split('_').map(Number);
+      if (tx >= a0 && tx <= a1 && tz >= b0 && tz <= b1) return true;
+    }
+    return false;
   }
 
   get farHeights(): Float32Array | null {

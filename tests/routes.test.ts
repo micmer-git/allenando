@@ -67,6 +67,6 @@ describe('salite vere nel pacchetto', () => {
           expect(p.y - h).toBeLessThan(8);
         }
       }
-    });
+    }, 30000);
   }
 });

@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, Field, Segmented, TextInput } from '@/components/ui';
+import { Button, Field, PageHeader, Segmented, TextInput } from '@/components/ui';
+import { cn } from '@/lib/cn';
+import { Chevron } from '@/components/Glyph';
 import { parseNumberInput } from '@/domain/format';
 import { PROFILE_LIMITS, type Quality } from '@/domain/types';
 import { useI18n } from '@/i18n';
@@ -53,18 +55,27 @@ export function ProfilePage() {
     setSaved(true);
   }
 
+  const autosave = () => void save();
+
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 pb-nav pt-6 md:px-8 md:pt-10">
-      <h1 className="font-display text-5xl tracking-tight">{t('profile.title')}</h1>
+    <main className="mx-auto w-full max-w-3xl px-4 pb-nav pt-5 md:px-8 md:pt-10" data-testid="profile">
+      <PageHeader
+        back={{ to: '/tu', label: 'Tu' }}
+        title={t('profile.title')}
+        aside={saved ? <span className="text-sm font-semibold text-good" role="status" data-testid="profile-saved">{t('profile.saved')}</span> : null}
+      />
       <section className="mt-6">
-        <h2 className="font-display text-2xl">{t('profile.look')}</h2>
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <Button variant={settings.theme === 'dark' ? 'primary' : 'ghost'} onClick={() => void updateSettings({ theme: 'dark' })}>
-            {t('theme.dark')}
-          </Button>
-          <Button variant={settings.theme === 'light' ? 'primary' : 'ghost'} onClick={() => void updateSettings({ theme: 'light' })}>
-            {t('theme.light')}
-          </Button>
+        <h2 className="font-display text-2xl uppercase">{t('profile.look')}</h2>
+        <div className="mt-3">
+          <Segmented<'dark' | 'light'>
+            label={t('profile.look')}
+            value={settings.theme}
+            onChange={(theme) => void updateSettings({ theme })}
+            options={[
+              { value: 'dark', label: t('theme.dark') },
+              { value: 'light', label: t('theme.light') },
+            ]}
+          />
         </div>
         <div className="mt-4">
           <p className="mb-2 text-sm font-medium text-muted">{t('profile.quality')}</p>
@@ -82,43 +93,51 @@ export function ProfilePage() {
         </div>
       </section>
       <section className="mt-8">
-        <h2 className="font-display text-2xl">{t('profile.body')}</h2>
+        <h2 className="font-display text-2xl uppercase">{t('profile.body')}</h2>
+        {/* ogni campo si salva quando lo lasci: niente «Salva» in fondo da ricordarsi */}
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <Field label={t('onboarding.name')}><TextInput value={name} onChange={(event) => setName(event.target.value)} /></Field>
-          <Field label={t('onboarding.weight')}><TextInput inputMode="decimal" value={weight} onChange={(event) => setWeight(event.target.value)} /></Field>
-          <Field label={t('onboarding.ftp')}><TextInput inputMode="numeric" value={ftp} onChange={(event) => setFtp(event.target.value)} /></Field>
-          <Field label={t('onboarding.maxHr')}><TextInput inputMode="numeric" value={maxHr} onChange={(event) => setMaxHr(event.target.value)} /></Field>
-          <Field label={t('profile.resting')}><TextInput inputMode="numeric" value={resting} onChange={(event) => setResting(event.target.value)} /></Field>
-          <Field label={t('profile.lthr')} hint={t('profile.lthrHint')}><TextInput inputMode="numeric" value={lthr} onChange={(event) => setLthr(event.target.value)} /></Field>
+          <Field label={t('onboarding.name')}><TextInput value={name} onChange={(event) => setName(event.target.value)} onBlur={autosave} /></Field>
+          <Field label={t('onboarding.weight')}><TextInput inputMode="decimal" value={weight} onChange={(event) => setWeight(event.target.value)} onBlur={autosave} /></Field>
+          <Field label={t('onboarding.ftp')}><TextInput inputMode="numeric" value={ftp} onChange={(event) => setFtp(event.target.value)} onBlur={autosave} /></Field>
+          <Field label={t('onboarding.maxHr')}><TextInput inputMode="numeric" value={maxHr} onChange={(event) => setMaxHr(event.target.value)} onBlur={autosave} /></Field>
+          <Field label={t('profile.resting')}><TextInput inputMode="numeric" value={resting} onChange={(event) => setResting(event.target.value)} onBlur={autosave} /></Field>
+          <Field label={t('profile.lthr')} hint={t('profile.lthrHint')}><TextInput inputMode="numeric" value={lthr} onChange={(event) => setLthr(event.target.value)} onBlur={autosave} /></Field>
         </div>
       </section>
-      <details className="mt-6 rounded-3xl border border-line bg-elev p-4">
-        <summary className="cursor-pointer font-semibold">{t('profile.physics')}</summary>
-        <div className="mt-3 grid gap-3 sm:grid-cols-3">
-          <Field label={t('profile.bike')}><TextInput inputMode="decimal" value={bike} onChange={(event) => setBike(event.target.value)} /></Field>
-          <Field label={t('profile.cda')}><TextInput inputMode="decimal" value={cda} onChange={(event) => setCda(event.target.value)} /></Field>
-          <Field label={t('profile.crr')}><TextInput inputMode="decimal" value={crr} onChange={(event) => setCrr(event.target.value)} /></Field>
+      <details className="group mt-6 rounded-3xl border border-line bg-elev px-4">
+        <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between font-semibold">
+          {t('profile.physics')}
+          <Chevron className="shrink-0 text-muted transition group-open:rotate-180" />
+        </summary>
+        <div className="grid gap-3 pb-4 sm:grid-cols-3">
+          <Field label={t('profile.bike')}><TextInput inputMode="decimal" value={bike} onChange={(event) => setBike(event.target.value)} onBlur={autosave} /></Field>
+          <Field label={t('profile.cda')}><TextInput inputMode="decimal" value={cda} onChange={(event) => setCda(event.target.value)} onBlur={autosave} /></Field>
+          <Field label={t('profile.crr')}><TextInput inputMode="decimal" value={crr} onChange={(event) => setCrr(event.target.value)} onBlur={autosave} /></Field>
         </div>
       </details>
-      <div className="mt-5 flex flex-wrap items-center gap-3">
-        <Button onClick={() => void save()}>{t('actions.save')}</Button>
-        {saved ? <span className="text-sm text-good">{t('profile.saved')}</span> : null}
-      </div>
-      <section className="mt-10">
-        <Button
-          variant="danger"
-          onClick={() => {
-            if (!armed) {
-              setArmed(true);
-              return;
-            }
-            void resetAll().then(() => navigate('/start'));
-          }}
-        >
-          {armed ? t('profile.resetArmed') : t('profile.reset')}
-        </Button>
-        <p className="mt-2 text-sm text-muted">{t('profile.resetHint')}</p>
-      </section>
+      <details className="group mt-10 rounded-3xl border border-danger/40 px-4" data-testid="profile-danger" onToggle={(e) => !(e.currentTarget as HTMLDetailsElement).open && setArmed(false)}>
+        <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between font-semibold text-danger">
+          {t('profile.danger')}
+          <Chevron className="shrink-0 transition group-open:rotate-180" />
+        </summary>
+        <div className="pb-4">
+          <p className="text-sm text-muted">{t('profile.resetHint')}</p>
+          <Button
+            variant={armed ? 'danger' : 'ghost'}
+            className={cn('mt-3', !armed && 'text-danger!')}
+            data-testid="profile-reset"
+            onClick={() => {
+              if (!armed) {
+                setArmed(true);
+                return;
+              }
+              void resetAll().then(() => navigate('/start'));
+            }}
+          >
+            {armed ? t('profile.resetArmed') : t('profile.reset')}
+          </Button>
+        </div>
+      </details>
     </main>
   );
 }
