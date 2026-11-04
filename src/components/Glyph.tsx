@@ -33,6 +33,15 @@ export function Glyph({ name, className, size = 24 }: { name: G; className?: str
   );
 }
 
+/** La freccia di una tendina, nello stesso tratto delle icone: si gira quando il blocco è aperto. */
+export function Chevron({ className, size = 18 }: { className?: string; size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <path d="m6 9 6 6 6-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 /** Una moneta d'oro, per i saldi e i prezzi. */
 export function Coin({ className, size = 16 }: { className?: string; size?: number }) {
   return (

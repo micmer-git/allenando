@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ProfileChart, RouteMap } from '@/components/RouteViz';
 import { Button, PageHeader, Segmented, TextInput } from '@/components/ui';
-import { formatDuration, formatKm, formatNumber } from '@/domain/format';
+import { formatDuration, formatKm, formatKmText, formatMetersText, formatNumber } from '@/domain/format';
 import { geoPointsFromSamples, hasAltitude, hasGps, hasPower, sectionSummary, sliceSection, type ReplayMode, type SectionSpec } from '@/domain/replay';
 import { trackFromGeo } from '@/domain/routes';
 import { useApp } from '@/store/useApp';
@@ -79,7 +79,7 @@ export function ReplaySetupPage() {
     <main className="mx-auto w-full max-w-3xl px-4 pb-nav pt-5 md:px-8 md:pt-10" data-testid="replay-setup">
       <PageHeader back={{ to: '/giri', label: 'Giri' }} title={ride.name} size="md" />
       <p className="num mt-1 text-muted">
-        {`${formatKm(ride.distanceM)} km · ${formatDuration(ride.durationSec)}${ride.externalId?.startsWith('intervals:') ? ' · Da Intervals.icu' : ride.fileType ? ` · ${ride.fileType.toUpperCase()}` : ''}`}
+        {`${formatKmText(ride.distanceM)} · ${formatDuration(ride.durationSec)}${ride.externalId?.startsWith('intervals:') ? ' · Da Intervals.icu' : ride.fileType ? ` · ${ride.fileType.toUpperCase()}` : ''}`}
       </p>
 
       <section className="mt-5">
@@ -130,7 +130,7 @@ export function ReplaySetupPage() {
           <dl className="grid grid-cols-4 gap-2 text-center">
             <Cell label="Tempo" value={formatDuration(summary.durationSec)} />
             <Cell label="km" value={formatKm(summary.distanceM)} />
-            <Cell label="D+" value={`${formatNumber(summary.gainM, 0)} m`} />
+            <Cell label="D+" value={`${formatMetersText(summary.gainM)}`} />
             <Cell label="Watt" value={summary.avgPower != null ? formatNumber(summary.avgPower, 0) : '–'} />
           </dl>
         ) : (

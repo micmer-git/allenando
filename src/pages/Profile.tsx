@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Field, PageHeader, Segmented, TextInput } from '@/components/ui';
 import { cn } from '@/lib/cn';
+import { Chevron } from '@/components/Glyph';
 import { parseNumberInput } from '@/domain/format';
 import { PROFILE_LIMITS, type Quality } from '@/domain/types';
 import { useI18n } from '@/i18n';
@@ -106,7 +107,7 @@ export function ProfilePage() {
       <details className="group mt-6 rounded-3xl border border-line bg-elev px-4">
         <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between font-semibold">
           {t('profile.physics')}
-          <span aria-hidden="true" className="text-muted transition group-open:rotate-180">⌄</span>
+          <Chevron className="shrink-0 text-muted transition group-open:rotate-180" />
         </summary>
         <div className="grid gap-3 pb-4 sm:grid-cols-3">
           <Field label={t('profile.bike')}><TextInput inputMode="decimal" value={bike} onChange={(event) => setBike(event.target.value)} onBlur={autosave} /></Field>
@@ -117,7 +118,7 @@ export function ProfilePage() {
       <details className="group mt-10 rounded-3xl border border-danger/40 px-4" data-testid="profile-danger" onToggle={(e) => !(e.currentTarget as HTMLDetailsElement).open && setArmed(false)}>
         <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between font-semibold text-danger">
           {t('profile.danger')}
-          <span aria-hidden="true" className="transition group-open:rotate-180">⌄</span>
+          <Chevron className="shrink-0 transition group-open:rotate-180" />
         </summary>
         <div className="pb-4">
           <p className="text-sm text-muted">{t('profile.resetHint')}</p>

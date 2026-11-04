@@ -3,7 +3,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { GRADE_LEGEND, gradeColor, ProfileChart, RouteMap, useVerifiedRoute } from '@/components/RouteViz';
 import { Button, PageHeader } from '@/components/ui';
 import { BoardPanel } from '@/components/Board';
-import { cap, formatDuration, formatKm, formatNumber } from '@/domain/format';
+import { Chevron } from '@/components/Glyph';
+import { cap, formatDuration, formatKm, formatMetersText, formatNumber } from '@/domain/format';
 import { projector } from '@/domain/geo';
 import { osmUrl, routeMeta, routeStats, streetViewUrl } from '@/domain/routes';
 import { ALL_BUILTIN } from '@/domain/workouts';
@@ -63,7 +64,7 @@ export function ClimbDetailPage() {
           <Big label="Dislivello" value={formatNumber(stats.endAlt - stats.startAlt, 0)} unit="m" />
           <Big label="Media" value={formatNumber(stats.avgGrade * 100, 1)} unit="%" />
           <Big label="Km duro" value={formatNumber(stats.maxKmGrade * 100, 1)} unit="%" />
-          <Big label="Quota" value={formatNumber(stats.endAlt, 0)} unit="m" note={`Da ${formatNumber(stats.startAlt, 0)} m`} />
+          <Big label="Quota" value={formatNumber(stats.endAlt, 0)} unit="m" note={`Da ${formatMetersText(stats.startAlt)}`} />
           <Big label="Tornanti" value={String(stats.hairpins)} unit="" />
         </dl>
       ) : (
@@ -167,11 +168,11 @@ export function ClimbDetailPage() {
           <details className="group mt-6 rounded-2xl border border-line text-sm text-muted" data-testid="climb-sources">
             <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between px-4 font-semibold text-ink">
               Fonti
-              <span aria-hidden="true" className="text-muted transition group-open:rotate-180">⌄</span>
+              <Chevron className="shrink-0 text-muted transition group-open:rotate-180" />
             </summary>
             <div className="space-y-2 px-4 pb-4 leading-relaxed">
               <p>
-                {`Strada: OpenStreetMap, con OSRM. Quota: EU-DEM 25 m (Copernicus) via OpenTopoData, entro ±${formatNumber(Math.ceil(route.track.maxElevationDelta), 0)} m; pendenza mediata su 40 m.`}
+                {`Strada: OpenStreetMap, con OSRM. Quota: EU-DEM 25 m (Copernicus) via OpenTopoData, entro ±${formatMetersText(Math.ceil(route.track.maxElevationDelta))}; pendenza mediata su 40 m.`}
               </p>
               <p>Tornanti: curve oltre 150° in 70 m.</p>
               <p>{route.attribution}</p>

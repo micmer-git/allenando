@@ -31,6 +31,28 @@ export const ELLISSI = `(() => {
   return out;
 })()`;
 
+/** Un'unità (m, km, %, W…) che comincia una riga, separata dal suo numero sulla riga sopra. */
+export const UNITA_A_CAPO = `(() => {
+  const words = [];
+  const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  let n; while ((n = w.nextNode())) {
+    const el = n.parentElement; if (!el || !el.getClientRects().length) continue;
+    if (getComputedStyle(el).visibility === 'hidden') continue;
+    const re = /\\S+/g; let m;
+    while ((m = re.exec(n.textContent))) {
+      const r = document.createRange(); r.setStart(n, m.index); r.setEnd(n, m.index + m[0].length);
+      const rs = r.getClientRects(); if (!rs.length) continue;
+      words.push({ t: m[0], top: rs[0].top, box: el.closest('li, section, div') });
+    }
+  }
+  const out = [];
+  for (let i = 1; i < words.length; i++) {
+    const a = words[i - 1], b = words[i];
+    if (a.box === b.box && /\\d$/.test(a.t) && b.top > a.top + 4 && /^(km|m|%|W|W\\/kg|bpm|rpm|min|h)([·,.;:)]|$)/.test(b.t)) out.push(a.t + ' ⏎ ' + b.t);
+  }
+  return out.slice(0, 20);
+})()`;
+
 /** Parole visibili nel primo schermo (barra in basso esclusa). */
 export const PAROLE = `(() => {
   let n = 0;
@@ -87,6 +109,10 @@ export async function giroPagine(p, check, { shot = null } = {}) {
     check(a.small.length === 0, `${name}: bersagli ≥ 44 px`, a.small.join(' | '));
     const xp = await p.evaluate(`/\\bXP\\b/.test(document.body.innerText)`);
     check(!xp, `${name}: nessun «XP» a schermo`);
+    const capo = await p.evaluate(UNITA_A_CAPO);
+    check(capo.length === 0, `${name}: nessuna unità a capo da sola`, capo.join(' | '));
+    const v = await p.evaluate(`document.body.innerText.includes('\\u2304')`);
+    check(!v, `${name}: nessuna «⌄» di testo come freccia`);
   };
   const go = async (name, path, wait = null, ms = 900) => {
     await p.go(path);
@@ -111,6 +137,8 @@ export async function giroPagine(p, check, { shot = null } = {}) {
   const pieni = await p.evaluate(PIENI);
   check(pieni.length <= 1, 'oggi: un solo tasto giallo pieno nel primo schermo', pieni.join(' | '));
   check(!(await p.evaluate(`!!document.querySelector('[data-testid=home-week]')`)), 'oggi: niente riquadri dei 7 giorni senza giri');
+  const orologio = await p.evaluate(`document.querySelector('[data-testid=home-session-clock]')?.getAttribute('aria-label') ?? ''`);
+  check(/^(Fra|Via fra|Partita da) \S/.test(orologio), 'oggi: il conto alla rovescia ha la sua parola', orologio);
   check(!(await p.evaluate(`[...document.querySelectorAll('[data-testid=home-session] *')].some((e) => parseFloat(getComputedStyle(e).width) <= 8 && e.getBoundingClientRect().height > 40)`)), 'oggi: niente barretta sul lato della sessione');
 
   // Mondo e le sue cinque schede
@@ -119,6 +147,8 @@ export async function giroPagine(p, check, { shot = null } = {}) {
   const carta = await p.evaluate(top('[data-testid=world-page] canvas'));
   check(!!carta && carta.top <= 220, 'mondo: la carta comincia entro 220 px', JSON.stringify(carta));
   check(!(await p.evaluate(`/in rete/i.test(document.body.innerText)`)), 'mondo: niente «in rete: –»');
+  const righe = await p.evaluate(`[...document.querySelectorAll('[data-testid^=world-ride-]')].filter((b) => b.querySelector('[data-testid=world-ride-side]')).filter((b) => { const n = b.querySelector('[data-testid=world-ride-name]').getBoundingClientRect(); const s = b.querySelector('[data-testid=world-ride-side]').getBoundingClientRect(); return s.top < n.bottom - 2; }).map((b) => b.textContent.trim().slice(0, 40))`);
+  check(righe.length === 0, 'mondo: il sottotitolo del percorso su una riga sua', righe.join(' | '));
   const tabs = await p.evaluate(`[...document.querySelectorAll('[data-testid=world-tabs] button')].map((b) => b.textContent.trim())`);
   for (const [i, tab] of tabs.entries()) {
     await p.evaluate(`document.querySelectorAll('[data-testid=world-tabs] button')[${i}].click()`);
@@ -150,6 +180,8 @@ export async function giroPagine(p, check, { shot = null } = {}) {
   check(barrette === 0, 'sessioni: nessuna barretta colorata sul lato', String(barrette));
   const aperta = await p.evaluate(`(() => { const li = document.querySelector('[data-testid^=session-][data-phase=aperta], [data-testid^=session-][data-phase=via]'); if (!li) return 'nessuna aperta adesso'; const i = li.dataset.testid.split('-')[1]; const box = document.querySelector('[data-testid=session-open-' + i + ']'); return box && /Aperta ora|Partita/.test(box.textContent) && /Entra/.test(box.textContent) ? 'ok' : 'manca'; })()`);
   check(aperta !== 'manca', 'sessioni: «Aperta ora · Entra» sulla sessione aperta', aperta);
+  const orologi = await p.evaluate(`[...document.querySelectorAll('[data-testid^=session-clock-]')].map((e) => e.textContent.trim()).filter((t) => !/^(Fra|Via fra|Partita da|Chiusa da) \\S/.test(t))`);
+  check(orologi.length === 0, 'sessioni: ogni conto alla rovescia ha la sua parola', orologi.join(' | '));
 
   await go('garage', '/garage', `!!document.querySelector('[data-testid=item-m-orobia]')`);
   await base('garage');
@@ -171,6 +203,12 @@ export async function giroPagine(p, check, { shot = null } = {}) {
   await base('classifiche');
   await ellissi('classifiche');
   await backTo('classifiche', '/tu');
+  for (const tab of ['percorsi', 'tratti']) {
+    await go(`classifiche-${tab}`, `/classifiche?tab=${tab}`, tab === 'tratti' ? `document.querySelectorAll('[data-testid^="lb-w:"]').length > 10` : `document.querySelectorAll('[data-testid^=lb-]').length > 5`, 1200);
+    await base(`classifiche, ${tab}`);
+  }
+  const doppie = await p.evaluate(`[...document.querySelectorAll('[data-testid^="lb-"] button')].filter((b) => { const s = [...b.querySelectorAll('span span')].map((x) => x.textContent.trim()); return s.length >= 2 && s[1].toLowerCase().startsWith(s[0].toLowerCase()); }).length`);
+  check(doppie === 0, 'classifiche: il nome del tratto scritto una volta sola', String(doppie));
 
   // Allenamenti: il primo entro 450 px; l'editor col grafico in cima e «Blocco 1»
   await go('allenamenti', '/workouts', `document.querySelectorAll('[data-testid=workout-list] > li').length >= 30`);

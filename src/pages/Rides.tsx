@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button, PageHeader, TextInput } from '@/components/ui';
-import { cap, formatDateTime, formatDuration, formatKm, formatNumber } from '@/domain/format';
+import { cap, formatDateTime, formatDuration, formatKmText, formatMetersText } from '@/domain/format';
 import { hasAltitude, hasGps, hasPower } from '@/domain/replay';
 import type { Ride } from '@/domain/types';
 import { estimateLthr } from '@/domain/zones';
@@ -53,7 +53,7 @@ function RideRow({ ride }: { ride: Ride }) {
       <Link to={`/giri/${ride.id}`} className="flex items-center justify-between gap-3 rounded-2xl bg-elev px-4 py-3" data-testid="replay-ride">
         <span className="min-w-0">
           <span className="block truncate font-semibold">{ride.name}</span>
-          <span className="num text-sm text-muted">{`${cap(formatDateTime(ride.startTime))} · ${formatKm(ride.distanceM)} km · ${formatDuration(ride.durationSec)}`}</span>
+          <span className="num text-sm text-muted">{`${cap(formatDateTime(ride.startTime))} · ${formatKmText(ride.distanceM)} · ${formatDuration(ride.durationSec)}`}</span>
           <span className="mt-1 flex gap-1.5">
             <Tag on={gps}>GPS</Tag>
             <Tag on={power}>Watt</Tag>
@@ -166,7 +166,7 @@ function IntervalsImport() {
             <li key={a.id} className="flex items-center justify-between gap-3 py-2">
               <span className="min-w-0">
                 <span className="block truncate font-semibold">{a.name || a.id}</span>
-                <span className="num text-xs text-muted">{`${a.startTime ? `${cap(formatDateTime(a.startTime))} · ` : ''}${formatKm(a.distanceM)} km · ${formatNumber(a.elevationGainM, 0)} m${a.hasPower ? ' · Watt' : ''}`}</span>
+                <span className="num text-xs text-muted">{`${a.startTime ? `${cap(formatDateTime(a.startTime))} · ` : ''}${formatKmText(a.distanceM)} · ${formatMetersText(a.elevationGainM)}${a.hasPower ? ' · Watt' : ''}`}</span>
                 {a.unavailable ? <span className="block text-xs text-warn">{a.unavailableReason ?? 'Non disponibile via API'}</span> : null}
               </span>
               <Button variant="soft" className="h-11 shrink-0 px-4 text-sm" disabled={a.unavailable || busy != null} onClick={() => void take(a)}>

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type Ref } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button, PageHeader, Segmented } from '@/components/ui';
 import { WorldMap, legsBounds, type MapMarker, type MapOverlay } from '@/components/WorldMap';
-import { cap, formatDuration, formatKm, formatNumber } from '@/domain/format';
+import { cap, formatDuration, formatKm, formatKmText, formatMetersText, formatNumber } from '@/domain/format';
 import { worldCount } from '@/multiplayer/world-client';
 import type { BoardRow, XpRow } from '@/multiplayer/world-protocol';
 import type { Leg } from '@/open/graph';
@@ -188,13 +188,18 @@ function RidesTab({ data, far, progress, picked, setPicked }: { data: WorldData;
                       data-testid={`world-ride-${r.id}`}
                     >
                       <div className="flex items-baseline justify-between gap-2">
-                        <p className="font-display text-xl leading-tight">
-                          {r.name} <span className="font-sans text-sm font-medium text-muted">{cap(r.side)}</span>
+                        <p className="min-w-0">
+                          <span className="block font-display text-xl leading-tight" data-testid="world-ride-name">
+                            {r.name}
+                          </span>
+                          <span className="block text-sm font-medium text-muted" data-testid="world-ride-side">
+                            {cap(r.side)}
+                          </span>
                         </p>
                         {rec?.bestSec != null ? <span className="num shrink-0 text-xs font-semibold text-good">{formatDuration(rec.bestSec)}</span> : null}
                       </div>
                       <p className="num mt-0.5 text-sm text-muted">
-                        {`${formatKm(r.lengthM)} km · D+ ${formatNumber(r.gainM, 0)} m · ${r.kind === 'salita' ? `Media ${pctStr(r.climbGrade)}` : `Fino a ${formatNumber(r.maxAlt, 0)} m`} · ${r.landmarks.length} luoghi`}
+                        {`${formatKmText(r.lengthM)} · D+ ${formatMetersText(r.gainM)} · ${r.kind === 'salita' ? `Media ${pctStr(r.climbGrade)}` : `Fino a ${formatMetersText(r.maxAlt)}`} · ${r.landmarks.length} luoghi`}
                       </p>
                     </button>
                   </li>
@@ -237,7 +242,7 @@ function RideCard({ data, ride, progress, onClose, onRide, startRef }: { data: W
       <p className="mt-2 text-[15px] leading-relaxed">{ride.blurb}</p>
       <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-4">
         <Stat label="Km" value={formatKm(ride.lengthM)} />
-        <Stat label="D+" value={`${formatNumber(ride.gainM, 0)} m`} />
+        <Stat label="D+" value={`${formatMetersText(ride.gainM)}`} />
         <Stat label="Quote" value={`${ride.startAlt}→${ride.endAlt}`} />
         <Stat label="Max 200 m" value={pctStr(ride.maxGrade)} />
       </dl>
@@ -338,7 +343,7 @@ function BoardList({ board }:{ board: { total: number; rows: BoardRow[]; mine: {
             {r.nick}
           </span>
           <span className="num">
-            {formatDuration(r.sec)} <span className="text-xs text-muted">{r.wkg ? `${formatNumber(r.wkg, 1)} W/kg` : ''}</span>
+            {formatDuration(r.sec)} <span className="text-xs text-muted">{r.wkg ? `${formatNumber(r.wkg, 1)}\u00a0W/kg` : ''}</span>
           </span>
         </li>
       ))}
@@ -477,7 +482,7 @@ function LoopTab({ data, far }: { data: WorldData; far: Float32Array | null }) {
                     <span className="inline-block h-3 w-3 rounded-full" style={{ background: ROUTE_COLORS[i] }} />
                     {l.via.slice(0, 4).join(' · ') || `Anello ${i + 1}`}
                   </p>
-                  <p className="num mt-0.5 text-sm text-muted">{`${formatKm(l.lengthM)} km · D+ ${formatNumber(l.gainM, 0)} m · ${Math.round(l.overlap * 100)}% di strada ripetuta`}</p>
+                  <p className="num mt-0.5 text-sm text-muted">{`${formatKmText(l.lengthM)} · D+ ${formatMetersText(l.gainM)} · ${Math.round(l.overlap * 100)}% di strada ripetuta`}</p>
                 </button>
               </li>
             ))}
@@ -594,7 +599,7 @@ function AbTab({ data, far }: { data: WorldData; far: Float32Array | null }) {
       {real ? (
         <div className="mt-2 rounded-2xl bg-elev px-3.5 py-3" data-testid="world-ab-route">
           <p className="font-semibold">{real.via.slice(0, 5).join(' · ') || `${a?.label} → ${b?.label}`}</p>
-          <p className="num mt-0.5 text-sm text-muted">{`${formatKm(real.lengthM)} km · D+ ${formatNumber(real.gainM, 0)} m${back ? ` · ${Math.round(real.overlap * 100)}% di ritorno sulla stessa strada` : ''}`}</p>
+          <p className="num mt-0.5 text-sm text-muted">{`${formatKmText(real.lengthM)} · D+ ${formatMetersText(real.gainM)}${back ? ` · ${Math.round(real.overlap * 100)}% di ritorno sulla stessa strada` : ''}`}</p>
           <Button className="mt-3 w-full" onClick={() => navigate(`/ride?world=bergamo&plan=${savePlan({ legs: real.legs, name: `${a?.label} → ${b?.label}${back ? ' e ritorno' : ''}` })}`)} data-testid="world-ab-ride">
             Pedala da A a B
           </Button>

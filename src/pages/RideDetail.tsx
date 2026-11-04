@@ -5,7 +5,7 @@ import { Button, PageHeader } from '@/components/ui';
 import { WorldMap, type MapMarker, type MapOverlay } from '@/components/WorldMap';
 import { loadWorld, Terrain, type WorldData } from '@/open/world';
 import type { Ride } from '@/domain/types';
-import { cap, formatDateTime, formatDuration, formatKm, formatNumber, formatTss, msToKmh } from '@/domain/format';
+import { cap, formatDateTime, formatDuration, formatKmText, formatNumber, formatTss, msToKmh } from '@/domain/format';
 import { HR_ZONES, POWER_ZONES } from '@/domain/zones';
 import { encodeActivityFit } from '@/io/fit';
 import { encodeTcx } from '@/io/tcx';
@@ -44,9 +44,9 @@ export function RideDetailPage() {
       </p>
       <dl className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Metric label={t('metrics.time')} value={formatDuration(ride.durationSec)} />
-        <Metric label={t('metrics.distance')} value={`${formatKm(ride.distanceM)} km`} />
-        <Metric label={t('metrics.avgPower')} value={ride.avgPower != null ? `${formatNumber(ride.avgPower, 0)} W` : '–'} />
-        <Metric label={t('metrics.npLong')} value={ride.np != null ? `${formatNumber(ride.np, 0)} W` : '–'} />
+        <Metric label={t('metrics.distance')} value={`${formatKmText(ride.distanceM)}`} />
+        <Metric label={t('metrics.avgPower')} value={ride.avgPower != null ? `${formatNumber(ride.avgPower, 0)}\u00a0W` : '–'} />
+        <Metric label={t('metrics.npLong')} value={ride.np != null ? `${formatNumber(ride.np, 0)}\u00a0W` : '–'} />
         <Metric label={t('metrics.ifLong')} value={ride.intensityFactor != null ? formatNumber(ride.intensityFactor, 2) : '–'} />
         <Metric label={t('metrics.tss')} value={formatTss(ride.tss)} testId="ride-detail-tss" />
         <Metric label={t('metrics.hr')} value={ride.avgHr != null ? `${ride.avgHr} ${t('units.bpm')}` : '–'} />

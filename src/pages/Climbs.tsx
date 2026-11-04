@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { ProfileChart, RouteMap, useVerifiedRoute } from '@/components/RouteViz';
-import { cap, formatKm, formatNumber } from '@/domain/format';
+import { cap, formatKm, formatMetersText, formatNumber } from '@/domain/format';
 import { PageHeader } from '@/components/ui';
 import { CATALOG, routeStats, VERIFIED_ROUTES, type RouteMeta } from '@/domain/routes';
 
@@ -60,7 +60,7 @@ function ClimbCard({ meta }: { meta: RouteMeta }) {
             {stats ? (
               <dl className="mt-3 grid grid-cols-3 gap-x-3 gap-y-1 text-sm">
                 <Fact label="Km" value={formatKm(stats.lengthM)} />
-                <Fact label="D+" value={`${formatNumber(stats.endAlt - stats.startAlt, 0)} m`} />
+                <Fact label="D+" value={`${formatMetersText(stats.endAlt - stats.startAlt)}`} />
                 <Fact label="Media" value={`${formatNumber(stats.avgGrade * 100, 1)}%`} />
               </dl>
             ) : (

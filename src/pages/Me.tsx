@@ -49,7 +49,10 @@ export function MePage() {
           <h1 className="break-words font-display text-4xl uppercase leading-none">{profile.name || 'Tu'}</h1>
           <p className="mt-1 text-sm text-muted">{lv.title}</p>
         </div>
-        <LevelRing xp={progress.xp} />
+        <span className="flex shrink-0 items-center gap-1.5" data-testid="me-level">
+          <span className="text-sm font-semibold text-muted">Liv.</span>
+          <LevelRing xp={progress.xp} />
+        </span>
       </header>
       <div className="mt-3">
         <div className="h-2 overflow-hidden rounded-full bg-elev2">

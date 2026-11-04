@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { WorkoutChart } from '@/components/WorkoutChart';
 import { Button, PageHeader, Segmented, Sheet } from '@/components/ui';
-import { formatDuration, formatKm, formatNumber, formatTss } from '@/domain/format';
+import { formatDuration, formatKmText, formatNumber, formatTss } from '@/domain/format';
 import { VERIFIED_ROUTES } from '@/domain/routes';
 import type { Workout } from '@/domain/types';
 import {
@@ -252,7 +252,7 @@ export function WorkoutsPage() {
                 {world ? (
                   world.rides.map((r) => (
                     <option key={r.id} value={r.id}>
-                      {`${r.name} · ${formatKm(r.lengthM)} km`}
+                      {`${r.name} · ${formatKmText(r.lengthM)}`}
                     </option>
                   ))
                 ) : (
@@ -323,7 +323,7 @@ function WorkoutCard({
       <div className="mt-3">
         <WorkoutChart workout={workout} ftp={ftp} />
       </div>
-      <p className="num mt-2 text-sm text-muted">{`${formatDuration(estimate.durationSec)} · NP ${formatNumber(estimate.np, 0)} W · TSS ${formatTss(estimate.tss)}`}</p>
+      <p className="num mt-2 text-sm text-muted">{`${formatDuration(estimate.durationSec)} · NP ${formatNumber(estimate.np, 0)}\u00a0W · TSS ${formatTss(estimate.tss)}`}</p>
       <div className="mt-3 flex flex-wrap gap-2">
         {start.loop ? (
           <button type="button" className={cn(startCls, 'disabled:opacity-50')} disabled={!start.ready || start.busy} onClick={start.loop} data-testid={`workout-${workout.id}`}>

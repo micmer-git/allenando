@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { BoardPanel, Medal } from '@/components/Board';
 import { PageHeader, Segmented } from '@/components/ui';
 import { Glyph } from '@/components/Glyph';
-import { cap, formatDuration, formatKm, formatNumber } from '@/domain/format';
+import { cap, formatDuration, formatKmText, formatMetersText, formatNumber } from '@/domain/format';
 import { VERIFIED_ROUTES } from '@/domain/routes';
 import { SEGMENT_STYLE, type Segment, type SegmentKind } from '@/game/arches';
 import { worldSegments } from '@/game/segments';
@@ -82,7 +82,7 @@ export function LeaderboardsPage() {
                 onToggle={() => setOpen(open === id ? null : id)}
                 kind="gpm"
                 title={r.name}
-                sub={c ? `${cap(r.side)} · ${formatKm(c.lengthM)} km · ${formatNumber(c.gainM, 0)} m` : `${cap(r.side)} · ${r.region}`}
+                sub={c ? `${cap(r.side)} · ${formatKmText(c.lengthM)} · ${formatMetersText(c.gainM)}` : `${cap(r.side)} · ${r.region}`}
                 leader={leaders === 'loading' || !leaders ? undefined : leaders[id]}
                 pb={pbs[id]?.sec}
               />
@@ -102,7 +102,7 @@ export function LeaderboardsPage() {
                 onToggle={() => setOpen(open === r.id ? null : r.id)}
                 kind="crono"
                 title={r.name}
-                sub={`${formatKm(r.lengthM)} km · ${formatNumber(r.gainM, 0)} m`}
+                sub={`${formatKmText(r.lengthM)} · ${formatMetersText(r.gainM)}`}
                 leader={leaders === 'loading' || !leaders ? undefined : leaders[r.id]}
                 pb={pbs[`w:${r.id}`]?.sec}
               />
@@ -131,7 +131,7 @@ export function LeaderboardsPage() {
                         onToggle={() => setOpen(open === s.id ? null : s.id)}
                         kind={s.kind}
                         title={s.name}
-                        sub={`${SEGMENT_STYLE[s.kind].name} · ${formatKm(s.to - s.from)} km`}
+                        sub={kindAndKm(s.name, SEGMENT_STYLE[s.kind].name, s.to - s.from)}
                         leader={leaders === 'loading' || !leaders ? undefined : leaders[s.id]}
                         pb={pbs[s.id]?.sec}
                       />
@@ -149,6 +149,12 @@ export function LeaderboardsPage() {
       {tab === 'punti' ? <XpBoard /> : null}
     </main>
   );
+}
+
+/** Il tipo del tratto solo se il nome non lo dice già («Volata del cassonetto» una volta sola). */
+export function kindAndKm(name: string, kind: string, meters: number): string {
+  const km = formatKmText(meters);
+  return name.toLocaleLowerCase('it-IT').includes(kind.toLocaleLowerCase('it-IT')) ? km : `${kind} · ${km}`;
 }
 
 function Row({

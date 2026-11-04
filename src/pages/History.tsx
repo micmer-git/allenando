@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { cap, formatDateTime, formatDuration, formatKm, formatNumber, formatTss } from '@/domain/format';
+import { cap, formatDateTime, formatDuration, formatKmText, formatNumber, formatTss } from '@/domain/format';
 import { PageHeader } from '@/components/ui';
 import { useI18n } from '@/i18n';
 import { useApp } from '@/store/useApp';
@@ -34,7 +34,7 @@ export function HistoryPage() {
                     <span className="text-sm text-muted">{cap(formatDateTime(ride.startTime))}</span>
                   </span>
                   <span className="text-right text-sm">
-                    <span className="num block font-semibold">{`${formatKm(ride.distanceM)} km`}</span>
+                    <span className="num block font-semibold">{`${formatKmText(ride.distanceM)}`}</span>
                     <span className="text-muted">{formatDuration(ride.durationSec)}</span>
                   </span>
                 </span>

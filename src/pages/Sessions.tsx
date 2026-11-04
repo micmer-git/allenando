@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { BoardPanel } from '@/components/Board';
-import { formatKm, formatNumber } from '@/domain/format';
+import { formatKmText, formatMetersText, NBSP, withUnit } from '@/domain/format';
 import { phaseOf, sessionAt, sessionBoardId, SESSION_STYLE, slotOf, upcoming, WORLD_RIDE_NAMES, type SessionDef, type SessionKind } from '@/game/sessions';
 import { Glyph } from '@/components/Glyph';
 import { PageHeader } from '@/components/ui';
@@ -16,14 +16,27 @@ export function countdown(ms: number): string {
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   const sec = s % 60;
-  if (h > 0) return `${h} h ${String(m).padStart(2, '0')}`;
-  if (m >= 10) return `${m} min`;
+  if (h > 0) return `${withUnit(String(h), 'h')}${NBSP}${String(m).padStart(2, '0')}`;
+  if (m >= 10) return withUnit(String(m), 'min');
   return `${m}:${String(sec).padStart(2, '0')}`;
+}
+
+/**
+ * Il tempo della sessione con la sua parola, mai un numero da solo accanto a un orario:
+ * «Fra 39 min» prima, «Via fra 6:07» quando è aperta, «Partita da 3 min» dopo il via.
+ */
+export function sessionClock(s: SessionDef, now: number): { label: string; value: string; text: string } {
+  const ph = phaseOf(s, now);
+  const out = (label: string, value: string) => ({ label, value, text: `${label} ${value}` });
+  if (ph === 'via') return out('Partita da', withUnit(String(Math.max(1, Math.floor((now - s.start) / 60_000))), 'min'));
+  if (ph === 'aperta') return out('Via fra', countdown(s.start - now));
+  if (ph === 'chiusa') return out('Chiusa da', withUnit(String(Math.floor((now - s.start) / 60_000)), 'min'));
+  return out('Fra', countdown(s.start - now));
 }
 
 /** Il passo del gruppo, scritto per esteso: è il dato che decide se entrare. */
 export function paceLabel(pace: { label: string; wkg: number }): string {
-  return `Passo ${pace.label} · ${pace.wkg.toFixed(1).replace('.', ',')} W/kg`;
+  return `Passo ${pace.label} · ${pace.wkg.toFixed(1).replace('.', ',')}\u00a0W/kg`;
 }
 
 /** Il link per entrare in una sessione. */
@@ -67,10 +80,13 @@ export function SessionsPage() {
               className={cn('rounded-2xl border bg-elev', can ? 'border-accent/70' : 'border-line')}
             >
               <div className="flex items-center gap-3 p-3">
-                <div className="w-[4.6rem] shrink-0 text-center">
+                <div className="w-[5.2rem] shrink-0 text-center">
                   <span className="num block font-display text-3xl leading-none">{hhmm(s.start)}</span>
-                  <span className={cn('mt-1 block whitespace-nowrap text-[11px] font-semibold uppercase tracking-wide', can ? 'text-accent' : 'text-muted')}>
-                    {ph === 'via' ? 'In corso' : ph === 'aperta' ? countdown(s.start - now) : `Fra ${countdown(s.start - now)}`}
+                  <span
+                    className={cn('num mt-1 block text-[11px] font-semibold uppercase leading-tight tracking-wide', can ? 'text-accent' : 'text-muted')}
+                    data-testid={`session-clock-${i}`}
+                  >
+                    {sessionClock(s, now).text}
                   </span>
                 </div>
                 <div className="min-w-0 flex-1">
@@ -78,7 +94,7 @@ export function SessionsPage() {
                   <span className="mt-1 block font-semibold leading-snug">{r?.name ?? WORLD_RIDE_NAMES[s.rideId] ?? s.rideId}</span>
                   <span className="num flex flex-wrap gap-x-1.5 text-sm leading-snug text-muted">
                     {s.pace ? <span className="whitespace-nowrap">{`${paceLabel(s.pace)}${r ? ' ·' : ''}`}</span> : null}
-                    {r ? <span className="whitespace-nowrap">{`${formatKm(r.lengthM)} km · ${formatNumber(r.gainM, 0)} m`}</span> : null}
+                    {r ? <span className="whitespace-nowrap">{`${formatKmText(r.lengthM)} · ${formatMetersText(r.gainM)}`}</span> : null}
                   </span>
                 </div>
                 {can ? (

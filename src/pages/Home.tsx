@@ -6,9 +6,9 @@ import { useGame } from '@/game/useGame';
 import { missionsFor } from '@/game/missions';
 import { phaseOf, upcoming, WORLD_RIDE_NAMES } from '@/game/sessions';
 import { LevelRing } from './Me';
-import { countdown, paceLabel, sessionHref, SessionKindToken } from './Sessions';
+import { paceLabel, sessionClock, sessionHref, SessionKindToken } from './Sessions';
 import { InstallCard } from '@/components/Install';
-import { cap, formatDateTime, formatDuration, formatKm, formatNumber, formatTss } from '@/domain/format';
+import { cap, formatDateTime, formatDuration, formatKm, formatKmText, formatNumber, formatTss } from '@/domain/format';
 import { localDateKey, trainingLoad } from '@/domain/load';
 import { VERIFIED_ROUTES } from '@/domain/routes';
 import { WORLD_RIDES } from '@/multiplayer/world-rides';
@@ -153,7 +153,7 @@ export function HomePage() {
                     <span className="text-sm text-muted">{cap(formatDateTime(ride.startTime))}</span>
                   </span>
                   <span className="shrink-0 text-right">
-                    <span className="num block font-semibold">{`${formatKm(ride.distanceM)} km`}</span>
+                    <span className="num block font-semibold">{`${formatKmText(ride.distanceM)}`}</span>
                     <span className="text-sm text-muted">{`${formatDuration(ride.durationSec)}${ride.tss != null ? ` · ${formatTss(ride.tss)} TSS` : ''}`}</span>
                   </span>
                 </Link>
@@ -189,6 +189,7 @@ function NextSession({ now }: { now: number }) {
   const ph = phaseOf(s, now);
   const can = ph === 'aperta' || ph === 'via';
   const name = WORLD_RIDE_NAMES[s.rideId] ?? s.rideId;
+  const clock = sessionClock(s, now);
   return (
     <section className={cn('mt-4 rounded-3xl border bg-elev', can ? 'border-accent/60' : 'border-line')} data-testid="home-session">
       <div className="flex items-center gap-3 py-3 pl-4 pr-3">
@@ -202,7 +203,10 @@ function NextSession({ now }: { now: number }) {
             {`${s.pace ? `${paceLabel(s.pace)} · ` : ''}${new Date(s.start).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`}
           </span>
         </div>
-        <span className="num shrink-0 font-display text-3xl leading-none">{ph === 'via' ? 'VIA' : countdown(s.start - now)}</span>
+        <p className="num shrink-0 text-right leading-none" data-testid="home-session-clock" aria-label={clock.text}>
+          <span className="block text-[11px] font-semibold uppercase tracking-wide text-muted">{clock.label}</span>
+          <span className="mt-1 block font-display text-3xl">{clock.value}</span>
+        </p>
         {can ? (
           <Link to={sessionHref(s)} className="grid h-11 shrink-0 place-items-center rounded-full bg-accent px-4 text-sm font-semibold text-accent-ink" data-testid="home-session-join">
             Entra

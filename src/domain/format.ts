@@ -30,12 +30,32 @@ export function formatDuration(sec: number): string {
   return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`;
 }
 
+/**
+ * Lo spazio fra un numero e la sua unità non si spezza: «1288 m» non va a capo prima della «m».
+ * U+00A0, lo spazio non separabile.
+ */
+export const NBSP = '\u00a0';
+
+export function withUnit(value: string, unit: string): string {
+  return `${value}${NBSP}${unit}`;
+}
+
+/** «4,83 km», con lo spazio che non va a capo. */
+export function formatKmText(meters: number): string {
+  return withUnit(formatKm(meters), 'km');
+}
+
+/** «1288 m», con lo spazio che non va a capo. */
+export function formatMetersText(meters: number): string {
+  return withUnit(formatNumber(meters, 0), 'm');
+}
+
 export function formatHours(seconds: number): string {
   const h = Math.floor(seconds / 3600);
   const m = Math.round((seconds % 3600) / 60);
-  if (h <= 0) return `${m} min`;
-  if (m === 0) return `${h} h`;
-  return `${h} h ${String(m).padStart(2, '0')}`;
+  if (h <= 0) return withUnit(String(m), 'min');
+  if (m === 0) return withUnit(String(h), 'h');
+  return `${withUnit(String(h), 'h')}${NBSP}${String(m).padStart(2, '0')}`;
 }
 
 export function formatDateTime(iso: string): string {
