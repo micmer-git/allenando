@@ -10,10 +10,11 @@ const ready = `document.querySelector('[data-testid=world-ready]')?.dataset.read
 export async function hold(p, sel, ms = 1100) {
   const at = await p.evaluate(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
   if (!at) return false;
-  // come un dito vero: il dito si alza dopo `ms` dal tocco, anche se la pagina (occupata dal 3D)
-  // non ha ancora gestito il tocco. Aspettare la risposta di Chrome al touchStart allungherebbe
-  // la pressione di tutto il tempo in cui la pagina è occupata
+  // Chrome sotto carico consegna i tocchi finti in ritardo, e l'app misura la pressione sui tempi
+  // degli eventi. Pressione lunga: si aspetta che il tocco sia arrivato, poi si tiene `ms` (dura
+  // almeno `ms`). Tocco breve: il dito si alza `ms` dopo senza aspettare (non si allunga)
   const down = p.s('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: at.x, y: at.y }] });
+  if (ms >= 800) await down;
   await sleep(ms);
   const up = p.s('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await Promise.all([down, up]);
@@ -86,12 +87,15 @@ export async function collaudoCorsa({ b, base, check, out = '' }) {
   await p.go('/ride?world=bergamo&ride=citta-alta');
   // l'app si avvia (sotto carico anche qualche secondo), poi la corsa si monta sotto il velo e aspetta il mondo
   await p.waitFor(`!!document.querySelector('[data-testid=ride-loading]') || ${ready}`, 60000);
+  const veil0 = await p.evaluate(`({ veil: !!document.querySelector('[data-testid=ride-loading]') && !(${ready}), title: document.querySelector('[data-testid=ride-loading-title]')?.textContent ?? '' })`);
   await p.shot('c2-20-velo');
   await p.waitFor(`!!document.querySelector('[data-testid=ride-screen]') || ${ready}`, 120000);
   const early = await p.evaluate(probe);
   const before = await p.evaluate(`({ ready: ${ready}, veil: !!document.querySelector('[data-testid=ride-loading]'), title: document.querySelector('[data-testid=ride-loading-title]')?.textContent ?? '' })`);
-  check(before.veil && !before.ready, 'corsa: prima del mondo c’è il velo col nome del percorso', JSON.stringify(before));
-  check(!!early && !early.live && !early.poi && /^00:00$/.test(early.time), 'corsa: prima del mondo tempo 00:00, niente tratti né punti caldi', JSON.stringify(early));
+  check(veil0.veil, 'corsa: prima del mondo c’è il velo', JSON.stringify(veil0));
+  check(/Città Alta/i.test(veil0.title) || /Città Alta/i.test(before.title), 'corsa: il velo dice il nome del percorso', JSON.stringify([veil0, before]));
+  // se il mondo è già pronto qui, il controllo del tempo fermo non si può fare su questa macchina
+  check(before.ready || (!!early && !early.live && !early.poi && /^00:00$/.test(early.time)), 'corsa: prima del mondo tempo 00:00, niente tratti né punti caldi', JSON.stringify(early));
   check(await p.waitFor(ready, 150000), 'corsa: mondo pronto');
   await sleep(600);
   check(!(await p.evaluate(`!!document.querySelector('[data-testid=ride-loading]')`)), 'corsa: il velo se ne va');
