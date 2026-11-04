@@ -4,10 +4,8 @@ import { savePlan } from './plan';
 import type { WorldData } from './world';
 
 /**
- * Da dove si parte nel mondo, fuori dalla pagina Mondo: la pagina Allenamenti li usa per
- * pedalare un allenamento nel giro libero da un paese o su un anello suggerito.
- * NB: la lista e la scelta del punto ricalcano STARTS/startPoint/go della scheda Libero di
- * src/pages/World.tsx; se cambia là, va allineata qui (o là si usa questa).
+ * Da dove si parte nel mondo: i paesi del giro libero e il punto preciso. Li usano la scheda
+ * Libero del Mondo e la pagina Allenamenti (un allenamento nel giro libero o su un anello).
  */
 
 /** I paesi da cui si parte, presi dai dati del mondo. */
@@ -23,15 +21,22 @@ export function townPoint(data: WorldData, name: string): { x: number; z: number
   return data.features.places.find((pl) => norm(pl.name) === norm(name) && pl.kind !== 'hamlet') ?? null;
 }
 
-/** I parametri del giro libero da un paese: arco, metri e verso (senza la superstrada). */
-export function freeStartQuery(data: WorldData, name: string): string | null {
-  const p = townPoint(data, name);
-  if (!p) return null;
-  const hit = data.graph.nearest(p.x, p.z, 400, (e) => e.cls !== CLS.trunk);
+/**
+ * I parametri del giro libero da un punto: arco, metri e verso. Una strada vera (graph.freeStart),
+ * e da un paese quella che lo attraversa: a Nembro il punto più vicino era un anellino di pista.
+ */
+export function freeQueryAt(data: WorldData, x: number, z: number, town = false): string | null {
+  const hit = data.graph.freeStart(x, z, 400, town);
   if (!hit) return null;
   const e = data.graph.edges[hit.edge];
   const dir = data.graph.allowed(hit.edge, 1) ? 1 : -1;
   return `world=bergamo&edge=${hit.edge}&s=${Math.round(Math.min(e.length - 1, hit.s))}&dir=${dir}`;
+}
+
+/** I parametri del giro libero da un paese. */
+export function freeStartQuery(data: WorldData, name: string): string | null {
+  const p = townPoint(data, name);
+  return p ? freeQueryAt(data, p.x, p.z, true) : null;
 }
 
 /**

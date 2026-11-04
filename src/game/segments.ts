@@ -6,7 +6,7 @@ import type { Segment, SegmentKind } from './arches';
 /**
  * I tratti cronometrati: volate, gran premi della montagna, cronometro.
  *
- * Nel mondo si ricavano dai 13 percorsi: dal profilo (un punto ogni 25 m) si cercano la
+ * Nel mondo si ricavano dai percorsi: dal profilo (un punto ogni 25 m) si cercano la
  * salita più dura, un rettilineo piatto prima dell'arrivo, un tratto regolare da crono. Poi
  * ogni tratto si «ancora» agli archi del grafo che percorre: così vale anche nel giro libero,
  * per chiunque passi di lì nel verso giusto, non solo per chi ha scelto quel percorso.

@@ -1,4 +1,8 @@
 import type { Career, RideFacts } from './career';
+import { WORLD_RIDES } from '@/multiplayer/world-rides';
+
+/** I percorsi del mondo, quanti sono oggi: li scrive build-world, la Ganda è il quattordicesimo. */
+const ALL_RIDES = Object.keys(WORLD_RIDES).length;
 
 /**
  * I traguardi. Ognuno ha una regola che si legge (desc), un controllo sui numeri della
@@ -116,6 +120,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   count('cassonetto-10', 'Re del cassonetto', 'Dieci volate del cassonetto. Vale la maglia Differenziata.', 'traguardi', 'cassonetto', 'cassonetto', 10, 200),
   { id: 'record-1', name: 'Più forte di prima', desc: 'Un record personale su un tratto già fatto.', group: 'traguardi', glyph: 'coppa', oro: 60, check: (c) => Object.values(c.pbs).some((p) => p.count >= 2) },
   // mondo
+  { id: 'mondo-ganda', name: 'La Ganda', desc: 'Il giro della Ganda, tutto: Orezzo, il passo, Selvino.', group: 'mondo', glyph: 'salita', oro: 150, check: (c) => (c.counts.worldRides['ganda'] ?? 0) > 0 },
   { id: 'mondo-citta-alta', name: 'Dentro le Mura', desc: 'Il percorso Città Alta, tutto. Vale la maglia Città Alta.', group: 'mondo', glyph: 'mappa', oro: 100, check: (c) => (c.counts.worldRides['citta-alta'] ?? 0) > 0 },
   {
     id: 'mondo-5',
@@ -130,13 +135,13 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'mondo-tutti',
     name: 'Bergamo intera',
-    desc: 'Tutti i tredici percorsi del mondo.',
+    desc: `Tutti i ${ALL_RIDES} percorsi del mondo.`,
     group: 'mondo',
     glyph: 'coppa',
     oro: 1000,
     rare: true,
-    check: (c) => Object.keys(c.counts.worldRides).length >= 13,
-    progress: (c) => [Math.min(13, Object.keys(c.counts.worldRides).length), 13],
+    check: (c) => Object.keys(c.counts.worldRides).filter((id) => id in WORLD_RIDES).length >= ALL_RIDES,
+    progress: (c) => [Math.min(ALL_RIDES, Object.keys(c.counts.worldRides).filter((id) => id in WORLD_RIDES).length), ALL_RIDES],
   },
   { id: 'luoghi-10', name: 'Curioso', desc: 'Dieci luoghi scoperti nel mondo.', group: 'mondo', glyph: 'campana', oro: 60, check: (_c, f) => f.discovered >= 10 },
   { id: 'luoghi-40', name: 'Guida delle valli', desc: 'Quaranta luoghi scoperti nel mondo.', group: 'mondo', glyph: 'campana', oro: 250, rare: true, check: (_c, f) => f.discovered >= 40 },

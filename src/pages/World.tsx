@@ -17,6 +17,7 @@ import { kindLabel } from '@/open/WorldScene';
 import { savePlan } from '@/open/plan';
 import { planAB, type AbRoute } from '@/open/ab';
 import { pickRoute } from '@/open/pick';
+import { freeQueryAt, START_TOWNS, townPoint } from '@/open/starts';
 
 const AREAS: { id: RideDef['area']; label: string }[] = [
   { id: 'citta', label: 'Bergamo città' },
@@ -37,7 +38,7 @@ const TABS: { value: Tab; label: string }[] = [
 const ROUTE_COLORS = ['#ffc814', '#ff6b4a', '#4ab8ff', '#c8f031', '#c77dff', '#3ce0b0', '#ff5fa2'];
 
 /** I punti di partenza del giro libero: i paesi grandi del mondo, presi dai dati. */
-const STARTS = ['Bergamo', 'Città Alta', 'Ponteranica', 'Alzano Lombardo', 'Nembro', 'Albino', 'Gazzaniga', 'Ponte Nossa', 'Clusone', 'Castione della Presolana', 'Villa d’Almè', 'Zogno', 'San Pellegrino Terme', 'San Giovanni Bianco', 'Piazza Brembana', 'Branzi', 'Serina', 'Selvino'];
+const STARTS = START_TOWNS;
 
 export function WorldPage() {
   const [data, setData] = useState<WorldData | null>(null);
@@ -377,14 +378,7 @@ function BoardList({ board }:{ board: { total: number; rows: BoardRow[]; mine: {
   );
 }
 
-function startPoint(data: WorldData, name: string): { x: number; z: number } | null {
-  if (name === 'Città Alta') {
-    const lm = data.features.landmarks.find((l) => /Piazza Vecchia/.test(l.name));
-    if (lm) return lm;
-  }
-  const p = data.features.places.find((pl) => pl.name.replace(/[’']/g, "'") === name.replace(/[’']/g, "'") && pl.kind !== 'hamlet');
-  return p ?? null;
-}
+const startPoint = townPoint;
 
 function FreeTab({ data, far }: { data: WorldData; far: Float32Array | null }) {
   const navigate = useNavigate();
@@ -392,11 +386,8 @@ function FreeTab({ data, far }: { data: WorldData; far: Float32Array | null }) {
   const starts = useMemo(() => STARTS.map((n) => ({ name: n, p: startPoint(data, n) })).filter((s) => s.p), [data]);
   function go(x: number, z: number, town = false) {
     // una strada vera, non l'anellino di una pista attorno a un'aiuola (a Nembro girava a vuoto)
-    const hit = data.graph.freeStart(x, z, 400, town);
-    if (!hit) return;
-    const e = data.graph.edges[hit.edge];
-    const dir = data.graph.allowed(hit.edge, 1) ? 1 : -1;
-    navigate(`/ride?world=bergamo&edge=${hit.edge}&s=${Math.round(Math.min(e.length - 1, hit.s))}&dir=${dir}`);
+    const q = freeQueryAt(data, x, z, town);
+    if (q) navigate(`/ride?${q}`);
   }
   return (
     <section className="mt-4">
