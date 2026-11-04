@@ -5,7 +5,7 @@ import { Segmented } from '@/components/ui';
 import { Glyph } from '@/components/Glyph';
 import { formatDuration, formatKm, formatNumber } from '@/domain/format';
 import { VERIFIED_ROUTES } from '@/domain/routes';
-import { SEGMENT_STYLE, type Segment } from '@/game/arches';
+import { SEGMENT_STYLE, type Segment, type SegmentKind } from '@/game/arches';
 import { worldSegments } from '@/game/segments';
 import { useGame } from '@/game/useGame';
 import { CLIMB_BOARD, type XpRow } from '@/multiplayer/world-protocol';
@@ -167,7 +167,7 @@ function Row({
   id: string;
   open: boolean;
   onToggle: () => void;
-  kind: 'volata' | 'gpm' | 'crono';
+  kind: SegmentKind;
   title: string;
   sub: string;
   leader?: Leader;

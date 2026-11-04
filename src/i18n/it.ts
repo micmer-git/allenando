@@ -176,6 +176,8 @@ export const it = {
     stepRest: 'Recupero',
     stepRamp: 'Rampa',
     stepWork: 'Lavoro',
+    stepZ2: 'Fondo',
+    stepAcc: 'Accelerazione',
     opener: {
       name: 'Risveglio',
       description: 'Tre blocchi corti per provare l’ERG: fondo, sweet spot e un tocco di VO2.',

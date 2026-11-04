@@ -19,7 +19,7 @@ const POOL: Mission[] = [
   { id: 'min-60', title: 'Un’ora in sella', oro: 70, check: (f) => f.durationSec >= 3600 },
   { id: 'su-200', title: 'Sali 200 metri', oro: 50, check: (f) => f.gainM >= 200 },
   { id: 'su-500', title: 'Sali 500 metri', oro: 90, check: (f) => f.gainM >= 500 },
-  { id: 'volata', title: 'Tira una volata', oro: 50, check: (f) => f.segments.some((s) => s.kind === 'volata') },
+  { id: 'volata', title: 'Tira una volata', oro: 50, check: (f) => f.segments.some((s) => s.kind === 'volata' || s.kind === 'cassonetto') },
   { id: 'gpm', title: 'Prendi un GPM', oro: 60, check: (f) => f.segments.some((s) => s.kind === 'gpm') },
   { id: 'crono', title: 'Fai una crono', oro: 70, check: (f) => f.segments.some((s) => s.kind === 'crono') },
   { id: 'tre-tratti', title: 'Tre tratti cronometrati', oro: 80, check: (f) => f.segments.length >= 3 },

@@ -35,6 +35,8 @@ export interface Career {
     volata: number;
     gpm: number;
     crono: number;
+    /** volate del cassonetto */
+    cassonetto: number;
     sessions: number;
     workouts: number;
     night: number;
@@ -58,7 +60,7 @@ export const EMPTY_CAREER: Career = {
   equipped: { ...DEFAULT_EQUIPPED },
   achievements: {},
   pbs: {},
-  counts: { rides: 0, km: 0, gainM: 0, volata: 0, gpm: 0, crono: 0, sessions: 0, workouts: 0, night: 0, rain: 0, dawn: 0, rooms: 0, pois: 0, climbs: {}, worldRides: {} },
+  counts: { rides: 0, km: 0, gainM: 0, volata: 0, gpm: 0, crono: 0, cassonetto: 0, sessions: 0, workouts: 0, night: 0, rain: 0, dawn: 0, rooms: 0, pois: 0, climbs: {}, worldRides: {} },
   streak: { days: 0, best: 0, last: '' },
   missions: { day: '', done: [] },
 };
@@ -95,6 +97,7 @@ export const ORO_RULES = {
   volata: 15,
   gpm: 25,
   crono: 30,
+  cassonetto: 12,
   personalBest: 20,
   session: 60,
   sessionPack: 40,
@@ -189,11 +192,11 @@ export function applyCareer(prev: Career, f: RideFacts, now = new Date()): Caree
   if (km >= 0.2) lines.push({ label: `${km.toFixed(1).replace('.', ',')} km`, oro: Math.round(km * ORO_RULES.perKm) });
   if (f.gainM >= 50) lines.push({ label: `${Math.round(f.gainM)} m in salita`, oro: Math.floor(f.gainM / 100) * ORO_RULES.per100m + (f.gainM % 100 >= 50 ? ORO_RULES.per100m / 2 : 0) });
 
-  // tratti: volate, GPM, crono, salite
+  // tratti: volate, GPM, crono, cassonetti, salite
   const pbs: string[] = [];
   for (const s of f.segments) {
     const base = ORO_RULES[s.kind];
-    lines.push({ label: `${s.kind === 'volata' ? 'Volata' : s.kind === 'gpm' ? 'GPM' : 'Crono'}: ${s.name}`, oro: base });
+    lines.push({ label: s.kind === 'cassonetto' ? s.name : `${s.kind === 'volata' ? 'Volata' : s.kind === 'gpm' ? 'GPM' : 'Crono'}: ${s.name}`, oro: base });
     next.counts[s.kind] += 1;
     const old = next.pbs[s.id];
     if (!old || s.sec < old.sec) {

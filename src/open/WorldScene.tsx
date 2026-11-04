@@ -6,7 +6,7 @@ import type { TrackPose } from '@/domain/track';
 import type { Quality } from '@/domain/types';
 import type { RideEngine } from '@/sim/engine';
 import { asphaltTexture, groundColor, hash2 } from '@/world/builders';
-import { Gate, Rider, bannerTexture, canvasTex, kmTexture } from '@/world/Scene';
+import { Gate, Rider, bannerTexture, canvasTex } from '@/world/Scene';
 import { FLAG, type Dir } from './graph';
 import type { WorldField } from './field';
 import type { NpcCrowd } from './npc';
@@ -1013,23 +1013,28 @@ function Roadside({ handle, mats }: { handle: React.MutableRefObject<RoadsideHan
 // ---------- archi dei traguardi ----------
 
 /**
- * Gli archi passati dal gioco. Solo in sviluppo, `?archlab` mette tre archi e un cartello davanti
- * al ciclista per vederli senza il gioco (non esiste nella build pubblicata).
+ * Gli archi passati dal gioco. Solo in sviluppo, `?archlab` mette davanti al ciclista un arco per
+ * tipo (traguardi, cassonetto, km, ultimo km, ERG) per vederli senza il gioco (non esiste nella
+ * build pubblicata).
  */
 function WorldArches({ arches, path, engine }: { arches?: ArchSpec[]; path: WorldPath; engine: RideEngine }) {
   const lab = useMemo<ArchSpec[] | null>(() => {
     if (!import.meta.env.DEV || typeof location === 'undefined' || !new URLSearchParams(location.search).has('archlab')) return null;
     const at = (d: number) => path.poseAt(Math.min(path.length - 1, engine.distance + d));
     const hw = (d: number) => path.graph.edges[path.edgeAt(Math.min(path.length - 1, engine.distance + d)).edge].hw;
-    const spec = (id: string, kind: ArchSpec['kind'], role: ArchSpec['role'], label: string, sub: string, d: number): ArchSpec => {
+    const spec = (id: string, kind: ArchSpec['kind'], role: ArchSpec['role'], label: string, sub: string, d: number, grade?: number): ArchSpec => {
       const p = at(d);
-      return { id, kind, role, label, sub, x: p.x, y: p.y, z: p.z, heading: p.heading, halfWidth: hw(d) };
+      return { id, kind, role, label, sub, grade, x: p.x, y: p.y, z: p.z, heading: p.heading, halfWidth: hw(d) };
     };
     return [
       spec('lab:a', 'volata', 'start', 'VOLATA', 'Traguardo di Zogno', 28),
       spec('lab:b', 'gpm', 'banner', '500 m', 'GPM', 60),
       spec('lab:c', 'gpm', 'finish', 'GPM', 'Colle di Zambla', 110),
       spec('lab:d', 'crono', 'start', 'CRONO', 'Cronoscalata', 170),
+      spec('lab:e', 'cassonetto', 'finish', 'CASSONETTO', 'Cene', 230),
+      spec('lab:f', 'km', 'km', '3 km', 'alla vetta', 290, 0.084),
+      spec('lab:g', 'ultimo', 'km', 'Ultimo km', 'all’arrivo', 350),
+      spec('lab:h', 'erg', 'start', '5′ · 280 W', 'Intervallo', 410),
     ];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path]);
@@ -1318,8 +1323,8 @@ function Declutter({ names }: { names: Set<THREE.Sprite> }) {
 // ---------- cartelli del percorso ----------
 
 /**
- * Sul percorso scelto: l'arco di partenza e quello d'arrivo del tratto cronometrato e, se è una salita,
- * il cartello a ogni chilometro con i km che mancano, la quota e la pendenza del km dopo.
+ * Sul percorso scelto: l'arco di partenza e quello d'arrivo del tratto cronometrato e, se è una
+ * salita, i tornanti numerati. I chilometri sono i portali alla Zwift del gioco (game.arches).
  */
 function RideSigns({ data, ride }: { data: WorldData; ride: RideDef }) {
   const signs = useMemo(() => {
@@ -1332,15 +1337,6 @@ function RideSigns({ data, ride }: { data: WorldData; ride: RideDef }) {
     const a = path.poseAt(from);
     const b = path.poseAt(to);
     const climb = b.altitude - a.altitude > 80;
-    const km: { pose: TrackPose; tex: THREE.CanvasTexture; hw: number }[] = [];
-    if (climb) {
-      for (let d = from + 1000; d < to - 300; d += 1000) {
-        const p = path.poseAt(d);
-        const q = path.poseAt(Math.min(to, d + 1000));
-        const grade = (q.altitude - p.altitude) / Math.max(1, Math.min(to, d + 1000) - d);
-        km.push({ pose: p, tex: kmTexture(Math.round((to - d) / 1000), grade, Math.round(p.altitude)), hw: g.edges[path.edgeAt(d).edge].hw });
-      }
-    }
     const startTex = bannerTexture(climb ? 'INIZIO SALITA' : 'PARTENZA', ride.name);
     const finishTex = bannerTexture('ARRIVO', ride.name);
     // tornanti numerati sulle salite, contati dall'alto come i cartelli veri (Selvino ne ha venti)
@@ -1351,14 +1347,12 @@ function RideSigns({ data, ride }: { data: WorldData; ride: RideDef }) {
     const hairpins = hairpinSigns(bends, (d) => path.poseAt(d), (d) => g.edges[path.edgeAt(d).edge].hw);
     return {
       hairpins,
-      km,
       start: { pose: path.poseAt(Math.min(path.length, from + 4)), tex: startTex, hw: g.edges[path.edgeAt(from + 4).edge].hw },
       finish: { pose: path.poseAt(Math.max(0, to - 2)), tex: finishTex, hw: g.edges[path.edgeAt(Math.max(0, to - 2)).edge].hw },
     };
   }, [data, ride]);
   useEffect(
     () => () => {
-      signs.km.forEach((k) => k.tex.dispose());
       signs.start.tex.dispose();
       signs.finish.tex.dispose();
     },
@@ -1369,22 +1363,6 @@ function RideSigns({ data, ride }: { data: WorldData; ride: RideDef }) {
       <Gate pose={signs.start.pose} texture={signs.start.tex} hw={signs.start.hw} />
       <Gate pose={signs.finish.pose} texture={signs.finish.tex} hw={signs.finish.hw} />
       <HairpinSigns items={signs.hairpins} />
-      {signs.km.map((k, i) => {
-        // a destra di chi sale
-        const off = k.hw + 1.3;
-        return (
-          <group key={i} position={[k.pose.x - Math.cos(k.pose.heading) * off, k.pose.y, k.pose.z + Math.sin(k.pose.heading) * off]} rotation={[0, k.pose.heading + Math.PI, 0]}>
-            <mesh position={[0, 0.7, 0]}>
-              <boxGeometry args={[0.07, 1.4, 0.07]} />
-              <meshLambertMaterial color="#666b72" />
-            </mesh>
-            <mesh position={[0, 1.65, 0]}>
-              <planeGeometry args={[1.2, 0.6]} />
-              <meshBasicMaterial map={k.tex} side={THREE.DoubleSide} />
-            </mesh>
-          </group>
-        );
-      })}
     </group>
   );
 }

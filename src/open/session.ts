@@ -404,6 +404,22 @@ export class WorldSession {
     this.junction = null;
   }
 
+  /** dove finiva il percorso scelto, se lo si è passato proseguendo libero (allenamento più lungo del percorso) */
+  routeEnd: number | null = null;
+
+  /**
+   * Il percorso finisce ma l'allenamento no: da qui si prosegue libero, la strada si allunga
+   * da sola come nel giro libero. Il percorso conta come fatto quando si passa `routeEnd`.
+   */
+  continueFree(distance: number): void {
+    // fuori dal percorso la strada si allunga già da sola
+    if (!this.onRoute || this.routeEnd != null) return;
+    this.routeEnd = this.path.length;
+    this.routeLegs = [];
+    this.toast('Fine del percorso', 'L’allenamento continua: prosegui libero, agli incroci scegli tu.', 'info');
+    this.extend(distance);
+  }
+
   /** Il nodo da cui partirebbe un anello: il prossimo incrocio. */
   nextNode(distance: number): number {
     const k = this.path.legAt(distance);
