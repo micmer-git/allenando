@@ -414,11 +414,36 @@ export function buildRides(ctx: Ctx): { rides: RideDef[]; landmarks: Landmark[];
     // tappe: ognuna si scioglie vicino alla precedente (i paesi omonimi esistono)
     const pts: Pt[] = [];
     for (const q of spec.via) pts.push(resolve(q, pts[pts.length - 1] ?? anchor(BERGAMO)));
+    // le piste solo per chi le vuole: a Nembro il punto del paese cade su un anellino di pista in
+    // porfido, e Selvino e la Ganda partivano lì con un incrocio dopo 8 m
+    const road = (e: { cls: number }) => e.cls !== CLS.trunk && e.cls !== CLS.pedestrian && (spec.prefs?.preferCycleways || e.cls !== CLS.cycleway);
+    // all'incrocio scelto: niente piste (se il percorso non le cerca) e niente zone pedonali (se le evita)
+    const fits = (e: { cls: number }) => (spec.prefs?.preferCycleways || e.cls !== CLS.cycleway) && (spec.prefs?.avoidPedestrian === false || e.cls !== CLS.pedestrian);
+    const onlyRoads = (n: number) => graph.edgesAt(n).every((k) => fits(graph.edges[k]));
+    /** il nodo più vicino che tocca solo strade (e non è un vicolo cieco) */
+    const roadNode = (x: number, z: number): number | null => {
+      let best: number | null = null;
+      let bestD = Infinity;
+      for (const id of graph.edgesNear(x, z, 350)) {
+        if (!road(graph.edges[id])) continue;
+        for (const n of [graph.edges[id].a, graph.edges[id].b]) {
+          if (graph.edgesAt(n).length < 2 || !onlyRoads(n)) continue;
+          const d = Math.hypot(graph.nodeX[n] - x, graph.nodeZ[n] - z);
+          if (d < bestD) {
+            bestD = d;
+            best = n;
+          }
+        }
+      }
+      return best;
+    };
     const nodes = pts.map((p) => {
       // si aggancia a un incrocio vero di una strada percorribile, non al fondo di un vicolo
-      const n =
-        graph.nearestNode(p.x, p.z, 350, (e) => e.cls !== CLS.trunk && e.cls !== CLS.pedestrian && graph.edgesAt(e.a).length > 1 && graph.edgesAt(e.b).length > 1) ??
+      let n =
+        graph.nearestNode(p.x, p.z, 350, (e) => road(e) && graph.edgesAt(e.a).length > 1 && graph.edgesAt(e.b).length > 1) ??
         graph.nearestNode(p.x, p.z, 600, (e) => e.cls !== CLS.trunk);
+      // se quell'incrocio tocca una pista o una zona pedonale, il navigatore ci passerebbe sopra
+      if (n != null && !onlyRoads(n)) n = roadNode(p.x, p.z) ?? n;
       if (n == null) throw new Error(`${spec.id}: nessuna strada vicino a ${p.name}`);
       return n;
     });
