@@ -1547,6 +1547,9 @@ function HoldButton({ onDone, disabled, children, className, testid, ms = HOLD_M
     window.clearTimeout(h.timer);
     hold.current = null;
     paint(0);
+    // il riepilogo compare sotto il dito: il clic che segue l'alzata non deve premere quello che c'è
+    // lì adesso («Continua a pedalare» sta proprio sotto «Termina»)
+    swallowNextClick();
     onDone();
   };
   // i tempi del dito sono quelli degli eventi (quando il dito tocca e si alza), non quelli in cui la
@@ -1608,6 +1611,8 @@ function HoldButton({ onDone, disabled, children, className, testid, ms = HOLD_M
       onPointerCancel={() => stop()}
       onLostPointerCapture={() => stop()}
       onContextMenu={(e) => e.preventDefault()}
+      // un tocco su «Termina» non genera clic: lo decide la pressione, e il clic finirebbe sul riepilogo
+      onTouchEnd={(e) => e.preventDefault()}
       onKeyDown={(e) => {
         if (e.key !== ' ' && e.key !== 'Enter') return;
         e.preventDefault();
@@ -2026,4 +2031,22 @@ class WorldBoundary extends Component<{ children: ReactNode; onFail: () => void 
     if (this.state.failed) return null;
     return this.props.children;
   }
+}
+
+/**
+ * Il prossimo clic (entro 0,7 s) non arriva a nessuno: dopo una pressione che apre un foglio, il
+ * clic dell'alzata del dito cadrebbe su quello che il foglio ha messo sotto il dito.
+ */
+function swallowNextClick(ms = 700): void {
+  const swallow = (e: MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    off();
+  };
+  const off = () => {
+    window.removeEventListener('click', swallow, true);
+    window.clearTimeout(timer);
+  };
+  window.addEventListener('click', swallow, true);
+  const timer = window.setTimeout(off, ms);
 }
