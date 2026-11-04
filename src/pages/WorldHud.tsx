@@ -370,7 +370,9 @@ export function XpSummary({ lines, total, level, rank, rankNote }: { lines: XpLi
     <div className="rounded-3xl bg-elev p-4" data-testid="xp-summary">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3">
         <p className="eyebrow">Punti</p>
-        <p className="num font-display text-3xl">+{formatNumber(total, 0)}</p>
+        <p className="num font-display text-3xl">
+          +{formatNumber(total, 0)} <span className="font-sans text-base font-semibold text-muted">punti</span>
+        </p>
       </div>
       <p className="mt-0.5 text-sm text-muted">
         Livello {level.level} · {level.title}

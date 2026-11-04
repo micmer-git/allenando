@@ -40,9 +40,22 @@ export const probe = `(() => {
     ...r.querySelectorAll('[data-testid=ride-route], [data-testid=ride-hud-center] > *, [data-testid=ride-hud-right] > *, [data-testid=ride-hud-bottom] > *, [data-testid=world-mini], [data-testid=ride-profile]'),
   ].filter((e) => vis(e) && e.dataset.testid !== 'turn-picker');
   const inBand = panels.filter((e) => { const b = e.getBoundingClientRect(); return b.bottom > band[0] && b.top < band[1]; }).map((e) => (e.dataset.testid || e.className.split(' ')[0] || e.tagName) + ' ' + Math.round(e.getBoundingClientRect().top) + '-' + Math.round(e.getBoundingClientRect().bottom));
+  // le pillole sotto il titolo: meteo, tratto (banner, in corso, in arrivo), fantasma; nessuna sopra un'altra
+  const pills = [...r.querySelectorAll('[data-testid=ride-route], [data-testid=world-weather], [data-testid=segment-banner], [data-testid=segment-live], [data-testid=segment-ahead], [data-testid=ghost-gap]')].filter(vis);
+  const overlaps = [];
+  for (let i = 0; i < pills.length; i++) for (let j = i + 1; j < pills.length; j++) {
+    const a = pills[i].getBoundingClientRect(), b = pills[j].getBoundingClientRect();
+    if (a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5) overlaps.push(pills[i].dataset.testid + '×' + pills[j].dataset.testid);
+  }
+  // la velocità scelta contro quella non scelta: contrasto dei fondi ≥ 3:1
+  const lum = (c) => { const m = c.match(/[\\d.]+/g); if (!m) return null; const [R, G, B] = m.slice(0, 3).map((v) => { const s = Number(v) / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; }); return 0.2126 * R + 0.7152 * G + 0.0722 * B; };
+  const group = r.querySelector('[aria-label="Velocità del simulatore"]');
+  const on = group?.querySelector('[aria-pressed=true]');
+  let speedContrast = null;
+  if (group && on) { const a = lum(getComputedStyle(on).backgroundColor), b = lum(getComputedStyle(group).backgroundColor); if (a != null && b != null) speedContrast = Math.round(((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) * 10) / 10; }
   return {
     canvas: cb ? [Math.round(cb.width), Math.round(cb.height)] : null,
-    big, yellow, inBand, band: band.map(Math.round),
+    big, yellow, inBand, band: band.map(Math.round), pills: pills.map((e) => e.dataset.testid), overlaps, speedContrast,
     time: document.querySelector('[data-testid=ride-time]')?.textContent ?? '',
     km: document.querySelector('[data-testid=ride-km] [data-big]')?.textContent ?? '',
     live: !!document.querySelector('[data-testid=segment-live]'),
@@ -107,6 +120,8 @@ export async function collaudoCorsa({ b, base, check, out = '' }) {
   check(m.big.length === 3 && m.big.every((s) => s >= 28), 'corsa: watt, tempo e km ≥ 28 px', m.big.join(' '));
   check(m.yellow.length === 0, 'corsa: nessun tasto giallo pieno tranne la velocità scelta', m.yellow.join(' | '));
   check(m.inBand.length === 0, 'corsa: fascia 35–65% del 3D libera (tranne l’incrocio)', `${m.band} ${m.inBand.join(' | ')}`);
+  check(m.overlaps.length === 0, 'corsa: meteo, tratto e fantasma non si toccano', `${m.pills.join(' ')} ${m.overlaps.join(' | ')}`);
+  check(m.speedContrast != null && m.speedContrast >= 3, 'corsa: velocità scelta e non scelta a contrasto ≥ 3:1', String(m.speedContrast));
   const cut = await p.evaluate(ellipsis('[data-testid=ride-screen]'));
   check(cut.length === 0, 'corsa: nessun testo troncato', cut.join(' | '));
   const low = await p.evaluate(lowercase('[data-testid=ride-screen]'));
@@ -236,6 +251,8 @@ export async function collaudoLargo({ b, base, check }) {
     check(m.canvas && m.canvas[0] >= Math.min(w, 1280) - 4 && m.canvas[1] >= h, `${w}×${h}: 3D a tutto schermo`, JSON.stringify(m.canvas));
     check(m.big.length === 3 && m.big.every((s) => s >= minFont), `${w}×${h}: watt, tempo e km ≥ ${minFont} px`, m.big.join(' '));
     check(m.yellow.length === 0, `${w}×${h}: nessun tasto giallo pieno tranne la velocità`, m.yellow.join(' | '));
+    check(m.overlaps.length === 0, `${w}×${h}: meteo, tratto e fantasma non si toccano`, `${m.pills.join(' ')} ${m.overlaps.join(' | ')}`);
+    check(m.speedContrast == null || m.speedContrast >= 3, `${w}×${h}: velocità scelta e non scelta a contrasto ≥ 3:1`, String(m.speedContrast));
     const a = await p.audit();
     check(a.overflow <= 0, `${w}×${h}: niente overflow`, String(a.overflow));
     check(a.small.length === 0, `${w}×${h}: bersagli ≥ 44 px`, a.small.join(' | '));

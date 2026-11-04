@@ -1419,17 +1419,10 @@ export function LoadingVeil({
   onBack?: () => void;
   children?: ReactNode;
 }) {
-  const bar = useRef<HTMLSpanElement>(null);
+  // solo CSS, solo transform: mentre il 3D carica un fotogramma può restare occupato 400 ms, e
+  // un'animazione in JS scatterebbe. Il compositore la porta avanti da solo
   const determinate = progress != null;
-  useEffect(() => {
-    const el = bar.current;
-    if (!el || determinate || idle || typeof el.animate !== 'function') return;
-    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const anim = reduce
-      ? el.animate([{ opacity: 0.35 }, { opacity: 1 }, { opacity: 0.35 }], { duration: 1600, iterations: Infinity })
-      : el.animate([{ transform: 'translateX(-110%)' }, { transform: 'translateX(260%)' }], { duration: 1300, iterations: Infinity, easing: 'cubic-bezier(.32,.72,0,1)' });
-    return () => anim.cancel();
-  }, [determinate, idle]);
+  const p = determinate ? Math.max(0.04, Math.min(1, progress)) : 0;
   return (
     <div
       className={cn('fixed inset-0 z-[60] flex flex-col overflow-auto bg-bg transition-opacity duration-200', leaving ? 'pointer-events-none opacity-0' : 'opacity-100')}
@@ -1464,13 +1457,19 @@ export function LoadingVeil({
               aria-valuenow={determinate ? Math.round(progress * 100) : undefined}
               className="mx-auto mt-8 h-1.5 w-56 overflow-hidden rounded-full bg-elev2"
             >
-              <span
-                ref={bar}
-                className="block h-full rounded-full bg-accent"
-                style={{ width: determinate ? `${Math.round(Math.max(0.04, Math.min(1, progress)) * 100)}%` : '40%', transition: determinate ? 'width 220ms cubic-bezier(.32,.72,0,1)' : undefined }}
-              />
+              {determinate ? (
+                <span
+                  className="block h-full w-full origin-left rounded-full bg-accent"
+                  style={{ transform: `scaleX(${p})`, transition: 'transform 220ms cubic-bezier(.32,.72,0,1)' }}
+                  data-testid="ride-loading-bar"
+                />
+              ) : (
+                // indeterminata: una barra che scorre (con «riduci movimento» resta ferma, il CSS globale la spegne)
+                <span className="block h-full w-2/5 rounded-full bg-accent" style={{ animation: 'orobia-veil 1.3s cubic-bezier(.32,.72,0,1) infinite' }} data-testid="ride-loading-bar" />
+              )}
             </div>
           )}
+          <style>{'@keyframes orobia-veil{from{transform:translateX(-110%)}to{transform:translateX(260%)}}'}</style>
           {children}
         </div>
       </div>
@@ -1707,6 +1706,7 @@ function RideSummary({
           <Sum label={t('metrics.avgPower')} value={ride.avgPower != null ? `${formatNumber(ride.avgPower, 0)} W` : '–'} />
         </dl>
         <p className="num -mt-1.5 px-1 text-sm text-muted">
+          {/* TODO(pista 1): formatTss(ride.tss) da @/domain/format, lo stesso del dettaglio del giro; qui intanto lo stesso arrotondamento (0 decimali) */}
           NP {ride.np != null ? `${formatNumber(ride.np, 0)} W` : '–'} · IF {ride.intensityFactor != null ? formatNumber(ride.intensityFactor, 2) : '–'} · TSS {ride.tss != null ? formatNumber(ride.tss, 0) : '–'}
         </p>
 
