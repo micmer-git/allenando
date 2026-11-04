@@ -261,7 +261,9 @@ export async function largo(b, base, check, { shot = null } = {}) {
   await d.s('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
   await onboard(d);
   await d.go('/');
-  await sleep(1200);
+  // sotto carico la prima pittura arriva tardi: si aspetta Oggi, non un tempo fisso
+  await d.waitFor(`!!document.querySelector('[data-testid=home-session]')`, 20000);
+  await sleep(600);
   if (shot) await d.shot('p1-oggi-computer');
   const side = await d.evaluate(top('[data-testid=side-nav]'));
   check(!!side && side.w >= 200, 'computer: il menu laterale con le voci resta', JSON.stringify(side));
