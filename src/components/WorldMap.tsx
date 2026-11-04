@@ -12,6 +12,8 @@ import { drawMonumenti, loadMonumenti, type Monumento } from '@/open/monumenti';
 
 export interface MapOverlay {
   legs: Leg[];
+  /** una traccia libera in coordinate del mondo (un giro col GPS), al posto degli archi */
+  path?: { xs: number[]; zs: number[] };
   color: string;
   width?: number;
   dashed?: boolean;
@@ -233,6 +235,14 @@ function hillshade(data: WorldData, h: Float32Array): HTMLCanvasElement | null {
   return c;
 }
 
+function strokePath(g: CanvasRenderingContext2D, p: { xs: number[]; zs: number[] }, sx: (x: number) => number, sz: (z: number) => number) {
+  if (p.xs.length < 2) return;
+  g.beginPath();
+  g.moveTo(sx(p.xs[0]), sz(p.zs[0]));
+  for (let i = 1; i < p.xs.length; i++) g.lineTo(sx(p.xs[i]), sz(p.zs[i]));
+  g.stroke();
+}
+
 function draw(g: CanvasRenderingContext2D, data: WorldData, relief: HTMLCanvasElement | null, v: View, W: number, H: number, overlays: MapOverlay[], markers: MapMarker[]) {
   const sx = (x: number) => (x - v.cx) / v.mpp + W / 2;
   const sz = (z: number) => (z - v.cz) / v.mpp + H / 2;
@@ -299,11 +309,13 @@ function draw(g: CanvasRenderingContext2D, data: WorldData, relief: HTMLCanvasEl
     g.strokeStyle = 'rgba(10,12,15,0.55)';
     g.lineWidth = (o.width ?? 4) + 2.5;
     g.setLineDash([]);
-    strokeLegs(g, data, o.legs, sx, sz);
+    if (o.path) strokePath(g, o.path, sx, sz);
+    else strokeLegs(g, data, o.legs, sx, sz);
     g.strokeStyle = o.color;
     g.lineWidth = o.width ?? 4;
     g.setLineDash(o.dashed ? [7, 6] : []);
-    strokeLegs(g, data, o.legs, sx, sz);
+    if (o.path) strokePath(g, o.path, sx, sz);
+    else strokeLegs(g, data, o.legs, sx, sz);
     g.setLineDash([]);
   }
 

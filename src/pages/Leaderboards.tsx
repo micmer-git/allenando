@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { BoardPanel, Medal } from '@/components/Board';
-import { Segmented } from '@/components/ui';
+import { PageHeader, Segmented } from '@/components/ui';
 import { Glyph } from '@/components/Glyph';
-import { formatDuration, formatKm, formatNumber } from '@/domain/format';
+import { cap, formatDuration, formatKm, formatNumber } from '@/domain/format';
 import { VERIFIED_ROUTES } from '@/domain/routes';
 import { SEGMENT_STYLE, type Segment, type SegmentKind } from '@/game/arches';
 import { worldSegments } from '@/game/segments';
@@ -50,10 +50,7 @@ export function LeaderboardsPage() {
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 pb-nav pt-5 md:px-8 md:pt-10" data-testid="leaderboards">
-      <Link to="/tu" className="-ml-1 inline-flex h-11 min-w-11 items-center pr-3 text-sm font-semibold text-muted">
-        ← Tu
-      </Link>
-      <h1 className="font-display text-5xl uppercase leading-[0.9]">Classifiche</h1>
+      <PageHeader back={{ to: '/tu', label: 'Tu' }} title="Classifiche" />
       <div className="mt-4">
         <Segmented<Tab>
           label="Classifiche"
@@ -84,8 +81,8 @@ export function LeaderboardsPage() {
                 open={open === id}
                 onToggle={() => setOpen(open === id ? null : id)}
                 kind="gpm"
-                title={`${r.name} ${r.side}`}
-                sub={c ? `${formatKm(c.lengthM)} km · ${formatNumber(c.gainM, 0)} m` : r.region}
+                title={r.name}
+                sub={c ? `${cap(r.side)} · ${formatKm(c.lengthM)} km · ${formatNumber(c.gainM, 0)} m` : `${cap(r.side)} · ${r.region}`}
                 leader={leaders === 'loading' || !leaders ? undefined : leaders[id]}
                 pb={pbs[id]?.sec}
               />
@@ -181,8 +178,8 @@ function Row({
           <Glyph name={kind} size={20} />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate font-semibold">{title}</span>
-          <span className="block truncate text-xs text-muted">{sub}</span>
+          <span className="block font-semibold leading-snug">{title}</span>
+          <span className="block text-xs leading-snug text-muted">{sub}</span>
         </span>
         <span className="shrink-0 text-right text-xs">
           {leader ? (
@@ -191,9 +188,9 @@ function Row({
               <span className="num font-semibold">{formatDuration(leader.sec)}</span>
             </span>
           ) : (
-            <span className="text-muted">nessun tempo</span>
+            <span className="text-muted">Nessun tempo</span>
           )}
-          {pb != null ? <span className="num mt-0.5 block text-accent">tu {formatDuration(pb)}</span> : leader ? <span className="mt-0.5 block max-w-24 truncate text-muted">{leader.nick}</span> : null}
+          {pb != null ? <span className="num mt-0.5 block text-accent">{`Tu ${formatDuration(pb)}`}</span> : leader ? <span className="mt-0.5 block max-w-24 truncate text-muted">{leader.nick}</span> : null}
         </span>
       </button>
       {open ? (
@@ -242,9 +239,9 @@ function XpBoard() {
               <span className="flex min-w-0 items-center gap-2">
                 <Medal rank={i + 1} />
                 <span className="truncate">{r.nick}</span>
-                <span className="text-xs text-muted">liv. {levelOf(r.xp).level}</span>
+                <span className="text-xs text-muted">{`Liv. ${levelOf(r.xp).level}`}</span>
               </span>
-              <span className="num">{formatNumber(r.xp, 0)} pt</span>
+              <span className="num">{`${formatNumber(r.xp, 0)} punti`}</span>
             </li>
           ))}
         </ol>

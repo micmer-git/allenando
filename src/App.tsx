@@ -78,7 +78,7 @@ function Shell() {
   const bare = location.pathname === '/start' || location.pathname.startsWith('/ride');
   if (bare) return <Outlet />;
   return (
-    <div className="md:grid md:grid-cols-[240px_1fr]">
+    <div className="rail:grid rail:grid-cols-[76px_minmax(0,1fr)] wide:grid wide:grid-cols-[240px_minmax(0,1fr)]">
       <SideNav />
       <div>
         <OfflineBanner />

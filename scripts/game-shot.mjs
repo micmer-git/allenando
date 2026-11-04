@@ -7,6 +7,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { launch, sleep } from './cdp.mjs';
+import { giroPagine } from './pagine-check.mjs';
 
 const [base = 'http://127.0.0.1:5183/allenando', out = 'shots'] = process.argv.slice(2);
 mkdirSync(out, { recursive: true });
@@ -92,6 +93,9 @@ try {
   check(await p.waitFor(`!!document.querySelector('[data-testid=climb-board]')`, 15000), 'salita: classifica dentro la pagina');
   await sleep(1200);
   await p.shot('g08-salita', true);
+
+  // pista 1: tutte le pagine (minuscole, bersagli, overflow, ellissi, «XP») e i «fatto» del piano
+  await giroPagine(p, check, { shot: !!process.env.P1_SHOTS });
 
   if (process.env.GIOCO) {
     // ---------- il gioco nuovo: carta → percorso, km alla Zwift, cassonetti, archi in ERG, allenamenti ----------

@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { GRADE_LEGEND, gradeColor, ProfileChart, RouteMap, useVerifiedRoute } from '@/components/RouteViz';
-import { Button } from '@/components/ui';
+import { Button, PageHeader } from '@/components/ui';
 import { BoardPanel } from '@/components/Board';
-import { formatDuration, formatKm, formatNumber } from '@/domain/format';
+import { cap, formatDuration, formatKm, formatNumber } from '@/domain/format';
 import { projector } from '@/domain/geo';
 import { osmUrl, routeMeta, routeStats, streetViewUrl } from '@/domain/routes';
 import { ALL_BUILTIN } from '@/domain/workouts';
@@ -44,7 +44,7 @@ export function ClimbDetailPage() {
     return (
       <main className="mx-auto max-w-3xl px-4 pt-10">
         <p>Salita non trovata.</p>
-        <Link to="/salite" className="text-accent">Torna alle salite</Link>
+        <Link to="/salite" className="inline-flex h-11 items-center font-semibold text-accent">Torna alle salite</Link>
       </main>
     );
   }
@@ -54,31 +54,56 @@ export function ClimbDetailPage() {
   const endGeo = route && endP ? projector(route.origin).toGeo(endP.x, endP.z) : null;
 
   return (
-    <main className="mx-auto w-full max-w-4xl px-4 pb-nav pt-5 md:px-8 md:pt-10" data-testid="climb-detail">
-      <Link to="/salite" className="text-sm font-semibold text-muted">← Salite</Link>
-      <p className="eyebrow mt-4">{meta.region}</p>
-      <h1 className="font-display text-6xl uppercase leading-[0.9]">{meta.name}</h1>
-      <p className="text-lg text-muted">{meta.side}</p>
+    <main className="mx-auto w-full max-w-4xl px-4 pb-nav-cta pt-3 md:px-8 md:pt-8" data-testid="climb-detail">
+      <PageHeader back={{ to: '/salite', label: 'Salite' }} eyebrow={meta.region} title={meta.name} sub={cap(meta.side)} size="lg" />
 
       {stats ? (
-        <dl className="mt-5 grid grid-cols-3 gap-2 sm:grid-cols-6">
+        <dl className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-6" data-testid="climb-stats">
           <Big label="Lunghezza" value={formatKm(stats.lengthM)} unit="km" />
           <Big label="Dislivello" value={formatNumber(stats.endAlt - stats.startAlt, 0)} unit="m" />
           <Big label="Media" value={formatNumber(stats.avgGrade * 100, 1)} unit="%" />
-          <Big label="Km più duro" value={formatNumber(stats.maxKmGrade * 100, 1)} unit="%" />
-          <Big label="Quota" value={`${formatNumber(stats.startAlt, 0)}→${formatNumber(stats.endAlt, 0)}`} unit="m" />
+          <Big label="Km duro" value={formatNumber(stats.maxKmGrade * 100, 1)} unit="%" />
+          <Big label="Quota" value={formatNumber(stats.endAlt, 0)} unit="m" note={`Da ${formatNumber(stats.startAlt, 0)} m`} />
           <Big label="Tornanti" value={String(stats.hairpins)} unit="" />
         </dl>
       ) : (
-        <p className="mt-5 text-muted">{error ?? 'Carico la traccia…'}</p>
+        <p className="mt-4 text-muted">{error ?? 'Carico la traccia…'}</p>
       )}
+
+      {/* il tasto per cui si apre la pagina: fisso sopra la barra, sempre nel primo schermo */}
+      <div className="cta-bar border-t border-line bg-bg/92 backdrop-blur-xl" data-testid="climb-cta">
+        <div className="mx-auto flex w-full max-w-4xl gap-2 px-4 py-2.5 md:px-8">
+          <Button className="flex-1" data-testid="climb-ride" onClick={() => navigate(`/ride?route=${id}`)}>
+            Pedala
+          </Button>
+          {best ? (
+            <Button variant="ghost" className="shrink-0" onClick={() => navigate(`/ride?route=${id}&ghost=${best.id}`)} data-testid="climb-ghost">
+              Fantasma · {formatDuration(best.durationSec)}
+            </Button>
+          ) : null}
+        </div>
+      </div>
 
       {route ? (
         <>
           <section className="mt-4 grid gap-3 md:grid-cols-[1fr_1.4fr]">
             <div className="rounded-2xl border border-line bg-elev p-3">
               <RouteMap track={route.track} className="aspect-square w-full" />
-              <p className="mt-2 text-xs text-muted">Nord in alto · ● partenza · ■ arrivo · punti verdi: tornanti trovati nella geometria</p>
+              <ul className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted" data-testid="climb-legend">
+                <li>Nord in alto</li>
+                <li className="flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-full border-2 border-ink bg-bg" aria-hidden="true" />
+                  Partenza
+                </li>
+                <li className="flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 bg-accent" aria-hidden="true" />
+                  Arrivo
+                </li>
+                <li className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-accent" aria-hidden="true" />
+                  Tornanti
+                </li>
+              </ul>
             </div>
             <div className="flex flex-col gap-3">
               <div className="rounded-2xl border border-line bg-elev p-3">
@@ -93,40 +118,25 @@ export function ClimbDetailPage() {
                 </ul>
               </div>
               <div className="rounded-2xl border border-line bg-elev p-4">
-                <p className="eyebrow">Pedala</p>
-                <div className="mt-3 flex flex-col gap-2">
-                  <Button data-testid="climb-ride" onClick={() => navigate(`/ride?route=${id}`)}>
-                    Pedala · pendenza al rullo
+                <p className="eyebrow">In ERG</p>
+                <div className="mt-2 flex gap-2">
+                  <select
+                    aria-label="Allenamento ERG"
+                    className="h-12 min-w-0 flex-1 rounded-full border border-line bg-elev2 px-4 text-sm"
+                    value={workoutId}
+                    onChange={(e) => setWorkoutId(e.target.value)}
+                  >
+                    <option value="">Scegli l’allenamento</option>
+                    {[...ALL_BUILTIN, ...custom].map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {workoutTitle(w, t)}
+                      </option>
+                    ))}
+                  </select>
+                  <Button variant="soft" disabled={!workoutId} onClick={() => navigate(`/ride?route=${id}&workout=${workoutId}`)}>
+                    Parti
                   </Button>
-                  <div className="flex gap-2">
-                    <select
-                      aria-label="Allenamento ERG"
-                      className="h-12 min-w-0 flex-1 rounded-full border border-line bg-elev2 px-4 text-sm"
-                      value={workoutId}
-                      onChange={(e) => setWorkoutId(e.target.value)}
-                    >
-                      <option value="">Allenamento ERG…</option>
-                      {[...ALL_BUILTIN, ...custom].map((w) => (
-                        <option key={w.id} value={w.id}>
-                          {workoutTitle(w, t)}
-                        </option>
-                      ))}
-                    </select>
-                    <Button variant="soft" disabled={!workoutId} onClick={() => navigate(`/ride?route=${id}&workout=${workoutId}`)}>
-                      ERG
-                    </Button>
-                  </div>
-                  {best ? (
-                    <Button variant="ghost" onClick={() => navigate(`/ride?route=${id}&ghost=${best.id}`)}>
-                      Contro il fantasma · {formatDuration(best.durationSec)}
-                    </Button>
-                  ) : (
-                    <p className="text-sm text-muted">Al primo arrivo in cima il tuo tempo diventa un fantasma da battere.</p>
-                  )}
                 </div>
-                <p className="mt-3 text-xs leading-relaxed text-muted">
-                  In pedalata libera il rullo riceve la pendenza (simulazione FTMS). In ERG riceve solo i watt: le due cose non vanno mai insieme.
-                </p>
               </div>
             </div>
           </section>
@@ -145,7 +155,7 @@ export function ClimbDetailPage() {
             <ol className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
               {kms.map((k, i) => (
                 <li key={i} className="flex items-center justify-between rounded-xl bg-elev px-3 py-2">
-                  <span className="text-sm text-muted">km {i + 1}</span>
+                  <span className="text-sm text-muted">{`Km ${i + 1}`}</span>
                   <span className="num font-semibold" style={{ color: gradeColor(k.grade) }}>
                     {formatNumber(k.grade * 100, 1)}%
                   </span>
@@ -154,43 +164,47 @@ export function ClimbDetailPage() {
             </ol>
           </section>
 
-          <section className="mt-6 rounded-2xl border border-line p-4 text-sm leading-relaxed text-muted">
-            <h2 className="font-semibold text-ink">Da dove vengono i dati</h2>
-            <p className="mt-1">
-              Strada: OpenStreetMap, percorso calcolato con OSRM tra il centro di partenza e il punto d’arrivo. Quota: EU-DEM 25 m (Copernicus) via OpenTopoData,
-              livellata entro ±{formatNumber(Math.ceil(route.track.maxElevationDelta), 0)} m dalla sorgente; la pendenza è mediata su circa 40 m. È una ricostruzione da dati aperti, non un rilievo:
-              precisione di qualche metro, non di centimetri. I tornanti sono quelli che la geometria mostra (curve oltre 150° in 70 m), non il conteggio dei cartelli.
-            </p>
-            <p className="mt-2">{route.attribution}</p>
-            {startGeo && endGeo ? (
-              <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
-                <a className="font-semibold text-accent" href={streetViewUrl(startGeo)} target="_blank" rel="noreferrer">
-                  Street View alla partenza ↗
-                </a>
-                <a className="font-semibold text-accent" href={streetViewUrl(endGeo)} target="_blank" rel="noreferrer">
-                  Street View all’arrivo ↗
-                </a>
-                <a className="font-semibold text-accent" href={osmUrl(startGeo, 13)} target="_blank" rel="noreferrer">
-                  Mappa OSM ↗
-                </a>
+          <details className="group mt-6 rounded-2xl border border-line text-sm text-muted" data-testid="climb-sources">
+            <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between px-4 font-semibold text-ink">
+              Fonti
+              <span aria-hidden="true" className="text-muted transition group-open:rotate-180">⌄</span>
+            </summary>
+            <div className="space-y-2 px-4 pb-4 leading-relaxed">
+              <p>
+                {`Strada: OpenStreetMap, con OSRM. Quota: EU-DEM 25 m (Copernicus) via OpenTopoData, entro ±${formatNumber(Math.ceil(route.track.maxElevationDelta), 0)} m; pendenza mediata su 40 m.`}
               </p>
-            ) : null}
-            <p className="mt-1 text-xs">Street View si apre su Google Maps come riferimento visivo: dalle sue immagini l’app non ricava niente.</p>
-          </section>
+              <p>Tornanti: curve oltre 150° in 70 m.</p>
+              <p>{route.attribution}</p>
+              {startGeo && endGeo ? (
+                <p className="flex flex-wrap gap-x-4">
+                  <a className="inline-flex h-11 items-center font-semibold text-accent" href={streetViewUrl(startGeo)} target="_blank" rel="noreferrer">
+                    Street View alla partenza ↗
+                  </a>
+                  <a className="inline-flex h-11 items-center font-semibold text-accent" href={streetViewUrl(endGeo)} target="_blank" rel="noreferrer">
+                    Street View all’arrivo ↗
+                  </a>
+                  <a className="inline-flex h-11 items-center font-semibold text-accent" href={osmUrl(startGeo, 13)} target="_blank" rel="noreferrer">
+                    Mappa OSM ↗
+                  </a>
+                </p>
+              ) : null}
+            </div>
+          </details>
         </>
       ) : null}
     </main>
   );
 }
 
-function Big({ label, value, unit }: { label: string; value: string; unit: string }) {
+function Big({ label, value, unit, note }: { label: string; value: string; unit: string; note?: string }) {
   return (
-    <div className="rounded-2xl border border-line bg-elev px-3 py-2">
-      <dt className="eyebrow">{label}</dt>
+    <div className="min-w-0 rounded-2xl border border-line bg-elev px-3 py-2">
+      <dt className="eyebrow whitespace-nowrap">{label}</dt>
       <dd className="num font-display text-3xl leading-tight">
         {value}
         {unit ? <span className="ml-1 text-base text-muted">{unit}</span> : null}
       </dd>
+      {note ? <dd className="num -mt-0.5 text-xs text-muted">{note}</dd> : null}
     </div>
   );
 }

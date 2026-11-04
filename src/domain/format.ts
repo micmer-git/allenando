@@ -79,3 +79,24 @@ export function toDatetimeLocalValue(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
+
+/**
+ * La maiuscola iniziale di un testo che arriva dai dati («da Nembro», «dalla stazione al
+ * castello»): sullo schermo ogni riga comincia con la maiuscola, i dati restano come sono.
+ */
+export function cap(text: string): string {
+  if (!text) return text;
+  const first = text.codePointAt(0)!;
+  const ch = String.fromCodePoint(first);
+  return ch.toLocaleUpperCase('it-IT') + text.slice(ch.length);
+}
+
+/**
+ * Il TSS, uguale ovunque: riepilogo, dettaglio, diario, Oggi. Sotto 10 con un decimale
+ * (un giro di un minuto fa 0,3, non 0), sopra intero. Senza valore, il trattino.
+ */
+export function formatTss(tss: number | null | undefined): string {
+  if (tss == null || !Number.isFinite(tss)) return '–';
+  const v = Math.max(0, tss);
+  return formatNumber(v, v < 10 ? 1 : 0);
+}

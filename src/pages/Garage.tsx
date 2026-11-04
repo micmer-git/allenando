@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Segmented } from '@/components/ui';
+import { PageHeader, Segmented } from '@/components/ui';
 import { BikeArt, HelmetArt, ItemArt, JerseyArt } from '@/components/KitArt';
 import { Coin } from '@/components/Glyph';
 import { ACHIEVEMENT_BY_ID } from '@/game/achievements';
@@ -35,21 +35,19 @@ export function GaragePage() {
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 pb-nav pt-5 md:px-8 md:pt-10" data-testid="garage">
-      <header className="flex items-end justify-between gap-3">
-        <div>
-          <p className="eyebrow">
-            {ownedCount} di {ITEMS.length} pezzi
-          </p>
-          <h1 className="font-display text-5xl uppercase leading-[0.9]">Garage</h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="num inline-flex h-10 items-center gap-1.5 rounded-full border border-line bg-elev px-3 font-semibold" data-testid="garage-oro">
-            <Coin size={18} />
-            {ready ? career.oro.toLocaleString('it-IT') : '–'}
-          </span>
-          <span className="num inline-flex h-10 items-center rounded-full bg-accent px-3 font-semibold text-accent-ink">Liv. {level}</span>
-        </div>
-      </header>
+      <PageHeader
+        eyebrow={`${ownedCount} di ${ITEMS.length} pezzi`}
+        title="Garage"
+        aside={
+          <div className="flex items-center gap-2">
+            <span className="num inline-flex h-10 items-center gap-1.5 rounded-full border border-line bg-elev px-3 font-semibold" data-testid="garage-oro">
+              <Coin size={18} />
+              {ready ? career.oro.toLocaleString('it-IT') : '–'}
+            </span>
+            <span className="num inline-flex h-10 items-center rounded-full border border-line bg-elev px-3 font-semibold">{`Liv. ${level}`}</span>
+          </div>
+        }
+      />
 
       <section className="relative mt-4 overflow-hidden rounded-3xl border border-line bg-[radial-gradient(120%_90%_at_50%_100%,color-mix(in_oklab,var(--accent)_22%,transparent),transparent_70%)] bg-elev">
         <Suspense fallback={<FlatPreview look={look} />}>
@@ -103,7 +101,7 @@ export function GaragePage() {
                     <button
                       type="button"
                       data-testid={`buy-${item.id}`}
-                      className="num flex h-11 w-full items-center justify-center gap-1.5 rounded-full bg-accent text-sm font-semibold text-accent-ink"
+                      className="num flex h-11 w-full items-center justify-center gap-1.5 rounded-full border border-accent/70 text-sm font-semibold text-accent"
                       onClick={() =>
                         void buy(item.id).then((why) => {
                           setMsg(why ? { id: item.id, text: why } : { id: item.id, text: 'Tuo. Indossato.' });

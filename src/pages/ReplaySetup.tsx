@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ProfileChart, RouteMap } from '@/components/RouteViz';
-import { Button, Segmented, TextInput } from '@/components/ui';
+import { Button, PageHeader, Segmented, TextInput } from '@/components/ui';
 import { formatDuration, formatKm, formatNumber } from '@/domain/format';
 import { geoPointsFromSamples, hasAltitude, hasGps, hasPower, sectionSummary, sliceSection, type ReplayMode, type SectionSpec } from '@/domain/replay';
 import { trackFromGeo } from '@/domain/routes';
@@ -67,7 +67,7 @@ export function ReplaySetupPage() {
     return (
       <main className="mx-auto max-w-3xl px-4 pt-10">
         <p>Giro non trovato.</p>
-        <Link to="/giri" className="text-accent">Torna ai giri</Link>
+        <Link to="/giri" className="inline-flex h-11 items-center font-semibold text-accent">Torna ai giri</Link>
       </main>
     );
   }
@@ -77,11 +77,9 @@ export function ReplaySetupPage() {
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 pb-nav pt-5 md:px-8 md:pt-10" data-testid="replay-setup">
-      <Link to="/giri" className="text-sm font-semibold text-muted">← Giri</Link>
-      <h1 className="mt-3 font-display text-4xl uppercase leading-none">{ride.name}</h1>
-      <p className="mt-1 text-muted">
-        {formatKm(ride.distanceM)} km · {formatDuration(ride.durationSec)}
-        {ride.externalId?.startsWith('intervals:') ? ' · da Intervals.icu' : ride.fileType ? ` · ${ride.fileType.toUpperCase()}` : ''}
+      <PageHeader back={{ to: '/giri', label: 'Giri' }} title={ride.name} size="md" />
+      <p className="num mt-1 text-muted">
+        {`${formatKm(ride.distanceM)} km · ${formatDuration(ride.durationSec)}${ride.externalId?.startsWith('intervals:') ? ' · Da Intervals.icu' : ride.fileType ? ` · ${ride.fileType.toUpperCase()}` : ''}`}
       </p>
 
       <section className="mt-5">
@@ -94,7 +92,7 @@ export function ReplaySetupPage() {
             { value: 'full', label: 'Tutto' },
             { value: 'time', label: 'Tempo' },
             { value: 'distance', label: 'Km' },
-            ...(laps.length > 1 ? [{ value: 'lap' as Kind, label: 'Lap' }] : []),
+            ...(laps.length > 1 ? [{ value: 'lap' as Kind, label: 'Giri' }] : []),
           ]}
         />
         {kind === 'time' ? (
@@ -118,7 +116,7 @@ export function ReplaySetupPage() {
                   onClick={() => setLap(i)}
                   className={`w-full rounded-xl px-3 py-2 text-left text-sm ${lap === i ? 'bg-accent text-accent-ink' : 'bg-elev'}`}
                 >
-                  <span className="block font-semibold">{l.name || `Lap ${i + 1}`}</span>
+                  <span className="block font-semibold">{l.name || `Giro ${i + 1}`}</span>
                   <span className="opacity-75">{formatDuration(l.endSec - l.startSec)}</span>
                 </button>
               </li>
@@ -130,10 +128,10 @@ export function ReplaySetupPage() {
       <section className="mt-4 rounded-2xl border border-line bg-elev p-4">
         {summary ? (
           <dl className="grid grid-cols-4 gap-2 text-center">
-            <Cell label="tempo" value={formatDuration(summary.durationSec)} />
+            <Cell label="Tempo" value={formatDuration(summary.durationSec)} />
             <Cell label="km" value={formatKm(summary.distanceM)} />
             <Cell label="D+" value={`${formatNumber(summary.gainM, 0)} m`} />
-            <Cell label="watt" value={summary.avgPower != null ? formatNumber(summary.avgPower, 0) : '–'} />
+            <Cell label="Watt" value={summary.avgPower != null ? formatNumber(summary.avgPower, 0) : '–'} />
           </dl>
         ) : (
           <p className="text-sm text-warn">Il pezzo scelto è vuoto.</p>
@@ -151,8 +149,8 @@ export function ReplaySetupPage() {
       <section className="mt-4">
         <p className="eyebrow mb-2">Come rifarlo</p>
         <div className="flex flex-col gap-2">
-          <ModeCard on={mode === 'power'} disabled={!power} onClick={() => setMode('power')} title="Power replay" text={power ? 'Il rullo in ERG con i watt di allora, secondo per secondo. La pendenza non viene inviata.' : 'Questo giro non ha potenza.'} />
-          <ModeCard on={mode === 'grade'} disabled={!gps && !alt} onClick={() => setMode('grade')} title="Grade replay" text={gps || alt ? 'Il rullo riceve la pendenza della strada (simulazione). I watt li metti tu.' : 'Servono GPS o quota.'} />
+          <ModeCard on={mode === 'power'} disabled={!power} onClick={() => setMode('power')} title="I watt di allora" text={power ? 'Il rullo in ERG con i watt di allora, secondo per secondo. La pendenza non viene inviata.' : 'Questo giro non ha potenza.'} />
+          <ModeCard on={mode === 'grade'} disabled={!gps && !alt} onClick={() => setMode('grade')} title="La pendenza di allora" text={gps || alt ? 'Il rullo riceve la pendenza della strada (simulazione). I watt li metti tu.' : 'Servono GPS o quota.'} />
           <ModeCard on={mode === 'ghost'} onClick={() => setMode('ghost')} title="Fantasma" text="Pendenza al rullo, e accanto a te il giro di allora alla sua velocità. Vedi il distacco in secondi." />
         </div>
       </section>

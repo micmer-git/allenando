@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Button, TextInput } from '@/components/ui';
-import { formatDateTime, formatDuration, formatKm, formatNumber } from '@/domain/format';
+import { Button, PageHeader, TextInput } from '@/components/ui';
+import { cap, formatDateTime, formatDuration, formatKm, formatNumber } from '@/domain/format';
 import { hasAltitude, hasGps, hasPower } from '@/domain/replay';
 import type { Ride } from '@/domain/types';
 import { estimateLthr } from '@/domain/zones';
@@ -24,11 +24,8 @@ export function RidesPage() {
   const replayable = rides.filter((r) => r.samples.length > 30);
   return (
     <main className="mx-auto w-full max-w-3xl px-4 pb-nav pt-6 md:px-8 md:pt-10" data-testid="rides-page">
-      <p className="eyebrow">Power replay · grade replay · fantasma</p>
-      <h1 className="mt-1 font-display text-5xl uppercase leading-none">Giri</h1>
-      <p className="mt-3 max-w-xl text-muted">
-        Porta dentro un tuo giro vero, scegline un pezzo e rifallo sul rullo: con i watt di allora, con la pendenza di allora, o contro te stesso.
-      </p>
+      <PageHeader back={{ to: '/tu', label: 'Tu' }} title="Rifai un giro" />
+      <p className="mt-2 max-w-xl text-muted">Un tuo giro vero, sul rullo: coi watt di allora, con la pendenza di allora, o contro te stesso.</p>
       <IntervalsImport />
       <FileImport />
       <section className="mt-8">
@@ -56,14 +53,12 @@ function RideRow({ ride }: { ride: Ride }) {
       <Link to={`/giri/${ride.id}`} className="flex items-center justify-between gap-3 rounded-2xl bg-elev px-4 py-3" data-testid="replay-ride">
         <span className="min-w-0">
           <span className="block truncate font-semibold">{ride.name}</span>
-          <span className="text-sm text-muted">
-            {formatDateTime(ride.startTime)} · {formatKm(ride.distanceM)} km · {formatDuration(ride.durationSec)}
-          </span>
+          <span className="num text-sm text-muted">{`${cap(formatDateTime(ride.startTime))} · ${formatKm(ride.distanceM)} km · ${formatDuration(ride.durationSec)}`}</span>
           <span className="mt-1 flex gap-1.5">
             <Tag on={gps}>GPS</Tag>
             <Tag on={power}>Watt</Tag>
             <Tag on={alt}>Quota</Tag>
-            {ride.laps && ride.laps.length > 1 ? <Tag on>{ride.laps.length} lap</Tag> : null}
+            {ride.laps && ride.laps.length > 1 ? <Tag on>{`${ride.laps.length} giri`}</Tag> : null}
           </span>
         </span>
         <span aria-hidden="true" className="text-xl text-muted">→</span>
@@ -139,7 +134,7 @@ function IntervalsImport() {
     <section className="mt-6 rounded-2xl border border-line bg-elev p-4" data-testid="intervals">
       <div className="flex items-center justify-between">
         <h2 className="font-display text-2xl uppercase">Intervals.icu</h2>
-        <span className="text-xs text-muted">{list ? `${list.length} attività` : 'non collegato'}</span>
+        <span className="text-xs text-muted">{list ? `${list.length} attività` : 'Non collegato'}</span>
       </div>
       <p className="mt-1 text-sm text-muted">
         Chiave API da Intervals.icu → Settings → Developer. Resta solo in questa pagina, non viene salvata. Le attività arrivate da Strava non hanno dati
@@ -171,12 +166,10 @@ function IntervalsImport() {
             <li key={a.id} className="flex items-center justify-between gap-3 py-2">
               <span className="min-w-0">
                 <span className="block truncate font-semibold">{a.name || a.id}</span>
-                <span className="text-xs text-muted">
-                  {a.startTime ? formatDateTime(a.startTime) : ''} · {formatKm(a.distanceM)} km · {formatNumber(a.elevationGainM, 0)} m{a.hasPower ? ' · watt' : ''}
-                </span>
+                <span className="num text-xs text-muted">{`${a.startTime ? `${cap(formatDateTime(a.startTime))} · ` : ''}${formatKm(a.distanceM)} km · ${formatNumber(a.elevationGainM, 0)} m${a.hasPower ? ' · Watt' : ''}`}</span>
                 {a.unavailable ? <span className="block text-xs text-warn">{a.unavailableReason ?? 'Non disponibile via API'}</span> : null}
               </span>
-              <Button variant="soft" className="h-10 shrink-0 px-4 text-sm" disabled={a.unavailable || busy != null} onClick={() => void take(a)}>
+              <Button variant="soft" className="h-11 shrink-0 px-4 text-sm" disabled={a.unavailable || busy != null} onClick={() => void take(a)}>
                 {busy === a.id ? '…' : 'Importa'}
               </Button>
             </li>
@@ -213,9 +206,9 @@ function FileImport() {
         <input className="sr-only" type="file" multiple accept=".fit,.tcx,.gpx,.zip" data-testid="rides-file" onChange={(e) => void onFiles(e.target.files)} />
       </label>
       {note ? <p className="mt-2 text-sm text-good">{note}</p> : null}
-      <p className="mt-2 text-xs text-muted">
-        Esempi sintetici per provare: <Link className="underline" to="/import">file DEMO</Link>.
-      </p>
+      <Link className="mt-1 inline-flex h-11 items-center text-sm font-semibold text-accent" to="/import">
+        File di esempio
+      </Link>
     </section>
   );
 }

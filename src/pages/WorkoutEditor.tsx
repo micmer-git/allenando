@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Button, Field, TextInput } from '@/components/ui';
-import { formatDuration, formatNumber } from '@/domain/format';
+import { useNavigate, useParams } from 'react-router-dom';
+import { Button, Field, PageHeader, TextInput } from '@/components/ui';
+import { WorkoutChart } from '@/components/WorkoutChart';
+import { formatDuration, formatTss } from '@/domain/format';
 import type { Workout, WorkoutStep } from '@/domain/types';
 import { emptyWorkout, workoutEstimate } from '@/domain/workouts';
 import { useI18n } from '@/i18n';
@@ -60,27 +61,27 @@ function Editor({ initial, isNew }: { initial: Workout; isNew: boolean }) {
   }
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 pb-nav pt-6 md:px-8 md:pt-10">
-      <Link to="/workouts" className="text-sm font-semibold text-muted">
-        {t('actions.back')}
-      </Link>
-      <h1 className="mt-3 font-display text-4xl">{t('workouts.editorTitle')}</h1>
-      <div className="mt-5">
+    <main className="mx-auto w-full max-w-3xl px-4 pb-nav pt-5 md:px-8 md:pt-10" data-testid="workout-editor">
+      <PageHeader back={{ to: '/workouts', label: t('workouts.title') }} title={isNew ? t('workouts.editorNew') : t('workouts.editorEdit')} size="md" />
+      <div className="mt-4" data-testid="editor-chart">
+        <WorkoutChart workout={preview} ftp={ftp} />
+        <p className="num mt-1.5 text-sm text-muted">{`${formatDuration(estimate.durationSec)} · TSS ${formatTss(estimate.tss)}`}</p>
+      </div>
+      <div className="mt-4">
         <Field label={t('workouts.name')}>
           <TextInput value={name} onChange={(event) => setName(event.target.value)} placeholder={t('workouts.namePlaceholder')} />
         </Field>
       </div>
-      <p className="num mt-4 text-sm text-muted">
-        {formatDuration(estimate.durationSec)} · TSS {formatNumber(estimate.tss, 0)}
-      </p>
       <ul className="mt-4 flex flex-col gap-3">
         {steps.map((step, index) => (
-          <li key={step.id} className="rounded-3xl border border-line bg-elev p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <span className="font-semibold">
-                {index + 1}. {t('workouts.steps')}
-              </span>
-              <button type="button" className="text-sm font-semibold text-danger" onClick={() => setSteps((current) => current.filter((item) => item.id !== step.id))}>
+          <li key={step.id} className="rounded-3xl border border-line bg-elev p-4" data-testid={`editor-step-${index}`}>
+            <div className="mb-2 flex items-center justify-between">
+              <span className="font-semibold">{t('workouts.step', { n: index + 1 })}</span>
+              <button
+                type="button"
+                className="-mr-2 inline-flex h-11 items-center rounded-full px-3 text-sm font-semibold text-danger"
+                onClick={() => setSteps((current) => current.filter((item) => item.id !== step.id))}
+              >
                 {t('workouts.remove')}
               </button>
             </div>
@@ -105,13 +106,13 @@ function Editor({ initial, isNew }: { initial: Workout; isNew: boolean }) {
                 </select>
               </Field>
             </div>
-            <label className="mt-3 flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={step.ramp} onChange={(event) => update(step.id, { ramp: event.target.checked })} />
+            <label className="mt-2 flex min-h-11 items-center gap-3 text-sm">
+              <input type="checkbox" className="h-5 w-5 accent-[var(--accent)]" checked={step.ramp} onChange={(event) => update(step.id, { ramp: event.target.checked })} />
               {t('workouts.rampTo')}
             </label>
             {step.ramp ? (
-              <div className="mt-3 max-w-[10rem]">
-                <TextInput inputMode="numeric" value={step.end} onChange={(event) => update(step.id, { end: event.target.value })} />
+              <div className="mt-1 max-w-[10rem]">
+                <TextInput inputMode="numeric" aria-label={t('workouts.rampTo')} value={step.end} onChange={(event) => update(step.id, { end: event.target.value })} />
               </div>
             ) : null}
           </li>
@@ -129,7 +130,8 @@ function Editor({ initial, isNew }: { initial: Workout; isNew: boolean }) {
         <Button onClick={() => void save()}>{t('actions.save')}</Button>
         {!isNew ? (
           <Button
-            variant="danger"
+            variant="ghost"
+            className="text-danger"
             onClick={() => {
               void deleteWorkout(initial.id).then(() => navigate('/workouts'));
             }}

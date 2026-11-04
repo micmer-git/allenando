@@ -6,6 +6,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { launch, sleep } from './cdp.mjs';
+import { largo, MINUSCOLE, minuscoleSu } from './pagine-check.mjs';
 
 const [base = 'http://127.0.0.1:4199/allenando', out = 'shots'] = process.argv.slice(2);
 mkdirSync(out, { recursive: true });
@@ -33,6 +34,8 @@ try {
   await sleep(500);
   await p.shot('01-onboarding');
   await auditCheck(p, 'onboarding');
+  const minOnb = await p.evaluate(MINUSCOLE);
+  check(minOnb.length === 0, 'onboarding: niente testi in minuscolo', minOnb.join(' | '));
   await p.evaluate(`(() => { const i = document.querySelector('[data-testid=onboarding-name]'); if (!i) return false;
     const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, 'Anna');
     i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
@@ -106,6 +109,12 @@ try {
     await p.shot('07-libero');
     check(await p.evaluate(`!!document.querySelector('[data-testid=profile-dot]')`), 'giro libero: pallino sull’altimetria');
   } else check(false, 'giro libero: mondo 3D pronto');
+
+  if (!process.env.ONLY_RIDE) {
+    // pista 1: le minuscole su Oggi e sulle cinque schede del Mondo; telefono in orizzontale e computer
+    await minuscoleSu(p, check, ['/', '/mondo']);
+    await largo(b, base, check);
+  }
 
   check(p.errors.length === 0, 'nessun errore di pagina', p.errors.slice(0, 5).join(' | '));
 } catch (err) {

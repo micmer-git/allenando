@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { useI18n } from '@/i18n';
-import { Wordmark } from '@/components/ui';
+import { Mark, Wordmark } from '@/components/ui';
 import { cn } from '@/lib/cn';
 
 const items = [
@@ -21,28 +21,47 @@ const more = [
   { to: '/history', key: 'nav.history', icon: BookIcon, end: false },
 ] as const;
 
+/**
+ * Il menu a sinistra. Sul computer (wide) con le voci e anche le sezioni che sul telefono stanno
+ * dentro «Tu»; sul telefono in orizzontale (rail) una colonna di sole icone, le sei della barra
+ * in basso, che stanno tutte in 390 px di altezza.
+ */
 export function SideNav() {
   const { t } = useI18n();
   return (
-    <aside className="sticky top-0 hidden h-dvh flex-col gap-2 border-r border-line px-4 py-6 md:flex">
-      <p className="px-3">
+    <aside
+      className="sticky top-0 hidden h-dvh flex-col border-r border-line rail:flex rail:items-center rail:gap-1 rail:px-1.5 rail:py-[max(0.5rem,env(safe-area-inset-top))] wide:flex wide:gap-2 wide:px-4 wide:py-6"
+      data-testid="side-nav"
+    >
+      <p className="px-3 rail:hidden">
         <Wordmark />
       </p>
-      <nav aria-label={t('nav.primary')} className="mt-6 flex flex-col gap-1">
+      <p className="hidden rail:grid rail:h-11 rail:place-items-center" aria-label="OROBIA">
+        <Mark size={30} />
+      </p>
+      <nav aria-label={t('nav.primary')} className="flex flex-col gap-1 rail:gap-0.5 wide:mt-6">
         {[...items, ...more].map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
             end={item.end}
+            aria-label={t(item.key)}
             className={({ isActive }) =>
               cn(
-                'flex h-11 items-center gap-3 rounded-xl px-3 text-[15px] font-semibold',
-                isActive ? 'bg-elev2 text-ink shadow-[inset_3px_0_0_var(--accent)]' : 'text-muted hover:bg-elev',
+                'items-center rounded-xl text-[15px] font-semibold wide:h-11 wide:gap-3 wide:px-3',
+                more.some((m) => m.to === item.to) ? 'hidden wide:flex' : 'hidden rail:grid rail:h-12 rail:w-14 rail:place-items-center wide:flex',
+                isActive ? 'bg-elev2 text-ink rail:text-accent' : 'text-muted hover:bg-elev',
               )
             }
           >
-            <item.icon />
-            {t(item.key)}
+            {({ isActive }) => (
+              <>
+                <span className={cn('grid place-items-center', isActive && 'wide:text-accent')}>
+                  <item.icon />
+                </span>
+                <span className="rail:sr-only">{t(item.key)}</span>
+              </>
+            )}
           </NavLink>
         ))}
       </nav>
@@ -55,7 +74,8 @@ export function BottomNav() {
   return (
     <nav
       aria-label={t('nav.primary')}
-      className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-bg/90 px-2 pb-[max(0.4rem,env(safe-area-inset-bottom))] pt-1 backdrop-blur-xl md:hidden"
+      className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-bg/90 px-2 pb-[max(0.4rem,env(safe-area-inset-bottom))] pt-1 backdrop-blur-xl rail:hidden wide:hidden"
+      data-testid="bottom-nav"
     >
       <ul className="grid grid-cols-6">
         {items.map((item) => (
