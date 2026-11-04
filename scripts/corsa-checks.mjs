@@ -134,7 +134,7 @@ export async function collaudoCorsa({ b, base, check, out = '' }) {
   check(await p.waitFor(`document.querySelector('[data-testid=ride-saved]')?.dataset.state === 'saved'`, 8000), 'riepilogo: «Giro salvato» senza toccare niente');
   check(await p.waitFor(`!!document.querySelector('[data-testid=rewards]')`, 15000), 'riepilogo: oro e traguardi');
   check(await p.evaluate(`!!document.querySelector('[data-testid=summary-map] canvas') && !!document.querySelector('[data-testid=summary-profile]')`), 'riepilogo: la carta con la traccia e il profilo');
-  check(!!(await p.evaluate(`document.querySelector('[data-testid=ride-summary-extra]')`)), 'riepilogo: la riga delle azioni secondarie (FIT, diario; cartolina)');
+  check(await p.evaluate(`!!document.querySelector('[data-testid=ride-summary-extra]')`), 'riepilogo: la riga delle azioni secondarie (FIT, diario; cartolina)');
   await sleep(800);
   await p.shot('c2-25-riepilogo');
   await p.shot('c2-25-riepilogo-tutta', true);
