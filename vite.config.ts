@@ -41,7 +41,8 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff,woff2,fit,gpx,tcx,zip,json,webmanifest}'],
         // il mondo di Bergamo pesa decine di MB in mattonelle: non si scarica tutto all'installazione,
         // si tiene in cache quello che si è già pedalato (e il grafo, che serve sempre)
-        globIgnores: ['**/world/**'],
+        // le pagine prima/dopo sono rapporti con le loro foto: non entrano nell'app installata
+        globIgnores: ['**/world/**', '**/prima-dopo/**'],
         runtimeCaching: [
           {
             urlPattern: ({ url }) => url.pathname.includes('/world/'),
@@ -54,7 +55,8 @@ export default defineConfig({
           },
         ],
         navigateFallback: '/allenando/index.html',
-        navigateFallbackDenylist: [/^\/allenando\/samples\//, /^\/allenando\/world\//],
+        // senza /prima-dopo/ il service worker aprirebbe l'app al posto del rapporto
+        navigateFallbackDenylist: [/^\/allenando\/samples\//, /^\/allenando\/world\//, /^\/allenando\/prima-dopo\//],
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
         cleanupOutdatedCaches: true,
       },
