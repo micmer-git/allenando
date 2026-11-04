@@ -35,7 +35,7 @@ const labels = label.split(',');
 const b = await launch({ out });
 const reps = labels.map((l, i) => ({ label: l, base: bases[i], settle: SETTLE, misura: MISURA, punti: {} }));
 try {
-  const p = await b.phone(bases[0], { width: 390, height: 844 });
+  let p = await b.phone(bases[0], { width: 390, height: 844 });
   for (const base of bases) {
     await p.s('Page.navigate', { url: `${base}/start` });
     await sleep(700);
@@ -47,7 +47,7 @@ try {
       await sleep(600);
     }
   }
-  for (const [name, path] of punti) for (let bi = 0; bi < bases.length; bi++) {
+  for (const [name, path] of punti) for (let bi = 0; bi < bases.length; bi++) try {
     const base = bases[bi];
     const rep = reps[bi];
     const dirOut = bases.length > 1 ? join(out, rep.label) : out;
@@ -111,6 +111,12 @@ try {
     console.log(
       `${(bases.length > 1 ? rep.label + ' ' : '') + name.padEnd(18)} pronto ${readyMs == null ? 'NO' : (readyMs / 1000).toFixed(1) + ' s'} · 400 m intorno ${realMs == null ? 'NO' : (realMs / 1000).toFixed(1) + ' s'}${fullMs ? ` (tutto ${(fullMs / 1000).toFixed(0)} s)` : ''} · chiamate ${r.calls} · triangoli ${r.triangles} · geo ${r.geometries} · tex ${r.textures} · p50 ${r.frameP50} ms · p95 ${r.frameP95} ms · mattonelle ${r.tiles ? `${r.tiles.ready}/${r.tiles.ready + r.tiles.pending} (entro 400 m al pronto ${r.tilesAtReady?.nearReady}/${r.tilesAtReady?.near})` : '–'} · heap ${heap} MB${pop ? ` · pop-in entro 150 m: ${pop.late} (il più vicino ${pop.lateMin} m; km ${pop.km0} → ${pop.km})` : ''}`,
     );
+  } catch (err) {
+    // con la grafica software e la macchina carica la scheda può morire: si segna e si va avanti
+    // con una scheda nuova (stesso profilo: l'accesso fatto resta)
+    console.log(`${labels[bi]} ${name}: scheda persa (${String(err?.message ?? err)}), si riprende`);
+    reps[bi].punti[name] = { path, error: String(err?.message ?? err) };
+    p = await b.phone(bases[0], { width: 390, height: 844 });
   }
   for (const rep of reps) rep.errors = p.errors;
 } catch (e) {

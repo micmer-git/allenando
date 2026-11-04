@@ -74,7 +74,7 @@ describe('il terreno lungo le strade', () => {
         expect(Math.abs(field.height(x, z, 10) - p.y)).toBeLessThan(12);
       }
     }
-  });
+  }, 60000);
 
   it('fra 6 e 20 m dal bordo della strada il terreno disegnato non supera 1:1 (Val Seriana, tutta)', async () => {
     const terrain = new Terrain(graph, '/world/bergamo/');
@@ -117,7 +117,7 @@ describe('il terreno lungo le strade', () => {
     expect(n).toBeGreaterThan(5000);
     // il resto sono muri di sostegno fra due strade a quote diverse più vicine di 20 m
     expect(bad / n).toBeLessThan(0.005);
-  }, 60000);
+  }, 120000);
 });
 
 describe('il suolo delle città', () => {

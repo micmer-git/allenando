@@ -147,8 +147,13 @@ interface LoadStatus {
   ready: boolean;
 }
 
-/** Dopo questo tempo si dice «pronto» comunque: meglio un mondo a metà che un velo per sempre. */
-const READY_TIMEOUT = 20000;
+/**
+ * Se il caricamento resta fermo per READY_STALL ms si dice «pronto» comunque (meglio un mondo a metà
+ * che un velo per sempre), e comunque dopo READY_TIMEOUT. Finché le mattonelle arrivano si aspetta:
+ * su un telefono lento il velo dura di più, ma dietro non c'è un mondo vuoto.
+ */
+const READY_STALL = 12000;
+const READY_TIMEOUT = 60000;
 
 /**
  * «Pronto» vuol dire che intorno al ciclista c'è il mondo: il terreno lontano e tutte le mattonelle
@@ -158,6 +163,8 @@ function ReadyWhenTiles({ onReady, onProgress, counts, status, terrain }: { onRe
   const sent = useRef(false);
   const t0 = useRef<number | null>(null);
   const shown = useRef(-1);
+  /** l'ultimo istante in cui il caricamento è andato avanti (mattonelle in scena, mattonelle chieste) */
+  const moved = useRef({ at: 0, key: '' });
   useFrame(() => {
     if (sent.current) return;
     const now = performance.now();
@@ -169,7 +176,9 @@ function ReadyWhenTiles({ onReady, onProgress, counts, status, terrain }: { onRe
       shown.current = p;
       onProgress?.(p);
     }
-    if (p >= 1 || now - t0.current > READY_TIMEOUT) {
+    const key = `${counts.ready}/${counts.nearReady}/${far}`;
+    if (key !== moved.current.key) moved.current = { at: now, key };
+    if (p >= 1 || now - moved.current.at > READY_STALL || now - t0.current > READY_TIMEOUT) {
       sent.current = true;
       status.ready = true;
       onProgress?.(1);
@@ -1122,19 +1131,27 @@ function spruceTiers(): THREE.BufferGeometry {
   return out;
 }
 
-/** Le chiome lontane: quattro facce bastano, e il tronco non si vede. */
-function farGeometries(): Record<TreeKind, THREE.BufferGeometry> {
-  const cone = (r: number, h: number, y: number) => {
-    const g = new THREE.ConeGeometry(r, h, 4, 1, true);
-    g.translate(0, y, 0);
-    return g;
-  };
+/**
+ * Le chiome lontane: quattro facce bastano, e il tronco non si vede. Abeti, larici e cipressi
+ * lontani sono un'istanza sola (un cono, allargato o stretto per specie: FAR_CONE), le latifoglie
+ * un ottaedro: due chiamate di disegno per tutto il bosco lontano.
+ */
+function farGeometries(): { conifer: THREE.BufferGeometry; broadleaf: THREE.BufferGeometry } {
+  const conifer = new THREE.ConeGeometry(2.2, 9.5, 4, 1, true);
+  conifer.translate(0, 6.1, 0);
   const broadleaf = new THREE.OctahedronGeometry(3.2, 0);
   broadleaf.scale(1, 0.9, 1);
   broadleaf.translate(0, 5.6, 0);
-  const rock = new THREE.OctahedronGeometry(1, 0);
-  rock.scale(1.3, 0.6, 1);
-  return { spruce: cone(2.2, 9.5, 6.1), larch: cone(2.4, 8, 6), broadleaf, cypress: cone(1.1, 10, 6.2), rock };
+  return { conifer, broadleaf };
+}
+
+/** Larghezza e altezza del cono lontano per specie, rispetto all'abete. */
+const FAR_CONE: Partial<Record<TreeKind, [number, number]>> = { spruce: [1, 1], larch: [2.4 / 2.2, 8 / 9.5], cypress: [0.5, 1.05] };
+
+/** La chiave dell'istanza di un albero: piena per specie, lontana per forma (i sassi sono sempre pieni). */
+function treeKey(kind: TreeKind, full: boolean): string {
+  if (full || kind === 'rock') return `${kind}:n`;
+  return kind === 'broadleaf' ? 'broadleaf:f' : 'conifer:f';
 }
 
 /** Gli alberi in scena con le geometrie piene e con quelle povere (per le misure, ?stats=1). */
@@ -1187,7 +1204,7 @@ function Forest({ handle, mats }: { handle: React.MutableRefObject<ForestHandle 
         for (const p of patches) {
           for (const t of p.trees) {
             const full = p.near && (t.x - px) ** 2 + (t.z - pz) ** 2 <= limit;
-            push(`${t.kind}:${full ? 'n' : 'f'}`, t);
+            push(treeKey(t.kind, full), t);
             // il tronco solo vicino: da lontano è meno di un pixel
             if (full && t.kind !== 'rock') push('trunk', t);
             if (full) nNear++;
@@ -1198,7 +1215,7 @@ function Forest({ handle, mats }: { handle: React.MutableRefObject<ForestHandle 
         treeCount.far = nFar;
         const d = new THREE.Object3D();
         const c = new THREE.Color();
-        const make = (key: string, geo: THREE.BufferGeometry, mat: THREE.Material, colors?: string[]) => {
+        const make = (key: string, geo: THREE.BufferGeometry, mat: THREE.Material, colored = true) => {
           const old = current.get(key);
           if (old) {
             g.remove(old);
@@ -1209,15 +1226,18 @@ function Forest({ handle, mats }: { handle: React.MutableRefObject<ForestHandle 
           if (items.length === 0) return;
           const m = new THREE.InstancedMesh(geo, mat, items.length);
           const rock = key.startsWith('rock');
+          const cone = key === 'conifer:f';
           items.forEach((it, i) => {
             d.position.set(it.x, it.y, it.z);
             d.rotation.set(rock ? it.tint : 0, it.r, 0);
             // chiome più alte o più tozze, e colori un po' diversi da un albero all'altro
             const tall = rock ? 1 : 0.85 + ((it.tint * 7.31) % 1) * 0.35;
-            d.scale.set(it.s, it.s * tall, it.s);
+            const [wide, high] = (cone && FAR_CONE[it.kind]) || [1, 1];
+            d.scale.set(it.s * wide, it.s * tall * high, it.s * wide);
             d.updateMatrix();
             m.setMatrixAt(i, d.matrix);
-            if (colors) {
+            if (colored) {
+              const colors = TREE_COLORS[it.kind];
               c.set(colors[Math.floor(it.tint * colors.length) % colors.length]);
               c.offsetHSL(0, (((it.tint * 13.7) % 1) - 0.5) * 0.08, (((it.tint * 29.3) % 1) - 0.5) * 0.07);
               m.setColorAt(i, c);
@@ -1229,11 +1249,10 @@ function Forest({ handle, mats }: { handle: React.MutableRefObject<ForestHandle 
           current.set(key, m);
           g.add(m);
         };
-        for (const k of KINDS) {
-          make(`${k}:n`, geos.near[k], mats.trees[k], TREE_COLORS[k]);
-          make(`${k}:f`, geos.far[k], mats.trees[k], TREE_COLORS[k]);
-        }
-        make('trunk', geos.trunk, mats.trees.trunk);
+        for (const k of KINDS) make(`${k}:n`, geos.near[k], mats.trees[k]);
+        make('conifer:f', geos.far.conifer, mats.trees.spruce);
+        make('broadleaf:f', geos.far.broadleaf, mats.trees.broadleaf);
+        make('trunk', geos.trunk, mats.trees.trunk, false);
       },
     };
     return () => {
