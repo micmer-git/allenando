@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { LineChart, ZoneBar } from '@/components/Charts';
 import { Button, PageHeader } from '@/components/ui';
+import { CartolinaButton } from '@/components/ShareCard';
 import { WorldMap, type MapMarker, type MapOverlay } from '@/components/WorldMap';
 import { loadWorld, Terrain, type WorldData } from '@/open/world';
 import type { Ride } from '@/domain/types';
@@ -116,6 +117,7 @@ export function RideDetailPage() {
             {t('history.exportGpx')}
           </Button>
         ) : null}
+        <CartolinaButton ride={ride} />
       </div>
       {ride.source === 'indoor' ? <p className="mt-2 text-xs text-muted">{gps ? t('history.gpsYes') : t('history.gpsNo')}</p> : null}
       <div className="mt-6 flex flex-wrap gap-2">

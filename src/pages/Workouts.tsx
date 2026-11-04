@@ -23,6 +23,7 @@ import { freeStartQuery, loopStartQuery, START_TOWNS } from '@/open/starts';
 import { loadWorld, type WorldData } from '@/open/world';
 import { useApp } from '@/store/useApp';
 import { cn } from '@/lib/cn';
+import { downloadZwo, importZwoFiles } from '@/io/zwo';
 
 export function workoutTitle(workout: Workout, t: Translate): string {
   return workout.nameKey ? t(workout.nameKey) : workout.name || t('workouts.editorTitle');
@@ -85,6 +86,7 @@ export function WorkoutsPage() {
   const [note, setNote] = useState<string | null>(null);
   const [sheet, setSheet] = useState(false);
   const closeSheet = useCallback(() => setSheet(false), []);
+  const [zwoNote, setZwoNote] = useState<string | null>(null);
   const needWorld = choice.where !== 'salita';
 
   useEffect(() => {
@@ -162,6 +164,10 @@ export function WorkoutsPage() {
           </Link>
         }
       />
+      <Link to="/programmi" className="mt-1 flex h-11 items-center justify-between rounded-2xl border border-line bg-elev px-4 text-sm font-semibold" data-testid="workouts-plans">
+        <span>Programmi a settimane</span>
+        <span aria-hidden="true" className="text-muted">→</span>
+      </Link>
 
       <div className="no-scrollbar -mx-4 mt-4 flex gap-1.5 overflow-x-auto px-4" role="group" aria-label="Filtri" data-testid="workout-filters">
         <button
@@ -205,7 +211,27 @@ export function WorkoutsPage() {
         ))}
       </ul>
 
-      <h2 className="mt-10 font-display text-3xl uppercase">{t('workouts.mine')}</h2>
+      <div className="mt-10 flex items-baseline justify-between gap-3">
+        <h2 className="font-display text-3xl uppercase">{t('workouts.mine')}</h2>
+        {/* i file di Zwift entrano fra i tuoi: un'azione leggera, non un terzo tasto pieno */}
+        <label className="-my-3 inline-flex h-11 cursor-pointer items-center text-sm font-semibold text-accent" data-testid="zwo-import">
+          Importa .zwo
+          <input
+            type="file"
+            accept=".zwo,application/xml,text/xml"
+            multiple
+            className="sr-only"
+            onChange={(e) => {
+              const el = e.currentTarget;
+              void importZwoFiles(el.files, saveWorkout).then((m) => {
+                setZwoNote(m);
+                el.value = '';
+              });
+            }}
+          />
+        </label>
+      </div>
+      {zwoNote ? <p className="mt-2 text-sm text-muted" role="status" data-testid="zwo-note">{zwoNote}</p> : null}
       {custom.length === 0 ? (
         <p className="mt-3 text-muted">{t('workouts.none')}</p>
       ) : (
@@ -346,6 +372,9 @@ function WorkoutCard({
         <Button variant="ghost" className="h-11" onClick={onCopy}>
           {t('actions.duplicate')}
         </Button>
+        <button type="button" className="inline-flex h-11 items-center px-2 text-sm font-semibold text-muted" onClick={() => downloadZwo(workout, workoutTitle(workout, t), ftp)} data-testid={`zwo-export-${workout.id}`}>
+          Esporta .zwo
+        </button>
       </div>
     </li>
   );

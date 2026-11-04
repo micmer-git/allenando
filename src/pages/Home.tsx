@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Wordmark } from '@/components/ui';
 import { Coin, Glyph } from '@/components/Glyph';
@@ -15,6 +15,9 @@ import { WORLD_RIDES } from '@/multiplayer/world-rides';
 import { useI18n } from '@/i18n';
 import { useApp } from '@/store/useApp';
 import { cn } from '@/lib/cn';
+
+// la carta del programma (src/pages/Plans.tsx) si carica a parte: non pesa sull'avvio
+const TodayWorkout = lazy(() => import('./Plans').then((mod) => ({ default: mod.TodayWorkout })));
 
 export function HomePage() {
   const { t } = useI18n();
@@ -59,7 +62,11 @@ export function HomePage() {
         </p>
       ) : null}
 
+      <Suspense fallback={null}>
+        <TodayWorkout className="mt-4" />
+      </Suspense>
       <NextSession now={now} />
+
       <Missions done={career.missions.day === todayKey() ? career.missions.done : []} />
 
       {/* il mondo è la cosa da fare: una carta grande col suo ingresso, e tre scorciatoie */}
