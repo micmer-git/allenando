@@ -7,6 +7,9 @@ import { bankLimit, createWorldField } from '../src/open/field';
 import { WorldPath } from '../src/open/path';
 import { pavedWeight, urbanDensity } from '../src/open/urban';
 import { walkHeights } from '../src/open/tiles';
+import { addBuilding, Tris } from '../src/open/buildings';
+import { BUILDING_KIND } from '../src/open/world';
+import { smoothNoise } from '../src/world/builders';
 
 /*
  * Pista 3 (il mondo 3D): il terreno lungo le strade (niente pareti né canyon), il suolo delle
@@ -152,5 +155,31 @@ describe('i marciapiedi', () => {
     const all = walkHeights(pts, pts.map(() => true));
     expect(all[0]).toBe(1);
     expect(all[20]).toBe(1);
+  });
+});
+
+describe('le case di valle e il colore del suolo', () => {
+  const ring = new Float32Array([0, 0, 40, 0, 40, 25, 0, 25]);
+  const C = { wall: { r: 0.8, g: 0.78, b: 0.7 }, base: { r: 0.7, g: 0.68, b: 0.6 }, roof: { r: 0.5, g: 0.5, b: 0.5 }, tiles: { r: 0.7, g: 0.3, b: 0.2 }, blind: true };
+  const glass = { r: 0.3, g: 0.35, b: 0.4 };
+  const hasGlass = (t: Tris) => {
+    for (let i = 0; i < t.col.length; i += 3) if (t.col[i] === glass.r && t.col[i + 1] === glass.g && t.col[i + 2] === glass.b) return true;
+    return false;
+  };
+
+  it('un capannone da 6 m ha il nastro delle finestre sotto la gronda; senza il colore del vetro resta cieco', () => {
+    const walls = new Tris();
+    addBuilding(walls, new Tris(), { kind: BUILDING_KIND.industrial, h: 6, minH: 0, roof: 0, ring }, 300, { ...C, ribbon: glass });
+    expect(hasGlass(walls)).toBe(true);
+    const plain = new Tris();
+    addBuilding(plain, new Tris(), { kind: BUILDING_KIND.industrial, h: 6, minH: 0, roof: 0, ring }, 300, C);
+    expect(hasGlass(plain)).toBe(false);
+  });
+
+  it('il rumore del colore del terreno è continuo: niente quadretti al bordo delle celle', () => {
+    let worst = 0;
+    for (let x = 0; x < 20; x += 0.01) worst = Math.max(worst, Math.abs(smoothNoise(x + 0.01, 3.3) - smoothNoise(x, 3.3)));
+    // con hash2(floor(x)) il salto al bordo di una cella arrivava a quasi 1
+    expect(worst).toBeLessThan(0.03);
   });
 });
