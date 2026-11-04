@@ -363,6 +363,11 @@ try {
     await p.clickText('1×');
     await sleep(2500);
     await p.shot('n2-03-fantasma-davanti');
+    // la pillola da leggere: nel layout di oggi il banner del tratto le sta sopra (la posizione si
+    // sistema all'unione con la pista 2); qui il banner si nasconde solo per la fotografia
+    await p.evaluate(`document.querySelector('[data-testid=ride-hud-center]')?.style.setProperty('visibility', 'hidden')`);
+    await p.shot('n2-04-pillola-fantasma');
+    await p.evaluate(`document.querySelector('[data-testid=ride-hud-center]')?.style.removeProperty('visibility')`);
     // contrasto del testo sulla pillola, posata sul cielo più chiaro possibile (il bianco)
     const ratio = await p.evaluate(`(() => { const el = document.querySelector('[data-testid=ghost-gap]'); if (!el) return 0; const st = getComputedStyle(el); const num = (c) => (c.match(/[\\d.]+/g) ?? []).map(Number); const [r, g, b, a = 1] = num(st.backgroundColor); const bg = [r, g, b].map((v) => v * a + 255 * (1 - a)); const fg = num(st.color).slice(0, 3); const lum = (c) => { const [x, y, z] = c.map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * x + 0.7152 * y + 0.0722 * z; }; const l1 = lum(fg), l2 = lum(bg); return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05); })()`);
     check(ratio >= 4.5, 'fantasma: contrasto della pillola ≥ 4,5:1 anche sul bianco', ratio.toFixed(1));
