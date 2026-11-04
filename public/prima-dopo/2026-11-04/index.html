@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OROBIA · Prima e dopo</title>
+<meta name="description" content="Il mondo di OROBIA prima e dopo la PR #6: rotatorie, gallerie, case sul pendio, 40 monumenti, gioco nuovo.">
+<meta name="robots" content="noindex">
+<link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #faf8f3; --carta: #fffdf8; --ink: #14150f; --ink-2: #3c3e33; --ink-3: #6f7363; --ink-4: #9a9c8d;
+    --rule: #e4e1d6; --rule-soft: #efece3; --dawn: #e0932f; --dawn-ink: #9a5f0f;
+    --scorre: #7d8a6a; --sente: #e0932f; --rallenta: #c2661f; --coda: #a63e22;
+    --serif: 'Instrument Serif', Georgia, serif; --sans: 'Inter', system-ui, sans-serif;
+    --molla: cubic-bezier(.2, .8, .2, 1);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { transition: none !important; } }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 400 1rem/1.5 var(--sans); -webkit-text-size-adjust: 100%; }
+  a { color: inherit; }
+  .testa { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--rule); }
+  .testa .riga { max-width: 52rem; margin: 0 auto; padding: .55rem 1rem; display: flex; align-items: center; gap: .75rem; }
+  .testa .torna { display: inline-flex; align-items: center; gap: .35rem; min-height: 2.75rem; padding-right: .5rem; font-weight: 600; text-decoration: none; }
+  .testa .torna svg { width: 1.6rem; height: 1.6rem; }
+  .testa .sezione { color: var(--ink-3); font-size: .875rem; }
+  .testa .stato { margin-left: auto; color: var(--ink-3); font-size: .8125rem; white-space: nowrap; }
+  .filtri { position: sticky; top: 3.4rem; z-index: 4; background: var(--bg); border-bottom: 1px solid var(--rule-soft); }
+  .filtri .riga { max-width: 52rem; margin: 0 auto; padding: .5rem 1rem; display: flex; gap: .4rem; overflow-x: auto; scrollbar-width: none; }
+  .filtri .riga::-webkit-scrollbar { display: none; }
+  .filtri a { flex: none; display: inline-flex; align-items: center; min-height: 2.75rem; padding: 0 .95rem; border: 1px solid var(--rule); border-radius: 999px; background: var(--carta); color: var(--ink-2); font-size: .875rem; font-weight: 500; text-decoration: none; }
+  .filtri a[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--carta); }
+  .involucro { max-width: 52rem; margin: 0 auto; padding: 0 1rem 3rem; }
+  .verdetto { padding: 2rem 0 1rem; }
+  .occhiello { margin: 0; color: var(--dawn-ink); font-size: .75rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; }
+  h1 { margin: .35rem 0 .5rem; font: 400 2.75rem/1 var(--serif); letter-spacing: -.01em; }
+  h1 em { color: var(--dawn-ink); }
+  .riassunto { margin: 0; max-width: 36rem; color: var(--ink-2); }
+  .cifre { margin: 1.25rem 0 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: .75rem; overflow: hidden; }
+  .cifre div { background: var(--carta); padding: .8rem .9rem; }
+  .cifre dt { color: var(--ink-3); font-size: .8125rem; }
+  .cifre dd { margin: .1rem 0 0; font: 400 2rem/1 var(--serif); font-variant-numeric: tabular-nums; }
+  @media (max-width: 43.99rem) { .cifre div:last-child:nth-child(odd) { grid-column: 1 / -1; } }
+  section.blocco { padding-top: 2.25rem; scroll-margin-top: 7rem; }
+  h2 { margin: 0; font: 400 2rem/1.05 var(--serif); }
+  .cappello { margin: .35rem 0 1rem; color: var(--ink-2); max-width: 38rem; }
+  .coppia { margin: 0 0 1.5rem; }
+  .coppia .lati { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+  .coppia .lati.tre { grid-template-columns: 1fr 1fr 1fr; }
+  figure { margin: 0; }
+  .scatto { display: block; width: 100%; padding: 0; border: 0; background: none; cursor: zoom-in; position: relative; border-radius: .6rem; overflow: hidden; box-shadow: 0 0 0 1px var(--rule); }
+  .scatto img { display: block; width: 100%; height: auto; background: #d9d6cc; }
+  .etichetta { position: absolute; top: .45rem; left: .45rem; padding: .15rem .5rem; border-radius: 999px; font-size: .75rem; font-weight: 600; letter-spacing: .04em; }
+  .etichetta.prima { background: rgba(20, 21, 15, .78); color: #fffdf8; }
+  .etichetta.dopo { background: var(--dawn); color: #14150f; }
+  .didascalia { margin: .45rem 0 0; color: var(--ink-2); font-size: .875rem; }
+  .didascalia b { color: var(--ink); font-weight: 600; }
+  .griglia { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem .5rem; }
+  .griglia.larga { grid-template-columns: 1fr; }
+  @media (min-width: 44rem) { .griglia { grid-template-columns: repeat(3, 1fr); } .griglia.larga { grid-template-columns: 1fr 1fr; } h1 { font-size: 3.5rem; } }
+  .griglia figcaption { margin-top: .35rem; color: var(--ink-2); font-size: .8125rem; line-height: 1.35; }
+  h3 { margin: 1.5rem 0 .6rem; font-size: .75rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
+  footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--rule); color: var(--ink-3); font-size: .8125rem; }
+  footer p { margin: 0 0 .5rem; }
+  dialog { border: 0; padding: 0; background: transparent; max-width: 100vw; max-height: 100vh; }
+  dialog::backdrop { background: rgba(20, 21, 15, .88); }
+  dialog img { display: block; max-width: 96vw; max-height: 88vh; width: auto; height: auto; border-radius: .5rem; }
+  dialog p { margin: .5rem 0 0; color: #fffdf8; font-size: .875rem; text-align: center; }
+  dialog button { position: fixed; top: .75rem; right: .75rem; width: 2.75rem; height: 2.75rem; border-radius: 999px; border: 0; background: #fffdf8; color: #14150f; font-size: 1.25rem; cursor: pointer; }
+</style>
+</head>
+<body>
+<header class="testa">
+  <div class="riga">
+    <a class="torna" href="../../" aria-label="Torna a OROBIA">
+      <svg viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#16130a"/><clipPath id="d"><circle cx="32" cy="32" r="24"/></clipPath><circle cx="32" cy="32" r="24" fill="#ffc814"/><g clip-path="url(#d)"><path d="M4 42 20.5 26.5l6.5 6.8L38.5 19 60 42v22H4Z" fill="#16130a"/><path d="M34.5 58 23.5 52.2 37 46.6 25.6 41.2l2.2-6.2" fill="none" stroke="#ffc814" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></g></svg>
+      <span>← OROBIA</span>
+    </a>
+    <span class="sezione">Prima e dopo</span>
+    <span class="stato">4 novembre 2026</span>
+  </div>
+</header>
+<nav class="filtri" aria-label="Sezioni">
+  <div class="riga">
+    <a href="#rotatorie" aria-pressed="true">Rotatorie</a>
+    <a href="#gallerie" aria-pressed="false">Gallerie</a>
+    <a href="#case" aria-pressed="false">Case</a>
+    <a href="#monumenti" aria-pressed="false">Monumenti</a>
+    <a href="#gioco" aria-pressed="false">Gioco</a>
+    <a href="#mondo" aria-pressed="false">In sella</a>
+  </div>
+</nav>
+
+<main class="involucro">
+  <div class="verdetto">
+    <p class="occhiello">PR #6 · in onda</p>
+    <h1>Il mondo, <em>prima e dopo</em></h1>
+    <p class="riassunto">Stesso punto, stessa inquadratura: a sinistra il 3 novembre, a destra oggi. Tocca una foto per ingrandirla.</p>
+    <dl class="cifre">
+      <div><dt>Rotatorie tonde</dt><dd>427</dd></div>
+      <div><dt>Gallerie chiuse</dt><dd>210</dd></div>
+      <div><dt>Monumenti veri</dt><dd>40</dd></div>
+      <div><dt>Percorsi</dt><dd>14</dd></div>
+      <div><dt>Allenamenti nuovi</dt><dd>27</dd></div>
+    </dl>
+  </div>
+
+  <section class="blocco" id="rotatorie">
+    <h2>Rotatorie</h2>
+    <p class="cappello">Prima l'anello era un ottagono a spigoli, con l'aiuola staccata dal bordo. Ora è tondo, con raccordi, cordoli e isole spartitraffico.</p>
+    <div class="coppia"><div class="lati">
+      <button class="scatto" data-zoom><img src="img/rot-albino-alto-prima.jpg" alt="Rotatoria di Albino dall'alto, prima" width="780" height="929" loading="lazy" decoding="async"><span class="etichetta prima">Prima</span></button>
+      <button class="scatto" data-zoom><img src="img/rot-albino-alto-dopo.jpg" alt="Rotatoria di Albino dall'alto, dopo" width="780" height="929" loading="lazy" decoding="async"><span class="etichetta dopo">Dopo</span></button>
+    </div><p class="didascalia"><b>Albino, via Marconi.</b> Dall'alto.</p></div>
+    <div class="coppia"><div class="lati">
+      <button class="scatto" data-zoom><img src="img/rot-albino-prima.jpg" alt="Rotatoria di Albino in sella, prima" width="780" height="929" loading="lazy" decoding="async"><span class="etichetta prima">Prima</span></button>
+      <button class="scatto" data-zoom><img src="img/rot-albino-dopo.jpg" alt="Rotatoria di Albino in sella, dopo" width="780" height="929" loading="lazy" decoding="async"><span class="etichetta dopo">Dopo</span></button>
+    </div><p class="didascalia"><b>La stessa, in sella.</b> Il cartello e la linea di precedenza sul bordo dell'anello.</p></div>
+    <div class="coppia"><div class="lati">
+      <button class="scatto" data-zoom><img src="img/rot-marconi-prima.jpg" alt="Piazzale Marconi a Bergamo, prima" width="780" height="929" loading="lazy" decoding="async"><span class="etichetta prima">Prima</span></button>
+      <button class="scatto" data-zoom><img src="img/rot-marconi-dopo.jpg" alt="Piazzale Marconi a Bergamo, dopo" width="780" height="929" loading="lazy" decoding="async"><span class="etichetta dopo">Dopo</span></button>
+    </div><p class="didascalia"><b>Bergamo, piazzale Marconi.</b> Le bocche raccordate, niente più spigoli.</p></div>
+    <div class="coppia"><div class="lati">
+      <button class="scatto" data-zoom><img src="img/rot-zogno-prima.jpg" alt="Rotatoria di Zogno sulla SS470, prima" width="780" height="929" loading="lazy" decoding="async"><span class="etichetta prima">Prima</span></button>
+      <button class="scatto" data-zoom><img src="img/rot-zogno-dopo.jpg" alt="Rotatoria di Zogno sulla SS470, dopo" width="780" height="929" loading="lazy" decoding="async"><span class="etichetta dopo">Dopo</span></button>
+    </div><p class="didascalia"><b>Zogno, SS470.</b> Marciapiedi e strisce non finiscono più sull'asfalto dell'altra strada.</p></div>
+  </section>
+
+  <section class="blocco" id="gallerie">
+    <h2>Gallerie</h2>
+    <p class="cappello">Prima erano una volta aperta ai fianchi: da dentro si vedeva il cielo. Ora sono un tubo chiuso con le lampade, con il portale nel pendio.</p>
+    <div class="coppia"><div class="lati">
+      <button class="scatto" data-zoom><img src="img/gal-goggia-prima.jpg" alt="Imbocco della galleria Goggia, prima" width="780" height="929" loading="lazy" decoding="async"><span class="etichetta prima">Prima</span></button>
+      <button class="scatto" data-zoom><img src="img/gal-goggia-dopo.jpg" alt="Imbocco della galleria Goggia, dopo" width="780" height="929" loading="lazy" decoding="async"><span class="etichetta dopo">Dopo</span></button>
+    </div><p class="didascalia"><b>Galleria Goggia, l'imbocco.</b> Il portale in calcestruzzo dentro il monte.</p></div>
+    <div class="coppia"><div class="lati">
+      <button class="scatto" data-zoom><img src="img/gal-dentro-prima.jpg" alt="Dentro la galleria Goggia, prima" width="780" height="929" loading="lazy" decoding="async"><span class="etichetta prima">Prima</span></button>
+      <button class="scatto" data-zoom><img src="img/gal-dentro-dopo.jpg" alt="Dentro la galleria Goggia, dopo" width="780" height="929" loading="lazy" decoding="async"><span class="etichetta dopo">Dopo</span></button>
+    </div><p class="didascalia"><b>Dentro.</b> Pareti, marciapiedi di servizio, due file di lampade ogni 9 m.</p></div>
+    <div class="coppia"><div class="lati">
+      <button class="scatto" data-zoom><img src="img/gal-alto-prima.jpg" alt="Galleria Goggia dall'alto, prima" width="780" height="929" loading="lazy" decoding="async"><span class="etichetta prima">Prima</span></button>
+      <button class="scatto" data-zoom><img src="img/gal-alto-dopo.jpg" alt="Galleria Goggia dall'alto, dopo" width="780" height="929" loading="lazy" decoding="async"><span class="etichetta dopo">Dopo</span></button>
+    </div><p class="didascalia"><b>Dall'alto.</b> La strada d'accesso non scava più il monte oltre l'imbocco.</p></div>
+    <div class="coppia"><div class="lati">
+      <button class="scatto" data-zoom><img src="img/gal-ss671-prima.jpg" alt="Galleria sulla SS671, prima" width="780" height="929" loading="lazy" decoding="async"><span class="etichetta prima">Prima</span></button>
+      <button class="scatto" data-zoom><img src="img/gal-ss671-dopo.jpg" alt="Galleria sulla SS671, dopo" width="780" height="929" loading="lazy" decoding="async"><span class="etichetta dopo">Dopo</span></button>
+    </div><p class="didascalia"><b>SS671, Val Seriana.</b></p></div>
+    <div class="coppia"><div class="lati">
+      <button class="scatto" data-zoom><img src="img/gal-ss470-prima.jpg" alt="Galleria sulla SS470, prima" width="780" height="929" loading="lazy" decoding="async"><span class="etichetta prima">Prima</span></button>
+      <button class="scatto" data-zoom><img src="img/gal-ss470-dopo.jpg" alt="Galleria sulla SS470, dopo" width="780" height="929" loading="lazy" decoding="async"><span class="etichetta dopo">Dopo</span></button>
+    </div><p class="didascalia"><b>SS470, Val Brembana.</b></p></div>
+  </section>
+
+  <section class="blocco" id="case">
+    <h2>Case sul pendio</h2>
+    <p class="cappello">Prima la base stava al punto più basso e a monte spuntava solo il tetto. Ora il piano terra sta a monte e sotto c'è il muro di sostegno. Guarda il lato verso il monte.</p>
+    <div class="coppia"><div class="lati">
+      <button class="scatto" data-zoom><img src="img/case-giorgi-prima.jpg" alt="Case sul pendio in salita, prima" width="780" height="929" loading="lazy" decoding="async"><span class="etichetta prima">Prima</span></button>
+      <button class="scatto" data-zoom><img src="img/case-giorgi-dopo.jpg" alt="Case sul pendio in salita, dopo" width="780" height="929" loading="lazy" decoding="async"><span class="etichetta dopo">Dopo</span></button>
+    </div><p class="didascalia"><b>In salita, in sella.</b></p></div>
+    <div class="coppia"><div class="lati">
+      <button class="scatto" data-zoom><img src="img/case-giorgi-alto-prima.jpg" alt="Case sul pendio dall'alto, prima" width="780" height="929" loading="lazy" decoding="async"><span class="etichetta prima">Prima</span></button>
+      <button class="scatto" data-zoom><img src="img/case-giorgi-alto-dopo.jpg" alt="Case sul pendio dall'alto, dopo" width="780" height="929" loading="lazy" decoding="async"><span class="etichetta dopo">Dopo</span></button>
+    </div><p class="didascalia"><b>Lo stesso punto, dall'alto.</b></p></div>
+    <div class="coppia"><div class="lati">
+      <button class="scatto" data-zoom><img src="img/case-scolari-prima.jpg" alt="Case lungo una strada in costa, prima" width="780" height="929" loading="lazy" decoding="async"><span class="etichetta prima">Prima</span></button>
+      <button class="scatto" data-zoom><img src="img/case-scolari-dopo.jpg" alt="Case lungo una strada in costa, dopo" width="780" height="929" loading="lazy" decoding="async"><span class="etichetta dopo">Dopo</span></button>
+    </div><p class="didascalia"><b>Strada in costa.</b></p></div>
+  </section>
+
+  <section class="blocco" id="monumenti">
+    <h2>Monumenti</h2>
+    <p class="cappello">40 edifici e statue veri, presi da OpenStreetMap e disegnati per tipo. Prima al loro posto c'era un parallelepipedo come tutti gli altri.</p>
+    <div class="coppia"><div class="lati">
+      <button class="scatto" data-zoom><img src="img/mon-agostino-prima.jpg" alt="Porta Sant'Agostino senza il modello" width="780" height="929" loading="lazy" decoding="async"><span class="etichetta prima">Prima</span></button>
+      <button class="scatto" data-zoom><img src="img/mon-agostino-dopo.jpg" alt="Porta Sant'Agostino col modello" width="780" height="929" loading="lazy" decoding="async"><span class="etichetta dopo">Dopo</span></button>
+    </div><p class="didascalia"><b>Porta Sant'Agostino.</b> Bugnato, fornice, leone di San Marco. Qui dentro si vedeva ancora l'imbocco di una galleria: OSM segna il passaggio come galleria.</p></div>
+    <div class="griglia">
+      <figure><button class="scatto" data-zoom><img src="img/mon-agostino-fornice.jpg" alt="In sella sotto il fornice di Porta Sant'Agostino" width="780" height="1673" loading="lazy" decoding="async"><span class="etichetta dopo">Corretto</span></button><figcaption>Sotto la porta ora si passa nel fornice, senza la galleria di cemento.</figcaption></figure>
+    </div>
+    <h3>Nel mondo</h3>
+    <div class="griglia">
+      <figure><button class="scatto" data-zoom><img src="img/mon-caduti.jpg" alt="Torre dei Caduti" width="780" height="929" loading="lazy" decoding="async"></button><figcaption>Torre dei Caduti</figcaption></figure>
+      <figure><button class="scatto" data-zoom><img src="img/mon-sanmartino.jpg" alt="Basilica di San Martino ad Alzano" width="780" height="929" loading="lazy" decoding="async"></button><figcaption>San Martino, Alzano</figcaption></figure>
+      <figure><button class="scatto" data-zoom><img src="img/mon-collegallo.jpg" alt="Santuario della Madonna del Colle Gallo" width="780" height="929" loading="lazy" decoding="async"></button><figcaption>Madonna del Colle Gallo</figcaption></figure>
+      <figure><button class="scatto" data-zoom><img src="img/mon-grandhotel.jpg" alt="Grand Hotel di San Pellegrino" width="780" height="929" loading="lazy" decoding="async"></button><figcaption>Grand Hotel, San Pellegrino</figcaption></figure>
+    </div>
+    <h3>Da vicino</h3>
+    <div class="griglia larga">
+      <figure><button class="scatto" data-zoom><img src="img/uno-agostino.jpg" alt="Modello di Porta Sant'Agostino" width="1280" height="800" loading="lazy" decoding="async"></button><figcaption>Porta Sant'Agostino</figcaption></figure>
+      <figure><button class="scatto" data-zoom><img src="img/uno-colleoni.jpg" alt="Modello della Cappella Colleoni" width="1280" height="800" loading="lazy" decoding="async"></button><figcaption>Cappella Colleoni: losanghe di marmo, rosone, loggetta</figcaption></figure>
+      <figure><button class="scatto" data-zoom><img src="img/uno-duomo.jpg" alt="Modello del Duomo di Bergamo" width="1280" height="800" loading="lazy" decoding="async"></button><figcaption>Duomo di Bergamo</figcaption></figure>
+      <figure><button class="scatto" data-zoom><img src="img/uno-briolini.jpg" alt="Modello del Mausoleo Briolini di Gazzaniga" width="1280" height="800" loading="lazy" decoding="async"></button><figcaption>Mausoleo Briolini, Gazzaniga: 18 m, dalla scheda OSM</figcaption></figure>
+    </div>
+    <h3>Tutti e 40</h3>
+    <div class="griglia larga">
+      <figure><button class="scatto" data-zoom><img src="img/lab-1.jpg" alt="Laboratorio dei monumenti, pagina 1" width="1280" height="800" loading="lazy" decoding="async"></button><figcaption>Porte e torri di Città Alta</figcaption></figure>
+      <figure><button class="scatto" data-zoom><img src="img/lab-2.jpg" alt="Laboratorio dei monumenti, pagina 2" width="1280" height="800" loading="lazy" decoding="async"></button><figcaption>Pagina 2</figcaption></figure>
+      <figure><button class="scatto" data-zoom><img src="img/lab-3.jpg" alt="Laboratorio dei monumenti, pagina 3" width="1280" height="800" loading="lazy" decoding="async"></button><figcaption>Pagina 3</figcaption></figure>
+      <figure><button class="scatto" data-zoom><img src="img/lab-4.jpg" alt="Laboratorio dei monumenti, pagina 4" width="1280" height="800" loading="lazy" decoding="async"></button><figcaption>Pagina 4</figcaption></figure>
+      <figure><button class="scatto" data-zoom><img src="img/lab-5.jpg" alt="Laboratorio dei monumenti, pagina 5" width="1280" height="800" loading="lazy" decoding="async"></button><figcaption>Pagina 5</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="blocco" id="gioco">
+    <h2>Gioco</h2>
+    <p class="cappello">Cose che prima non c'erano. Al posto dei cartellini dei km, piccoli e illeggibili, ora ci sono gli archi.</p>
+    <h3>Archi dei km</h3>
+    <div class="griglia">
+      <figure><button class="scatto" data-zoom><img src="img/gio-km-salita.jpg" alt="Portale dei km in salita" width="780" height="1673" loading="lazy" decoding="async"></button><figcaption>In salita: un portale a ogni km, con la pendenza del km che viene</figcaption></figure>
+      <figure><button class="scatto" data-zoom><img src="img/gio-ultimo-km.jpg" alt="Arco dell'ultimo km in salita" width="780" height="1673" loading="lazy" decoding="async"></button><figcaption>Ultimo km, in salita</figcaption></figure>
+      <figure><button class="scatto" data-zoom><img src="img/gio-ultimo-km-valle.jpg" alt="Arco dell'ultimo km in valle" width="780" height="1673" loading="lazy" decoding="async"></button><figcaption>Ultimo km, in valle</figcaption></figure>
+    </div>
+    <h3>Volate del cassonetto</h3>
+    <div class="griglia">
+      <figure><button class="scatto" data-zoom><img src="img/gio-cass-via.jpg" alt="Il via della volata del cassonetto" width="780" height="1673" loading="lazy" decoding="async"></button><figcaption>Il via</figcaption></figure>
+      <figure><button class="scatto" data-zoom><img src="img/gio-cass-bidoni.jpg" alt="Il traguardo: tre bidoni della differenziata" width="780" height="1673" loading="lazy" decoding="async"></button><figcaption>Il traguardo: tre bidoni</figcaption></figure>
+      <figure><button class="scatto" data-zoom><img src="img/gio-cass-tempo.jpg" alt="Il tempo della volata del cassonetto" width="780" height="1673" loading="lazy" decoding="async"></button><figcaption>Il tempo, coi decimi</figcaption></figure>
+    </div>
+    <h3>Archi in ERG</h3>
+    <div class="griglia">
+      <figure><button class="scatto" data-zoom><img src="img/gio-erg-mondo.jpg" alt="Arco d'inizio intervallo in ERG nel mondo" width="780" height="1687" loading="lazy" decoding="async"></button><figcaption>L'arco d'inizio intervallo, nel mondo</figcaption></figure>
+      <figure><button class="scatto" data-zoom><img src="img/gio-erg-salita.jpg" alt="Arco in ERG in salita" width="780" height="1687" loading="lazy" decoding="async"></button><figcaption>In salita</figcaption></figure>
+      <figure><button class="scatto" data-zoom><img src="img/gio-prosegue.jpg" alt="Allenamento che prosegue oltre il percorso" width="780" height="1687" loading="lazy" decoding="async"></button><figcaption>Finito il percorso, l'allenamento prosegue libero</figcaption></figure>
+    </div>
+    <h3>Carta e allenamenti</h3>
+    <div class="griglia">
+      <figure><button class="scatto" data-zoom><img src="img/gio-carta.jpg" alt="Carta dei percorsi con un percorso scelto" width="780" height="1688" loading="lazy" decoding="async"></button><figcaption>Tocchi la linea, si apre il percorso</figcaption></figure>
+      <figure><button class="scatto" data-zoom><img src="img/gio-allenamenti.jpg" alt="Libreria degli allenamenti con i filtri" width="780" height="1651" loading="lazy" decoding="async"></button><figcaption>27 allenamenti nuovi, con i filtri</figcaption></figure>
+      <figure><button class="scatto" data-zoom><img src="img/gio-allenamenti-dove.jpg" alt="Scelta di dove pedalare l'allenamento" width="780" height="1651" loading="lazy" decoding="async"></button><figcaption>Dove pedalarlo</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="blocco" id="mondo">
+    <h2>In sella, sulla build pubblicata</h2>
+    <p class="cappello">Il collaudo finale, quello che è in onda.</p>
+    <div class="griglia">
+      <figure><button class="scatto" data-zoom><img src="img/mondo-ganda.jpg" alt="Il giro della Ganda, il via a Nembro" width="780" height="1673" loading="lazy" decoding="async"></button><figcaption>Il giro della Ganda: il via a Nembro, sotto l'arco della crono</figcaption></figure>
+      <figure><button class="scatto" data-zoom><img src="img/mondo-nembro.jpg" alt="Giro libero da Nembro" width="780" height="1673" loading="lazy" decoding="async"></button><figcaption>Giro libero da Nembro: si parte sulla strada principale, non sull'anellino di pista</figcaption></figure>
+      <figure><button class="scatto" data-zoom><img src="img/mondo-rotatoria.jpg" alt="Rotatoria di Albino in corsa" width="780" height="1673" loading="lazy" decoding="async"></button><figcaption>Una rotatoria, in corsa</figcaption></figure>
+      <figure><button class="scatto" data-zoom><img src="img/mondo-galleria.jpg" alt="Una galleria in corsa" width="780" height="1673" loading="lazy" decoding="async"></button><figcaption>Una galleria, in corsa</figcaption></figure>
+    </div>
+  </section>
+
+  <footer>
+    <p>Schermate da Chrome headless con WebGL software, telefono 390×844. I «prima» sono della versione del 3 novembre (PR #5), negli stessi punti e con la stessa inquadratura. Le mattonelle a volte arrivano tardi: qualche ombra nera viene da lì.</p>
+    <p>Monumenti: impronta e posizione da OpenStreetMap, forma per archetipo, altezze in gran parte stimate.</p>
+  </footer>
+</main>
+
+<dialog id="zoom" aria-label="Foto ingrandita">
+  <button type="button" aria-label="Chiudi">×</button>
+  <img alt="">
+  <p></p>
+</dialog>
+
+<script>
+  // Tocca una foto: si apre grande. Tocca ovunque o Esc: si chiude.
+  const zoom = document.getElementById('zoom');
+  const big = zoom.querySelector('img');
+  const cap = zoom.querySelector('p');
+  document.querySelectorAll('[data-zoom]').forEach((b) => b.addEventListener('click', () => {
+    const img = b.querySelector('img');
+    big.src = img.src;
+    big.alt = img.alt;
+    cap.textContent = img.alt;
+    zoom.showModal();
+  }));
+  zoom.addEventListener('click', () => zoom.close());
+
+  // La scheda della sezione che si sta leggendo resta accesa.
+  const tabs = [...document.querySelectorAll('.filtri a')];
+  const seen = new Map();
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) seen.set(e.target.id, e.isIntersecting ? e.intersectionRatio : 0);
+    let best = null;
+    for (const t of tabs) {
+      const id = t.getAttribute('href').slice(1);
+      if ((seen.get(id) ?? 0) > 0 && best == null) best = t;
+    }
+    if (!best) return;
+    for (const t of tabs) t.setAttribute('aria-pressed', String(t === best));
+    best.parentElement.scrollTo({ left: Math.max(0, best.offsetLeft - 16) });
+  }, { rootMargin: '-35% 0px -55% 0px', threshold: [0, 0.01] });
+  document.querySelectorAll('section.blocco').forEach((s) => io.observe(s));
+</script>
+</body>
+</html>
