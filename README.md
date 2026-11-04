@@ -21,6 +21,11 @@ Tutto sul dispositivo (IndexedDB, chiave `career`), come i giri; in rete vanno s
 - **Archi dei km**: sulle salite un portale a ogni km, col numero e la pendenza del km che viene; fuori dalle salite uno ogni 5 km; «Ultimo km» rosso prima dell’arrivo (`kmArchSpecs` in `src/game/arches.ts`).
 - **Allenamenti** (`src/domain/workouts.ts`): 27 nuovi da 30 minuti a 2 ore (fondo, tempo, sweet spot, soglia, over-under, VO2max, sprint, cadenza, rifinitura, recupero), da filtrare per durata e tipo e da pedalare dove si vuole: una salita verificata, un percorso del mondo, il giro libero da un paese o un anello lungo quanto l’allenamento. Se il percorso finisce prima, si prosegue libero. In ERG un arco sulla strada segna l’inizio e la fine di ogni intervallo di lavoro (`src/game/ergArches.ts`): la distanza è la velocità per il tempo che manca.
 - **Carta**: nella scheda Percorsi del Mondo si tocca una linea e si apre quel percorso.
+- **Il tuo fantasma** (`src/game/ghosts.ts`): il giro migliore su ognuno dei 14 percorsi, su ogni tratto e sulle salite verificate si salva da solo (secondi al metro, in IndexedDB `kv` → `ghosts`). Al giro dopo pedala accanto a te un ciclista trasparente, e una pillola dice «Dietro al fantasma · 3 s» o «Davanti al fantasma · 12 s».
+- **Cartolina** (`src/io/share-image.ts`): un'immagine 1080×1350 del giro, con la traccia d'oro sulla carta di Bergamo, i monumenti passati, il profilo e i numeri. Dal riepilogo e dal diario; si condivide dal telefono o si scarica.
+- **Programmi** (`src/domain/plans.ts`, pagina `/programmi`): «Primo Selvino» (4 settimane), «Base d'inverno» (6) e «Pronti per la Ganda» (4), fatti con gli allenamenti della libreria, ognuno col suo percorso. In Oggi la carta «L'allenamento di oggi» apre la corsa con allenamento e percorso; una seduta saltata si recupera entro due giorni.
+- **File `.zwo`** (`src/io/zwo.ts`): gli allenamenti di Zwift si importano (Allenamenti › «Importa .zwo») e ognuno si esporta.
+- **Il giro non si perde** (`src/sim/recovery.ts`): al «Termina» va nel diario da solo. Mentre si pedala si mette da parte ogni 15 s, in pausa e quando l'app va in secondo piano; riaprendo dopo un crash compare «Hai un giro a metà» con Riprendi, Salva com'è e Scarta. «Termina» si tiene premuto 0,8 s, così un tocco per sbaglio non chiude il giro.
 
 ## Il mondo
 
@@ -28,6 +33,11 @@ Tutto sul dispositivo (IndexedDB, chiave `career`), come i giri; in rete vanno s
 - **40 monumenti veri** (`scripts/world/monumenti.ts`, modelli in `src/world/monumenti/`): le quattro porte delle Mura, Campanone, Gombito, Santa Maria Maggiore con la Cappella Colleoni, il Duomo, la Rocca, la Torre dei Caduti, il Donizetti, le statue, il Mausoleo Briolini di Gazzaniga, San Martino ad Alzano, Clusone, il Casinò e il Grand Hotel di San Pellegrino, il Cornello e altri. Impronta e id da OSM, forma per archetipo; prendono il posto dell’edificio generico e sono punti caldi. Il laboratorio `lab/monumenti.html` li mostra tutti (solo in sviluppo).
 - **Strada**: rotatorie tonde coi raccordi, i cordoli e le isole spartitraffico (`src/open/rings.ts`); gallerie chiuse e illuminate, con il portale nel pendio (`src/open/tunnels.ts`); case sul pendio col muro di sostegno; sotto le porte delle Mura si passa nel fornice.
 - **Giro libero**: «dritto» non rifà le strade appena fatte e non entra nei vicoli ciechi (guarda due incroci avanti); dai paesi si parte sulla strada che li attraversa.
+- **Pronto vuol dire pronto** (`src/open/pronto.ts`): la corsa parte quando il terreno lontano e tutte le mattonelle entro 400 m sono in scena col loro arredo; fino ad allora c'è il velo col nome del percorso e l'avanzamento. Si arrende solo per un errore o dopo 60 s.
+- **Nomi dei luoghi** (`src/open/WorldLabels.tsx`): al massimo tre insieme, spenti dietro il terreno, le case e i monumenti vicini, mai tagliati e mai sopra l'HUD.
+- **Paesaggio**: suolo pavimentato in città (`src/open/urban.ts`), boschi fitti a due specie vicino alla strada, niente pareti di terreno lungo le strade, capannoni con le finestre a nastro.
+- **Misure**: con `?stats=1` la pagina della corsa espone `window.__orobiaStats` (chiamate di disegno, triangoli, fotogrammi p50/p95, mattonelle, pop-in).
+- **Peso**: three.js e r3f stanno in un pezzo a parte (`riderRig-*.js`), scaricato solo per la corsa e il garage: l'app si apre con ~270 kB gzip.
 
 ## Esporta con il GPS vero
 
