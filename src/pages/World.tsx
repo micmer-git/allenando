@@ -13,7 +13,7 @@ import { worldSegments } from '@/game/segments';
 import { SEGMENT_STYLE } from '@/game/arches';
 import { useGame } from '@/game/useGame';
 import { Terrain, loadWorld, type RideDef, type WorldData } from '@/open/world';
-import { kindLabel } from '@/open/WorldScene';
+import { kindLabel } from '@/open/labels';
 import { savePlan } from '@/open/plan';
 import { planAB, type AbRoute } from '@/open/ab';
 import { pickRoute } from '@/open/pick';

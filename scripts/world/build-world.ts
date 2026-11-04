@@ -1159,9 +1159,15 @@ const riverOut = rivers.map((r) => {
   let level = Infinity;
   const ys = r.xz.map(([x, z]) => {
     const h = demAt(x, z) - 0.8;
-    level = Math.min(level, h);
+    // fuori dal DEM la quota è NaN: il livello resta quello di prima. Prima un fiume che nasceva
+    // fuori dal mondo restava NaN (cioè 0 nel file) per tutto il corso, e il campo scavava un
+    // canyon di 300 m lungo il Serio (piano del rilascio, M2)
+    if (Number.isFinite(h)) level = Math.min(level, h);
     return level;
   });
+  // i primi punti fuori dal DEM prendono il primo livello vero (un fiume tutto fuori resta a 0)
+  const firstOk = ys.findIndex((y) => Number.isFinite(y));
+  for (let i = 0; i < ys.length; i++) if (!Number.isFinite(ys[i])) ys[i] = firstOk >= 0 ? ys[firstOk] : 0;
   // ma non si appiattisce di colpo dopo una buca del DEM: si lascia scendere al più del 10%
   for (let i = ys.length - 2; i >= 0; i--) {
     const run = Math.hypot(r.xz[i + 1][0] - r.xz[i][0], r.xz[i + 1][1] - r.xz[i][1]);

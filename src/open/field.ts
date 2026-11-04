@@ -13,8 +13,8 @@ import type { Terrain, WorldFeatures } from './world';
 
 const CELL = 32;
 
-/** numeri per segmento: ax, az, bx, bz, ay, by, hw, grado, imbocchi (1 = a, 2 = b) */
-const STRIDE = 9;
+/** numeri per segmento: ax, az, bx, bz, ay, by, hw, grado, imbocchi (1 = a, 2 = b), arco (-1 per i fiumi) */
+const STRIDE = 10;
 
 interface SegIndex {
   seg: Float32Array;
@@ -49,6 +49,8 @@ function buildIndex(segs: number[]): SegIndex {
 }
 
 export interface FieldHit {
+  /** l'arco del grafo (-1 per i fiumi) */
+  edge: number;
   /** distanza dal bordo della carreggiata (0 dentro) */
   edgeDist: number;
   /** distanza dalla mezzeria */
@@ -58,11 +60,17 @@ export interface FieldHit {
   grade: number;
 }
 
-function nearest(ix: SegIndex, x: number, z: number, reach: number, out: FieldHit): boolean {
+/**
+ * La strada col bordo più vicino entro `reach`; con `second`, anche la più vicina fra quelle di un
+ * ALTRO arco (per raccordare il terreno fra due strade a quote diverse).
+ */
+function nearest(ix: SegIndex, x: number, z: number, reach: number, out: FieldHit, second?: FieldHit): boolean {
   const r = Math.ceil(reach / CELL);
   const cx = Math.floor(x / CELL);
   const cz = Math.floor(z / CELL);
   let best = Infinity;
+  let best2 = Infinity;
+  if (second) second.edge = -2;
   const s = ix.seg;
   for (let oz = -r; oz <= r; oz++) {
     for (let ox = -r; ox <= r; ox++) {
@@ -85,13 +93,28 @@ function nearest(ix: SegIndex, x: number, z: number, reach: number, out: FieldHi
         const d = Math.sqrt((x - px) ** 2 + (z - pz) ** 2);
         // si sceglie la strada col bordo più vicino, non la mezzeria: una statale larga vince sul vicolo
         const ed = Math.max(0, d - s[o + 6]);
+        const edge = s[o + 9];
         if (ed < best) {
+          // la migliore di prima diventa la seconda, se era di un altro arco
+          if (second && best < Infinity && out.edge !== edge) {
+            best2 = best;
+            Object.assign(second, out);
+          }
           best = ed;
+          out.edge = edge;
           out.edgeDist = ed;
           out.dist = d;
           out.y = s[o + 4] + (s[o + 5] - s[o + 4]) * u;
           out.hw = s[o + 6];
           out.grade = s[o + 7];
+        } else if (second && ed < best2 && edge !== out.edge) {
+          best2 = ed;
+          second.edge = edge;
+          second.edgeDist = ed;
+          second.dist = d;
+          second.y = s[o + 4] + (s[o + 5] - s[o + 4]) * u;
+          second.hw = s[o + 6];
+          second.grade = s[o + 7];
         }
       }
     }
@@ -113,6 +136,43 @@ export interface WorldField {
   terrain: Terrain;
 }
 
+/** Larghezza del raccordo fra due strade vicine, metri. */
+const BLEND = 16;
+
+/** Fin dove la scarpata resta al più 0,9:1, metri dal bordo; oltre risale ripida verso il DEM. */
+const BANK_END = 26;
+
+/**
+ * Di quanto il terreno può salire (o scendere) rispetto alla strada a `e` metri dal bordo, se da
+ * `e0` in poi può staccarsene: una scarpata al più 0,9:1 fino a BANK_END, poi 2,5:1. Così una
+ * strada scavata nel DEM a 25 m non corre in un canyon: la parete, se c'è, sta oltre i 26 m e fra
+ * 6 e 20 m dal bordo la pendenza resta sotto 1:1 (piano del rilascio, M2).
+ */
+export function bankLimit(e: number, e0 = 1.5): number {
+  if (e <= e0) return 0;
+  if (e <= BANK_END) return 0.9 * (e - e0);
+  return 0.9 * Math.max(0, BANK_END - e0) + 2.5 * (e - BANK_END);
+}
+
+/**
+ * Il terreno vicino a una strada: il DEM raccordato alla quota della strada. Il raccordo è più
+ * lungo quanto più il DEM se ne stacca (una sfumatura di 40 m su 30 m di dislivello farebbe una
+ * parete), e resta dentro la scarpata di bankLimit sopra e sotto.
+ */
+function bank(h: number, road: number, hit: FieldHit, spacing: number): number {
+  const base = road - 0.4;
+  const dev = h - base;
+  const e = hit.edgeDist;
+  const span = Math.min(60, Math.max(38.5, (1.5 * Math.abs(dev)) / 0.9));
+  let out = base + dev * smoothstep(1.5, 1.5 + span, e);
+  // dentro la fascia coperta da un triangolo che tocca la strada: sempre sotto l'asfalto, e poi su
+  // al più con la scarpata
+  const near = spacing * 1.6;
+  const top = road - 0.35 - spacing * 1.2 * hit.grade + bankLimit(e, near);
+  out = Math.min(out, top);
+  return Math.max(out, base - bankLimit(e));
+}
+
 export function createWorldField(graph: WorldGraph, terrain: Terrain, features: WorldFeatures): WorldField {
   // i nodi da cui parte una galleria: gli imbocchi
   const portal = new Set<number>();
@@ -128,18 +188,19 @@ export function createWorldField(graph: WorldGraph, terrain: Terrain, features: 
     for (let k = 0; k <= last; k++) {
       const run = e.cum[k + 1] - e.cum[k] || 1;
       const ends = (k === 0 && portal.has(e.a) ? 1 : 0) + (k === last && portal.has(e.b) ? 2 : 0);
-      segs.push(e.xs[k], e.zs[k], e.xs[k + 1], e.zs[k + 1], e.ys[k], e.ys[k + 1], e.hw, Math.abs(e.ys[k + 1] - e.ys[k]) / run, ends);
+      segs.push(e.xs[k], e.zs[k], e.xs[k + 1], e.zs[k + 1], e.ys[k], e.ys[k + 1], e.hw, Math.abs(e.ys[k + 1] - e.ys[k]) / run, ends, e.id);
     }
   }
   const roads = buildIndex(segs);
   const wsegs: number[] = [];
   for (const r of features.rivers) {
     const p = r.pts;
-    for (let i = 0; i + 5 < p.length; i += 3) wsegs.push(p[i], p[i + 1], p[i + 3], p[i + 4], p[i + 2], p[i + 5], r.hw, 0, 0);
+    for (let i = 0; i + 5 < p.length; i += 3) wsegs.push(p[i], p[i + 1], p[i + 3], p[i + 4], p[i + 2], p[i + 5], r.hw, 0, 0, -1);
   }
   const water = buildIndex(wsegs);
-  const hit: FieldHit = { edgeDist: 0, dist: 0, y: 0, hw: 3, grade: 0 };
-  const wHit: FieldHit = { edgeDist: 0, dist: 0, y: 0, hw: 3, grade: 0 };
+  const hit: FieldHit = { edge: -1, edgeDist: 0, dist: 0, y: 0, hw: 3, grade: 0 };
+  const hit2: FieldHit = { edge: -2, edgeDist: 0, dist: 0, y: 0, hw: 3, grade: 0 };
+  const wHit: FieldHit = { edge: -1, edgeDist: 0, dist: 0, y: 0, hw: 3, grade: 0 };
   let lastDist = Infinity;
   let inWater = false;
   return {
@@ -162,16 +223,21 @@ export function createWorldField(graph: WorldGraph, terrain: Terrain, features: 
           inWater = true;
         } else h = Math.min(h, bed + (h - bed) * smoothstep(0, 30, wHit.edgeDist) + wHit.edgeDist * 0.15);
       }
-      if (!nearest(roads, x, z, 64, hit)) {
+      if (!nearest(roads, x, z, 64, hit, hit2)) {
         lastDist = Infinity;
         return h;
       }
       lastDist = hit.edgeDist;
-      const base = hit.y - 0.4;
-      const w = smoothstep(1.5, 40, hit.edgeDist);
-      let out = base + (h - base) * w;
-      // dentro la fascia coperta da un triangolo che tocca la strada: sempre sotto l'asfalto
-      if (hit.edgeDist < spacing * 1.6) out = Math.min(out, hit.y - 0.35 - spacing * 1.2 * hit.grade);
+      let out = bank(h, hit.y, hit, spacing);
+      // fra due strade a quote diverse il terreno passa dall'una all'altra senza gradino: vicino alla
+      // linea di mezzo vale la media, e il raccordo si stende su BLEND metri
+      if (hit2.edge >= 0) {
+        const lam = 0.5 * smoothstep(0, BLEND, BLEND - (hit2.edgeDist - hit.edgeDist));
+        if (lam > 0) out += (bank(h, hit2.y, hit2, spacing) - out) * lam;
+      }
+      // a meno di una maglia dalla strada più vicina vince lei: la sua carreggiata resta scoperta
+      // (due strade a quote diverse più vicine di due maglie hanno un muro di sostegno, nel vero)
+      if (hit.edgeDist < spacing) out = Math.min(out, hit.y - 0.35 - spacing * 1.2 * hit.grade);
       return out;
     },
   };
