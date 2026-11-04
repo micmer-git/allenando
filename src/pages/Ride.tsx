@@ -1548,20 +1548,24 @@ function HoldButton({ onDone, disabled, children, className, testid, ms = HOLD_M
     paint(0);
     onDone();
   };
-  const start = () => {
+  // i tempi del dito sono quelli degli eventi (quando il dito tocca e si alza), non quelli in cui la
+  // pagina, occupata dal 3D, riesce a gestirli: 1 s tenuto vale 1 s anche se il telefono è in affanno
+  const at = (stamp?: number) => (stamp != null && stamp > 0 && stamp <= performance.now() ? stamp : performance.now());
+  const start = (stamp?: number) => {
     if (disabled || hold.current) return;
-    const t0 = performance.now();
+    const t0 = at(stamp);
     const step = (now: number) => {
       paint(Math.min(1, (now - t0) / ms));
       if (hold.current) hold.current.raf = requestAnimationFrame(step);
     };
-    hold.current = { t0, raf: requestAnimationFrame(step), timer: window.setTimeout(complete, ms) };
+    hold.current = { t0, raf: requestAnimationFrame(step), timer: window.setTimeout(complete, Math.max(120, ms - (performance.now() - t0))) };
   };
-  const stop = () => {
+  // (almeno 120 ms al timer: se il dito si è già alzato mentre la pagina era occupata, il suo evento passa prima)
+  const stop = (stamp?: number) => {
     const h = hold.current;
     if (!h) return;
     // tenuto abbastanza ma il timer non è ancora passato (il telefono era occupato): vale
-    if (performance.now() - h.t0 >= ms) {
+    if (at(stamp) - h.t0 >= ms) {
       complete();
       return;
     }
@@ -1594,23 +1598,23 @@ function HoldButton({ onDone, disabled, children, className, testid, ms = HOLD_M
       onPointerDown={(e) => {
         if (e.button !== 0) return;
         e.currentTarget.setPointerCapture?.(e.pointerId);
-        start();
+        start(e.timeStamp);
       }}
-      onPointerUp={stop}
-      onPointerCancel={stop}
-      onLostPointerCapture={stop}
+      onPointerUp={(e) => stop(e.timeStamp)}
+      onPointerCancel={() => stop()}
+      onLostPointerCapture={() => stop()}
       onContextMenu={(e) => e.preventDefault()}
       onKeyDown={(e) => {
         if (e.key !== ' ' && e.key !== 'Enter') return;
         e.preventDefault();
         e.stopPropagation();
-        if (!e.repeat) start();
+        if (!e.repeat) start(e.timeStamp);
       }}
       onKeyUp={(e) => {
         if (e.key !== ' ' && e.key !== 'Enter') return;
         e.preventDefault();
         e.stopPropagation();
-        stop();
+        stop(e.timeStamp);
       }}
       onClick={(e) => {
         // un clic senza dito (uno script, un lettore di schermo) non chiude il giro: lo dice
