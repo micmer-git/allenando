@@ -48,10 +48,15 @@ import { Declutter, Labels, Landmarks } from './WorldLabels';
 import { loadProgress, READY_RADIUS, tileDist } from './pronto';
 import { URBAN_R, urbanDensity } from './urban';
 
+/**
+ * Per qualità: lato e anelli delle mattonelle, passo del terreno, alberi per cella di bosco e il
+ * tetto degli alberi con le geometrie piene (`nearTrees`, i più vicini al ciclista: gli altri hanno
+ * la chioma povera, 4-8 triangoli e niente tronco).
+ */
 const QUALITY = {
-  low: { tile: 500, ring: 2, spacing: 16, trees: 0.9, far: 6000, farStride: 2, npcs: 6, dpr: 1 as number | [number, number] },
-  medium: { tile: 500, ring: 3, spacing: 10, trees: 1.6, far: 9000, farStride: 1, npcs: 10, dpr: [1, 1.25] as [number, number] },
-  high: { tile: 500, ring: 4, spacing: 8, trees: 2.4, far: 13000, farStride: 1, npcs: 14, dpr: [1, 1.6] as [number, number] },
+  low: { tile: 500, ring: 2, spacing: 16, trees: 0.9, nearTrees: 900, far: 6000, farStride: 2, npcs: 6, dpr: 1 as number | [number, number] },
+  medium: { tile: 500, ring: 3, spacing: 10, trees: 1.6, nearTrees: 2200, far: 9000, farStride: 1, npcs: 10, dpr: [1, 1.25] as [number, number] },
+  high: { tile: 500, ring: 4, spacing: 8, trees: 2.4, nearTrees: 3600, far: 13000, farStride: 1, npcs: 14, dpr: [1, 1.6] as [number, number] },
 } satisfies Record<Quality, unknown>;
 
 export function npcCount(quality: Quality): number {
@@ -188,7 +193,7 @@ function WorldContent(props: WorldSceneProps & { counts: TileCounts; status: Loa
   const stats = useMemo(() => statsWanted(), []);
   return (
     <group>
-      {stats ? <StatsProbe tiles={() => counts} /> : null}
+      {stats ? <StatsProbe tiles={() => ({ ...counts, treesNear: treeCount.near, treesFar: treeCount.far })} /> : null}
       <Atmosphere weather={props.weather} daytime={props.daytime} data={data} far={q.far} mats={mats} />
       {props.weather && props.weather.rain >= 0.1 ? <Rain mmh={props.weather.rain} weather={props.weather} /> : null}
       <FarTerrain terrain={terrain} stride={q.farStride} material={mats.far} />
@@ -613,6 +618,8 @@ interface TileEntry {
   items: RoadsideItems | null;
   /** la mattonella è entrata del tutto (dissolvenza finita): sotto, il terreno lontano si nasconde */
   shown: boolean;
+  /** e il suo arredo vicino */
+  dshown: boolean;
   /** il bosco fitto delle mattonelle intorno al ciclista */
   dense: 'none' | 'build' | 'ready';
   xjob: Generator<void, TileMeshes['trees'], void> | null;
@@ -804,7 +811,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
       g.add(sign);
     }
     entry.group?.add(g);
-    fades.current.push(startFade(g, null));
+    fades.current.push(startFade(g, entry, 'detail'));
     entry.items = street.items;
     if (street.trees.length) entry.trees = [...entry.trees, ...street.trees];
   }
@@ -835,14 +842,14 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
           const ix = cx + dx;
           const iz = cz + dz;
           const key = `${ix}_${iz}`;
-          if (!map.has(key)) map.set(key, { key, ix, iz, state: 'wait', job: null, group: null, trees: [], detail: 'none', djob: null, items: null, shown: false, dense: 'none', xjob: null });
+          if (!map.has(key)) map.set(key, { key, ix, iz, state: 'wait', job: null, group: null, trees: [], detail: 'none', djob: null, items: null, shown: false, dshown: false, dense: 'none', xjob: null });
         }
       }
       for (const [key, t] of map) {
         if (Math.max(Math.abs(t.ix - cx), Math.abs(t.iz - cz)) > q.ring + 1) {
           // una mattonella che se ne va mentre entrava: prima si chiude la dissolvenza
           fades.current = fades.current.filter((f) => {
-            if (f.tile !== t && !(t.group && f.group.parent === t.group)) return true;
+            if (f.tile !== t) return true;
             endFade(f);
             return false;
           });
@@ -958,7 +965,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
         job.job = null;
         if (job.group) {
           root.current?.add(job.group);
-          fades.current.push(startFade(job.group, job));
+          fades.current.push(startFade(job.group, job, 'tile'));
         }
         dirtyTrees.current = true;
         if (status.ready) noteLate(counts, tileDist(job, b.x0, b.z0, T, pose.x, pose.z));
@@ -977,7 +984,8 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
           return true;
         }
         endFade(f);
-        if (f.tile) f.tile.shown = true;
+        if (f.part === 'tile') f.tile.shown = true;
+        else f.tile.dshown = true;
         return false;
       });
     }
@@ -986,7 +994,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
       dirtyTrees.current = false;
       const all: ForestPatch[] = [];
       for (const t of map.values()) if (t.state === 'ready') all.push({ trees: t.trees, near: near(t) <= DENSE_RING });
-      forest.current.set(all);
+      forest.current.set(all, pose.x, pose.z, q.nearTrees);
     }
     if (dirtyProps.current && roadside.current) {
       dirtyProps.current = false;
@@ -1028,8 +1036,8 @@ function countTiles(c: TileCounts, map: Map<string, TileEntry>, x0: number, z0: 
     if (t.detail === 'ready') c.detail++;
     if (tileDist(t, x0, z0, T, px, pz) <= READY_RADIUS) {
       c.near++;
-      // in scena davvero: salita finita (startFade)
-      if (t.shown) c.nearReady++;
+      // in scena davvero: la mattonella e il suo arredo, salita finita (startFade)
+      if (t.shown && t.dshown) c.nearReady++;
     }
   }
 }
@@ -1041,7 +1049,9 @@ const RISE_M = 8;
 
 interface Fade {
   group: THREE.Group;
-  tile: TileEntry | null;
+  tile: TileEntry;
+  /** la mattonella o il suo arredo */
+  part: 'tile' | 'detail';
   t0: number;
 }
 
@@ -1051,9 +1061,9 @@ interface Fade {
  * (alphaHash): voleva un programma in più per ogni materiale, e con la grafica software il «pronto»
  * arrivava 20 s dopo.
  */
-function startFade(group: THREE.Group, tile: TileEntry | null): Fade {
+function startFade(group: THREE.Group, tile: TileEntry, part: Fade['part']): Fade {
   group.position.y = -RISE_M;
-  return { group, tile, t0: performance.now() };
+  return { group, tile, part, t0: performance.now() };
 }
 
 function endFade(f: Fade): void {
@@ -1070,7 +1080,8 @@ function disposeGroup(g: THREE.Group | null): void {
 // ---------- bosco: un'istanza per specie per tutto il mondo vicino ----------
 
 interface ForestHandle {
-  set(list: ForestPatch[]): void;
+  /** gli alberi di tutte le mattonelle; i più vicini a (px, pz), al più `cap`, con le geometrie piene */
+  set(list: ForestPatch[], px: number, pz: number, cap: number): void;
 }
 
 const TREE_COLORS: Record<TreeKind, string[]> = {
@@ -1081,13 +1092,12 @@ const TREE_COLORS: Record<TreeKind, string[]> = {
   rock: ['#8b877f', '#7a766f', '#9b968c'],
 };
 
-/** Una corona di latifoglia: tre sfere basse fuse e un po' storte, non un icosaedro solo. */
+/** Una corona di latifoglia: due sfere basse fuse e sfalsate, non un icosaedro solo (40 triangoli). */
 function broadleafCrown(): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
   const blobs: [number, number, number, number][] = [
-    [0, 5.4, 0, 2.7],
-    [1.3, 6.3, 0.5, 2.0],
-    [-1.1, 6.6, -0.6, 1.9],
+    [0, 5.4, 0.2, 2.8],
+    [-0.9, 6.5, -0.5, 2.1],
   ];
   for (const [x, y, z, r] of blobs) {
     const g = new THREE.IcosahedronGeometry(r, 0);
@@ -1127,6 +1137,9 @@ function farGeometries(): Record<TreeKind, THREE.BufferGeometry> {
   return { spruce: cone(2.2, 9.5, 6.1), larch: cone(2.4, 8, 6), broadleaf, cypress: cone(1.1, 10, 6.2), rock };
 }
 
+/** Gli alberi in scena con le geometrie piene e con quelle povere (per le misure, ?stats=1). */
+export const treeCount = { near: 0, far: 0 };
+
 /** Gli alberi di una mattonella, e se la mattonella è vicina (geometrie piene) o lontana (povere). */
 interface ForestPatch {
   trees: TileMeshes['trees'];
@@ -1153,7 +1166,7 @@ function Forest({ handle, mats }: { handle: React.MutableRefObject<ForestHandle 
     const current = meshes.current;
     const KINDS: TreeKind[] = ['spruce', 'larch', 'broadleaf', 'cypress', 'rock'];
     handle.current = {
-      set(patches) {
+      set(patches, px, pz, cap) {
         if (!g) return;
         const by = new Map<string, TileMeshes['trees']>();
         const push = (key: string, t: TileMeshes['trees'][number]) => {
@@ -1161,13 +1174,28 @@ function Forest({ handle, mats }: { handle: React.MutableRefObject<ForestHandle 
           if (l) l.push(t);
           else by.set(key, [t]);
         };
+        // le geometrie piene alle mattonelle vicine, e fra i loro alberi ai `cap` più vicini
+        const near: TileMeshes['trees'] = [];
+        for (const p of patches) for (const t of p.trees) if (p.near) near.push(t);
+        let limit = Infinity;
+        if (near.length > cap) {
+          const d = near.map((t) => (t.x - px) ** 2 + (t.z - pz) ** 2).sort((a, b) => a - b);
+          limit = d[cap - 1];
+        }
+        let nNear = 0;
+        let nFar = 0;
         for (const p of patches) {
           for (const t of p.trees) {
-            push(`${t.kind}:${p.near ? 'n' : 'f'}`, t);
+            const full = p.near && (t.x - px) ** 2 + (t.z - pz) ** 2 <= limit;
+            push(`${t.kind}:${full ? 'n' : 'f'}`, t);
             // il tronco solo vicino: da lontano è meno di un pixel
-            if (p.near && t.kind !== 'rock') push('trunk', t);
+            if (full && t.kind !== 'rock') push('trunk', t);
+            if (full) nNear++;
+            else nFar++;
           }
         }
+        treeCount.near = nNear;
+        treeCount.far = nFar;
         const d = new THREE.Object3D();
         const c = new THREE.Color();
         const make = (key: string, geo: THREE.BufferGeometry, mat: THREE.Material, colors?: string[]) => {

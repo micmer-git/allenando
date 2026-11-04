@@ -23,6 +23,9 @@ export interface TileCounts {
   /** dopo il «pronto»: mattonelle o arredo entrati in scena a meno di 150 m, e la distanza minima (-1: nessuno) */
   late: number;
   lateMin: number;
+  /** alberi con le geometrie piene e con quelle povere */
+  treesNear?: number;
+  treesFar?: number;
 }
 
 export interface OrobiaStats {

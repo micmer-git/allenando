@@ -4,7 +4,8 @@
 //   Con due basi e due etichette separate da virgole («http://…:5313/allenando,http://…:5303/allenando»
 //   «prima,dopo») misura i punti alternando le due build, punto per punto: con la grafica software
 //   e altri processi sulla macchina è l'unico confronto che regge.
-// RIDE=1: dopo la misura pedala 10 s a 10× e conta mattonelle e arredo comparsi entro 150 m (pop-in).
+// RIDE=1: dopo la misura pedala 10 s a 4× e conta mattonelle e arredo comparsi entro 150 m dopo il
+// «pronto» (pop-in), con i km del contachilometri prima e dopo.
 // Per ogni punto: tempo fino a «pronto» (world-ready), mattonelle al momento del «pronto», poi,
 // dopo SETTLE ms, una finestra di MISURA ms in cui si leggono da `window.__orobiaStats` (?stats=1)
 // chiamate di disegno, triangoli, geometrie, texture, tempo per fotogramma p50/p95, e l'heap JS.
@@ -57,6 +58,9 @@ try {
     const shots = process.env.TEMPI ? [1500, 3000, 6000] : [];
     let readyMs = null;
     let atReady = null;
+    // il mondo intorno davvero pronto: tutte le mattonelle entro 400 m in scena (lo dice ?stats=1
+    // anche nella build di prima, dove «pronto» arrivava con la prima mattonella qualunque)
+    let realMs = null;
     while (Date.now() - t0 < 120000) {
       const el = Date.now() - t0;
       if (shots.length && el >= shots[0]) {
@@ -70,7 +74,13 @@ try {
           atReady = r;
         }
       }
-      if (readyMs != null && shots.length === 0) break;
+      if (realMs == null) {
+        const t = await p.evaluate(`window.__orobiaStats?.tiles ?? null`).catch(() => null);
+        if (t && t.near > 0 && t.nearReady >= t.near) realMs = Date.now() - t0;
+        // la salita (RideScene) non ha mattonelle: lì pronto è pronto
+        if (readyMs != null && !t) realMs = readyMs;
+      }
+      if (readyMs != null && realMs != null && shots.length === 0) break;
       await sleep(100);
     }
     await sleep(Math.max(0, SETTLE - (Date.now() - t0 - (readyMs ?? 0))));
@@ -88,16 +98,18 @@ try {
     await p.shot(`${bases.length > 1 ? rep.label + '/' : ''}misura-${name}`);
     let pop = null;
     if (process.env.RIDE && st?.tiles) {
-      await p.clickText('10×');
+      // 4×: sul piano il simulatore va a 25-30 km/h, cioè oltre 100 km/h di mondo che scorre
+      const km0 = await p.evaluate(`document.querySelector('[data-testid=ride-km]')?.textContent ?? ''`).catch(() => '');
+      await p.clickText('4×');
       await sleep(10000);
       const t = await p.evaluate(`window.__orobiaStats?.tiles ?? null`);
       const km = await p.evaluate(`document.querySelector('[data-testid=ride-km]')?.textContent ?? ''`).catch(() => '');
-      pop = t ? { late: t.late, lateMin: t.lateMin, km } : null;
+      pop = t ? { late: t.late, lateMin: t.lateMin, km0, km } : null;
     }
-    rep.punti[name] = { path, readyMs, fullMs, tilesAtReady: atReady?.tiles ?? null, progressAtReady: atReady?.progress ?? null, ...st, heapMB: heap, pop };
+    rep.punti[name] = { path, readyMs, realMs, fullMs, tilesAtReady: atReady?.tiles ?? null, progressAtReady: atReady?.progress ?? null, ...st, heapMB: heap, pop };
     const r = rep.punti[name];
     console.log(
-      `${(bases.length > 1 ? rep.label + ' ' : '') + name.padEnd(18)} pronto ${readyMs == null ? 'NO' : (readyMs / 1000).toFixed(1) + ' s'}${fullMs ? ` (tutto ${(fullMs / 1000).toFixed(0)} s)` : ''} · chiamate ${r.calls} · triangoli ${r.triangles} · geo ${r.geometries} · tex ${r.textures} · p50 ${r.frameP50} ms · p95 ${r.frameP95} ms · mattonelle ${r.tiles ? `${r.tiles.ready}/${r.tiles.ready + r.tiles.pending} (entro 400 m al pronto ${r.tilesAtReady?.nearReady}/${r.tilesAtReady?.near})` : '–'} · heap ${heap} MB${pop ? ` · pop-in entro 150 m: ${pop.late} (il più vicino ${pop.lateMin} m)` : ''}`,
+      `${(bases.length > 1 ? rep.label + ' ' : '') + name.padEnd(18)} pronto ${readyMs == null ? 'NO' : (readyMs / 1000).toFixed(1) + ' s'} · 400 m intorno ${realMs == null ? 'NO' : (realMs / 1000).toFixed(1) + ' s'}${fullMs ? ` (tutto ${(fullMs / 1000).toFixed(0)} s)` : ''} · chiamate ${r.calls} · triangoli ${r.triangles} · geo ${r.geometries} · tex ${r.textures} · p50 ${r.frameP50} ms · p95 ${r.frameP95} ms · mattonelle ${r.tiles ? `${r.tiles.ready}/${r.tiles.ready + r.tiles.pending} (entro 400 m al pronto ${r.tilesAtReady?.nearReady}/${r.tilesAtReady?.near})` : '–'} · heap ${heap} MB${pop ? ` · pop-in entro 150 m: ${pop.late} (il più vicino ${pop.lateMin} m; km ${pop.km0} → ${pop.km})` : ''}`,
     );
   }
   for (const rep of reps) rep.errors = p.errors;
