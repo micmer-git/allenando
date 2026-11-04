@@ -272,7 +272,7 @@ export class RideGame {
     let spec: ArchSpec | null = null;
     if (cur && cur.d < this.track.length - 1) {
       const p = this.poseAt(cur.d);
-      spec = { id: `erg:${cur.gate.id}`, kind: 'erg', role: cur.gate.role, label: cur.gate.label, sub: cur.gate.sub, x: p.x, y: p.y, z: p.z, heading: p.heading, halfWidth: this.halfWidth(cur.d) };
+      spec = { id: `erg:${cur.gate.id}`, kind: 'erg', role: cur.gate.role, label: cur.gate.label, sub: cur.gate.sub, x: p.x, y: p.y, z: p.z, heading: p.heading, halfWidth: this.halfWidth(cur.d), d: cur.d };
     }
     const old = this.ergSpec;
     if (old && spec ? old.id === spec.id && Math.hypot(old.x - spec.x, old.z - spec.z) < 0.5 : old === spec) return;

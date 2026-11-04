@@ -166,8 +166,8 @@ function RidesTab({ data, far, progress, picked, setPicked }: { data: WorldData;
     const eb = data.graph.edges[b.edge];
     const ia = a.dir > 0 ? 0 : ea.xs.length - 1;
     const ib = b.dir > 0 ? eb.xs.length - 1 : 0;
-    out.push({ x: ea.xs[ia], z: ea.zs[ia], color: '#ffc814', label: sel.name, ring: true });
-    if (Math.hypot(eb.xs[ib] - ea.xs[ia], eb.zs[ib] - ea.zs[ia]) > 300) out.push({ x: eb.xs[ib], z: eb.zs[ib], color: '#16130a' });
+    out.push({ x: ea.xs[ia], z: ea.zs[ia], color: '#ffc814', label: 'Partenza', ring: true });
+    if (Math.hypot(eb.xs[ib] - ea.xs[ia], eb.zs[ib] - ea.zs[ia]) > 300) out.push({ x: eb.xs[ib], z: eb.zs[ib], color: '#16130a', label: 'Arrivo' });
     for (const l of sel.landmarks) {
       const lm = data.features.landmarks.find((x) => x.id === l.id);
       if (lm) out.push({ x: lm.x, z: lm.z, color: progress.visited[lm.id] ? '#ffc814' : '#ffffff', label: lm.name });
@@ -257,7 +257,7 @@ function RideCard({ data, ride, progress, onClose, onRide, startRef }: { data: W
         </button>
       </div>
       <p className="mt-2 text-[15px] leading-relaxed">{ride.blurb}</p>
-      <dl className="mt-3 grid grid-cols-4 gap-2 text-center">
+      <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-4">
         <Stat label="Km" value={formatKm(ride.lengthM)} />
         <Stat label="D+" value={`${formatNumber(ride.gainM, 0)} m`} />
         <Stat label="Quote" value={`${ride.startAlt}→${ride.endAlt}`} />

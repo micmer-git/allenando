@@ -18,6 +18,11 @@ export function clock(sec: number): string {
   return `${m}:${String(whole).padStart(2, '0')},${tenth}`;
 }
 
+/** Il nome del tratto nell'HUD: il cassonetto ha già il tipo nel nome («Volata del cassonetto · Cene»). */
+function segTitle(seg: { kind: string; name: string }, short: string): string {
+  return seg.kind === 'cassonetto' ? seg.name : `${short} · ${seg.name}`;
+}
+
 /** Il tratto in corso, quello che arriva, e il risultato appena tagliato il traguardo. */
 export function SegmentHud({ game }: { game: RideGame }) {
   const e = game.engine;
@@ -29,9 +34,7 @@ export function SegmentHud({ game }: { game: RideGame }) {
     return (
       <div className="pop-in pointer-events-none overflow-hidden rounded-2xl shadow-lg" style={{ background: st.color, color: st.ink }} data-testid="segment-banner">
         <div className="px-4 py-2 text-center">
-          <p className="text-[11px] font-bold uppercase tracking-[0.14em] opacity-90">
-            {st.short} · {banner.seg.name}
-          </p>
+          <p className="text-[11px] font-bold uppercase tracking-[0.14em] opacity-90">{segTitle(banner.seg, st.short)}</p>
           <p className="num font-display text-4xl leading-none">{clock(banner.sec)}</p>
           <p className="mt-0.5 text-xs font-semibold">
             {banner.prev == null ? 'Primo tempo' : banner.isPb ? `Record! −${formatDuration(Math.abs(delta!))}` : `+${formatDuration(Math.abs(delta!))} dal record`}
@@ -57,7 +60,7 @@ export function SegmentHud({ game }: { game: RideGame }) {
             <span className="block text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: st.color }}>
               {st.short}
             </span>
-            <span className="block truncate text-sm font-semibold leading-tight">{live.seg.name}</span>
+            <span className="block truncate text-sm font-semibold leading-tight">{live.seg.kind === 'cassonetto' ? live.seg.name.split(' · ').pop() : live.seg.name}</span>
           </span>
           <span className="num font-display text-3xl leading-none">{clock(t)}</span>
         </div>
@@ -77,7 +80,7 @@ export function SegmentHud({ game }: { game: RideGame }) {
     return (
       <p className="pointer-events-none inline-flex items-center gap-2 rounded-full bg-bg/75 px-3 py-1.5 text-xs font-semibold backdrop-blur" data-testid="segment-ahead">
         <span className="h-2.5 w-2.5 rounded-full" style={{ background: st.color }} />
-        Fra {Math.round(next.from - e.distance)} m · {st.short} {next.seg.name}
+        Fra {Math.round(next.from - e.distance)} m · {next.seg.kind === 'cassonetto' ? next.seg.name : `${st.short} ${next.seg.name}`}
       </p>
     );
   }

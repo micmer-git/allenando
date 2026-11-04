@@ -258,7 +258,19 @@ export function RidePage() {
       </div>
     );
   }
-  return <RideSession setup={setup} />;
+  // un'altra strada (un link da un giro all'altro senza ricaricare) è un'altra pedalata: motore nuovo
+  return <RideSession key={setupId(setup)} setup={setup} />;
+}
+
+const setupIds = new WeakMap<RideSetup, number>();
+let nextSetupId = 0;
+function setupId(setup: RideSetup): number {
+  let id = setupIds.get(setup);
+  if (id == null) {
+    id = ++nextSetupId;
+    setupIds.set(setup, id);
+  }
+  return id;
 }
 
 function RideSession({ setup }: { setup: RideSetup }) {
@@ -404,6 +416,8 @@ function RideScreen({
   );
   const gap = ghostSamples && ghostSamples.length > 1 ? gapSeconds(ghostSamples, engine.distance / ghostScale, engine.elapsed) : null;
   const hairpinsDone = track.hairpins.filter((h) => h.distance <= engine.distance).length;
+  // un arco (traguardo, km, ERG) fra 15 e 110 m: è lì che lo copre la colonna dei tratti
+  const archNear = !game.banner && game.arches.some((a) => a.role !== 'banner' && a.d != null && a.d - engine.distance > 15 && a.d - engine.distance < 110);
   const room = useRoom(setup.routeId, engine, profile.name);
   const riders = room.snap?.riders;
   const riderKey = riders?.map((r) => `${r.id}:${r.color}:${r.nick}`).join('|') ?? '';
@@ -746,7 +760,8 @@ function RideScreen({
             </div>
           </div>
         </div>
-        <div className="pointer-events-none absolute inset-x-0 top-[8rem] flex flex-col items-center gap-1.5 px-14">
+        {/* la colonna dei tratti sta proprio sulla fascia dell'orizzonte: quando un arco è vicino si fa trasparente, e l'arco si legge */}
+        <div className={`pointer-events-none absolute inset-x-0 top-[8rem] flex flex-col items-center gap-1.5 px-14 transition-opacity duration-300 ${archNear ? 'opacity-25' : ''}`} data-testid="ride-hud-center">
           <SessionHud game={game} />
           <SegmentHud game={game} />
           <ErgAheadHud game={game} />
@@ -782,6 +797,8 @@ function RideScreen({
 
         <span data-testid="world-ready" data-ready={ready ? 'yes' : 'no'} className="sr-only" />
         <span data-testid="room-3d" data-count={remote?.list.length ?? 0} className="sr-only" />
+        {/* gli archi sulla strada adesso (traguardi, km, ERG): per il collaudo, non si vede */}
+        <span data-testid="ride-arches" data-list={game.arches.map((a) => `${a.kind}:${a.role}:${a.label}@${Math.round(a.d ?? -1)}`).join('|')} className="sr-only" />
       </div>
       <aside className="max-h-[45%] overflow-auto border-t border-line bg-elev px-4 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 md:max-h-none md:w-[400px] md:shrink-0 md:border-l md:border-t-0 md:pt-4">
         {progress && engine.workout ? (

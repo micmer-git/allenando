@@ -72,6 +72,8 @@ export interface ArchSpec {
   heading: number;
   /** semilarghezza della strada in quel punto, metri: l'arco la scavalca con un metro di margine */
   halfWidth: number;
+  /** metri lungo il percorso in cui sta (per l'HUD e il collaudo) */
+  d?: number;
 }
 
 /** Il nome corto del tratto sull'arco: per il cassonetto basta il paese. */
@@ -85,7 +87,7 @@ export function archSpecs(segments: Segment[], poseAt: (d: number) => TrackPose,
   const out: ArchSpec[] = [];
   const put = (s: Segment, role: ArchRole, d: number, label: string, sub?: string) => {
     const p = poseAt(d);
-    out.push({ id: `${s.id}:${role}:${Math.round(d)}`, kind: s.kind, role, label, sub, x: p.x, y: p.y, z: p.z, heading: p.heading, halfWidth: halfWidthAt(d) });
+    out.push({ id: `${s.id}:${role}:${Math.round(d)}`, kind: s.kind, role, label, sub, x: p.x, y: p.y, z: p.z, heading: p.heading, halfWidth: halfWidthAt(d), d });
   };
   for (const s of segments) {
     const st = SEGMENT_STYLE[s.kind];
@@ -169,6 +171,6 @@ export function kmClimbs(climbs: { from: number; to: number; gain: number }[], a
 export function kmArchSpecs(marks: KmMark[], poseAt: (d: number) => TrackPose, halfWidthAt: (d: number) => number = () => 3.2): ArchSpec[] {
   return marks.map((m) => {
     const p = poseAt(m.d);
-    return { id: `km:${Math.round(m.d)}`, kind: m.kind, role: 'km', label: m.label, sub: m.sub, grade: m.grade, x: p.x, y: p.y, z: p.z, heading: p.heading, halfWidth: halfWidthAt(m.d) };
+    return { id: `km:${Math.round(m.d)}`, kind: m.kind, role: 'km', label: m.label, sub: m.sub, grade: m.grade, x: p.x, y: p.y, z: p.z, heading: p.heading, halfWidth: halfWidthAt(m.d), d: m.d };
   });
 }

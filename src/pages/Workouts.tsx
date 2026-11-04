@@ -182,7 +182,7 @@ export function WorkoutsPage() {
               {world ? (
                 world.rides.map((r) => (
                   <option key={r.id} value={r.id}>
-                    {r.name} · {formatKm(r.lengthM)} km · D+ {formatNumber(r.gainM, 0)} m
+                    {r.name} · {formatKm(r.lengthM)} km
                   </option>
                 ))
               ) : (

@@ -74,46 +74,57 @@ function gradeColor(g: number): string {
 }
 
 /**
- * Il cartello del portale dei km, fatto per leggersi da lontano su un telefono: a sinistra il
- * numero grande («3 KM», «ULTIMO KM»), a destra «ALLA VETTA» e la pendenza in un riquadro
- * colorato, oppure «ALL'ARRIVO».
+ * Il cartello del portale dei km, fatto per leggersi da lontano su un telefono. Coi numeri corti
+ * («3 KM», «15 KM») il numero grande a sinistra e a destra «ALLA VETTA» con la pendenza in un
+ * riquadro colorato, oppure «ALL'ARRIVO»; con «ULTIMO KM» due righe: la scritta grande sopra,
+ * vetta o arrivo e pendenza sotto.
  */
 function kmTexture(spec: ArchSpec): THREE.CanvasTexture {
   const w = 512;
-  const h = 128;
+  const h = 160;
   const st = ARCH_STYLE[spec.kind];
   return canvasTexture(w, h, (g) => {
     g.fillStyle = st.color;
     g.fillRect(0, 0, w, h);
     g.fillStyle = spec.kind === 'ultimo' ? '#ffffff' : '#ffc814';
-    g.fillRect(0, h - 8, w, 8);
+    g.fillRect(0, h - 9, w, 9);
     g.textBaseline = 'middle';
     const label = spec.label.toUpperCase();
     const sub = (spec.sub ?? '').toUpperCase();
-    const right = spec.grade != null ? 190 : sub ? 170 : 0;
+    const pct = spec.grade != null ? gradeText(spec.grade) : '';
     g.fillStyle = st.ink;
-    g.textAlign = 'left';
-    fitText(g, label, 800, 84, w - right - 36);
-    g.fillText(label, 20, h * 0.5);
-    if (spec.grade != null) {
-      const x0 = w - right;
-      g.font = '700 24px sans-serif';
+    if (label.length > 6) {
       g.textAlign = 'center';
-      g.globalAlpha = 0.9;
-      g.fillText(sub, x0 + right / 2 - 8, 26);
-      g.globalAlpha = 1;
-      g.fillStyle = gradeColor(spec.grade);
-      g.beginPath();
-      g.roundRect(x0, 44, right - 16, 72, 12);
-      g.fill();
-      g.fillStyle = spec.grade >= 0.04 && spec.grade < 0.07 ? '#16130a' : '#ffffff';
-      fitText(g, gradeText(spec.grade), 800, 52, right - 32);
-      g.fillText(gradeText(spec.grade), x0 + (right - 16) / 2, 82);
-    } else if (sub) {
-      g.textAlign = 'right';
+      fitText(g, label, 800, 92, w * 0.92);
+      g.fillText(label, w / 2, 58);
+      const line = pct ? `${sub} · ${pct}` : sub;
+      fitText(g, line, 800, 42, w * 0.9);
+      g.fillText(line, w / 2, 122);
+      return;
+    }
+    const right = 210;
+    g.textAlign = 'left';
+    fitText(g, label, 800, 112, w - right - 36);
+    g.fillText(label, 20, h * 0.5);
+    const x0 = w - right;
+    if (pct) {
+      g.textAlign = 'center';
+      fitText(g, sub, 700, 32, right - 20);
       g.globalAlpha = 0.92;
-      fitText(g, sub, 700, 34, right);
-      g.fillText(sub, w - 18, h * 0.5);
+      g.fillText(sub, x0 + (right - 16) / 2, 30);
+      g.globalAlpha = 1;
+      g.fillStyle = gradeColor(spec.grade!);
+      g.beginPath();
+      g.roundRect(x0, 54, right - 16, 90, 14);
+      g.fill();
+      g.fillStyle = spec.grade! >= 0.04 && spec.grade! < 0.07 ? '#16130a' : '#ffffff';
+      fitText(g, pct, 800, 66, right - 36);
+      g.fillText(pct, x0 + (right - 16) / 2, 101);
+    } else if (sub) {
+      g.textAlign = 'center';
+      g.globalAlpha = 0.95;
+      fitText(g, sub, 800, 44, right - 16);
+      g.fillText(sub, x0 + (right - 16) / 2, h * 0.5);
       g.globalAlpha = 1;
     }
   });
@@ -193,9 +204,9 @@ function buildOne(s: ArchSpec): Built {
   } else if (s.role === 'km') {
     // portale leggero: due pali sottili e il cartello in alto, sopra la strada
     const half = s.halfWidth + 0.9;
-    const H = 5.4;
+    const H = 6.2;
     const bw = half * 2 + 0.4;
-    const bh = Math.min(2.3, Math.max(1.5, bw / 4));
+    const bh = Math.min(3, Math.max(1.8, bw / 3.2));
     const poleMat = s.kind === 'ultimo' ? white : matOf('#3a3e46');
     const pole = geo(new THREE.CylinderGeometry(0.1, 0.12, H, 10));
     pole.translate(0, H / 2, 0);
@@ -356,10 +367,13 @@ export function Arches({ specs }: { specs: ArchSpec[] }) {
   }, [specs, group]);
   useEffect(
     () => () => {
-      for (const b of built.current.values()) b.dispose();
+      for (const b of built.current.values()) {
+        group.remove(b.root);
+        b.dispose();
+      }
       built.current.clear();
     },
-    [],
+    [group],
   );
   return <primitive object={group} />;
 }
