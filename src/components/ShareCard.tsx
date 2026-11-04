@@ -2,9 +2,14 @@ import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui';
 import { validPosition } from '@/domain/metrics';
 import type { Ride } from '@/domain/types';
-import { cardInputFromRide, CARD_H, CARD_W, downloadCard, renderCard, shareCard, type ShareOutcome, type WorldContext } from '@/io/share-image';
+import type { ShareOutcome, WorldContext } from '@/io/share-image';
 import { loadMonumenti } from '@/open/monumenti';
 import { loadWorld, Terrain } from '@/open/world';
+
+// il disegno della cartolina si carica al primo tocco: non pesa sull'avvio dell'app
+const CARD_W = 1080;
+const CARD_H = 1350;
+const painter = () => import('@/io/share-image');
 
 /**
  * Il tasto «Cartolina» (nel riepilogo del giro e nel dettaglio) e il foglio che la mostra:
@@ -61,6 +66,7 @@ function CartolinaSheet({ ride, onClose }: { ride: Ride; onClose: () => void }) 
     void (async () => {
       const world = await worldFor(ride);
       const monumenti = world ? await loadMonumenti(world.data.graph.id) : [];
+      const { cardInputFromRide, renderCard } = await painter();
       const input = cardInputFromRide(ride, world?.data ?? null, monumenti);
       const blob = await renderCard(input, world);
       if (!alive) return;
@@ -105,7 +111,7 @@ function CartolinaSheet({ ride, onClose }: { ride: Ride; onClose: () => void }) 
         </div>
         <div className="mt-3 flex flex-col gap-2">
           {share ? (
-            <Button disabled={!card} onClick={() => card && void shareCard(card.blob, card.title).then((o) => setNote(DONE[o]))} data-testid="cartolina-share">
+            <Button disabled={!card} onClick={() => card && void painter().then(({ shareCard }) => shareCard(card.blob, card.title)).then((o) => setNote(DONE[o]))} data-testid="cartolina-share">
               Condividi
             </Button>
           ) : null}
@@ -114,7 +120,7 @@ function CartolinaSheet({ ride, onClose }: { ride: Ride; onClose: () => void }) 
             disabled={!card}
             onClick={() => {
               if (!card) return;
-              downloadCard(card.blob, card.title);
+              void painter().then(({ downloadCard }) => downloadCard(card.blob, card.title));
               setNote(DONE.scaricata);
             }}
             data-testid="cartolina-download"

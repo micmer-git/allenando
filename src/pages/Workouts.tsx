@@ -145,16 +145,13 @@ export function WorkoutsPage() {
     <main className="mx-auto w-full max-w-3xl px-4 pb-nav pt-6 md:px-8 md:pt-10">
       <h1 className="font-display text-5xl tracking-tight">{t('workouts.title')}</h1>
       <p className="mt-3 max-w-xl text-lg text-muted">{t('workouts.lead')}</p>
-      <div className="mt-5 flex flex-wrap gap-2">
-        <Link to="/workouts/edit/new" className="inline-flex h-12 items-center rounded-full bg-accent px-5 font-semibold text-accent-ink">
-          {t('workouts.new')}
-        </Link>
-        <Link to="/programmi" className="inline-flex h-12 items-center rounded-full bg-elev2 px-5 font-semibold" data-testid="workouts-plans">
-          Programmi
-        </Link>
+      <Link to="/workouts/edit/new" className="mt-5 inline-flex h-12 items-center rounded-full bg-accent px-5 font-semibold text-accent-ink">
+        {t('workouts.new')}
+      </Link>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <Link to="/programmi" className="inline-flex h-12 items-center rounded-full bg-elev2 px-5 font-semibold" data-testid="workouts-plans">Programmi</Link>
         <label className="inline-flex h-12 cursor-pointer items-center rounded-full border border-line px-5 font-semibold" data-testid="zwo-import">
-          Importa .zwo
-          <input type="file" accept=".zwo,application/xml,text/xml" multiple className="sr-only" onChange={(e) => { const el = e.currentTarget; void importZwoFiles(el.files, saveWorkout).then((m) => { setZwoNote(m); el.value = ''; }); }} />
+          Importa .zwo<input type="file" accept=".zwo,application/xml,text/xml" multiple className="sr-only" onChange={(e) => { const el = e.currentTarget; void importZwoFiles(el.files, saveWorkout).then((m) => { setZwoNote(m); el.value = ''; }); }} />
         </label>
       </div>
       {zwoNote ? <p className="mt-2 text-sm text-muted" role="status" data-testid="zwo-note">{zwoNote}</p> : null}

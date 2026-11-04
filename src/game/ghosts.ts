@@ -272,9 +272,11 @@ export class RideGhosts {
     return { ...p, x: p.x + Math.cos(p.heading) * lane, z: p.z - Math.sin(p.heading) * lane };
   };
 
-  /** C'è almeno un fantasma per questa strada (per montare il ciclista solo se serve). */
+  /** C'è un fantasma per questa strada: il percorso o uno dei suoi tratti (per montare il ciclista solo se serve). */
   get any(): boolean {
-    return this.opts.enabled && Object.keys(this.traces).length > 0;
+    if (!this.opts.enabled) return false;
+    if (this.routeKey && this.traces[this.routeKey]) return true;
+    return this.opts.game.tracker.windows.some((w) => !!this.traces[w.seg.id]);
   }
 
   /**
@@ -304,7 +306,14 @@ export class RideGhosts {
     // il fantasma nuovo vale già da adesso: il tratto rifatto nello stesso giro lo trova
     this.traces[trace.id] = trace;
     this.kept.push(trace.id);
-    void saveGhostIfBetter(trace);
+    this.saving.push(saveGhostIfBetter(trace));
+  }
+
+  private saving: Promise<boolean>[] = [];
+
+  /** Aspetta che i fantasmi tenuti siano scritti in IndexedDB. */
+  async flush(): Promise<void> {
+    await Promise.all(this.saving);
   }
 }
 

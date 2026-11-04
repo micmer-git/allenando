@@ -3,6 +3,8 @@
 // Uso: node scripts/game-shot.mjs <base> <outdir>   (es. http://127.0.0.1:5183/allenando shots)
 // GIOCO=1 aggiunge il 3D del gioco: carta → percorso, allenamenti col posto, archi in ERG (mondo e
 // salita), un allenamento che va oltre il percorso, portali dei km, volata del cassonetto.
+// NOVITA=1 le novità: due giri su Maresana col fantasma, la cartolina (riepilogo e dettaglio, PNG
+// 1080×1350), i programmi con l'allenamento di oggi, un .zwo vero importato, esportato e in ERG.
 // Esce con 1 se un controllo fallisce o la pagina lancia errori.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -285,6 +287,190 @@ try {
     check(await p.waitFor(`!!document.querySelector('[data-testid=rewards]')`, 15000), 'fine: riepilogo con oro e traguardi');
     await sleep(800);
     await p.shot('g11-premi', true);
+  }
+
+  if (process.env.NOVITA) {
+    // ---------- le novità (pista 4): fantasma, cartolina, programmi, .zwo ----------
+    const basePath = new URL(base).pathname.replace(/\/$/, '');
+    const nav = async (path) => {
+      await p.evaluate(`(() => { history.pushState({}, '', ${JSON.stringify(basePath + '/')}); dispatchEvent(new PopStateEvent('popstate')); })()`);
+      await p.waitFor(`!document.querySelector('[data-testid=ride-screen]')`, 15000);
+      await sleep(300);
+      await p.evaluate(`(() => { history.pushState({}, '', ${JSON.stringify(basePath + path)}); dispatchEvent(new PopStateEvent('popstate')); })()`);
+      await sleep(600);
+    };
+    const ready = (ms = 180000) => p.waitFor(`document.querySelector('[data-testid=world-ready]')?.dataset.ready === 'yes'`, ms);
+    const setEffort = (v) =>
+      p.evaluate(`(() => { const i = document.querySelector('input[type=range]'); if (!i) return false; const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, '${v}'); i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+    // le scritte che cominciano in minuscolo, dentro un pezzo di pagina: ogni elemento con del testo
+    // suo, letto per intero (le unità no; «12 settimane» comincia con un numero e va bene)
+    const lower = (sel) =>
+      p.evaluate(`(() => { const out = []; for (const root of document.querySelectorAll(${JSON.stringify(sel)})) for (const el of [root, ...root.querySelectorAll('*')]) { if (el.closest('.sr-only') || ![...el.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim())) continue; const t = el.textContent.replace(/\\s+/g, ' ').trim(); const c = t.match(/[\\p{L}\\p{N}]/u)?.[0]; if (c && /\\p{Ll}/u.test(c) && !/^(km|m|W|rpm|s)\\b/.test(t)) out.push(t); } return out; })()`);
+    // un PNG dalla pagina (blob: dell'anteprima) al disco
+    const savePng = async (sel, name) => {
+      const r = await p.evaluate(`(async () => { const img = document.querySelector(${JSON.stringify(sel)}); if (!img) return null; await img.decode().catch(() => null); const buf = new Uint8Array(await (await fetch(img.src)).arrayBuffer()); let s = ''; for (let i = 0; i < buf.length; i += 0x8000) s += String.fromCharCode(...buf.subarray(i, i + 0x8000)); return { w: img.naturalWidth, h: img.naturalHeight, b64: btoa(s) }; })()`);
+      if (r) writeFileSync(join(out, `${name}.png`), Buffer.from(r.b64, 'base64'));
+      return r;
+    };
+
+    // N2 · due giri su Maresana: il primo forte, il secondo più piano; al secondo il fantasma è in strada
+    await nav('/ride?world=bergamo&ride=maresana');
+    check(await ready(), 'fantasma: Maresana pronta');
+    await p.clickText('10×');
+    await setEffort(160);
+    check(await p.evaluate(`!document.querySelector('[data-testid=ghost-gap]')`), 'fantasma: al primo giro non c’è');
+    check(await p.waitFor(`!!document.querySelector('[data-testid=ride-summary]')`, 900000), 'fantasma: primo giro finito');
+    await sleep(1500);
+    await p.shot('n2-01-primo-giro-riepilogo');
+    // N3 · la cartolina dal riepilogo
+    check(await p.click('[data-testid=cartolina-open]'), 'cartolina: il tasto nel riepilogo');
+    check(await p.waitFor(`!!document.querySelector('[data-testid=cartolina-img]')`, 60000), 'cartolina: disegnata');
+    await sleep(800);
+    const png = await savePng('[data-testid=cartolina-img]', 'n3-cartolina-maresana');
+    check(png?.w === 1080 && png?.h === 1350, 'cartolina: PNG 1080×1350', png ? `${png.w}×${png.h}` : 'niente');
+    await p.shot('n3-01-cartolina-riepilogo');
+    await auditCheck(p, 'cartolina');
+    const low3 = await lower('[data-testid=cartolina]');
+    check(low3.length === 0, 'cartolina: niente minuscole', low3.join(' | '));
+    await p.click('[data-testid=cartolina-close]');
+    await sleep(300);
+    await p.click('[data-testid=ride-save]');
+    check(await p.waitFor(`!!document.querySelector('[data-testid=ride-open-history]')`, 10000), 'primo giro: salvato');
+
+    await nav('/ride?world=bergamo&ride=maresana');
+    check(await ready(), 'fantasma: Maresana di nuovo');
+    await p.clickText('10×');
+    await setEffort(115);
+    check(await p.waitFor(`/\\d+ s (dietro|avanti)|Pari/.test(document.querySelector('[data-testid=ghost-gap]')?.textContent ?? '')`, 60000), 'fantasma: ghost-gap dice i secondi', await p.evaluate(`document.querySelector('[data-testid=ghost-gap]')?.textContent ?? ''`));
+    check(await p.waitFor(`/Fantasma \\d+ s dietro/.test(document.querySelector('[data-testid=ghost-gap]')?.textContent ?? '')`, 120000), 'fantasma: più piano del record, sei dietro', await p.evaluate(`document.querySelector('[data-testid=ghost-gap]')?.textContent ?? ''`));
+    await p.clickText('1×');
+    await sleep(2500);
+    await p.shot('n2-02-fantasma-in-strada');
+    await p.clickText('10×');
+    await sleep(6000);
+    await p.clickText('1×');
+    await sleep(2500);
+    await p.shot('n2-03-fantasma-davanti');
+    console.log('     ghost-gap:', await p.evaluate(`document.querySelector('[data-testid=ghost-gap]')?.textContent ?? ''`));
+
+    // N3 · la cartolina dal dettaglio del giro salvato
+    await nav('/history');
+    await p.waitFor(`!!document.querySelector('a[href*="/history/ride-"]')`, 10000);
+    const detail = await p.evaluate(`document.querySelector('a[href*="/history/ride-"]')?.getAttribute('href')`);
+    await nav(detail.replace(basePath, ''));
+    check(await p.waitFor(`!!document.querySelector('[data-testid=ride-detail] [data-testid=cartolina-open]')`, 10000), 'cartolina: il tasto nel dettaglio');
+    await p.click('[data-testid=cartolina-open]');
+    check(await p.waitFor(`!!document.querySelector('[data-testid=cartolina-img]')`, 60000), 'cartolina: dal dettaglio');
+    await sleep(800);
+    const png2 = await savePng('[data-testid=cartolina-img]', 'n3-cartolina-dettaglio');
+    check(png2?.w === 1080 && png2?.h === 1350, 'cartolina dal dettaglio: 1080×1350');
+    await p.shot('n3-02-cartolina-dettaglio');
+    await p.click('[data-testid=cartolina-close]');
+
+    // N4 · i programmi: si comincia oggi, Oggi mostra la seduta e un tocco apre la corsa
+    await nav('/programmi');
+    check(await p.waitFor(`!!document.querySelector('[data-testid=plan-start-primo-selvino]')`, 10000), 'programmi: la pagina');
+    await p.shot('n4-01-programmi');
+    await p.shot('n4-01-programmi-tutta', true);
+    await auditCheck(p, 'programmi');
+    await p.click('[data-testid=plan-start-primo-selvino]');
+    check(await p.waitFor(`document.querySelector('[data-testid=plan-active]')?.dataset.plan === 'primo-selvino'`, 5000), 'programmi: Primo Selvino cominciato');
+    await sleep(500);
+    await p.shot('n4-02-programma-attivo');
+    await p.shot('n4-02-programma-attivo-tutta', true);
+    await auditCheck(p, 'programma attivo');
+    const low4 = await lower('[data-testid=plans-page]');
+    check(low4.length === 0, 'programmi: niente minuscole', low4.join(' | '));
+    await nav('/');
+    check(await p.waitFor(`document.querySelector('[data-testid=today-workout]')?.dataset.day === '0'`, 8000), 'oggi: l’allenamento di oggi (giorno 0)');
+    const todayText = await p.evaluate(`document.querySelector('[data-testid=today-workout]').textContent`);
+    check(/L’allenamento di oggi/.test(todayText) && /Val Seriana/.test(todayText), 'oggi: la riga giusta per la data', todayText);
+    await p.shot('n4-03-oggi');
+    await auditCheck(p, 'oggi col programma');
+    const low5 = await lower('[data-testid=today-workout]');
+    check(low5.length === 0, 'oggi: niente minuscole nella carta', low5.join(' | '));
+    const href = await p.evaluate(`document.querySelector('[data-testid=today-workout-go]').getAttribute('href')`);
+    check(/workout=endurance/.test(href) && /ride=val-seriana/.test(href), 'oggi: il link mette insieme allenamento e percorso', href);
+    await p.click('[data-testid=today-workout-go]');
+    check(await ready(), 'oggi → corsa: pronta');
+    check(await p.waitFor(`!!document.querySelector('[data-testid=erg-target]')`, 10000), 'oggi → corsa: in ERG');
+    check(/Val Seriana/.test(await p.evaluate(`document.querySelector('[data-testid=ride-route]')?.textContent ?? ''`)), 'oggi → corsa: sul percorso Val Seriana');
+    await sleep(1500);
+    await p.shot('n4-04-corsa-dal-programma');
+    // tre giorni dopo: il giorno 3 è riposo e l'agilità del giorno 2 è saltata, da recuperare
+    await nav('/');
+    await p.evaluate(`new Promise((ok, ko) => { const r = indexedDB.open('allenando'); r.onsuccess = () => { const db = r.result; const tx = db.transaction('kv', 'readwrite'); const st = tx.objectStore('kv'); const g = st.get('programma'); g.onsuccess = () => { const v = g.result; const d = new Date(); d.setDate(d.getDate() - 3); v.start = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); v.done = { 0: 'a-mano' }; st.put(v, 'programma'); }; tx.oncomplete = () => ok(true); tx.onerror = ko; }; r.onerror = ko; })`);
+    await nav('/programmi');
+    await nav('/');
+    check(await p.waitFor(`document.querySelector('[data-testid=today-workout]')?.dataset.day === '2'`, 8000), 'oggi, tre giorni dopo: da recuperare il giorno 2');
+    check(/Da recuperare/.test(await p.evaluate(`document.querySelector('[data-testid=today-workout]').textContent`)), 'oggi: «Da recuperare»');
+    await p.shot('n4-05-oggi-da-recuperare');
+
+    // N5 · un .zwo vero: si importa, sta fra i tuoi, va in ERG
+    await nav('/workouts');
+    await p.waitFor(`!!document.querySelector('[data-testid=zwo-import] input')`, 8000);
+    const zwoPath = join(out, 'Chamois_Abuse.zwo');
+    // un file vero di Zwift (GC Coaching), come in tests/novita.test.ts:
+    // https://github.com/vincent290587/WeePlanner/blob/master/db/GC%20Coaching/Chamois_Abuse.zwo
+    const CHAMOIS_ZWO = `<workout_file>
+    <author>S.Gaffney (GC Coaching)</author>
+    <name>Chamois Abuse</name>
+    <description>WARM-UP
+-Start with 10 minutes gradually increasing your power and cadence, then 3x 30 seconds @110+ RPM @115% FTP with 3 minutes active recovery to ready the legs, and finally 2 minutes free ride to ready the mind. </description>
+    <sportType>bike</sportType>
+    <tags>
+        <tag name="Warm-up"/>
+    </tags>
+    <workout>
+        <Warmup Duration="600" PowerLow="0.37261483" PowerHigh="0.75449997" pace="1125572608"/>
+        <IntervalsT Repeat="3" OnDuration="30.000002" OffDuration="30.000002" OnPower="1.1544999" OffPower="0.50449997" pace="1125572608"/>
+        <FreeRide Duration="120.00001" FlatRoad="1"/>
+        <SteadyState Duration="300" Power="1.0044999" pace="1125572608"/>
+        <Ramp Duration="30" PowerLow="1.0044999" PowerHigh="1.5044999" pace="1125572608"/>
+        <SteadyState Duration="120" Power="0.50449997" pace="1125572608"/>
+        <SteadyState Duration="300" Power="1.0044999" pace="1125572608"/>
+        <Ramp Duration="30" PowerLow="1.0044999" PowerHigh="1.5044999" pace="1125572608"/>
+        <SteadyState Duration="120" Power="0.50449997" pace="1125572608"/>
+        <SteadyState Duration="300" Power="1.0044999" pace="1125572608"/>
+        <Ramp Duration="30" PowerLow="1.0044999" PowerHigh="1.5044999" pace="1125572608"/>
+        <SteadyState Duration="120" Power="0.50449997" pace="1125572608"/>
+        <SteadyState Duration="300" Power="1.0044999" pace="1125572608"/>
+        <Ramp Duration="30" PowerLow="1.0044999" PowerHigh="1.5044999" pace="1125572608"/>
+        <SteadyState Duration="120" Power="0.5" pace="1125572608"/>
+        <SteadyState Duration="300" Power="1.0044999" pace="1125572608"/>
+        <Ramp Duration="30" PowerLow="1.0044999" PowerHigh="1.5044999" pace="1125572608"/>
+        <SteadyState Duration="240" Power="0.50449997" pace="1125572608"/>
+        <IntervalsT Repeat="10" OnDuration="30" OffDuration="30" OnPower="1.2544999" OffPower="0.75449997" pace="1125572608"/>
+        <SteadyState Duration="300" Power="0.50449997" pace="1125572608"/>
+        <IntervalsT Repeat="10" OnDuration="30" OffDuration="30" OnPower="1.3544999" OffPower="0.65449995" pace="1125572608"/>
+        <Cooldown Duration="330" PowerLow="0.81431097" PowerHigh="0.31961131" pace="1125572608"/>
+    </workout>
+</workout_file>
+`;
+    writeFileSync(zwoPath, CHAMOIS_ZWO);
+    await p.s('DOM.enable');
+    const { result } = await p.s('Runtime.evaluate', { expression: `document.querySelector('[data-testid=zwo-import] input')` });
+    await p.s('DOM.setFileInputFiles', { files: [zwoPath], objectId: result.objectId });
+    check(await p.waitFor(`/Importato «Chamois Abuse»/.test(document.querySelector('[data-testid=zwo-note]')?.textContent ?? '')`, 8000), 'zwo: importato', await p.evaluate(`document.querySelector('[data-testid=zwo-note]')?.textContent ?? ''`));
+    await sleep(500);
+    await p.evaluate(`document.querySelector('[data-testid=zwo-note]').scrollIntoView({ block: 'start' })`);
+    await p.shot('n5-01-zwo-importato');
+    await p.evaluate(`[...document.querySelectorAll('h2')].find((h) => h.textContent === 'Chamois Abuse')?.scrollIntoView({ block: 'center' })`);
+    await sleep(400);
+    await p.shot('n5-02-zwo-fra-i-tuoi');
+    await auditCheck(p, 'allenamenti col .zwo');
+    const zid = await p.evaluate(`(() => { const h = [...document.querySelectorAll('h2')].find((x) => x.textContent === 'Chamois Abuse'); return h?.closest('li')?.querySelector('[data-testid^=zwo-export-]')?.getAttribute('data-testid')?.replace('zwo-export-', '') ?? null; })()`);
+    check(!!zid, 'zwo: l’allenamento importato ha «Inizia»', zid ?? '');
+    await p.s('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: out });
+    await p.click(`[data-testid="zwo-export-${zid}"]`);
+    await sleep(1500);
+    check((await import('node:fs')).existsSync(join(out, 'chamois-abuse.zwo')), 'zwo: esportato di nuovo (chamois-abuse.zwo)');
+    await p.click(`[data-testid="workout-${zid}"]`);
+    check(await ready(), 'zwo → corsa: pronta');
+    check(await p.waitFor(`!!document.querySelector('[data-testid=erg-target]')`, 10000), 'zwo → corsa: in ERG');
+    check(await p.waitFor(`(document.querySelector('[data-testid=ride-arches]')?.dataset.list ?? '').includes('erg:')`, 30000), 'zwo → corsa: gli archi dell’ERG');
+    await sleep(1500);
+    await p.shot('n5-03-zwo-in-erg');
   }
 
   check(p.errors.length === 0, 'nessun errore di pagina', p.errors.slice(0, 5).join(' | '));

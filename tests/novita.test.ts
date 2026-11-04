@@ -9,6 +9,7 @@ import { WorldSession } from '../src/open/session';
 import { decodeFeatures, type RideDef, type WorldData } from '../src/open/world';
 import { decodeMonumenti, type MonumentiFile } from '../src/open/monumenti';
 import { projector } from '../src/domain/geo';
+import { trackFromRouteFile, type RouteFile } from '../src/domain/routes';
 import { STANDARD_AIR } from '../src/domain/physics';
 import type { Ride, RideSample } from '../src/domain/types';
 import { RideEngine } from '../src/sim/engine';
@@ -146,7 +147,7 @@ describe('N2 · il fantasma al metro', () => {
     expect(t1.sec).toBeCloseTo(lap1, 0);
     expect(t1.lengthM).toBeCloseTo(a.engine.distance, 0);
     a.off();
-    await new Promise((r) => setTimeout(r, 50));
+    await a.ghosts.flush();
     const saved = await loadGhosts();
     expect(saved['w:maresana'].sec).toBeCloseTo(lap1, 0);
     // a metà del primo giro: il tempo del fantasma al metro è quello del giro vero, entro un secondo
@@ -188,6 +189,30 @@ describe('N2 · il fantasma al metro', () => {
     expect(b.ghosts.now()?.kind ?? 'tratto').toBe('tratto');
     b.off();
   }, 60000);
+
+  it('sulla salita verificata: il tratto «salita» è il fantasma, e il ciclista si monta solo se c’è', () => {
+    const file = JSON.parse(readFileSync(join(__dirname, '..', 'public', 'routes', 'selvino-nembro.json'), 'utf8')) as RouteFile;
+    const route = trackFromRouteFile(file, 3);
+    const engine = new RideEngine({ track: route.track, source: new FixedPower(300), physics: { massKg: 83, cda: 0.32, crr: 0.004, ...STANDARD_AIR }, ftp: 250, maxHr: 186, restHr: 52, lthr: 166, weightKg: 75, workout: null, withCamilla: false, crr: 0.004, cw: 0.39 });
+    const game = new RideGame({ engine, track: route.track, climb: { routeId: 'selvino-nembro', name: 'Selvino da Nembro' }, nick: '', weightKg: 75, pbs: {}, sim: () => true, scale: () => 1, ranked: false });
+    const ghosts = new RideGhosts({ engine, game, session: null, enabled: true, sim: () => true });
+    // un fantasma di un altro posto non monta il ciclista qui
+    ghosts.traces = { 'w:maresana': traceFromPoints('w:maresana', [], 0, 3106, 0, 600)! };
+    expect(ghosts.any).toBe(false);
+    const len = route.track.length;
+    ghosts.traces['salita:selvino-nembro'] = traceFromPoints('salita:selvino-nembro', [], 0, len, 0, 3000)!;
+    expect(ghosts.any).toBe(true);
+    for (let i = 0; i < 600; i++) {
+      engine.tick(0.1);
+      game.tick(0.1);
+    }
+    const now = ghosts.now()!;
+    expect(now.kind).toBe('tratto');
+    expect(now.label).toBe('Fantasma del GPM');
+    expect(now.distance).toBeCloseTo((len * engine.elapsed) / 3000, 0);
+    expect(ghosts.pose()).toBeNull(); // sulla salita lo disegna RideScene, dai metri
+    expect(ghosts.distance()).toBeCloseTo(now.distance, 5);
+  });
 
   it('con un allenamento o nei replay niente fantasma, né letto né registrato', () => {
     const a = worldRide('maresana', 330);

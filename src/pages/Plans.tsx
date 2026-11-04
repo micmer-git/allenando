@@ -208,7 +208,7 @@ export function PlansPage() {
             {days
               .filter((d) => d.week === shown)
               .map((d) => (
-                <li key={d.index} className={cn('flex min-h-14 items-center gap-3 rounded-2xl px-3 py-2', d.session ? 'bg-elev' : '')} data-testid={`plan-day-${d.index}`} data-status={d.status}>
+                <li key={d.index} className={cn('flex items-center gap-3 rounded-2xl px-3', d.session ? 'min-h-14 bg-elev py-2' : 'min-h-9 py-1')} data-testid={`plan-day-${d.index}`} data-status={d.status}>
                   <span className="num w-14 shrink-0 text-sm text-muted">{dayLabel(d.date)}</span>
                   {d.session ? (
                     <span className="min-w-0 flex-1">
@@ -277,9 +277,9 @@ function PlanCard({ plan, onStart, replacing }: { plan: TrainingPlan; onStart: (
         <span className="num shrink-0 rounded-full bg-elev2 px-2.5 py-1 text-xs font-semibold">{plan.weeks.length} settimane</span>
       </div>
       {/* il carico settimana per settimana: lo scarico si vede */}
-      <div className="mt-3 flex h-12 items-end gap-1" aria-label="Carico per settimana" role="img">
+      <div className="mt-3 flex h-10 items-end gap-1" aria-label="Carico per settimana" role="img">
         {loads.map((l, i) => (
-          <span key={i} className={cn('flex-1 rounded-t-md', plan.weeks[i].recovery ? 'bg-elev2' : 'bg-accent/70')} style={{ height: `${Math.max(12, (l / max) * 100)}%` }} title={plan.weeks[i].title} />
+          <span key={i} className={cn('flex-1 rounded-t', plan.weeks[i].recovery ? 'bg-ink/10' : 'bg-ink/25')} style={{ height: `${Math.max(12, (l / max) * 100)}%` }} title={plan.weeks[i].title} />
         ))}
       </div>
       <p className="num mt-2 text-sm text-muted">
