@@ -6,6 +6,11 @@ import { WorldSession } from '../src/open/session';
 import { isPaintedCrossing, poiKind, snapSignals } from '../src/open/snap';
 import { decodeFeatures, type FeaturesFile, type WorldData } from '../src/open/world';
 import { projector } from '../src/domain/geo';
+import { createWorldField } from '../src/open/field';
+import { curbOffset, ringsOf } from '../src/open/rings';
+import { inTube, portalClear, tunnelDepth } from '../src/open/tunnels';
+import { createFarMask, updateFarMask } from '../src/open/farMask';
+import type { Terrain } from '../src/open/world';
 
 /*
  * La strada: rotatorie (una domanda sola, uscite numerate), semafori agganciati agli incroci,
@@ -277,5 +282,135 @@ describe('il mondo vero', () => {
     for (const p of features.pois) expect(p.edge).toBeLessThan(graph.edges.length);
     expect(features.pois.some((p) => p.kind === 'fontanella')).toBe(true);
     expect(features.pois.some((p) => p.kind === 'belvedere')).toBe(true);
+  });
+});
+
+describe('forma della strada', () => {
+  it('la rotatoria è un anello tondo, coi raccordi alle bocche e il cordolo solo fra una bocca e l’altra', () => {
+    const g = roundabout();
+    const [r] = ringsOf(g);
+    expect(r.smooth).toBe(true);
+    // otto punti OSM su un cerchio di 20 m: la mezzeria disegnata è un cerchio, non un ottagono
+    const rad = Array.from(r.rad);
+    expect(Math.max(...rad) - Math.min(...rad)).toBeLessThan(0.8);
+    expect(r.branches).toHaveLength(4);
+    for (const b of r.branches) {
+      // due raccordi per ramo; il cordolo del ramo riparte dopo il raccordo
+      expect(b.fillets[0]).not.toBeNull();
+      expect(b.fillets[1]).not.toBeNull();
+      expect(b.clear).toBeGreaterThan(b.t0 + 1);
+      // al bordo dell'anello la bocca è più larga del ramo, a fine raccordo torna la carreggiata
+      expect(curbOffset(b, 0, b.t0)).toBeGreaterThan(b.hw + 1);
+      expect(curbOffset(b, 1, b.fillets[1]!.t1 + 1)).toBe(b.hw);
+    }
+    // quattro tratti di cordolo, e nessuno passa davanti a un ramo
+    expect(r.curbs).toHaveLength(4);
+    for (const b of r.branches) {
+      for (const [a0, a1] of r.curbs) {
+        let th = b.th;
+        while (th < a0) th += Math.PI * 2;
+        expect(th).toBeGreaterThan(a1);
+      }
+    }
+  });
+
+  it('un ingresso e un’uscita vicini, due sensi unici: niente cordolo in mezzo, l’isola spartitraffico', () => {
+    const ring = FLAG.roundabout | FLAG.oneway;
+    const at = (deg: number): P => [Math.cos((deg * Math.PI) / 180) * 20, Math.sin((deg * Math.PI) / 180) * 20];
+    const nodes: P[] = [at(90), at(55), at(0), at(-90), at(180), [6, 120], [6, 400]];
+    const g = graphOf(nodes, [
+      { a: 0, b: 1, flags: ring },
+      { a: 1, b: 2, flags: ring, via: [at(28)] },
+      { a: 2, b: 3, flags: ring, via: [at(-45)] },
+      { a: 3, b: 4, flags: ring, via: [at(-135)] },
+      { a: 4, b: 0, flags: ring, via: [at(135)] },
+      // l'uscita dall'anello e l'ingresso, che si uniscono 100 m più in là
+      { a: 1, b: 5, flags: FLAG.oneway },
+      { a: 5, b: 0, flags: FLAG.oneway },
+      { a: 5, b: 6 },
+    ]);
+    const [r] = ringsOf(g);
+    expect(r.smooth).toBe(true);
+    expect(r.splitters).toHaveLength(1);
+    // l'isola sta fra i due rami, fuori dall'anello
+    const isle = r.splitters[0];
+    const cx = isle.reduce((s, p) => s + p.x, 0) / isle.length;
+    const cz = isle.reduce((s, p) => s + p.z, 0) / isle.length;
+    expect(Math.hypot(cx - r.cx, cz - r.cz)).toBeGreaterThan(r.meanR + r.hw);
+    // i due raccordi affacciati non ci sono più
+    const out = r.branches.find((b) => b.edge === 5)!;
+    const inn = r.branches.find((b) => b.edge === 6)!;
+    expect(out.fillets.filter(Boolean)).toHaveLength(1);
+    expect(inn.fillets.filter(Boolean)).toHaveLength(1);
+  });
+
+  it('nelle svolte a destra il ciclista resta sull’asfalto, non sul ciglio', () => {
+    // da sud verso nord, poi a destra verso est: il percorso taglia la curva verso l'interno
+    const g = graphOf(
+      [
+        [0, 200],
+        [0, 0],
+        [200, 0],
+      ],
+      [
+        { a: 0, b: 1 },
+        { a: 1, b: 2 },
+      ],
+    );
+    const session = new WorldSession(worldOf(g), { edge: 0, dir: 1, s: 0 }, 0);
+    let worstOld = Infinity;
+    let worst = Infinity;
+    for (let d = 150; d <= 250; d += 0.5) {
+      const p = session.playerPose(d);
+      worst = Math.min(worst, g.asphaltMargin(p.x, p.z, p.y));
+      // come era prima: la corsia intera anche dentro la curva
+      const c = session.path.poseAt(d);
+      const lane = -(3 - 1.15);
+      worstOld = Math.min(worstOld, g.asphaltMargin(c.x + Math.cos(c.heading) * lane, c.z - Math.sin(c.heading) * lane, c.y));
+    }
+    expect(worstOld).toBeLessThan(0);
+    expect(worst).toBeGreaterThan(0.5);
+  });
+
+  it('in galleria: profondità dall’imbocco, galleria artificiale sull’accesso, e oltre l’imbocco il monte non è scavato', () => {
+    const g = graphOf(
+      [
+        [0, 0],
+        [0, -100],
+        [0, -300],
+        [0, -400],
+      ],
+      [
+        { a: 0, b: 1 },
+        { a: 1, b: 2, flags: FLAG.tunnel },
+        { a: 2, b: 3 },
+      ],
+    );
+    expect(tunnelDepth(g, g.edges[1], 100)).toBeCloseTo(100);
+    expect(tunnelDepth(g, g.edges[1], 10)).toBeCloseTo(10);
+    expect(tunnelDepth(g, g.edges[1], 190)).toBeCloseTo(10);
+    // la galleria artificiale: 12 m sulle due strade d'accesso, lì niente marciapiedi e guardrail
+    expect(portalClear(g, 0, false)).toBeGreaterThan(12);
+    expect(portalClear(g, 2, true)).toBeGreaterThan(12);
+    expect(portalClear(g, 0, true)).toBe(0);
+    // gli alberi non crescono dentro il tubo, sì sopra il monte
+    expect(inTube(g, 0, -200, 3)).toBe(true);
+    expect(inTube(g, 0, -200, 40)).toBe(false);
+    expect(inTube(g, 40, -200, 3)).toBe(false);
+    // un monte piatto a 30 m: la strada d'accesso (a quota 0) scava fino all'imbocco, non oltre
+    const terrain = { height: () => 30, cover: () => 0 } as unknown as Terrain;
+    const field = createWorldField(g, terrain, worldOf(g).features);
+    expect(field.height(0, -85, 10)).toBeLessThan(0);
+    expect(field.height(0, -115, 10)).toBeGreaterThan(25);
+  });
+
+  it('il terreno lontano si nasconde sotto ogni mattonella pronta, non solo nel quadrato tutto pronto', () => {
+    const mask = createFarMask(5);
+    // pronte: il centro e una dell'anello esterno, isolata
+    updateFarMask(mask, -1000, -1000, 500, 10, 10, (ix, iz) => (ix === 10 && iz === 10) || (ix === 12 && iz === 8));
+    expect(mask.data[2 * 5 + 2]).toBe(255);
+    expect(mask.data[0 * 5 + 4]).toBe(255);
+    expect(mask.data[2 * 5 + 3]).toBe(0);
+    expect(mask.uGrid.value.toArray()).toEqual([-1000 + 8 * 500, -1000 + 8 * 500, 500, 5]);
   });
 });

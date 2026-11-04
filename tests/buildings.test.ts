@@ -1,6 +1,9 @@
+import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { addBuilding, earcut, minRect, ringArea, roofShape, Tris, type BuildingColors } from '../src/open/buildings';
 import { BUILDING_KIND, type Building } from '../src/open/world';
+import { buildingsJob, type TileSpec } from '../src/open/tiles';
+import type { WorldField } from '../src/open/field';
 
 const C: BuildingColors = { wall: { r: 1, g: 0.9, b: 0.8 }, base: { r: 0.8, g: 0.7, b: 0.6 }, roof: { r: 0.5, g: 0.5, b: 0.5 }, tiles: { r: 0.7, g: 0.3, b: 0.2 }, blind: false };
 
@@ -103,5 +106,43 @@ describe('edifici', () => {
     const flat = normals(walls).filter((v) => Math.abs(v[0]) < 1e-6 && Math.abs(v[2]) < 1e-6);
     expect(flat.length).toBeGreaterThan(0);
     for (const v of flat) expect(v[1]).toBeGreaterThan(0);
+  });
+});
+
+describe('edifici sul pendio', () => {
+  /** Il terreno sale del 60% verso est: una casa di 10 m ha 6 m di dislivello sotto. */
+  const slope = { height: (x: number) => x * 0.6 } as unknown as WorldField;
+  const spec: TileSpec = { tx: 0, tz: 0, x0: -50, z0: -50, size: 100, spacing: 10, trees: 0, buildings: true, ring: 0 };
+  const run = (b: Building) => {
+    const job = buildingsJob(slope, [b], spec);
+    let r = job.next();
+    while (!r.done) r = job.next();
+    return r.value;
+  };
+  const ys = (g: THREE.BufferGeometry | null) => {
+    const out: number[] = [];
+    const p = g?.getAttribute('position');
+    if (p) for (let i = 0; i < p.count; i++) out.push(p.getY(i));
+    return out;
+  };
+
+  it('la casa non resta sepolta a monte: il tetto sta sopra il terreno più alto, lo zoccolo scende al più basso', () => {
+    const b = house(rect(10, 8, 0, 5, 0), 7);
+    const g = run(b);
+    const walls = ys(g.walls);
+    const roofs = ys(g.roofs);
+    // a valle il muro tocca il terreno (x = 0, quota 0), nessun angolo galleggia
+    expect(Math.min(...walls)).toBeLessThanOrEqual(0);
+    // a monte (x = 10, quota 6) la gronda è più di due metri sopra il terreno: si vede la casa
+    expect(Math.min(...roofs)).toBeGreaterThan(6 + 2);
+  });
+
+  it('in piano non cambia niente: base mezzo metro sotto il terreno, altezza dai dati', () => {
+    const flat = { height: () => 0 } as unknown as WorldField;
+    const job = buildingsJob(flat, [house(rect(10, 8, 0, 5, 0), 7)], spec);
+    let r = job.next();
+    while (!r.done) r = job.next();
+    const walls = ys(r.value.walls);
+    expect(Math.min(...walls)).toBeCloseTo(-0.6, 5);
   });
 });

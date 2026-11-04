@@ -3,7 +3,9 @@ import { ASPHALT_REPEAT_M, groundColor, hash2 } from '@/world/builders';
 import { CLS, FLAG, type Edge, type EdgePose, type WorldGraph } from './graph';
 import type { WorldField } from './field';
 import { BUILDING_KIND, COVER, type Building, type Place, type WorldFeatures } from './world';
-import { addBuilding, BLANK_UV, ringArea, Tris } from './buildings';
+import { addBuilding, BLANK_UV, earcut, ringArea, Tris } from './buildings';
+import { ringAt, ringBranch, ringsIn, smoothRingOf, type Pt, type RingGeo } from './rings';
+import { portalClear, tunnelGeometry } from './tunnels';
 
 /*
  * Le mattonelle del mondo vicino al ciclista: terreno raccordato alle strade, nastri d'asfalto
@@ -38,7 +40,9 @@ export interface TileMeshes {
   /** cordoli e marciapiedi dei paesi, a colori di vertice */
   kerb: THREE.BufferGeometry | null;
   rails: THREE.BufferGeometry | null;
+  /** gallerie: dentro (colori di vertice, luce cotta) e la carreggiata in galleria */
   tunnel: THREE.BufferGeometry | null;
+  tunnelRoad: THREE.BufferGeometry | null;
   buildings: BuildingMeshes;
   water: THREE.BufferGeometry | null;
   trees: { kind: TreeKind; x: number; y: number; z: number; s: number; r: number; tint: number }[];
@@ -299,7 +303,7 @@ const WALK_EDGE = new THREE.Color('#8d877d');
  * nelle curve strette e negli ultimi 15 m prima di un incrocio. Si campiona ogni 1,5 m, che
  * divide esattamente tutti i passi.
  */
-function centerLine(paint: Mesh, graph: WorldGraph, field: WorldField, e: Edge, s0: number, s1: number, lift: number, endA: number, endB: number): void {
+function centerLine(paint: Mesh, graph: WorldGraph, field: WorldField, e: Edge, s0: number, s1: number, lift: number, endA: number, endB: number, keep: (p: EdgePose, s: number) => boolean = () => true): void {
   const lo = Math.max(6, endA);
   const hi = e.length - Math.max(6, endB);
   const solidAt = (s: number) => (endA > 0 && s < endA + 15) || (endB > 0 && s > e.length - endB - 15) || bendAt(graph, e, s) > 0.62;
@@ -325,12 +329,17 @@ function centerLine(paint: Mesh, graph: WorldGraph, field: WorldField, e: Edge, 
     if (solidAt(s)) {
       // continua: nelle curve strette e prima degli incroci
       const p = graph.pose(e.id, s, 1);
+      if (!keep(p, s)) {
+        prev = null;
+        continue;
+      }
       if (prev) seg(prev, p);
       prev = p;
       continue;
     }
     prev = null;
     const p = graph.pose(e.id, s, 1);
+    if (!keep(p, s)) continue;
     const urban = URBAN.has(field.terrain.cover(p.x, p.z));
     const period = urban ? 7.5 : 12;
     const on = urban ? 3 : 4.5;
@@ -353,6 +362,7 @@ export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec):
   const concrete = new Mesh();
   const kerb = new Mesh();
   const tunnel = new Mesh();
+  const tunnelRoad = new Mesh();
   const x0 = spec.x0;
   const z0 = spec.z0;
   const x1 = spec.x0 + spec.size;
@@ -367,6 +377,8 @@ export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec):
   let count = 0;
   for (const id of ids) {
     const e = graph.edges[id];
+    // gli archi di una rotatoria liscia li disegna l'anello intero (drawRing), qui sotto
+    if (e.flags & FLAG.roundabout && smoothRingOf(graph, id)) continue;
     const runs = runsInside(graph, e, x0, z0, x1, z1, e.cls >= CLS.residential ? 2.5 : 3);
     const bridge = (e.flags & FLAG.bridge) !== 0;
     const tun = (e.flags & FLAG.tunnel) !== 0;
@@ -375,21 +387,44 @@ export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec):
     const lift = roadLift(e.cls);
     const surface = e.flags & FLAG.cobbles || e.cls === CLS.pedestrian ? stone : e.cls === CLS.cycleway ? cycle : asphalt;
     const nearEnd = (p: P) => p.d > 10 && p.d < e.length - 10;
-    const endA = junctionClear(graph, e.a, id);
-    const endB = junctionClear(graph, e.b, id);
+    /** il punto a `off` di lato (sinistra positiva) non cade sulla carreggiata di un'altra strada */
+    // (le strade si sovrappongono vicino ai nodi: a metà arco non si chiede, costa)
+    const offOthers = (p: P, off: number) => (p.d > 60 && p.d < e.length - 60) || graph.asphaltMargin(p.x + Math.cos(p.h) * off, p.z - Math.sin(p.h) * off, p.y, 1.5, id) < -0.05;
+    // ai rami delle rotatorie i cordoli ripartono dopo il raccordo (o dopo l'isola spartitraffico)
+    // e dentro la galleria artificiale davanti a un imbocco (tunnels.ts) niente marciapiedi
+    const ringA = ringBranch(graph, id, true)?.clear ?? 0;
+    const ringB = ringBranch(graph, id, false)?.clear ?? 0;
+    const endA = Math.max(junctionClear(graph, e.a, id), ringA, portalClear(graph, id, true));
+    const endB = Math.max(junctionClear(graph, e.b, id), ringB, portalClear(graph, id, false));
+    if (tun) {
+      // la galleria: tubo, luce, portali (tunnels.ts), campionata fitta per le pozze di luce
+      tunnelGeometry(graph, (x, z) => field.terrain.height(x, z), e, runsInside(graph, e, x0, z0, x1, z1, 1.5), { x0, z0, x1, z1 }, lift, { road: tunnelRoad, inner: tunnel, shell: concrete });
+      if (++count % 40 === 0) yield;
+      continue;
+    }
     // marciapiede: nei paesi, sulle strade da provinciale in giù, lontano dagli incroci
     const walkable = !bridge && !tun && !ring && e.cls >= CLS.secondary && e.cls <= CLS.residential && !(e.flags & FLAG.cobbles);
-    const walkAt = (p: P) => walkable && p.d > endA + 1 && p.d < e.length - endB - 1 && URBAN.has(field.terrain.cover(p.x, p.z));
+    // dopo un raccordo di rotatoria il marciapiede riparte subito, dove finisce il cordolo del raccordo
+    const walkA = ringA ? Math.max(ringA, junctionClear(graph, e.a, id) + 1) : endA + 1;
+    const walkB = ringB ? Math.max(ringB, junctionClear(graph, e.b, id) + 1) : endB + 1;
+    const walkAt = (p: P) => walkable && p.d > walkA && p.d < e.length - walkB && URBAN.has(field.terrain.cover(p.x, p.z));
+    // e mai sopra un'altra strada: due sensi unici che si uniscono, o una via che corre accanto,
+    // si prendevano il marciapiede dell'altra in mezzo alla carreggiata
+    const walkSide = (side: number) => (p: P) =>
+      walkAt(p) && ((p.d > 60 && p.d < e.length - 60) || graph.asphaltMargin(p.x + Math.cos(p.h) * side * (hw + 1), p.z - Math.sin(p.h) * side * (hw + 1), p.y, 2.5, id) < -0.4);
     const lineW = e.cls <= CLS.primary ? 0.15 : 0.12;
     for (const pts of runs) {
       if (pts.length < 2) continue;
       strip(surface, pts, hw, lift, -hw, lift, surface === stone ? 4 : surface === asphalt ? ASPHALT_REPEAT_M : 10);
       if (e.cls <= CLS.unclassified && !tun) {
-        strip(paint, pts, hw - 0.12, lift + 0.012, hw - 0.12 - lineW, lift + 0.012, 8, nearEnd);
-        strip(paint, pts, -hw + 0.12 + lineW, lift + 0.012, -hw + 0.12, lift + 0.012, 8, nearEnd);
+        // le linee di margine si fermano dove passano sull'asfalto di un'altra strada (due sensi
+        // unici che confluiscono, una via che si affianca): prima si incrociavano a X
+        const lineAt = (side: number) => (p: P) => nearEnd(p) && offOthers(p, side * (hw - 0.2));
+        strip(paint, pts, hw - 0.12, lift + 0.012, hw - 0.12 - lineW, lift + 0.012, 8, lineAt(1));
+        strip(paint, pts, -hw + 0.12 + lineW, lift + 0.012, -hw + 0.12, lift + 0.012, 8, lineAt(-1));
       }
       if (e.cls <= CLS.tertiary && hw >= 2.7 && !ring && !(e.flags & (FLAG.oneway | FLAG.onewayRev))) {
-        centerLine(paint, graph, field, e, pts[0].d, pts[pts.length - 1].d, lift + 0.014, endA, endB);
+        centerLine(paint, graph, field, e, pts[0].d, pts[pts.length - 1].d, lift + 0.014, endA, endB, (p, s) => offOthers({ x: p.x, y: p.y, z: p.z, h: p.heading, d: s }, 0));
       }
       if (bridge) {
         // impalcato: cordolo in cemento coi due fianchi, bordo esterno fino alla trave, pile fino al terreno
@@ -405,9 +440,6 @@ export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec):
           if (p.y - ground < 4) continue;
           pier(concrete, p, Math.max(1.2, hw * 0.45), p.y - 1.6, ground - 2);
         }
-      } else if (tun) {
-        // galleria: volta a botte sopra la carreggiata
-        tunnelVault(tunnel, pts, hw + 1.2, lift);
       } else {
         const noWalk = (p: P) => !walkAt(p);
         strip(verge, pts, hw + 0.8, lift - 0.1, hw, lift - 0.02, 8, noWalk);
@@ -420,15 +452,18 @@ export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec):
           const tone = WALK[Math.floor(hash2(e.id, 3) * WALK.length) % WALK.length];
           for (const s of [1, -1]) {
             // il fianco del cordolo chiaro, il piano del marciapiede, il fianco esterno che scende
-            strip(kerb, pts, s * hw, lift - 0.02, s * hw, top, 8, walkAt, KERB);
-            strip(kerb, pts, s * (hw + 1.75), top, s * hw, top, 8, walkAt, tone);
-            strip(kerb, pts, s * (hw + 1.75), top, s * (hw + 2.1), -2.8, 8, walkAt, WALK_EDGE);
+            const keep = walkSide(s);
+            strip(kerb, pts, s * hw, lift - 0.02, s * hw, top, 8, keep, KERB);
+            strip(kerb, pts, s * (hw + 1.75), top, s * hw, top, 8, keep, tone);
+            strip(kerb, pts, s * (hw + 1.75), top, s * (hw + 2.1), -2.8, 8, keep, WALK_EDGE);
           }
         }
       }
     }
     if (++count % 40 === 0) yield;
   }
+  // le rotatorie lisce: ognuna nella mattonella che ne ha il centro
+  for (const g of ringsIn(graph, x0, z0, x1, z1)) if (g.smooth) drawRing(g, graph, field, { surface: g.cobbles ? stone : asphalt, paint, kerb });
   return {
     asphalt: asphalt.build(),
     stone: stone.build(),
@@ -437,8 +472,202 @@ export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec):
     verge: verge.build(),
     concrete: concrete.build(),
     kerb: kerb.build(),
-    tunnel: tunnel.build(),
+    tunnel: tunnel.build(false),
+    tunnelRoad: tunnelRoad.build(false),
   };
+}
+
+// ---------- rotatorie ----------
+
+/** Due triangoli fra a0-a1 (una sezione) e b0-b1 (la successiva), con la faccia in su. */
+function quadUp(m: Mesh, a0: number, a1: number, b0: number, b1: number): void {
+  const P = m.pos;
+  const ny = (P[a1 * 3 + 2] - P[a0 * 3 + 2]) * (P[b0 * 3] - P[a0 * 3]) - (P[a1 * 3] - P[a0 * 3]) * (P[b0 * 3 + 2] - P[a0 * 3 + 2]);
+  if (ny >= 0) m.idx.push(a0, a1, b0, a1, b1, b0);
+  else m.idx.push(a0, b0, a1, a1, b0, b1);
+}
+
+/** Un triangolo con la faccia in su. */
+function triUpIdx(m: Mesh, a: number, b: number, c: number): void {
+  const P = m.pos;
+  const ny = (P[b * 3 + 2] - P[a * 3 + 2]) * (P[c * 3] - P[a * 3]) - (P[b * 3] - P[a * 3]) * (P[c * 3 + 2] - P[a * 3 + 2]);
+  if (ny >= 0) m.idx.push(a, b, c);
+  else m.idx.push(a, c, b);
+}
+
+const RING_VERGE = new THREE.Color('#8f8574');
+const ISLE_GRASS = new THREE.Color('#5f8f3e');
+const ISLE_STONE = new THREE.Color('#aaa59a');
+const ISLE_FACE = new THREE.Color('#bdb8ae');
+
+/** Un punto del cordolo: dove sta, la quota dell'asfalto lì, e da che parte sta il fuori. */
+interface CurbPt {
+  x: number;
+  y: number;
+  z: number;
+  ox: number;
+  oz: number;
+}
+
+/**
+ * Il cordolo lungo una linea: fianco di 14 cm, testa di 22 cm, poi nei paesi il marciapiede e il
+ * fianco che scende nel terreno, fuori la banchina che scende. È la sezione dei marciapiedi delle
+ * strade (roadsJob): il cordolo dell'anello continua in quello del ramo.
+ */
+function curbAlong(kerb: Mesh, line: CurbPt[], urban: boolean, walk: THREE.Color): void {
+  if (line.length < 2) return;
+  const prof: [number, number, THREE.Color][] = urban
+    ? [
+        [0, -0.04, KERB],
+        [0, 0.14, KERB],
+        [0.22, 0.14, walk],
+        [1.75, 0.14, WALK_EDGE],
+        [2.1, -2.8, WALK_EDGE],
+      ]
+    : [
+        [0, -0.04, KERB],
+        [0, 0.12, KERB],
+        [0.22, 0.12, RING_VERGE],
+        [1.3, -0.12, RING_VERGE],
+        [2.4, -3, RING_VERGE],
+      ];
+  let prev = -1;
+  for (const p of line) {
+    const base = kerb.pos.length / 3;
+    for (const [o, dy, c] of prof) kerb.vertex(p.x + p.ox * o, p.y + dy, p.z + p.oz * o, 0, 0, c);
+    if (prev >= 0) for (let j = 0; j < prof.length - 1; j++) kerb.idx.push(prev + j, base + j, prev + j + 1, prev + j + 1, base + j, base + j + 1);
+    prev = base;
+  }
+}
+
+function wrapA(a: number): number {
+  let d = a;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return d;
+}
+
+/**
+ * Una rotatoria liscia (rings.ts): l'anello d'asfalto, i raccordi alle bocche, il cordolo fra una
+ * bocca e l'altra, le isole spartitraffico, la linea bianca continua dentro e quella fuori.
+ * L'anello sta un centimetro sopra tutti i rami: le loro teste squadrate finiscono sotto.
+ */
+/** Il sollevamento dell'asfalto di una rotatoria: liscia, un centimetro sopra tutti i rami. */
+export function ringLift(g: RingGeo): number {
+  let lift = roadLift(g.cls);
+  if (!g.smooth) return lift;
+  for (const b of g.branches) lift = Math.max(lift, roadLift(b.cls));
+  return lift + 0.012;
+}
+
+function drawRing(g: RingGeo, graph: WorldGraph, field: WorldField, m: { surface: Mesh; paint: Mesh; kerb: Mesh }): void {
+  const lift = ringLift(g);
+  const fl = lift - 0.006;
+  const urban = URBAN.has(field.terrain.cover(g.cx, g.cz));
+  const walk = WALK[Math.floor(hash2(g.cx, g.cz) * WALK.length) % WALK.length];
+  const at = (th: number, off: number) => {
+    const a = ringAt(g, th);
+    const r = a.r + off;
+    return { x: g.cx + Math.cos(th) * r, y: a.y, z: g.cz + Math.sin(th) * r };
+  };
+  const TAU = Math.PI * 2;
+  // la carreggiata, con la trama che scorre lungo l'anello
+  let prev = -1;
+  let run = 0;
+  let last: { x: number; z: number } | null = null;
+  for (let k = 0; k <= g.n; k++) {
+    const th = -Math.PI + (k / g.n) * TAU;
+    const i = at(th, -g.hw);
+    const o = at(th, g.hw);
+    const mx = (i.x + o.x) / 2;
+    const mz = (i.z + o.z) / 2;
+    if (last) run += Math.hypot(mx - last.x, mz - last.z);
+    last = { x: mx, z: mz };
+    const a = m.surface.vertex(i.x, i.y + lift, i.z, 0, run / ASPHALT_REPEAT_M);
+    m.surface.vertex(o.x, o.y + lift, o.z, 1, run / ASPHALT_REPEAT_M);
+    if (prev >= 0) quadUp(m.surface, prev, prev + 1, a, a + 1);
+    prev = a;
+  }
+  // linee bianche da 12 cm: continua dentro, fra le bocche fuori
+  const line = (th0: number, th1: number, o0: number, o1: number) => {
+    const steps = Math.max(1, Math.ceil(((th1 - th0) * (g.meanR + o0)) / 1.2));
+    let p = -1;
+    for (let k = 0; k <= steps; k++) {
+      const th = th0 + ((th1 - th0) * k) / steps;
+      const a = at(th, o0);
+      const b = at(th, o1);
+      const q = m.paint.vertex(a.x, a.y + lift + 0.012, a.z);
+      m.paint.vertex(b.x, b.y + lift + 0.012, b.z);
+      if (p >= 0) quadUp(m.paint, p, p + 1, q, q + 1);
+      p = q;
+    }
+  };
+  line(-Math.PI, Math.PI, -g.hw + 0.25, -g.hw + 0.37);
+  for (const [a, b] of g.curbs) if ((b - a) * g.meanR > 1.4) line(a + 0.4 / g.meanR, b - 0.4 / g.meanR, g.hw - 0.37, g.hw - 0.25);
+  // il cordolo esterno fra le bocche: il fuori è lontano dal centro
+  for (const [a, b] of g.curbs) {
+    const pts: CurbPt[] = [];
+    const steps = Math.max(1, Math.ceil(((b - a) * (g.meanR + g.hw)) / 1.5));
+    for (let k = 0; k <= steps; k++) {
+      const th = a + ((b - a) * k) / steps;
+      const p = at(th, g.hw);
+      pts.push({ x: p.x, y: p.y + lift, z: p.z, ox: Math.cos(th), oz: Math.sin(th) });
+    }
+    curbAlong(m.kerb, pts, urban, walk);
+  }
+  // i raccordi: un ventaglio dallo spigolo vivo all'arco, e il cordolo che segue l'arco
+  for (const b of g.branches) {
+    const e = graph.edges[b.edge];
+    for (const f of b.fillets) {
+      if (!f) continue;
+      const a0 = Math.atan2(f.az - f.fz, f.ax - f.fx);
+      const da = wrapA(Math.atan2(f.bz - f.fz, f.bx - f.fx) - a0);
+      const yA = ringAt(g, Math.atan2(f.az - g.cz, f.ax - g.cx)).y;
+      const tb = Math.min(e.length, f.t1);
+      const yB = graph.pose(b.edge, b.atA ? tb : e.length - tb, 1).y;
+      const yP = ringAt(g, Math.atan2(f.pz - g.cz, f.px - g.cx)).y;
+      const steps = Math.max(2, Math.ceil(Math.abs(da) * f.r));
+      const c = m.surface.vertex(f.px, yP + fl, f.pz, f.px / 6, f.pz / ASPHALT_REPEAT_M);
+      const curb: CurbPt[] = [];
+      let p = -1;
+      for (let k = 0; k <= steps; k++) {
+        const u = k / steps;
+        const ang = a0 + da * u;
+        const x = f.fx + Math.cos(ang) * f.r;
+        const z = f.fz + Math.sin(ang) * f.r;
+        const y = yA + (yB - yA) * u;
+        const q = m.surface.vertex(x, y + fl, z, x / 6, z / ASPHALT_REPEAT_M);
+        if (p >= 0) triUpIdx(m.surface, c, p, q);
+        p = q;
+        curb.push({ x, y: y + fl, z, ox: -Math.cos(ang), oz: -Math.sin(ang) });
+      }
+      curbAlong(m.kerb, curb, urban, walk);
+    }
+  }
+  for (const isle of g.splitters) islandTop(m.kerb, isle, lift);
+}
+
+/** Un'isola rialzata di 15 cm sull'anello di punti (x, z, quota dell'asfalto): prato se c'è posto. */
+function islandTop(kerb: Mesh, ring: Pt[], lift: number): void {
+  const flat = new Float32Array(ring.length * 2);
+  ring.forEach((p, i) => {
+    flat[i * 2] = p.x;
+    flat[i * 2 + 1] = p.z;
+  });
+  const top = Math.abs(ringArea(flat)) > 25 ? ISLE_GRASS : ISLE_STONE;
+  const base = kerb.pos.length / 3;
+  for (const p of ring) kerb.vertex(p.x, p.y + lift + 0.15, p.z, 0, 0, top);
+  const tri = earcut(flat);
+  for (let i = 0; i < tri.length; i += 3) triUpIdx(kerb, base + tri[i], base + tri[i + 1], base + tri[i + 2]);
+  for (let i = 0; i < ring.length; i++) {
+    const p = ring[i];
+    const q = ring[(i + 1) % ring.length];
+    const k = kerb.vertex(p.x, p.y + lift - 0.06, p.z, 0, 0, ISLE_FACE);
+    kerb.vertex(q.x, q.y + lift - 0.06, q.z, 0, 0, ISLE_FACE);
+    kerb.vertex(p.x, p.y + lift + 0.15, p.z, 0, 0, ISLE_FACE);
+    kerb.vertex(q.x, q.y + lift + 0.15, q.z, 0, 0, ISLE_FACE);
+    kerb.idx.push(k, k + 2, k + 1, k + 1, k + 2, k + 3);
+  }
 }
 
 export function pier(m: Mesh, p: P, w: number, top: number, bottom: number): void {
@@ -460,30 +689,6 @@ export function pier(m: Mesh, p: P, w: number, top: number, bottom: number): voi
     m.vertex(ax, bottom, az);
     m.vertex(bx, bottom, bz);
     m.idx.push(k, k + 2, k + 1, k + 1, k + 2, k + 3);
-  }
-}
-
-function tunnelVault(m: Mesh, pts: P[], r: number, lift: number): void {
-  const seg = 8;
-  let prev = -1;
-  for (const p of pts) {
-    const lx = Math.cos(p.h);
-    const lz = -Math.sin(p.h);
-    const base = m.pos.length / 3;
-    for (let s = 0; s <= seg; s++) {
-      const a = (s / seg) * Math.PI;
-      const off = Math.cos(a) * r;
-      const up = Math.sin(a) * (r * 0.95) + 0.4;
-      m.vertex(p.x + lx * off, p.y + lift + up, p.z + lz * off, s / seg, p.d / 6);
-    }
-    if (prev >= 0) {
-      for (let s = 0; s < seg; s++) {
-        const a = prev + s;
-        const b = base + s;
-        m.idx.push(a, a + 1, b, a + 1, b + 1, b);
-      }
-    }
-    prev = base;
   }
 }
 
@@ -531,10 +736,12 @@ export function* buildingsJob(field: WorldField, list: Building[], spec: TileSpe
     cx /= m;
     cz /= m;
     if (cx < spec.x0 || cx >= x1 || cz < spec.z0 || cz >= z1) continue;
-    // base: il punto più basso del terreno sotto l'impronta, così nessun angolo galleggia
-    let low = Infinity;
-    for (let i = 0; i < r.length; i += 2) low = Math.min(low, field.height(r[i], r[i + 1], spec.spacing));
-    const ground = low - 0.6;
+    // il terreno sotto l'impronta, ai vertici e lungo i lati: il punto più basso fa da zoccolo
+    // (nessun angolo galleggia), quello più alto da piano terra (sul pendio la casa non resta mezza
+    // sepolta a monte: scende con lo zoccolo a valle, come le case vere)
+    const { low, high } = footprintGround(field, r, spec.spacing, cx, cz);
+    const plinth = low - 0.6;
+    const ground = Math.max(plinth, Math.min(high - 1, low + 12));
     const seed = hash2(Math.floor(cx), Math.floor(cz));
     const stone = b.kind === BUILDING_KIND.church || b.kind === BUILDING_KIND.tower || b.kind === BUILDING_KIND.castle;
     if (b.kind === BUILDING_KIND.industrial) wall.set(WALL_INDUSTRIAL[Math.floor(seed * 3) % 3]);
@@ -545,7 +752,7 @@ export function* buildingsJob(field: WorldField, list: Building[], spec: TileSpe
     base.copy(wall).multiplyScalar(0.84);
     // i tetti in coppi sono quasi tutti rossi: il grigio dei dati OSM resta ai tetti piani
     const pitchedRoof = b.roof === 0 || b.kind === BUILDING_KIND.house ? roof : tmpC.set(ROOFS[0][Math.floor(seed * 4) % 4]);
-    const { top, shape } = addBuilding(walls, roofs, b, ground, { wall, base, roof, tiles: pitchedRoof, blind: stone || b.kind === BUILDING_KIND.industrial });
+    const { top, shape } = addBuilding(walls, roofs, b, ground, { wall, base, roof, tiles: pitchedRoof, blind: stone || b.kind === BUILDING_KIND.industrial }, plinth);
     if (b.kind === BUILDING_KIND.tower && m <= 8 && shape === 'flat') {
       // cuspide dei campanili
       const apex = top + Math.min(9, Math.sqrt(Math.abs(ringArea(r))) * 0.9);
@@ -566,6 +773,32 @@ export function* buildingsJob(field: WorldField, list: Building[], spec: TileSpe
     if (++count % 150 === 0) yield;
   }
   return { walls: trisGeometry(walls), roofs: trisGeometry(roofs) };
+}
+
+/**
+ * La quota più bassa e più alta del terreno sotto un'impronta: vertici, punti lungo i lati ogni
+ * 6 m e il centro. Lo stesso `field.height` della mattonella, così vale quello che si vede.
+ */
+export function footprintGround(field: Pick<WorldField, 'height'>, r: ArrayLike<number>, spacing: number, cx: number, cz: number): { low: number; high: number } {
+  let low = Infinity;
+  let high = -Infinity;
+  const at = (x: number, z: number) => {
+    const h = field.height(x, z, spacing);
+    if (h < low) low = h;
+    if (h > high) high = h;
+  };
+  const m = r.length / 2;
+  for (let i = 0; i < m; i++) {
+    const ax = r[i * 2];
+    const az = r[i * 2 + 1];
+    const bx = r[((i + 1) % m) * 2];
+    const bz = r[((i + 1) % m) * 2 + 1];
+    at(ax, az);
+    const k = Math.floor(Math.hypot(bx - ax, bz - az) / 6);
+    for (let j = 1; j <= k; j++) at(ax + ((bx - ax) * j) / (k + 1), az + ((bz - az) * j) / (k + 1));
+  }
+  at(cx, cz);
+  return { low, high };
 }
 
 function trisGeometry(t: Tris): THREE.BufferGeometry | null {
@@ -610,7 +843,7 @@ export function* treesJob(field: WorldField, spec: TileSpec): Generator<void, Ti
         const x = cx + (rx - 0.5) * cell;
         const z = cz + (rz - 0.5) * cell;
         const y = field.height(x, z, spec.spacing);
-        if (field.lastRoadDist() < 4 || field.lastWater()) continue;
+        if (field.lastRoadDist() < 4 || field.lastWater() || field.inTube(x, z, y)) continue;
         const kind = cov === COVER.rock ? 'rock' : species(y, hash2(x * 1.7, z * 2.3));
         if (!kind) continue;
         // pendenza dal terreno: sulle pareti non cresce un bosco
@@ -743,15 +976,22 @@ export function* furnitureJob(graph: WorldGraph, field: WorldField, places: Plac
     }
     // lampioni nei tratti urbani, lontano dalle estremità (gli incroci li hanno già)
     if (!(e.flags & FLAG.bridge)) {
+      const pa = portalClear(graph, e.id, true);
+      const pb = portalClear(graph, e.id, false);
       for (let s = 15; s < e.length - 10; s += 30) {
+        if (s < pa || s > e.length - pb) continue;
         const k = Math.round((s / e.length) * n);
         if (!urban[k]) continue;
         const p = graph.pose(e.id, s, 1);
         if (!inside(p.x, p.z)) continue;
         const side = Math.floor(s / 30) % 2 === 0 ? 1 : -1;
         const off = e.hw + 0.9;
+        const lx = p.x + Math.cos(p.heading) * off * side;
+        const lz = p.z - Math.sin(p.heading) * off * side;
+        // mai in mezzo a un'altra strada (due sensi unici che confluiscono, una via accanto)
+        if (graph.asphaltMargin(lx, lz, p.y, 1.5, e.id) > -0.3) continue;
         // h: rotazione che porta il braccio (+z del modello) verso il centro della strada
-        lamps.push({ x: p.x + Math.cos(p.heading) * off * side, y: p.y, z: p.z - Math.sin(p.heading) * off * side, h: Math.atan2(-Math.cos(p.heading) * side, Math.sin(p.heading) * side) });
+        lamps.push({ x: lx, y: p.y, z: lz, h: Math.atan2(-Math.cos(p.heading) * side, Math.sin(p.heading) * side) });
       }
     }
     // ingresso nell'abitato: almeno 60 m di campagna e poi almeno 40 m di case, in un verso o nell'altro
@@ -771,7 +1011,10 @@ export function* furnitureJob(graph: WorldGraph, field: WorldField, places: Plac
         if (!name) continue;
         // a destra di chi entra
         const off = e.hw + 1.4;
-        towns.push({ x: p.x - Math.cos(p.heading) * off, y: p.y, z: p.z + Math.sin(p.heading) * off, h: p.heading, name });
+        const tx = p.x - Math.cos(p.heading) * off;
+        const tz = p.z + Math.sin(p.heading) * off;
+        if (graph.asphaltMargin(tx, tz, p.y, 1.5, e.id) > -0.3) continue;
+        towns.push({ x: tx, y: p.y, z: tz, h: p.heading, name });
         k += 6;
       }
     }

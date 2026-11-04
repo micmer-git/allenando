@@ -82,6 +82,8 @@ async function phone(label, isolated = true) {
   const errors = [];
   handlers.set(sessionId, (msg) => {
     if (msg.method === 'Runtime.exceptionThrown') errors.push(msg.params.exceptionDetails.exception?.description ?? msg.params.exceptionDetails.text);
+    // anche console.error: gli errori dentro useFrame (r3f) arrivano solo da lì
+    if (msg.method === 'Runtime.consoleAPICalled' && msg.params.type === 'error') errors.push(msg.params.args.map((a) => a.description ?? a.value ?? '').join(' ').slice(0, 600));
     if (msg.method === 'Log.entryAdded' && msg.params.entry.level === 'error' && !/favicon/.test(msg.params.entry.url ?? '')) errors.push(`${msg.params.entry.text} ${msg.params.entry.url ?? ''}`);
   });
   const s = (m, p) => send(m, p, sessionId);
@@ -158,7 +160,7 @@ try {
 
   if (process.env.SPOTS) {
     for (const spot of process.env.SPOTS.split(';').filter(Boolean)) {
-      const [name, path] = spot.split('|');
+      const [name, path, cam] = spot.split('|');
       await a.go(path);
       const t0 = Date.now();
       const ok = await a.waitFor(`document.querySelector('[data-testid=world-ready]')?.dataset.ready === 'yes'`, 120000);
@@ -168,6 +170,9 @@ try {
         await a.evaluate(`(() => { const d = [...document.querySelectorAll('details')].find((x) => x.textContent.includes('Impostazioni')); if (d) d.open = true;
           [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Mezzodì')?.click(); return true; })()`);
       }
+      // CAM="indietro,su[,lato]" (o un terzo campo del punto): la camera di collaudo di WorldCam, per guardare un incrocio dall'alto
+      const view = cam ?? process.env.CAM;
+      await a.evaluate(`(() => { globalThis.__orobiaCam = ${view ? `[${view}]` : 'undefined'}; return true; })()`);
       await sleep(Number(process.env.SETTLE ?? 9000));
       // CLEAN=1: solo il 3D, senza i pannelli sopra (per guardare la strada)
       if (process.env.CLEAN) await a.evaluate(`(() => { const st = document.createElement('style'); st.textContent = '* { visibility: hidden !important } canvas { visibility: visible !important }'; document.head.appendChild(st); return true; })()`);

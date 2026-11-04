@@ -344,6 +344,42 @@ export class WorldGraph {
     return best;
   }
 
+  /**
+   * Quanto (x, z) sta dentro l'asfalto disegnato: metri dal bordo della carreggiata più vicina,
+   * positivi dentro, negativi fuori. Contano solo le strade a ±2,5 m dalla quota y, così un ponte
+   * sopra la testa non vale come asfalto sotto le ruote. −Infinity se non c'è strada entro `reach`.
+   * `except`: un arco da non contare (per sapere se il marciapiede di una strada cade su un'altra).
+   */
+  asphaltMargin(x: number, z: number, y: number, reach = 12, except = -1): number {
+    // solo le celle che il quadrato ±reach tocca davvero: di solito una
+    const cx0 = Math.floor((x - reach) / CELL);
+    const cx1 = Math.floor((x + reach) / CELL);
+    const cz0 = Math.floor((z - reach) / CELL);
+    const cz1 = Math.floor((z + reach) / CELL);
+    let best = -Infinity;
+    for (let cz = cz0; cz <= cz1; cz++) {
+      for (let cx = cx0; cx <= cx1; cx++) {
+        const bucket = this.grid.get(cellKey(cx, cz));
+        if (!bucket) continue;
+        for (const code of bucket) {
+          if (Math.floor(code / 4096) === except) continue;
+          const e = this.edges[Math.floor(code / 4096)];
+          const k = code % 4096;
+          const ax = e.xs[k];
+          const az = e.zs[k];
+          const dx = e.xs[k + 1] - ax;
+          const dz = e.zs[k + 1] - az;
+          const len2 = dx * dx + dz * dz || 1;
+          const u = Math.min(1, Math.max(0, ((x - ax) * dx + (z - az) * dz) / len2));
+          if (Math.abs(e.ys[k] + (e.ys[k + 1] - e.ys[k]) * u - y) > 2.5) continue;
+          const m = e.hw - Math.hypot(x - ax - dx * u, z - az - dz * u);
+          if (m > best) best = m;
+        }
+      }
+    }
+    return best;
+  }
+
   /** Gli archi con almeno un segmento nelle celle entro r metri da (x, z). */
   edgesNear(x: number, z: number, r: number): Set<number> {
     const out = new Set<number>();

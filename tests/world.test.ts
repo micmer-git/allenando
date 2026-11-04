@@ -7,6 +7,8 @@ import { planAB } from '../src/open/ab';
 import { WorldSession } from '../src/open/session';
 import { decodeFeatures, type RideDef, type WorldData } from '../src/open/world';
 import { WORLD_EDGES, WORLD_ID, WORLD_RIDES } from '../src/multiplayer/world-rides';
+import { ringsOf } from '../src/open/rings';
+import { portalClear, tunnelDepth } from '../src/open/tunnels';
 
 // Il mondo di Bergamo come lo scarica la pagina: grafo e percorsi generati da build-world.
 const dir = join(__dirname, '..', 'public', 'world', 'bergamo');
@@ -112,5 +114,36 @@ describe('mondo di Bergamo', () => {
       expect(session.path.length, `${name}: il percorso si allunga`).toBeGreaterThan(15000);
       expect(Math.max(...seen.values()), `${name}: nessuna strada fatta più di due volte in 15 km`).toBeLessThanOrEqual(2);
     }
+  });
+});
+
+describe('strade vere: rotatorie e gallerie', () => {
+  it('quasi tutte le rotatorie diventano anelli lisci, con numeri sani', () => {
+    const rings = ringsOf(graph);
+    expect(rings.length).toBeGreaterThan(300);
+    expect(rings.filter((r) => r.smooth).length / rings.length).toBeGreaterThan(0.95);
+    for (const r of rings) {
+      if (!r.smooth) continue;
+      for (const v of r.rad) expect(Number.isFinite(v) && v > r.hw).toBe(true);
+      for (const b of r.branches) for (const f of b.fillets) if (f) expect(Number.isFinite(f.fx + f.fz + f.t1)).toBe(true);
+    }
+    // piazzale Marconi (22134): un anello di ~10 m, due rami, ognuno col suo raccordo
+    const marconi = rings.find((r) => r.edges.includes(22134))!;
+    expect(marconi.smooth).toBe(true);
+    expect(marconi.branches.length).toBe(2);
+  });
+
+  it('la galleria Goggia sulla SS470: profonda a metà, galleria artificiale ai due imbocchi', () => {
+    const e = graph.edges[1784];
+    expect(e.name).toContain('Goggia');
+    expect(tunnelDepth(graph, e, e.length / 2)).toBeGreaterThan(250);
+    let ext = 0;
+    for (const node of [e.a, e.b]) {
+      for (let i = graph.adjStart[node]; i < graph.adjStart[node + 1]; i++) {
+        const q = graph.edges[graph.adjEdges[i]];
+        if (q.id !== e.id) ext += portalClear(graph, q.id, q.a === node) > 0 ? 1 : 0;
+      }
+    }
+    expect(ext).toBe(2);
   });
 });
