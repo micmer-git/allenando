@@ -2,6 +2,7 @@ import type { Track } from '@/domain/track';
 import type { RideEngine } from '@/sim/engine';
 import type { WorldSession } from '@/open/session';
 import { POI_LABEL, type PoiKind, type WorldData } from '@/open/world';
+import { monumentiPronti, monumentoPoiKind } from '@/open/monumenti';
 import { postResult } from '@/open/progress';
 import { archSpecs, type ArchSpec, type Segment } from './arches';
 import type { PersonalBest, SegmentResult } from './career';
@@ -174,6 +175,12 @@ export class RideGame {
           this.poisPassed.push(poi.id);
           this.poiToast = { name: poi.name || POI_LABEL[poi.kind], kind: poi.kind, at: performance.now() };
         }
+      }
+      // i monumenti (src/open/monumenti.ts): punti caldi anche loro, col nome, entro la loro portata
+      for (const m of monumentiPronti()) {
+        if (seen.has(`m${m.id}`) || (m.x - p.x) ** 2 + (m.z - p.z) ** 2 > m.reach * m.reach) continue;
+        this.poisPassed.push(`m${m.id}`);
+        this.poiToast = { name: m.name, kind: monumentoPoiKind(m), at: performance.now() };
       }
     }
     if (this.poiToast && performance.now() - this.poiToast.at > 5000) this.poiToast = null;

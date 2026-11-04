@@ -40,6 +40,7 @@ import {
   stoneTexture,
 } from '@/world/roadside';
 import { ROADSIDE_KINDS, streetJob, type RoadsideItems, type RoadsideKind } from './streets';
+import { Monumenti } from './MonumentiScene';
 
 const QUALITY = {
   low: { tile: 500, ring: 2, spacing: 16, trees: 0.9, far: 6000, farStride: 2, npcs: 6, dpr: 1 as number | [number, number] },
@@ -137,6 +138,7 @@ function WorldContent(props: WorldSceneProps) {
       <NearTiles {...props} mats={mats} rect={farRect.current} />
       <Lakes data={data} />
       <Walls data={data} field={field} />
+      <Monumenti playerPose={props.playerPose} />
       <Labels data={data} engine={props.engine} playerPose={props.playerPose} names={names} />
       <Landmarks data={data} playerPose={props.playerPose} names={names} />
       <Declutter names={names} />

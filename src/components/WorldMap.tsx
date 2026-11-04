@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CLS, type Leg } from '@/open/graph';
 import type { WorldData } from '@/open/world';
+import { drawMonumenti, loadMonumenti, type Monumento } from '@/open/monumenti';
 
 /**
  * La carta del mondo: rilievo ombreggiato dal DEM a 250 m, fiumi, laghi, strade per classe,
@@ -72,6 +73,8 @@ export function WorldMap({
   const b = data.graph.bounds;
   const [view, setView] = useState<View>({ cx: (b.x0 + b.x1) / 2, cz: (b.z0 + b.z1) / 2, mpp: 120 });
   const [width, setWidth] = useState(360);
+  const [monumenti, setMonumenti] = useState<readonly Monumento[]>([]);
+  useEffect(() => void loadMonumenti(data.graph.id).then(setMonumenti), [data]);
 
   // rilievo: un'immagine sola dalla griglia lontana, calcolata una volta
   const relief = useMemo(() => (far ? hillshade(data, far) : null), [data, far]);
@@ -104,7 +107,8 @@ export function WorldMap({
     if (!g) return;
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     draw(g, data, relief, view, width, height, overlays, markers);
-  }, [data, relief, view, width, height, overlays, markers]);
+    drawMonumenti(g, monumenti, view, width, height);
+  }, [data, relief, view, width, height, overlays, markers, monumenti]);
 
   // trascinare, rotella, pizzico
   const drag = useRef<{ x: number; y: number; moved: boolean; pts: Map<number, { x: number; y: number }>; dist0: number; mpp0: number } | null>(null);
