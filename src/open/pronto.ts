@@ -15,10 +15,46 @@ export function tileDist(t: { ix: number; iz: number }, x0: number, z0: number, 
 
 /**
  * Avanzamento da 0 a 1: le mattonelle entro READY_RADIUS in scena, e il terreno lontano che conta
- * come una mattonella. Vale 1 solo quando c'è tutto.
+ * come una mattonella. Conta anche i passi a metà (`nearPartial`: DEM arrivato, terreno e strade
+ * in costruzione, arredo), così un caricamento lento va avanti invece di sembrare fermo. Vale 1
+ * solo quando c'è tutto.
  */
-export function loadProgress(c: { near: number; nearReady: number }, farLoaded: boolean): number {
+export function loadProgress(c: { near: number; nearReady: number; nearPartial?: number }, farLoaded: boolean): number {
   if (c.near === 0) return farLoaded ? 0.05 : 0;
-  const done = c.nearReady + (farLoaded ? 1 : 0);
-  return done >= c.near + 1 ? 1 : Math.min(0.99, done / (c.near + 1));
+  const far = farLoaded ? 1 : 0;
+  if (c.nearReady >= c.near && far) return 1;
+  const done = Math.max(c.nearReady, c.nearPartial ?? 0) + far;
+  return Math.min(0.99, done / (c.near + 1));
+}
+
+/** A che punto è una mattonella, da 0 a 1 (1 = in scena col suo arredo). */
+export function tileStage(t: {
+  state: 'wait' | 'build' | 'ready';
+  shown: boolean;
+  detail: 'none' | 'build' | 'ready';
+  dshown: boolean;
+  steps: number;
+  dsteps: number;
+}, demReady: boolean): number {
+  if (t.state === 'wait') return demReady ? 0.1 : 0;
+  // i passi del lavoro (terreno, strade, case, alberi): una curva che sale e non arriva mai da sola
+  if (t.state === 'build') return 0.1 + 0.45 * (1 - Math.exp(-t.steps / 40));
+  if (!t.shown) return 0.58;
+  if (t.detail === 'none') return 0.6;
+  if (t.detail === 'build') return 0.6 + 0.3 * (1 - Math.exp(-t.dsteps / 20));
+  return t.dshown ? 1 : 0.93;
+}
+
+/** Perché si è detto «pronto»: tutto intorno, un errore (DEM o terreno lontano mancanti), il tetto di tempo. */
+export type ReadyReason = 'tutto' | 'errore' | 'tetto';
+
+/**
+ * Si dice «pronto» quando c'è tutto; prima solo per un errore o dopo `cap` ms. Un telefono lento
+ * aspetta di più dietro il velo, ma non vede un mondo a metà.
+ */
+export function readyReason(progress: number, error: boolean, elapsed: number, cap: number): ReadyReason | null {
+  if (progress >= 1) return 'tutto';
+  if (error) return 'errore';
+  if (elapsed > cap) return 'tetto';
+  return null;
 }

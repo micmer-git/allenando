@@ -20,6 +20,8 @@ export interface TileCounts {
   /** mattonelle entro 400 m dal ciclista, e quante di queste sono in scena */
   near: number;
   nearReady: number;
+  /** la somma degli avanzamenti delle mattonelle entro 400 m (tileStage): conta i passi a metà */
+  nearPartial: number;
   /** dopo il «pronto»: mattonelle o arredo entrati in scena a meno di 150 m, e la distanza minima (-1: nessuno) */
   late: number;
   lateMin: number;
@@ -47,8 +49,17 @@ export interface OrobiaStats {
   dpr: number;
 }
 
+/** L'istante del «pronto», con le mattonelle entro 400 m in quel momento (per il collaudo). */
+export interface OrobiaReady {
+  reason: string;
+  ms: number;
+  near: number;
+  nearReady: number;
+}
+
 declare global {
   interface Window {
+    __orobiaReady?: OrobiaReady;
     __orobiaStats?: OrobiaStats;
     __orobiaStatsReset?: () => void;
   }

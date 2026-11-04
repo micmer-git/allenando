@@ -79,6 +79,93 @@ export function occluded(
   return false;
 }
 
+/**
+ * Un volume che copre la vista: una casa (l'impronta e la quota del tetto) o un monumento (il suo
+ * rettangolo orientato). L'impronta è un anello x, z; y0 e y1 sono il piede e la cima.
+ */
+export interface Volume {
+  ring: ArrayLike<number>;
+  y0: number;
+  y1: number;
+  minX: number;
+  minZ: number;
+  maxX: number;
+  maxZ: number;
+}
+
+/** Il volume di un anello x, z fra y0 e y1. */
+export function volumeOf(ring: ArrayLike<number>, y0: number, y1: number): Volume {
+  let minX = Infinity;
+  let minZ = Infinity;
+  let maxX = -Infinity;
+  let maxZ = -Infinity;
+  for (let i = 0; i < ring.length; i += 2) {
+    minX = Math.min(minX, ring[i]);
+    maxX = Math.max(maxX, ring[i]);
+    minZ = Math.min(minZ, ring[i + 1]);
+    maxZ = Math.max(maxZ, ring[i + 1]);
+  }
+  return { ring, y0, y1, minX, minZ, maxX, maxZ };
+}
+
+/** Il rettangolo orientato di un monumento: centro, larghezza (x del modello), profondità, verso. */
+export function boxVolume(x: number, z: number, w: number, d: number, yaw: number, y0: number, y1: number): Volume {
+  // la +z del modello guarda (sin yaw, cos yaw), la +x (cos yaw, −sin yaw)
+  const ux = Math.cos(yaw);
+  const uz = -Math.sin(yaw);
+  const vx = Math.sin(yaw);
+  const vz = Math.cos(yaw);
+  const ring: number[] = [];
+  for (const [a, b] of [
+    [-1, -1],
+    [1, -1],
+    [1, 1],
+    [-1, 1],
+  ]) ring.push(x + (ux * a * w) / 2 + (vx * b * d) / 2, z + (uz * a * w) / 2 + (vz * b * d) / 2);
+  return volumeOf(ring, y0, y1);
+}
+
+/** Il punto (x, z) sta dentro l'impronta (pari e dispari). */
+export function insideRing(ring: ArrayLike<number>, x: number, z: number): boolean {
+  let inside = false;
+  const n = ring.length / 2;
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const xi = ring[i * 2];
+    const zi = ring[i * 2 + 1];
+    const xj = ring[j * 2];
+    const zj = ring[j * 2 + 1];
+    if (zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+/**
+ * La linea di vista dalla camera (a) al punto del nome (b) attraversa una parete del volume sotto
+ * la sua cima? Il volume che contiene il punto stesso (la chiesa sotto il suo nome) non conta.
+ */
+export function volumeBlocks(ax: number, ay: number, az: number, bx: number, by: number, bz: number, v: Volume): boolean {
+  if (Math.max(ax, bx) < v.minX || Math.min(ax, bx) > v.maxX || Math.max(az, bz) < v.minZ || Math.min(az, bz) > v.maxZ) return false;
+  if (insideRing(v.ring, bx, bz)) return false;
+  const dx = bx - ax;
+  const dz = bz - az;
+  const n = v.ring.length / 2;
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const px = v.ring[j * 2];
+    const pz = v.ring[j * 2 + 1];
+    const ex = v.ring[i * 2] - px;
+    const ez = v.ring[i * 2 + 1] - pz;
+    const den = dx * ez - dz * ex;
+    if (Math.abs(den) < 1e-9) continue;
+    // a + t·d = p + u·e
+    const t = ((px - ax) * ez - (pz - az) * ex) / den;
+    const u = ((px - ax) * dz - (pz - az) * dx) / den;
+    if (t <= 0 || t >= 1 || u < 0 || u > 1) continue;
+    const y = ay + (by - ay) * t;
+    if (y >= v.y0 && y <= v.y1) return true;
+  }
+  return false;
+}
+
 /** Un rettangolo sullo schermo, in pixel della tela: sinistra, alto, destra, basso. */
 export type Rect = [number, number, number, number];
 

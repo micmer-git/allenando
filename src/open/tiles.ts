@@ -397,9 +397,31 @@ export function walkHeights(pts: { d: number }[], on: boolean[]): Float32Array {
   return out;
 }
 
+/** Un marciapiede più corto di così (fra due punti senza) non si fa: sarebbe un gradino isolato. */
+export const WALK_MIN = 15;
+
+/**
+ * Toglie i pezzi di marciapiede più corti di `min` metri che cominciano e finiscono dentro la corsa.
+ * Quelli che toccano il bordo della corsa restano: continuano nella mattonella vicina.
+ */
+export function trimWalk(pts: { d: number }[], on: boolean[], min = WALK_MIN): boolean[] {
+  const out = on.slice();
+  let i = 0;
+  while (i < on.length) {
+    if (!on[i]) {
+      i++;
+      continue;
+    }
+    let j = i;
+    while (j + 1 < on.length && on[j + 1]) j++;
+    if (i > 0 && j < on.length - 1 && pts[j].d - pts[i].d < min) for (let k = i; k <= j; k++) out[k] = false;
+    i = j + 1;
+  }
+  return out;
+}
+
 /** Il marciapiede di un lato: il fianco del cordolo chiaro, il piano in masselli, il fianco esterno che scende. */
-function walkStrips(kerb: Mesh, pts: P[], hw: number, lift: number, top: number, s: number, keep: (p: P) => boolean, tone: THREE.Color): void {
-  const on = pts.map(keep);
+function walkStrips(kerb: Mesh, pts: P[], hw: number, lift: number, top: number, s: number, on: boolean[], tone: THREE.Color): void {
   const k = walkHeights(pts, on);
   let prev = -1;
   for (let i = 0; i < pts.length; i++) {
@@ -525,16 +547,21 @@ export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec):
           pier(concrete, p, Math.max(1.2, hw * 0.45), p.y - 1.6, ground - 2);
         }
       } else {
-        const noWalk = (p: P) => !walkAt(p);
-        strip(verge, pts, hw + 0.8, lift - 0.1, hw, lift - 0.02, 8, noWalk);
-        strip(verge, pts, -hw, lift - 0.02, -hw - 0.8, lift - 0.1, 8, noWalk);
-        strip(verge, pts, hw + 2, -3.4, hw + 0.8, lift - 0.1, 8, noWalk);
-        strip(verge, pts, -hw - 0.8, lift - 0.1, -hw - 2, -3.4, 8, noWalk);
-        if (walkable) {
+        // dove c'è il marciapiede, lato per lato; i pezzi più corti di WALK_MIN non si fanno (erano
+        // i gradini isolati del punto M5), e lì resta la banchina
+        const sides = walkable ? [1, -1].map((side) => trimWalk(pts, pts.map(walkSide(side)))) : null;
+        const onWalk = sides ? sides.map((on) => new Set(pts.filter((_, i) => on[i]))) : null;
+        const bank = (i: number) => (p: P) => !onWalk || !onWalk[i].has(p);
+        strip(verge, pts, hw + 0.8, lift - 0.1, hw, lift - 0.02, 8, bank(0));
+        strip(verge, pts, -hw, lift - 0.02, -hw - 0.8, lift - 0.1, 8, bank(1));
+        strip(verge, pts, hw + 2, -3.4, hw + 0.8, lift - 0.1, 8, bank(0));
+        strip(verge, pts, -hw - 0.8, lift - 0.1, -hw - 2, -3.4, 8, bank(1));
+        if (sides) {
           // cordolo alto 14 cm, marciapiede di 1,6 m in masselli, e il fianco che scende nel terreno
           const top = lift + 0.14;
           const tone = WALK[Math.floor(hash2(e.id, 3) * WALK.length) % WALK.length];
-          for (const s of [1, -1]) walkStrips(kerb, pts, hw, lift, top, s, walkSide(s), tone);
+          walkStrips(kerb, pts, hw, lift, top, 1, sides[0], tone);
+          walkStrips(kerb, pts, hw, lift, top, -1, sides[1], tone);
         }
       }
     }

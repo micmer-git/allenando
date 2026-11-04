@@ -1,8 +1,8 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { kindLabel, LABEL_FULL, LABEL_GONE, labelFade, landmarkSub, occluded, placeLabels, type LabelCandidate, type Rect } from '../src/open/labels';
-import { loadProgress, READY_RADIUS, tileDist } from '../src/open/pronto';
+import { boxVolume, kindLabel, LABEL_FULL, LABEL_GONE, labelFade, landmarkSub, occluded, placeLabels, volumeBlocks, volumeOf, type LabelCandidate, type Rect } from '../src/open/labels';
+import { loadProgress, READY_RADIUS, readyReason, tileDist, tileStage } from '../src/open/pronto';
 
 /*
  * Pista 3 (il mondo 3D): i nomi dei luoghi nel cielo, il pacchetto iniziale senza WebGL,
@@ -69,6 +69,31 @@ describe('i nomi dei luoghi', () => {
   });
 });
 
+describe('i nomi dietro le case e i monumenti', () => {
+  // una casa 20 × 20 m alta 15 m, fra la camera (a terra, a x = 0) e un nome a 300 m
+  const casa = volumeOf([40, -10, 60, -10, 60, 10, 40, 10], 300, 315);
+
+  it('si spegne il nome il cui punto è coperto da una casa', () => {
+    expect(volumeBlocks(0, 305, 0, 300, 320, 0, casa)).toBe(true);
+    // la linea di vista passa sopra il tetto
+    expect(volumeBlocks(0, 305, 0, 300, 420, 0, casa)).toBe(false);
+    // o di fianco
+    expect(volumeBlocks(0, 305, 30, 300, 320, 30, casa)).toBe(false);
+  });
+
+  it('il nome sopra il suo monumento non lo copre il monumento stesso', () => {
+    expect(volumeBlocks(0, 305, 0, 50, 330, 0, casa)).toBe(false);
+  });
+
+  it('il fornice: dalla camera sotto la porta, il nome oltre il muro è coperto', () => {
+    // una porta 30 × 12 m, ruotata di 90°, alta 18 m; la camera ci sta dentro
+    const porta = boxVolume(0, 0, 30, 12, Math.PI / 2, 290, 318);
+    expect(volumeBlocks(0, 302, 0, 200, 330, 400, porta)).toBe(true);
+    // un nome lontano, in alto oltre la cima, si vede
+    expect(volumeBlocks(0, 302, 0, 600, 2000, 0, porta)).toBe(false);
+  });
+});
+
 describe('pronto vuol dire pronto', () => {
   it('l’avanzamento arriva a 1 solo con tutte le mattonelle entro 400 m e il terreno lontano', () => {
     expect(READY_RADIUS).toBe(400);
@@ -78,6 +103,31 @@ describe('pronto vuol dire pronto', () => {
     expect(loadProgress({ near: 6, nearReady: 6 }, true)).toBe(1);
     // cresce con le mattonelle
     expect(loadProgress({ near: 6, nearReady: 3 }, true)).toBeGreaterThan(loadProgress({ near: 6, nearReady: 2 }, true));
+  });
+
+  it('un caricamento lento va avanti a passi parziali e non scatta prima del tetto', () => {
+    const t = { state: 'wait' as const, shown: false, detail: 'none' as const, dshown: false, steps: 0, dsteps: 0 };
+    const stages = [
+      tileStage(t, false),
+      tileStage(t, true),
+      tileStage({ ...t, state: 'build', steps: 5 }, true),
+      tileStage({ ...t, state: 'build', steps: 80 }, true),
+      tileStage({ ...t, state: 'ready' }, true),
+      tileStage({ ...t, state: 'ready', shown: true }, true),
+      tileStage({ ...t, state: 'ready', shown: true, detail: 'build', dsteps: 10 }, true),
+      tileStage({ ...t, state: 'ready', shown: true, detail: 'ready' }, true),
+      tileStage({ ...t, state: 'ready', shown: true, detail: 'ready', dshown: true }, true),
+    ];
+    for (let i = 1; i < stages.length; i++) expect(stages[i]).toBeGreaterThan(stages[i - 1]);
+    expect(stages[stages.length - 1]).toBe(1);
+    // l'avanzamento sale coi passi a metà, ma resta sotto 1 finché manca qualcosa
+    expect(loadProgress({ near: 4, nearReady: 0, nearPartial: 2.2 }, true)).toBeGreaterThan(loadProgress({ near: 4, nearReady: 0, nearPartial: 1 }, true));
+    expect(loadProgress({ near: 4, nearReady: 3, nearPartial: 3.99 }, true)).toBeLessThan(1);
+    // nessun «fermo da 12 s»: si aspetta fino al tetto, salvo un errore
+    expect(readyReason(0.7, false, 59000, 60000)).toBeNull();
+    expect(readyReason(0.7, false, 61000, 60000)).toBe('tetto');
+    expect(readyReason(0.7, true, 2000, 60000)).toBe('errore');
+    expect(readyReason(1, false, 2000, 60000)).toBe('tutto');
   });
 
   it('la distanza dal ciclista a una mattonella', () => {

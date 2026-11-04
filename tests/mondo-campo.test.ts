@@ -6,7 +6,7 @@ import { decodeFeatures, Terrain, type FeaturesFile, type RideDef } from '../src
 import { bankLimit, createWorldField } from '../src/open/field';
 import { WorldPath } from '../src/open/path';
 import { pavedWeight, urbanDensity } from '../src/open/urban';
-import { walkHeights } from '../src/open/tiles';
+import { trimWalk, walkHeights } from '../src/open/tiles';
 import { addBuilding, Tris } from '../src/open/buildings';
 import { BUILDING_KIND } from '../src/open/world';
 import { smoothNoise } from '../src/world/builders';
@@ -155,6 +155,16 @@ describe('i marciapiedi', () => {
     const all = walkHeights(pts, pts.map(() => true));
     expect(all[0]).toBe(1);
     expect(all[20]).toBe(1);
+  });
+
+  it('un pezzo di marciapiede più corto di 15 m in mezzo alla strada non si fa (il gradino del punto M5)', () => {
+    const pts = Array.from({ length: 41 }, (_, i) => ({ d: i * 2.5 }));
+    // 10 m di marciapiede isolato, poi uno da 30 m, poi uno che arriva al bordo della corsa
+    const on = pts.map((_, i) => (i >= 4 && i <= 8) || (i >= 14 && i <= 26) || i >= 37);
+    const t = trimWalk(pts, on);
+    expect(t.slice(4, 9).every((x) => !x)).toBe(true);
+    expect(t.slice(14, 27).every((x) => x)).toBe(true);
+    expect(t.slice(37).every((x) => x)).toBe(true);
   });
 });
 

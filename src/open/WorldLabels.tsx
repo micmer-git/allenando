@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import type { TrackPose } from '@/domain/track';
 import { canvasTex } from '@/world/Scene';
 import type { Terrain, WorldData } from './world';
-import { LABEL_GONE, labelFade, landmarkSub, occluded, placeLabels, type LabelCandidate, type Rect } from './labels';
+import { LABEL_GONE, labelFade, landmarkSub, occluded, placeLabels, volumeBlocks, type LabelCandidate, type Rect, type Volume } from './labels';
 
 /*
  * I nomi dei luoghi nel 3D (cime, passi, paesi, luoghi da riconoscere). Le regole stanno in
@@ -244,7 +244,12 @@ function hudRects(canvas: HTMLCanvasElement): Rect[] | null {
  * i tre più importanti che stanno tutti dentro la tela e fuori dall'HUD. Si accendono e si spengono
  * sfumando; la dimensione sullo schermo è fissa, in pixel.
  */
-export function Declutter({ names, terrain, playerPose }: { names: Set<THREE.Sprite>; terrain: Terrain; playerPose: () => TrackPose }) {
+/** Le case e i monumenti intorno al ciclista che possono coprire un nome (li aggiorna WorldScene). */
+export interface Occluders {
+  list: Volume[];
+}
+
+export function Declutter({ names, terrain, playerPose, occluders }: { names: Set<THREE.Sprite>; terrain: Terrain; playerPose: () => TrackPose; occluders: Occluders }) {
   const { camera, gl, size } = useThree();
   const clock = useRef(0);
   const hudClock = useRef(0);
@@ -298,7 +303,11 @@ export function Declutter({ names, terrain, playerPose }: { names: Set<THREE.Spr
       const cam = camera.position;
       const visible = cands.filter((c) => {
         const u = c.key.userData as LabelData;
-        return !occluded(height, cam.x, cam.y, cam.z, c.key.position.x, u.ground + 8, c.key.position.z);
+        const s = c.key.position;
+        // dietro una montagna (il DEM), o dietro una casa o un monumento vicini (il punto del nome)
+        if (occluded(height, cam.x, cam.y, cam.z, s.x, u.ground + 8, s.z)) return false;
+        for (const v of occluders.list) if (volumeBlocks(cam.x, cam.y, cam.z, s.x, s.y, s.z, v)) return false;
+        return true;
       });
       const on = placeLabels(visible, { width: size.width, height: size.height, top }, blocked);
       for (const s of names) want.current.set(s, on.has(s) ? (fade.get(s) ?? 0) : 0);

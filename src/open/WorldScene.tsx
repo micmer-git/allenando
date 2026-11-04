@@ -44,8 +44,10 @@ import {
 import { ROADSIDE_KINDS, streetJob, type RoadsideItems, type RoadsideKind } from './streets';
 import { Monumenti } from './MonumentiScene';
 import { StatsProbe, statsWanted, type TileCounts } from './StatsProbe';
-import { Declutter, Labels, Landmarks } from './WorldLabels';
-import { loadProgress, READY_RADIUS, tileDist } from './pronto';
+import { Declutter, Labels, Landmarks, type Occluders } from './WorldLabels';
+import { boxVolume, volumeOf, type Volume } from './labels';
+import { monumentiPronti } from './monumenti';
+import { loadProgress, READY_RADIUS, readyReason, tileDist, tileStage } from './pronto';
 import { URBAN_R, urbanDensity } from './urban';
 
 /**
@@ -122,7 +124,7 @@ export interface ExtraWorldRider {
 export function WorldScene(props: WorldSceneProps) {
   const q = QUALITY[props.quality];
   // le mattonelle contate da NearTiles: le leggono il «pronto», l'avanzamento e le misure (?stats=1)
-  const counts = useMemo<TileCounts>(() => ({ ready: 0, pending: 0, detail: 0, near: 0, nearReady: 0, late: 0, lateMin: -1 }), []);
+  const counts = useMemo<TileCounts>(() => ({ ready: 0, pending: 0, detail: 0, near: 0, nearReady: 0, nearPartial: 0, late: 0, lateMin: -1 }), []);
   const status = useMemo<LoadStatus>(() => ({ ready: false }), []);
   return (
     <Canvas
@@ -137,7 +139,7 @@ export function WorldScene(props: WorldSceneProps) {
       <color attach="background" args={[HAZE]} />
       <fog attach="fog" args={[HAZE, 350, q.far * 0.92]} />
       <WorldContent {...props} counts={counts} status={status} />
-      <ReadyWhenTiles onReady={props.onReady} onProgress={props.onProgress} counts={counts} status={status} terrain={props.terrain} />
+      <ReadyWhenTiles onReady={props.onReady} onProgress={props.onProgress} counts={counts} status={status} terrain={props.terrain} playerPose={props.playerPose} />
     </Canvas>
   );
 }
@@ -148,23 +150,35 @@ interface LoadStatus {
 }
 
 /**
- * Se il caricamento resta fermo per READY_STALL ms si dice «pronto» comunque (meglio un mondo a metà
- * che un velo per sempre), e comunque dopo READY_TIMEOUT. Finché le mattonelle arrivano si aspetta:
- * su un telefono lento il velo dura di più, ma dietro non c'è un mondo vuoto.
+ * Il tetto: dopo READY_TIMEOUT ms si dice «pronto» comunque (meglio un mondo a metà che un velo per
+ * sempre). Prima solo per un errore (una mattonella del DEM o il terreno lontano che non arrivano).
+ * Un caricamento lento non è un errore: su un telefono lento il velo dura di più, e dietro non c'è
+ * un mondo vuoto.
  */
-const READY_STALL = 12000;
 const READY_TIMEOUT = 60000;
 
 /**
  * «Pronto» vuol dire che intorno al ciclista c'è il mondo: il terreno lontano e tutte le mattonelle
  * entro READY_RADIUS (suolo, strade, case) sono in scena. Prima, l'avanzamento va al velo.
  */
-function ReadyWhenTiles({ onReady, onProgress, counts, status, terrain }: { onReady: () => void; onProgress?: (p: number) => void; counts: TileCounts; status: LoadStatus; terrain: Terrain }) {
+function ReadyWhenTiles({
+  onReady,
+  onProgress,
+  counts,
+  status,
+  terrain,
+  playerPose,
+}: {
+  onReady: () => void;
+  onProgress?: (p: number) => void;
+  counts: TileCounts;
+  status: LoadStatus;
+  terrain: Terrain;
+  playerPose: () => TrackPose;
+}) {
   const sent = useRef(false);
   const t0 = useRef<number | null>(null);
   const shown = useRef(-1);
-  /** l'ultimo istante in cui il caricamento è andato avanti (mattonelle in scena, mattonelle chieste) */
-  const moved = useRef({ at: 0, key: '' });
   useFrame(() => {
     if (sent.current) return;
     const now = performance.now();
@@ -176,11 +190,14 @@ function ReadyWhenTiles({ onReady, onProgress, counts, status, terrain }: { onRe
       shown.current = p;
       onProgress?.(p);
     }
-    const key = `${counts.ready}/${counts.nearReady}/${far}`;
-    if (key !== moved.current.key) moved.current = { at: now, key };
-    if (p >= 1 || now - moved.current.at > READY_STALL || now - t0.current > READY_TIMEOUT) {
+    const pose = playerPose();
+    const error = terrain.farFailed || terrain.failedAround(pose.x, pose.z, READY_RADIUS + 100);
+    const reason = readyReason(p, error, now - t0.current, READY_TIMEOUT);
+    if (reason) {
       sent.current = true;
       status.ready = true;
+      // per il collaudo (?stats=1): com'era il mondo intorno nell'istante del «pronto»
+      if (statsWanted()) window.__orobiaReady = { reason, ms: Math.round(now - t0.current), near: counts.near, nearReady: counts.nearReady };
       onProgress?.(1);
       onReady();
     }
@@ -199,6 +216,8 @@ function WorldContent(props: WorldSceneProps & { counts: TileCounts; status: Loa
   const mats = useMaterials(farMask, cut);
   const names = useMemo(() => new Set<THREE.Sprite>(), []);
   const { counts } = props;
+  // le case e i monumenti intorno al ciclista: coprono i nomi (WorldLabels)
+  const occluders = useMemo<Occluders>(() => ({ list: [] }), []);
   const stats = useMemo(() => statsWanted(), []);
   return (
     <group>
@@ -206,13 +225,13 @@ function WorldContent(props: WorldSceneProps & { counts: TileCounts; status: Loa
       <Atmosphere weather={props.weather} daytime={props.daytime} data={data} far={q.far} mats={mats} />
       {props.weather && props.weather.rain >= 0.1 ? <Rain mmh={props.weather.rain} weather={props.weather} /> : null}
       <FarTerrain terrain={terrain} stride={q.farStride} material={mats.far} />
-      <NearTiles {...props} mats={mats} mask={farMask} cut={cut} />
+      <NearTiles {...props} mats={mats} mask={farMask} cut={cut} occluders={occluders} />
       <Lakes data={data} />
       <Walls data={data} field={field} />
       <Monumenti playerPose={props.playerPose} />
       <Labels data={data} playerPose={props.playerPose} names={names} />
       <Landmarks data={data} playerPose={props.playerPose} names={names} />
-      <Declutter names={names} terrain={terrain} playerPose={props.playerPose} />
+      <Declutter names={names} terrain={terrain} playerPose={props.playerPose} occluders={occluders} />
       {props.ride ? <RideSigns data={data} ride={props.ride} /> : null}
       <PlayerRider {...props} />
       <ContactShadow playerPose={props.playerPose} />
@@ -627,6 +646,9 @@ interface TileEntry {
   items: RoadsideItems | null;
   /** la mattonella è entrata del tutto (dissolvenza finita): sotto, il terreno lontano si nasconde */
   shown: boolean;
+  /** passi fatti del lavoro della mattonella e di quello dell'arredo (l'avanzamento del velo) */
+  steps: number;
+  dsteps: number;
   /** e il suo arredo vicino */
   dshown: boolean;
   /** il bosco fitto delle mattonelle intorno al ciclista */
@@ -634,8 +656,10 @@ interface TileEntry {
   xjob: Generator<void, TileMeshes['trees'], void> | null;
 }
 
-function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: TunnelCut; counts: TileCounts; status: LoadStatus }) {
-  const { data, field, terrain, quality, mats, mask, cut, playerPose, counts, status } = props;
+function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: TunnelCut; counts: TileCounts; status: LoadStatus; occluders: Occluders }) {
+  const { data, field, terrain, quality, mats, mask, cut, playerPose, counts, status, occluders } = props;
+  /** dove e con quante liste di case si sono raccolti gli ultimi volumi che coprono i nomi */
+  const occAt = useRef({ x: Infinity, z: Infinity, lists: -1, mon: -1 });
   const q = QUALITY[quality];
   const root = useRef<THREE.Group>(null);
   const tiles = useRef(new Map<string, TileEntry>());
@@ -825,7 +849,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
     if (street.trees.length) entry.trees = [...entry.trees, ...street.trees];
   }
 
-  useFrame(() => {
+  useFrame((_, dt) => {
     const pose = playerPose();
     // il centro sta un po' avanti: si vede più strada davanti che dietro
     const ax = pose.x + Math.sin(pose.heading) * T * 0.4;
@@ -851,7 +875,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
           const ix = cx + dx;
           const iz = cz + dz;
           const key = `${ix}_${iz}`;
-          if (!map.has(key)) map.set(key, { key, ix, iz, state: 'wait', job: null, group: null, trees: [], detail: 'none', djob: null, items: null, shown: false, dshown: false, dense: 'none', xjob: null });
+          if (!map.has(key)) map.set(key, { key, ix, iz, state: 'wait', job: null, group: null, trees: [], detail: 'none', djob: null, items: null, shown: false, dshown: false, steps: 0, dsteps: 0, dense: 'none', xjob: null });
         }
       }
       for (const [key, t] of map) {
@@ -879,9 +903,11 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
     // un lavoro alla volta, il più vicino, per non più di 6 ms a fotogramma; mentre si carica
     // il velo copre la scena e un fotogramma lento non si vede: 24 ms
     const t0 = performance.now();
-    const budget = status.ready ? 6 : 24;
+    // e su un telefono lento (fotogrammi lunghi) almeno tre quarti del fotogramma: altrimenti il
+    // caricamento va a passo di fotogramma, e con il velo davanti non serve disegnare in fretta
+    const budget = status.ready ? 6 : Math.min(400, Math.max(24, dt * 750));
     let guard = 0;
-    while (performance.now() - t0 < budget && guard++ < 80) {
+    while (performance.now() - t0 < budget && guard++ < (status.ready ? 80 : 600)) {
       let job: TileEntry | null = null;
       let best = Infinity;
       let kind: 'tile' | 'detail' | 'dense' = 'tile';
@@ -953,6 +979,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
           job.djob = detailJob(job, specOf(job.ix, job.iz, d));
           job.detail = 'build';
         }
+        job.dsteps++;
         const r = job.djob!.next();
         if (r.done) {
           job.detail = 'ready';
@@ -968,6 +995,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
         job.job = tileJob(job, specOf(job.ix, job.iz, d));
         job.state = 'build';
       }
+      job.steps++;
       const r = job.job!.next();
       if (r.done) {
         job.state = 'ready';
@@ -980,7 +1008,18 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
         if (status.ready) noteLate(counts, tileDist(job, b.x0, b.z0, T, pose.x, pose.z));
       }
     }
-    countTiles(counts, map, b.x0, b.z0, T, pose.x, pose.z);
+    countTiles(counts, map, b.x0, b.z0, T, pose.x, pose.z, terrain);
+    // i volumi che coprono i nomi: ogni 25 m, o quando arrivano case o monumenti nuovi
+    {
+      const o = occAt.current;
+      let lists = 0;
+      for (const v of buildings.current.values()) if (Array.isArray(v)) lists++;
+      const mon = monumentiPronti().length;
+      if (Math.hypot(pose.x - o.x, pose.z - o.z) > 25 || lists !== o.lists || mon !== o.mon) {
+        occAt.current = { x: pose.x, z: pose.z, lists, mon };
+        occluders.list = nearVolumes(buildings.current, monumentiPronti(), terrain, pose.x, pose.z, OCC_R);
+      }
+    }
     updateTunnelCut(cut, data.graph, pose.x, pose.z);
     // il terreno lontano si nasconde sotto ogni mattonella pronta (farMask.ts)
     // le dissolvenze: 300 ms, poi i materiali condivisi tornano al loro posto
@@ -1023,6 +1062,40 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
   );
 }
 
+/** Fin dove case e monumenti possono coprire un nome, metri dal ciclista. */
+const OCC_R = 120;
+
+/** Il riquadro delle case già lette, per non ricalcolarlo a ogni giro. */
+const bboxOf = new WeakMap<Building, [number, number, number, number]>();
+
+/** Case e monumenti entro `r` da (x, z), come volumi che coprono la vista. */
+function nearVolumes(lists: Map<string, Building[] | Promise<Building[]>>, mons: readonly { x: number; z: number; w: number; d: number; yaw: number; yMin: number; y: number; h: number }[], terrain: Terrain, x: number, z: number, r: number): Volume[] {
+  const out: Volume[] = [];
+  // solo le liste delle mattonelle del DEM che toccano il quadrato intorno
+  const [a0, b0] = terrain.tileOf(x - r, z - r);
+  const [a1, b1] = terrain.tileOf(x + r, z + r);
+  for (let i = a0; i <= a1; i++) for (let j = b0; j <= b1; j++) {
+    const list = lists.get(`${i}_${j}`);
+    if (!Array.isArray(list)) continue;
+    for (const bd of list) {
+      let bb = bboxOf.get(bd);
+      if (!bb) {
+        const v = volumeOf(bd.ring, 0, 0);
+        bb = [v.minX, v.minZ, v.maxX, v.maxZ];
+        bboxOf.set(bd, bb);
+      }
+      if (bb[2] < x - r || bb[0] > x + r || bb[3] < z - r || bb[1] > z + r) continue;
+      const ground = terrain.height((bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2);
+      out.push(volumeOf(bd.ring, ground - 3, ground + Math.max(3, bd.h) + 1));
+    }
+  }
+  for (const m of mons) {
+    if (Math.abs(m.x - x) > r + m.w || Math.abs(m.z - z) > r + m.d) continue;
+    out.push(boxVolume(m.x, m.z, m.w, m.d, m.yaw, m.yMin - 1, m.y + m.h));
+  }
+  return out;
+}
+
 /** Sotto questa distanza, una mattonella o il suo arredo che entra in scena dopo il «pronto» si vede comparire. */
 const POP_NEAR = 150;
 
@@ -1033,12 +1106,13 @@ function noteLate(c: TileCounts, d: number): void {
 }
 
 /** Conta le mattonelle in scena, in attesa, e quelle entro READY_RADIUS dal ciclista. */
-function countTiles(c: TileCounts, map: Map<string, TileEntry>, x0: number, z0: number, T: number, px: number, pz: number): void {
+function countTiles(c: TileCounts, map: Map<string, TileEntry>, x0: number, z0: number, T: number, px: number, pz: number, terrain: Terrain): void {
   c.ready = 0;
   c.pending = 0;
   c.detail = 0;
   c.near = 0;
   c.nearReady = 0;
+  c.nearPartial = 0;
   for (const t of map.values()) {
     if (t.state === 'ready') c.ready++;
     else c.pending++;
@@ -1047,6 +1121,8 @@ function countTiles(c: TileCounts, map: Map<string, TileEntry>, x0: number, z0: 
       c.near++;
       // in scena davvero: la mattonella e il suo arredo, salita finita (startFade)
       if (t.shown && t.dshown) c.nearReady++;
+      const [dx, dz] = terrain.tileOf(x0 + (t.ix + 0.5) * T, z0 + (t.iz + 0.5) * T);
+      c.nearPartial += tileStage(t, terrain.has(dx, dz));
     }
   }
 }
