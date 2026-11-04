@@ -177,7 +177,7 @@ export function PlansPage() {
               <h2 className="mt-1 font-display text-3xl uppercase leading-none">{plan.name}</h2>
             </div>
             <p className="num shrink-0 text-sm text-muted" data-testid="plan-progress">
-              {prog.done}/{prog.total} fatti
+              {`${prog.done}/${prog.total} fatti`}
             </p>
           </div>
           <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-elev2" aria-hidden="true">
@@ -190,7 +190,7 @@ export function PlansPage() {
               ‹
             </button>
             <p className="text-center">
-              <span className="eyebrow block">Settimana {shown + 1} di {plan.weeks.length}</span>
+              <span className="eyebrow block">{`Settimana ${shown + 1} di ${plan.weeks.length}`}</span>
               <span className="font-semibold">{plan.weeks[shown].title}</span>
               {plan.weeks[shown].recovery ? <span className="text-muted"> · Scarico</span> : null}
             </p>
@@ -274,7 +274,7 @@ function PlanCard({ plan, onStart, replacing }: { plan: TrainingPlan; onStart: (
           <h3 className="font-display text-3xl uppercase leading-none">{plan.name}</h3>
           <p className="mt-1.5 text-sm text-muted">{plan.goal}</p>
         </div>
-        <span className="num shrink-0 rounded-full bg-elev2 px-2.5 py-1 text-xs font-semibold">{plan.weeks.length} settimane</span>
+        <span className="num shrink-0 rounded-full bg-elev2 px-2.5 py-1 text-xs font-semibold">{`${plan.weeks.length} settimane`}</span>
       </div>
       {/* il carico settimana per settimana: lo scarico si vede */}
       <div className="mt-3 flex h-10 items-end gap-1" aria-label="Carico per settimana" role="img">
@@ -283,7 +283,7 @@ function PlanCard({ plan, onStart, replacing }: { plan: TrainingPlan; onStart: (
         ))}
       </div>
       <p className="num mt-2 text-sm text-muted">
-        {sessions} uscite · {formatHours(hours)} in tutto
+        {`${sessions} uscite · ${formatHours(hours)} in tutto`}
       </p>
       <Button
         variant="soft"

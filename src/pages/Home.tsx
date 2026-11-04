@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Wordmark } from '@/components/ui';
 import { Coin, Glyph } from '@/components/Glyph';
@@ -6,7 +6,6 @@ import { useGame } from '@/game/useGame';
 import { missionsFor } from '@/game/missions';
 import { phaseOf, SESSION_STYLE, upcoming, WORLD_RIDE_NAMES } from '@/game/sessions';
 import { LevelRing } from './Me';
-import { TodayWorkout } from './Plans';
 import { countdown, sessionHref } from './Sessions';
 import { InstallCard } from '@/components/Install';
 import { formatDateTime, formatDuration, formatKm, formatNumber } from '@/domain/format';
@@ -15,6 +14,9 @@ import { VERIFIED_ROUTES } from '@/domain/routes';
 import { WORLD_RIDES } from '@/multiplayer/world-rides';
 import { useI18n } from '@/i18n';
 import { useApp } from '@/store/useApp';
+
+// la carta del programma (src/pages/Plans.tsx) si carica a parte: non pesa sull'avvio
+const TodayWorkout = lazy(() => import('./Plans').then((mod) => ({ default: mod.TodayWorkout })));
 
 export function HomePage() {
   const { t } = useI18n();
@@ -53,7 +55,9 @@ export function HomePage() {
         </p>
       ) : null}
 
-      <TodayWorkout className="mt-4" />
+      <Suspense fallback={null}>
+        <TodayWorkout className="mt-4" />
+      </Suspense>
       <NextSession />
       <Missions done={career.missions.day === todayKey() ? career.missions.done : []} />
 

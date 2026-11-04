@@ -79,8 +79,8 @@ export const PLANS: TrainingPlan[] = [
     ],
   },
   {
-    id: 'ganda-sotto-ora',
-    name: 'Sotto l’ora alla Ganda',
+    id: 'pronti-ganda',
+    name: 'Pronti per la Ganda',
     goal: 'Il giro della Ganda col tuo tempo migliore',
     weeks: [
       { title: 'Soglia', days: [S('soglia-3x12', 'selvino'), _, S('endurance', 'val-seriana'), _, S('agilita', 'ciclovia-brembana'), S('fondo-lungo-acc', 'ganda'), _] },

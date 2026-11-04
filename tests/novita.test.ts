@@ -15,11 +15,11 @@ import type { Ride, RideSample } from '../src/domain/types';
 import { RideEngine } from '../src/sim/engine';
 import type { TelemetrySource, TrainerSnapshot } from '../src/sim/source';
 import { RideGame } from '../src/game/rideGame';
-import { formatGap, ghostGap, ghostMetersAt, ghostTimeAt, loadGhosts, RideGhosts, saveGhostIfBetter, traceFromPoints } from '../src/game/ghosts';
+import { GAP_COLORS, gapLabel, gapStyle, ghostGap, ghostMetersAt, ghostTimeAt, loadGhosts, RideGhosts, saveGhostIfBetter, traceFromPoints } from '../src/game/ghosts';
 import { CARD_H, CARD_MARGIN, CARD_W, cardInputFromRide, cardTitle, layoutCard, paintCard, toCard, type CardInput, type Measure } from '../src/io/share-image';
 import { ALL_BUILTIN, builtinById, stepPower, workoutDuration, workoutEstimate, workoutPowerSeries } from '../src/domain/workouts';
 import { addDays, daysBetween, loadPlanState, markDone, PLACE_NAMES, planDays, PLANS, progressOf, savePlanState, sessionAt, sessionLink, startPlan, syncDone, todayOf, weekLoads } from '../src/domain/plans';
-import { FREE_RIDE_PCT, importZwoFiles, parseZwo, workoutToZwo, ZwoError } from '../src/io/zwo';
+import { FREE_RIDE_PCT, importZwoFiles, MAX_EFFORT_PCT, parseZwo, workoutToZwo, ZwoError } from '../src/io/zwo';
 import { ergGates } from '../src/game/ergArches';
 
 const dir = join(__dirname, '..', 'public', 'world', 'bergamo');
@@ -84,7 +84,47 @@ function worldRide(rideId: string, power: number) {
   return { session, engine, game, ghosts, off, tick };
 }
 
+/** Contrasto WCAG fra un testo e una pillola semitrasparente posata su un fondo qualunque. */
+function contrast(fg: string, pill: string, under: [number, number, number]): number {
+  const hex = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const m = /rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/.exec(pill)!;
+  const a = Number(m[4]);
+  const bg = [1, 2, 3].map((k, i) => Number(m[k]) * a + under[i] * (1 - a));
+  const lum = (c: number[]) => {
+    const [r, g, b] = c.map((v) => {
+      const x = v / 255;
+      return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const l1 = lum(hex(fg));
+  const l2 = lum(bg);
+  return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+}
+
 describe('N2 · il fantasma al metro', () => {
+  it('gapLabel: il soggetto sei tu, davanti, dietro o pari col fantasma', () => {
+    expect(gapLabel(12.4)).toBe('Davanti al fantasma · 12 s');
+    expect(gapLabel(-2)).toBe('Dietro al fantasma · 2 s');
+    expect(gapLabel(0.3)).toBe('Pari col fantasma');
+    expect(gapLabel(-75, ' del GPM')).toBe('Dietro al fantasma del GPM · 01:15');
+  });
+
+  it('la pillola: niente rosso, contrasto almeno 4,5:1 davanti e dietro, sul cielo chiaro e sul buio', () => {
+    for (const gap of [12, -2, 0]) {
+      const st = gapStyle(gap);
+      expect(st.color).not.toMatch(/#ff6464|#b42323|red/i);
+      for (const under of [
+        [255, 255, 255],
+        [207, 219, 229],
+        [0, 0, 0],
+      ] as [number, number, number][])
+        expect(contrast(st.color, st.background, under), `${gap} su ${under}`).toBeGreaterThanOrEqual(4.5);
+    }
+    expect(gapStyle(12).color).toBe(GAP_COLORS.ahead);
+    expect(gapStyle(-2).color).toBe(GAP_COLORS.behind);
+  });
+
   const steady = Array.from({ length: 201 }, (_, i) => ({ d: i * 5, t: i }));
 
   it('a passo costante: secondi al metro e metri al secondo si rispondono', () => {
@@ -99,10 +139,6 @@ describe('N2 · il fantasma al metro', () => {
     expect(ghostMetersAt(tr, 999)).toBe(1000);
     // io a 480 m in 100 s: lui c'era a 96 s, sono dietro di 4 s
     expect(ghostGap(tr, 480, 100)).toBeCloseTo(-4, 5);
-    expect(formatGap(-4)).toBe('4 s dietro');
-    expect(formatGap(12.4)).toBe('12 s avanti');
-    expect(formatGap(75)).toBe('01:15 avanti');
-    expect(formatGap(0.2)).toBe('Pari');
   });
 
   it('un pezzo in mezzo al giro parte da zero; in una sosta conta l’arrivo, non la ripartenza', () => {
@@ -160,10 +196,10 @@ describe('N2 · il fantasma al metro', () => {
     for (let i = 0; i < 1200; i++) b.tick(); // due minuti
     const now = b.ghosts.now()!;
     expect(now.kind).toBe('percorso');
-    expect(now.label).toBe('Fantasma');
+    expect(now.of).toBe('');
     expect(now.distance).toBeGreaterThan(b.engine.distance + 5);
     expect(now.gap!).toBeLessThan(-1);
-    expect(formatGap(now.gap!)).toMatch(/^\d+ s dietro$/);
+    expect(gapLabel(now.gap!)).toMatch(/^Dietro al fantasma · \d+ s$/);
     // in strada: la posa è sul percorso, accanto al punto dei metri del fantasma
     const pose = b.ghosts.pose()!;
     const on = b.session.path.poseAt(now.distance);
@@ -208,7 +244,7 @@ describe('N2 · il fantasma al metro', () => {
     }
     const now = ghosts.now()!;
     expect(now.kind).toBe('tratto');
-    expect(now.label).toBe('Fantasma del GPM');
+    expect(now.of).toBe(' del GPM');
     expect(now.distance).toBeCloseTo((len * engine.elapsed) / 3000, 0);
     expect(ghosts.pose()).toBeNull(); // sulla salita lo disegna RideScene, dai metri
     expect(ghosts.distance()).toBeCloseTo(now.distance, 5);
@@ -304,8 +340,10 @@ describe('N3 · la cartolina', () => {
     const names = input.monuments.map((m) => m.name);
     expect(names[0]).toBe('Stazione di Bergamo');
     expect(names[names.length - 1]).toBe('Castello di San Vigilio');
-    expect(names).toContain("Porta Sant'Agostino");
-    expect(names.indexOf("Porta Sant'Agostino")).toBeLessThan(names.indexOf('Duomo di Bergamo'));
+    // l'apostrofo tipografico, non quello dritto di OpenStreetMap
+    expect(names).toContain('Porta Sant’Agostino');
+    expect(names.join('|')).not.toContain("'");
+    expect(names.indexOf('Porta Sant’Agostino')).toBeLessThan(names.indexOf('Duomo di Bergamo'));
     const layout = boxesInside(input);
     // il titolo lungo va su due righe, non si tronca
     expect(layout.texts.filter((t) => t.id.startsWith('title-')).length).toBe(2);
@@ -407,11 +445,11 @@ describe('N4 · i programmi a settimane', () => {
   const plan = (id: string) => PLANS.find((p) => p.id === id)!;
   const hard = (d: { workout: string | null } | null) => !!d && (d.workout == null || workoutEstimate(builtinById(d.workout)!, 250).if >= 0.8);
 
-  it('tre programmi: Primo Selvino 4 settimane, Base d’inverno 6, Sotto l’ora alla Ganda 4', () => {
+  it('tre programmi: Primo Selvino 4 settimane, Base d’inverno 6, Pronti per la Ganda 4', () => {
     expect(PLANS.map((p) => [p.name, p.weeks.length])).toEqual([
       ['Primo Selvino', 4],
       ['Base d’inverno', 6],
-      ['Sotto l’ora alla Ganda', 4],
+      ['Pronti per la Ganda', 4],
     ]);
   });
 
@@ -445,7 +483,7 @@ describe('N4 · i programmi a settimane', () => {
     expect(loads[k]).toBeLessThan(loads[k - 1] * 0.6);
     // i due programmi con un traguardo finiscono con la prova sul loro percorso
     expect(plan('primo-selvino').weeks[3].days.find((d) => d && !d.workout)?.place).toEqual({ kind: 'percorso', ride: 'selvino' });
-    expect(plan('ganda-sotto-ora').weeks[3].days.find((d) => d && !d.workout)?.place).toEqual({ kind: 'percorso', ride: 'ganda' });
+    expect(plan('pronti-ganda').weeks[3].days.find((d) => d && !d.workout)?.place).toEqual({ kind: 'percorso', ride: 'ganda' });
   });
 
   it('il calendario: giorno 0 oggi, settimane di sette giorni, anche col cambio dell’ora', () => {
@@ -510,114 +548,71 @@ describe('N4 · i programmi a settimane', () => {
 
 // ---------------------------------------------------------------------------
 
-/** Tre file veri, così come li danno Zwift (GC Coaching) e il suo editor. */
+/**
+ * Tre .zwo scritti da noi, nelle tre forme che si trovano in giro: col copione e i tag, coi
+ * blocchi ripetuti e la cadenza, e come li salva un editor (pace, scritte a tempo, durate coi
+ * decimali). Insieme hanno Warmup, SteadyState, SolidState, IntervalsT, FreeRide, MaxEffort,
+ * una Ramp in salita e una in discesa, Cooldown.
+ */
 const ZWO = {
-  // https://github.com/vincent290587/WeePlanner/blob/master/db/GC%20Coaching/Chamois_Abuse.zwo
-  chamois: `<workout_file>
-    <author>S.Gaffney (GC Coaching)</author>
-    <name>Chamois Abuse</name>
-    <description>WARM-UP
--Start with 10 minutes gradually increasing your power and cadence, then 3x 30 seconds @110+ RPM @115% FTP with 3 minutes active recovery to ready the legs, and finally 2 minutes free ride to ready the mind. </description>
+  soglia: `<workout_file>
+    <author>OROBIA</author>
+    <name>Soglia a Città Alta</name>
+    <description>Riscaldamento, tre blocchi alla soglia, una rampa in discesa e il defaticamento.</description>
     <sportType>bike</sportType>
     <tags>
-        <tag name="Warm-up"/>
+        <tag name="Soglia"/>
     </tags>
     <workout>
-        <Warmup Duration="600" PowerLow="0.37261483" PowerHigh="0.75449997" pace="1125572608"/>
-        <IntervalsT Repeat="3" OnDuration="30.000002" OffDuration="30.000002" OnPower="1.1544999" OffPower="0.50449997" pace="1125572608"/>
-        <FreeRide Duration="120.00001" FlatRoad="1"/>
-        <SteadyState Duration="300" Power="1.0044999" pace="1125572608"/>
-        <Ramp Duration="30" PowerLow="1.0044999" PowerHigh="1.5044999" pace="1125572608"/>
-        <SteadyState Duration="120" Power="0.50449997" pace="1125572608"/>
-        <SteadyState Duration="300" Power="1.0044999" pace="1125572608"/>
-        <Ramp Duration="30" PowerLow="1.0044999" PowerHigh="1.5044999" pace="1125572608"/>
-        <SteadyState Duration="120" Power="0.50449997" pace="1125572608"/>
-        <SteadyState Duration="300" Power="1.0044999" pace="1125572608"/>
-        <Ramp Duration="30" PowerLow="1.0044999" PowerHigh="1.5044999" pace="1125572608"/>
-        <SteadyState Duration="120" Power="0.50449997" pace="1125572608"/>
-        <SteadyState Duration="300" Power="1.0044999" pace="1125572608"/>
-        <Ramp Duration="30" PowerLow="1.0044999" PowerHigh="1.5044999" pace="1125572608"/>
-        <SteadyState Duration="120" Power="0.5" pace="1125572608"/>
-        <SteadyState Duration="300" Power="1.0044999" pace="1125572608"/>
-        <Ramp Duration="30" PowerLow="1.0044999" PowerHigh="1.5044999" pace="1125572608"/>
-        <SteadyState Duration="240" Power="0.50449997" pace="1125572608"/>
-        <IntervalsT Repeat="10" OnDuration="30" OffDuration="30" OnPower="1.2544999" OffPower="0.75449997" pace="1125572608"/>
-        <SteadyState Duration="300" Power="0.50449997" pace="1125572608"/>
-        <IntervalsT Repeat="10" OnDuration="30" OffDuration="30" OnPower="1.3544999" OffPower="0.65449995" pace="1125572608"/>
-        <Cooldown Duration="330" PowerLow="0.81431097" PowerHigh="0.31961131" pace="1125572608"/>
+        <Warmup Duration="600" PowerLow="0.45" PowerHigh="0.75" Cadence="88"/>
+        <SteadyState Duration="480" Power="0.98"/>
+        <SteadyState Duration="180" Power="0.55"/>
+        <SteadyState Duration="480" Power="1.0"/>
+        <SteadyState Duration="180" Power="0.55"/>
+        <SteadyState Duration="480" Power="1.02"/>
+        <Ramp Duration="240" PowerLow="0.9" PowerHigh="0.6"/>
+        <Cooldown Duration="420" PowerLow="0.6" PowerHigh="0.4"/>
     </workout>
 </workout_file>
 `,
-  // https://github.com/vincent290587/WeePlanner/blob/master/db/GC%20Coaching/NOT_SO_SWEET_SPOT.zwo
-  sweet: `<workout_file>
-    <author>S.Gaffney (GC Coaching)</author>
-    <name>Not So Sweet Spot</name>
-    <description>WARM-UP
--Start with 10 minutes gradually increasing your power and cadence, then 3x 30 seconds @110+ RPM @115% FTP with 3 minutes active recovery to ready the legs, and finally 2 minutes free ride to ready the mind. 
-
-NOT SO SWEET SPOT
--2x 12 minutes @SST w/ a 3 minute gradual ramp-up in both power and cadence to finish.  Rest for 3 minutes between.
--Finish with a gradual "cool-down" :-) then stretch!</description>
+  trenta: `<workout_file>
+    <author>OROBIA</author>
+    <name>Trenta-trenta in Val Seriana</name>
+    <description>Due serie di 30 secondi forte e 30 piano, con due minuti liberi in mezzo.</description>
     <sportType>bike</sportType>
-    <tags>
-        <tag name="SweetSpot"/>
-    </tags>
+    <tags/>
     <workout>
-        <Warmup Duration="600" PowerLow="0.41679245" PowerHigh="0.7526415" pace="1125572608"/>
-        <IntervalsT Repeat="3" OnDuration="30.000002" OffDuration="30.000002" OnPower="1.1544999" OffPower="0.50449997" pace="1125572608"/>
-        <FreeRide Duration="120.00001" FlatRoad="1"/>
-        <SteadyState Duration="720" Power="0.88449997" pace="1125572608"/>
-        <Ramp Duration="180" PowerLow="0.88449997" PowerHigh="1.1044999" pace="1125572608"/>
-        <SteadyState Duration="180" Power="0.5" pace="1125572608"/>
-        <SteadyState Duration="720" Power="0.88449997" pace="1125572608"/>
-        <Ramp Duration="180" PowerLow="0.88449997" PowerHigh="1.1044999" pace="1125572608"/>
-        <SteadyState Duration="180" Power="0.50449997" pace="1125572608"/>
-        <Cooldown Duration="540" PowerLow="0.86805052" PowerHigh="0.25433213" pace="1125572608"/>
+        <Warmup Duration="480" PowerLow="0.4" PowerHigh="0.7">
+            <textevent timeoffset="10" message="Si parte piano"/>
+        </Warmup>
+        <IntervalsT Repeat="8" OnDuration="30" OffDuration="30" OnPower="1.2" OffPower="0.5" Cadence="100" CadenceResting="85"/>
+        <FreeRide Duration="120" FlatRoad="1"/>
+        <IntervalsT Repeat="6" OnDuration="30.000002" OffDuration="30.000002" OnPower="1.3" OffPower="0.55"/>
+        <Cooldown Duration="360" PowerLow="0.65" PowerHigh="0.35"/>
     </workout>
 </workout_file>
 `,
-  // https://github.com/eljefewappo/ZwiftWorkouts/blob/master/14367/examples/All_The_BuildingBlocks.zwo
-  blocks: `<workout_file>
+  blocchi: `<workout_file>
   <author/>
-  <name>All_The_BuildingBlocks</name>
+  <name>Tutti i blocchi</name>
   <description/>
   <sportType>bike</sportType>
   <durationType>time</durationType>
   <tags/>
   <workout>
-    <SteadyState Duration="300" Power="0.5" pace="0">
-      <textevent timeoffset="48" message="Zone 1"/>
+    <Warmup Duration="300" PowerLow="0.5" PowerHigh="0.7" pace="0"/>
+    <SteadyState Duration="300" Power="0.62" pace="0">
+      <textevent timeoffset="30" message="Fondo"/>
     </SteadyState>
-    <SteadyState Duration="300" Power="0.605" pace="0">
-      <textevent timeoffset="48" message="Zone 2"/>
-    </SteadyState>
-    <SteadyState Duration="300" Power="0.763" pace="0">
-      <textevent timeoffset="63" message="Zone 3"/>
-    </SteadyState>
-    <SteadyState Duration="300" Power="0.901" pace="0">
-      <textevent timeoffset="75" message="Zone 4"/>
-    </SteadyState>
-    <SteadyState Duration="300" Power="1.053" pace="0">
-      <textevent timeoffset="57" message="Zone 5"/>
-    </SteadyState>
-    <SteadyState Duration="300" Power="1.194" pace="0">
-      <textevent timeoffset="27" message="Zone 6"/>
-    </SteadyState>
-    <Ramp Duration="300" PowerLow="0.25" PowerHigh="0.75" pace="0">
-      <textevent timeoffset="87" message="Ramp Up"/>
-    </Ramp>
+    <SolidState Duration="240" Power="0.88"/>
     <Ramp Duration="300" PowerLow="0.75" PowerHigh="0.25" pace="0">
-      <textevent timeoffset="90" message="Ramp Down"/>
+      <textevent timeoffset="60" message="Giù"/>
     </Ramp>
-    <IntervalsT Repeat="3" OnDuration="30" OffDuration="120" OnPower="1" OffPower="0.5" pace="0">
-      <textevent timeoffset="69" message="Intervals"/>
-    </IntervalsT>
-    <FreeRide Duration="600" FlatRoad="0">
-      <textevent timeoffset="75" message="Free ride"/>
-    </FreeRide>
-    <Ramp Duration="295" PowerLow="0.75" PowerHigh="0.85" pace="0"/>
-    <Ramp Duration="295" PowerLow="0.75" PowerHigh="0.85" pace="0"/>
-    <Cooldown Duration="295" PowerLow="0.85" PowerHigh="0.75" pace="0"/>
+    <Ramp Duration="120.00001" PowerLow="0.5" PowerHigh="0.9" pace="0"/>
+    <IntervalsT Repeat="3" OnDuration="45" OffDuration="75" OnPower="1.1" OffPower="0.5" pace="0"/>
+    <MaxEffort Duration="15"/>
+    <FreeRide Duration="600" FlatRoad="0"/>
+    <Cooldown Duration="295" PowerLow="0.7" PowerHigh="0.45" pace="0"/>
   </workout>
 </workout_file>
 `,
@@ -629,44 +624,53 @@ function declared(xml: string): number {
   for (const m of xml.matchAll(/<(\w+)\s([^>]*?)\/?>/g)) {
     const a = (k: string) => Number(new RegExp(`\\b${k}="([^"]+)"`).exec(m[2])?.[1] ?? 0);
     if (m[1] === 'IntervalsT') sec += a('Repeat') * (Math.round(a('OnDuration')) + Math.round(a('OffDuration')));
-    else if (/^(Warmup|Cooldown|Ramp|SteadyState|FreeRide|MaxEffort)$/.test(m[1])) sec += Math.round(a('Duration'));
+    else if (/^(Warmup|Cooldown|Ramp|SteadyState|SolidState|FreeRide|MaxEffort)$/.test(m[1])) sec += Math.round(a('Duration'));
   }
   return sec;
 }
 
 describe('N5 · gli allenamenti .zwo', () => {
-  it('Chamois Abuse: riscaldamento, IntervalsT, FreeRide, SteadyState, Ramp e defaticamento, al secondo', () => {
-    const w = parseZwo(ZWO.chamois, 'zwo-a');
-    expect(w).toMatchObject({ id: 'zwo-a', name: 'Chamois Abuse', builtin: false, kind: 'custom', description: 'Da Zwift · S.Gaffney (GC Coaching)' });
-    expect(workoutDuration(w)).toBe(declared(ZWO.chamois));
-    expect(w.steps[0]).toMatchObject({ name: 'warmup', durationSec: 600, powerPct: 37.3, powerEndPct: 75.4 });
-    // IntervalsT 3 × (30″ al 115%, 30″ al 50%)
-    expect(w.steps.slice(1, 7).map((s) => [s.durationSec, s.powerPct])).toEqual([
-      [30, 115.4],
-      [30, 50.4],
-      [30, 115.4],
-      [30, 50.4],
-      [30, 115.4],
-      [30, 50.4],
+  it('Soglia a Città Alta: riscaldamento, blocchi costanti, rampa in discesa e defaticamento, al secondo', () => {
+    const w = parseZwo(ZWO.soglia, 'zwo-a');
+    expect(w).toMatchObject({ id: 'zwo-a', name: 'Soglia a Città Alta', builtin: false, kind: 'custom', description: 'Da un file .zwo · OROBIA' });
+    expect(workoutDuration(w)).toBe(declared(ZWO.soglia));
+    expect(w.steps.map((s) => [s.name, s.durationSec, s.powerPct, s.powerEndPct ?? null])).toEqual([
+      ['warmup', 600, 45, 75],
+      ['work', 480, 98, null],
+      ['rec', 180, 55, null],
+      ['work-1', 480, 100, null],
+      ['rec-1', 180, 55, null],
+      ['work-2', 480, 102, null],
+      ['ramp', 240, 90, 60],
+      ['cooldown', 420, 60, 40],
     ]);
-    expect(w.steps[7]).toMatchObject({ name: 'rec-libero', durationSec: 120, powerPct: FREE_RIDE_PCT });
-    expect(w.steps[8]).toMatchObject({ durationSec: 300, powerPct: 100.4 });
-    expect(w.steps[9]).toMatchObject({ name: 'ramp', durationSec: 30, powerPct: 100.4, powerEndPct: 150.4 });
-    const last = w.steps[w.steps.length - 1];
-    expect(last).toMatchObject({ name: 'cooldown', durationSec: 330, powerPct: 81.4, powerEndPct: 32 });
+    expect(w.steps[0].cadence).toBe(88);
     expect(new Set(w.steps.map((s) => s.id)).size).toBe(w.steps.length);
   });
 
-  it('Not So Sweet Spot e All The Building Blocks: la durata torna, le rampe anche in discesa, le scritte a tempo fuori', () => {
-    const a = parseZwo(ZWO.sweet);
-    expect(workoutDuration(a)).toBe(declared(ZWO.sweet));
-    expect(a.steps.filter((s) => s.durationSec === 720).every((s) => s.powerPct === 88.4)).toBe(true);
-    const b = parseZwo(ZWO.blocks);
-    expect(workoutDuration(b)).toBe(declared(ZWO.blocks));
-    expect(b.description).toBe('Da Zwift');
-    const down = b.steps.find((s) => s.name?.startsWith('ramp') && s.powerPct === 75 && s.powerEndPct === 25);
-    expect(down?.durationSec).toBe(300);
-    expect(b.steps.find((s) => s.name === 'rec-libero')?.durationSec).toBe(600);
+  it('Trenta-trenta: IntervalsT con la cadenza, FreeRide, durate coi decimali, scritte a tempo fuori', () => {
+    const w = parseZwo(ZWO.trenta);
+    expect(workoutDuration(w)).toBe(declared(ZWO.trenta));
+    expect(w.steps.slice(1, 5).map((s) => [s.durationSec, s.powerPct, s.cadence])).toEqual([
+      [30, 120, 100],
+      [30, 50, 85],
+      [30, 120, 100],
+      [30, 50, 85],
+    ]);
+    expect(w.steps[17]).toMatchObject({ name: 'rec-libero', durationSec: 120, powerPct: FREE_RIDE_PCT });
+    expect(w.steps.filter((s) => s.powerPct === 130).every((s) => s.durationSec === 30)).toBe(true);
+    expect(w.steps[w.steps.length - 1]).toMatchObject({ name: 'cooldown', durationSec: 360, powerPct: 65, powerEndPct: 35 });
+  });
+
+  it('Tutti i blocchi: SolidState, MaxEffort, una rampa giù e una su, come li salva un editor', () => {
+    const w = parseZwo(ZWO.blocchi);
+    expect(workoutDuration(w)).toBe(declared(ZWO.blocchi));
+    expect(w.description).toBe('Da un file .zwo');
+    expect(w.steps.find((s) => s.powerPct === 75 && s.powerEndPct === 25)?.durationSec).toBe(300);
+    expect(w.steps.find((s) => s.powerPct === 50 && s.powerEndPct === 90)?.durationSec).toBe(120);
+    expect(w.steps.find((s) => s.name === 'work-max')).toMatchObject({ durationSec: 15, powerPct: MAX_EFFORT_PCT });
+    expect(w.steps.find((s) => s.name === 'rec-libero')?.durationSec).toBe(600);
+    expect(w.steps.find((s) => s.durationSec === 240)?.powerPct).toBe(88);
   });
 
   it('non tutto è un allenamento per la bici', () => {
@@ -675,28 +679,36 @@ describe('N5 · gli allenamenti .zwo', () => {
     expect(() => parseZwo('<workout_file><workout></workout></workout_file>')).toThrow(ZwoError);
   });
 
-  it('esportato e reimportato: la stessa potenza a ogni secondo, gli intervalli come IntervalsT', () => {
+  it.each(Object.keys(ZWO) as (keyof typeof ZWO)[])('andata e ritorno di %s: importato, esportato e reimportato, identico al secondo', (k) => {
+    const a = parseZwo(ZWO[k]);
+    const xml = workoutToZwo(a, a.name!, 250);
+    const b = parseZwo(xml);
+    expect(workoutPowerSeries(b, 250)).toEqual(workoutPowerSeries(a, 250));
+    expect(b.steps.map((s) => [s.durationSec, s.powerPct, s.powerEndPct, s.cadence])).toEqual(a.steps.map((s) => [s.durationSec, s.powerPct, s.powerEndPct, s.cadence]));
+    // e una seconda volta: i blocchi esportati non cambiano più
+    const blocks = (x: string) => x.slice(x.indexOf('<workout>'), x.indexOf('</workout>'));
+    expect(blocks(workoutToZwo(b, a.name!, 250))).toBe(blocks(xml));
+  });
+
+  it('esportati gli allenamenti pronti tornano uguali, gli intervalli come IntervalsT', () => {
     for (const id of ['vo2-30-30', 'over-under-3x9', 'agilita', 'risveglio']) {
       const w = builtinById(id)!;
-      const xml = workoutToZwo(w, id, 250);
-      const back = parseZwo(xml);
-      const a = workoutPowerSeries(w, 250);
-      const b = workoutPowerSeries(back, 250);
-      expect(b.length, id).toBe(a.length);
-      for (let i = 0; i < a.length; i++) expect(Math.abs(a[i] - b[i]), `${id} al secondo ${i}`).toBeLessThan(0.6);
+      const back = parseZwo(workoutToZwo(w, id, 250));
+      expect(workoutPowerSeries(back, 250), id).toEqual(workoutPowerSeries(w, 250));
     }
     expect(workoutToZwo(builtinById('vo2-30-30')!, 'VO2max 30/30', 250)).toMatch(/<IntervalsT Repeat="10" OnDuration="30" OffDuration="30" OnPower="1.25" OffPower="0.5"\/>/);
+    expect(workoutToZwo(parseZwo(ZWO.trenta), 'x', 250)).toMatch(/<IntervalsT Repeat="8" OnDuration="30" OffDuration="30" OnPower="1.2" OffPower="0.5" Cadence="100" CadenceResting="85"\/>/);
   });
 
   it('l’allenamento importato va in ERG, con gli archi degli intervalli', async () => {
     const saved: string[] = [];
-    const note = await importZwoFiles([new File([ZWO.chamois], 'Chamois_Abuse.zwo'), new File(['<gpx/>'], 'giro.gpx')], async (w) => {
+    const note = await importZwoFiles([new File([ZWO.trenta], 'trenta-trenta.zwo'), new File(['<gpx/>'], 'giro.gpx')], async (w) => {
       saved.push(w.name!);
     });
-    expect(saved).toEqual(['Chamois Abuse']);
-    expect(note).toBe('Importato «Chamois Abuse»: è fra i tuoi. «giro.gpx» non è un allenamento .zwo per la bici.');
-    const w = parseZwo(ZWO.chamois);
-    expect(ergGates(w, 250).length).toBeGreaterThanOrEqual(5);
+    expect(saved).toEqual(['Trenta-trenta in Val Seriana']);
+    expect(note).toBe('Importato «Trenta-trenta in Val Seriana»: è fra i tuoi. «giro.gpx» non è un allenamento .zwo per la bici.');
+    const w = parseZwo(ZWO.trenta);
+    expect(ergGates(w, 250).length).toBeGreaterThanOrEqual(2);
     const session = new WorldSession(world, { ride: rideDef('val-seriana') }, 0);
     const engine = new RideEngine({
       track: session.path,
@@ -713,8 +725,8 @@ describe('N5 · gli allenamenti .zwo', () => {
       cw: 0.39,
     });
     const game = new RideGame({ engine, track: session.path, world: { data: world, session }, nick: '', weightKg: 75, pbs: {}, sim: () => true, scale: () => 1, ranked: false });
-    for (let i = 0; i < 6100; i++) {
-      engine.tick(0.1); // 610 s: dentro il primo intervallo
+    for (let i = 0; i < 4900; i++) {
+      engine.tick(0.1); // 490 s: dentro il primo 30″ forte
       session.step(engine, 0.1);
       game.tick(0.1);
     }

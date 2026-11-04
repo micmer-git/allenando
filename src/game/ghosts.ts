@@ -151,11 +151,28 @@ export function ghostGap(trace: GhostTrace, m: number, s: number): number | null
   return g == null ? null : g - s;
 }
 
-/** «12 s avanti», «1:05 dietro», «Pari». */
-export function formatGap(gap: number): string {
+/**
+ * Il distacco a parole, col soggetto: sei tu davanti o dietro al fantasma. «Davanti al fantasma
+ * · 12 s», «Dietro al fantasma del GPM · 01:05», «Pari col fantasma». `of` è « del GPM» per un tratto.
+ */
+export function gapLabel(gap: number, of = ''): string {
   const a = Math.abs(gap);
-  if (a < 0.5) return 'Pari';
-  return `${a < 60 ? `${Math.round(a)} s` : formatDuration(a)} ${gap > 0 ? 'avanti' : 'dietro'}`;
+  if (a < 0.5) return `Pari col fantasma${of}`;
+  return `${gap > 0 ? 'Davanti al' : 'Dietro al'} fantasma${of} · ${a < 60 ? `${Math.round(a)} s` : formatDuration(a)}`;
+}
+
+/**
+ * I colori della pillola: fondo notte quasi pieno, testo chiaro; verde solo quando sei davanti.
+ * Niente rosso (nel canone vuol dire «cancella»). Contrasto ≥ 4,5:1 su qualunque cielo (la prova).
+ */
+export const GAP_COLORS = {
+  bg: 'rgba(12, 11, 9, 0.86)',
+  ahead: '#5fe0a8',
+  behind: '#f6f2e6',
+} as const;
+
+export function gapStyle(gap: number): { background: string; color: string } {
+  return { background: GAP_COLORS.bg, color: gap >= 0.5 ? GAP_COLORS.ahead : GAP_COLORS.behind };
 }
 
 // ---------- in IndexedDB ----------
@@ -186,19 +203,19 @@ export function saveGhostIfBetter(trace: GhostTrace): Promise<boolean> {
 
 export interface GhostNow {
   kind: 'percorso' | 'tratto';
-  /** «Fantasma», «Fantasma del GPM»… */
-  label: string;
+  /** di quale fantasma si parla: «» per il percorso, « del GPM», « della volata»… */
+  of: string;
   /** metri del fantasma sulla strada di adesso (la stessa del motore) */
   distance: number;
   /** distacco in secondi, positivo se sei davanti; null oltre il suo arrivo */
   gap: number | null;
 }
 
-const KIND_LABEL: Record<SegmentKind, string> = {
-  gpm: 'Fantasma del GPM',
-  volata: 'Fantasma della volata',
-  crono: 'Fantasma della crono',
-  cassonetto: 'Fantasma del cassonetto',
+const KIND_OF: Record<SegmentKind, string> = {
+  gpm: ' del GPM',
+  volata: ' della volata',
+  crono: ' della crono',
+  cassonetto: ' del cassonetto',
 };
 
 export interface RideGhostsOptions {
@@ -242,7 +259,7 @@ export class RideGhosts {
     // il percorso intero: solo partendo dal via e restando sul percorso
     const route = this.routeKey ? this.traces[this.routeKey] : undefined;
     if (route && s && s.onRoute && this.startD < 1) {
-      return { kind: 'percorso', label: 'Fantasma', distance: ghostMetersAt(route, e.elapsed), gap: ghostGap(route, e.distance, e.elapsed) };
+      return { kind: 'percorso', of: '', distance: ghostMetersAt(route, e.elapsed), gap: ghostGap(route, e.distance, e.elapsed) };
     }
     // il tratto partito per primo (la salita intera prima degli ultimi 3 km)
     let best: GhostNow | null = null;
@@ -252,7 +269,7 @@ export class RideGhosts {
       if (!tr || l.t0 >= t0) continue;
       t0 = l.t0;
       const into = e.elapsed - l.t0;
-      best = { kind: 'tratto', label: KIND_LABEL[l.seg.kind] ?? 'Fantasma', distance: l.from + ghostMetersAt(tr, into), gap: ghostGap(tr, e.distance - l.from, into) };
+      best = { kind: 'tratto', of: KIND_OF[l.seg.kind] ?? '', distance: l.from + ghostMetersAt(tr, into), gap: ghostGap(tr, e.distance - l.from, into) };
     }
     return best;
   }

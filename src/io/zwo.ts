@@ -128,7 +128,7 @@ export function parseZwo(text: string, id = `zwo-${crypto.randomUUID()}`): Worko
   const name = textOf(head, 'name') || 'Allenamento da Zwift';
   // la descrizione di un .zwo è il copione dei blocchi, quasi sempre in inglese: si dice da dove viene
   const author = textOf(head, 'author');
-  const description = author ? `Da Zwift · ${author}` : 'Da Zwift';
+  const description = author ? `Da un file .zwo · ${author}` : 'Da un file .zwo';
   return { id, builtin: false, kind: 'custom', name, description, steps };
 }
 

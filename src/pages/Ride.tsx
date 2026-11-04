@@ -49,7 +49,7 @@ import { SEGMENT_STYLE } from '@/game/arches';
 import { sessionById } from '@/game/sessions';
 import { useGame, useLook } from '@/game/useGame';
 import { ErgAheadHud, LevelUp, PoiToast, RewardsSummary, SegmentHud, SessionHud } from './RideGameHud';
-import { formatGap, useRideGhosts } from '@/game/ghosts';
+import { gapLabel, gapStyle, useRideGhosts } from '@/game/ghosts';
 import { CartolinaButton } from '@/components/ShareCard';
 
 const DEFAULT_ROUTE = 'selvino-nembro';
@@ -755,11 +755,8 @@ function RideScreen({
                 </button>
               ) : null}
               {gap != null ? (
-                <p
-                  className={`rounded-xl px-2.5 py-1 text-xs font-semibold backdrop-blur ${gap >= 0 ? 'bg-good/25 text-good' : 'bg-danger/25 text-danger'}`}
-                  data-testid="ghost-gap"
-                >
-                  {own?.label ?? 'Fantasma'} {formatGap(gap)}
+                <p className="rounded-xl px-2.5 py-1 text-xs font-semibold backdrop-blur" style={gapStyle(gap)} data-testid="ghost-gap">
+                  {gapLabel(gap, own?.of)}
                 </p>
               ) : null}
             </div>

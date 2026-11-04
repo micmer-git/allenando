@@ -308,10 +308,10 @@ try {
     const ready = (ms = 180000) => p.waitFor(`document.querySelector('[data-testid=world-ready]')?.dataset.ready === 'yes'`, ms);
     const setEffort = (v) =>
       p.evaluate(`(() => { const i = document.querySelector('input[type=range]'); if (!i) return false; const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, '${v}'); i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
-    // le scritte che cominciano in minuscolo, dentro un pezzo di pagina: ogni elemento con del testo
-    // suo, letto per intero (le unità no; «12 settimane» comincia con un numero e va bene)
+    // le scritte che cominciano in minuscolo, nodo di testo per nodo di testo (come le conta la pista 1:
+    // «12 uscite · 11 h in tutto» spezzato da React diventa «uscite ·» e «in tutto»); le unità no
     const lower = (sel) =>
-      p.evaluate(`(() => { const out = []; for (const root of document.querySelectorAll(${JSON.stringify(sel)})) for (const el of [root, ...root.querySelectorAll('*')]) { if (el.closest('.sr-only') || ![...el.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim())) continue; const t = el.textContent.replace(/\\s+/g, ' ').trim(); const c = t.match(/[\\p{L}\\p{N}]/u)?.[0]; if (c && /\\p{Ll}/u.test(c) && !/^(km|m|W|rpm|s)\\b/.test(t)) out.push(t); } return out; })()`);
+      p.evaluate(`(() => { const out = []; for (const root of document.querySelectorAll(${JSON.stringify(sel)})) { const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) { const t = n.textContent.trim(); if (t.length < 4 || !/\\s/.test(t) || !n.parentElement || n.parentElement.closest('.sr-only') || getComputedStyle(n.parentElement).textTransform === 'uppercase') continue; if (/^[a-zàèéìòù]/.test(t) && !/^(km|m |min|kg|bpm|rpm|ml|h )/.test(t)) out.push(t); } } return out; })()`);
     // un PNG dalla pagina (blob: dell'anteprima) al disco
     const savePng = async (sel, name) => {
       const r = await p.evaluate(`(async () => { const img = document.querySelector(${JSON.stringify(sel)}); if (!img) return null; await img.decode().catch(() => null); const buf = new Uint8Array(await (await fetch(img.src)).arrayBuffer()); let s = ''; for (let i = 0; i < buf.length; i += 0x8000) s += String.fromCharCode(...buf.subarray(i, i + 0x8000)); return { w: img.naturalWidth, h: img.naturalHeight, b64: btoa(s) }; })()`);
@@ -353,8 +353,8 @@ try {
     check(await ready(), 'fantasma: Maresana di nuovo');
     await p.clickText('10×');
     await setEffort(115);
-    check(await p.waitFor(`/\\d+ s (dietro|avanti)|Pari/.test(document.querySelector('[data-testid=ghost-gap]')?.textContent ?? '')`, 60000), 'fantasma: ghost-gap dice i secondi', await p.evaluate(`document.querySelector('[data-testid=ghost-gap]')?.textContent ?? ''`));
-    check(await p.waitFor(`/Fantasma \\d+ s dietro/.test(document.querySelector('[data-testid=ghost-gap]')?.textContent ?? '')`, 120000), 'fantasma: più piano del record, sei dietro', await p.evaluate(`document.querySelector('[data-testid=ghost-gap]')?.textContent ?? ''`));
+    check(await p.waitFor(`/^(Davanti al fantasma · \\d+ s|Dietro al fantasma · \\d+ s|Pari col fantasma)$/.test(document.querySelector('[data-testid=ghost-gap]')?.textContent ?? '')`, 60000), 'fantasma: ghost-gap dice i secondi', await p.evaluate(`document.querySelector('[data-testid=ghost-gap]')?.textContent ?? ''`));
+    check(await p.waitFor(`/^Dietro al fantasma · \\d+ s$/.test(document.querySelector('[data-testid=ghost-gap]')?.textContent ?? '')`, 120000), 'fantasma: più piano del record, sei dietro', await p.evaluate(`document.querySelector('[data-testid=ghost-gap]')?.textContent ?? ''`));
     await p.clickText('1×');
     await sleep(2500);
     await p.shot('n2-02-fantasma-in-strada');
@@ -363,6 +363,10 @@ try {
     await p.clickText('1×');
     await sleep(2500);
     await p.shot('n2-03-fantasma-davanti');
+    // contrasto del testo sulla pillola, posata sul cielo più chiaro possibile (il bianco)
+    const ratio = await p.evaluate(`(() => { const el = document.querySelector('[data-testid=ghost-gap]'); if (!el) return 0; const st = getComputedStyle(el); const num = (c) => (c.match(/[\\d.]+/g) ?? []).map(Number); const [r, g, b, a = 1] = num(st.backgroundColor); const bg = [r, g, b].map((v) => v * a + 255 * (1 - a)); const fg = num(st.color).slice(0, 3); const lum = (c) => { const [x, y, z] = c.map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * x + 0.7152 * y + 0.0722 * z; }; const l1 = lum(fg), l2 = lum(bg); return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05); })()`);
+    check(ratio >= 4.5, 'fantasma: contrasto della pillola ≥ 4,5:1 anche sul bianco', ratio.toFixed(1));
+    check(!/255, 100, 100|180, 35, 35/.test(await p.evaluate(`getComputedStyle(document.querySelector('[data-testid=ghost-gap]')).color`)), 'fantasma: la pillola non è rossa');
     console.log('     ghost-gap:', await p.evaluate(`document.querySelector('[data-testid=ghost-gap]')?.textContent ?? ''`));
 
     // N3 · la cartolina dal dettaglio del giro salvato
@@ -377,6 +381,23 @@ try {
     const png2 = await savePng('[data-testid=cartolina-img]', 'n3-cartolina-dettaglio');
     check(png2?.w === 1080 && png2?.h === 1350, 'cartolina dal dettaglio: 1080×1350');
     await p.shot('n3-02-cartolina-dettaglio');
+    await p.click('[data-testid=cartolina-close]');
+
+    // N3 · Città Alta dalla build: un giro intero a 10×, poi la cartolina coi monumenti passati
+    await nav('/ride?world=bergamo&ride=citta-alta');
+    check(await ready(), 'cartolina Città Alta: pronta');
+    await p.clickText('10×');
+    await setEffort(160);
+    check(await p.waitFor(`!!document.querySelector('[data-testid=ride-summary]')`, 1800000), 'cartolina Città Alta: giro finito');
+    await p.click('[data-testid=cartolina-open]');
+    check(await p.waitFor(`!!document.querySelector('[data-testid=cartolina-img]')`, 60000), 'cartolina Città Alta: disegnata');
+    await sleep(800);
+    const ca = await savePng('[data-testid=cartolina-img]', 'n3-cartolina-citta-alta');
+    check(ca?.w === 1080 && ca?.h === 1350, 'cartolina Città Alta: PNG 1080×1350');
+    const mon = await p.evaluate(`document.querySelector('[data-testid=cartolina-img]').dataset.monumenti`);
+    check(/Porta Sant’Agostino/.test(mon) && !mon.includes("'") && mon.split('|').length >= 5, 'cartolina Città Alta: i monumenti, con l’apostrofo tipografico', mon);
+    check(await p.evaluate(`document.fonts.check('800 100px "Barlow Condensed"') && document.fonts.check('500 24px Outfit')`), 'cartolina Città Alta: Barlow Condensed e Outfit caricati');
+    await p.shot('n3-03-cartolina-citta-alta');
     await p.click('[data-testid=cartolina-close]');
 
     // N4 · i programmi: si comincia oggi, Oggi mostra la seduta e un tocco apre la corsa
@@ -421,64 +442,46 @@ try {
     // N5 · un .zwo vero: si importa, sta fra i tuoi, va in ERG
     await nav('/workouts');
     await p.waitFor(`!!document.querySelector('[data-testid=zwo-import] input')`, 8000);
-    const zwoPath = join(out, 'Chamois_Abuse.zwo');
-    // un file vero di Zwift (GC Coaching), come in tests/novita.test.ts:
-    // https://github.com/vincent290587/WeePlanner/blob/master/db/GC%20Coaching/Chamois_Abuse.zwo
-    const CHAMOIS_ZWO = `<workout_file>
-    <author>S.Gaffney (GC Coaching)</author>
-    <name>Chamois Abuse</name>
-    <description>WARM-UP
--Start with 10 minutes gradually increasing your power and cadence, then 3x 30 seconds @110+ RPM @115% FTP with 3 minutes active recovery to ready the legs, and finally 2 minutes free ride to ready the mind. </description>
+    const zwoPath = join(out, 'trenta-trenta.zwo');
+    // un .zwo scritto da noi, come quelli di tests/novita.test.ts: riscaldamento, IntervalsT con la
+    // cadenza, FreeRide, defaticamento
+    const ZWO = `<workout_file>
+    <author>OROBIA</author>
+    <name>Trenta-trenta in Val Seriana</name>
+    <description>Due serie di 30 secondi forte e 30 piano, con due minuti liberi in mezzo.</description>
     <sportType>bike</sportType>
-    <tags>
-        <tag name="Warm-up"/>
-    </tags>
+    <tags/>
     <workout>
-        <Warmup Duration="600" PowerLow="0.37261483" PowerHigh="0.75449997" pace="1125572608"/>
-        <IntervalsT Repeat="3" OnDuration="30.000002" OffDuration="30.000002" OnPower="1.1544999" OffPower="0.50449997" pace="1125572608"/>
-        <FreeRide Duration="120.00001" FlatRoad="1"/>
-        <SteadyState Duration="300" Power="1.0044999" pace="1125572608"/>
-        <Ramp Duration="30" PowerLow="1.0044999" PowerHigh="1.5044999" pace="1125572608"/>
-        <SteadyState Duration="120" Power="0.50449997" pace="1125572608"/>
-        <SteadyState Duration="300" Power="1.0044999" pace="1125572608"/>
-        <Ramp Duration="30" PowerLow="1.0044999" PowerHigh="1.5044999" pace="1125572608"/>
-        <SteadyState Duration="120" Power="0.50449997" pace="1125572608"/>
-        <SteadyState Duration="300" Power="1.0044999" pace="1125572608"/>
-        <Ramp Duration="30" PowerLow="1.0044999" PowerHigh="1.5044999" pace="1125572608"/>
-        <SteadyState Duration="120" Power="0.50449997" pace="1125572608"/>
-        <SteadyState Duration="300" Power="1.0044999" pace="1125572608"/>
-        <Ramp Duration="30" PowerLow="1.0044999" PowerHigh="1.5044999" pace="1125572608"/>
-        <SteadyState Duration="120" Power="0.5" pace="1125572608"/>
-        <SteadyState Duration="300" Power="1.0044999" pace="1125572608"/>
-        <Ramp Duration="30" PowerLow="1.0044999" PowerHigh="1.5044999" pace="1125572608"/>
-        <SteadyState Duration="240" Power="0.50449997" pace="1125572608"/>
-        <IntervalsT Repeat="10" OnDuration="30" OffDuration="30" OnPower="1.2544999" OffPower="0.75449997" pace="1125572608"/>
-        <SteadyState Duration="300" Power="0.50449997" pace="1125572608"/>
-        <IntervalsT Repeat="10" OnDuration="30" OffDuration="30" OnPower="1.3544999" OffPower="0.65449995" pace="1125572608"/>
-        <Cooldown Duration="330" PowerLow="0.81431097" PowerHigh="0.31961131" pace="1125572608"/>
+        <Warmup Duration="480" PowerLow="0.4" PowerHigh="0.7">
+            <textevent timeoffset="10" message="Si parte piano"/>
+        </Warmup>
+        <IntervalsT Repeat="8" OnDuration="30" OffDuration="30" OnPower="1.2" OffPower="0.5" Cadence="100" CadenceResting="85"/>
+        <FreeRide Duration="120" FlatRoad="1"/>
+        <IntervalsT Repeat="6" OnDuration="30.000002" OffDuration="30.000002" OnPower="1.3" OffPower="0.55"/>
+        <Cooldown Duration="360" PowerLow="0.65" PowerHigh="0.35"/>
     </workout>
 </workout_file>
 `;
-    writeFileSync(zwoPath, CHAMOIS_ZWO);
+    writeFileSync(zwoPath, ZWO);
     await p.s('DOM.enable');
     const { result } = await p.s('Runtime.evaluate', { expression: `document.querySelector('[data-testid=zwo-import] input')` });
     await p.s('DOM.setFileInputFiles', { files: [zwoPath], objectId: result.objectId });
-    check(await p.waitFor(`/Importato «Chamois Abuse»/.test(document.querySelector('[data-testid=zwo-note]')?.textContent ?? '')`, 8000), 'zwo: importato', await p.evaluate(`document.querySelector('[data-testid=zwo-note]')?.textContent ?? ''`));
+    check(await p.waitFor(`/Importato «Trenta-trenta in Val Seriana»/.test(document.querySelector('[data-testid=zwo-note]')?.textContent ?? '')`, 8000), 'zwo: importato', await p.evaluate(`document.querySelector('[data-testid=zwo-note]')?.textContent ?? ''`));
     await sleep(500);
     await p.evaluate(`document.querySelector('[data-testid=zwo-note]').scrollIntoView({ block: 'start' })`);
     await p.shot('n5-01-zwo-importato');
-    await p.evaluate(`[...document.querySelectorAll('h2')].find((h) => h.textContent === 'Chamois Abuse')?.scrollIntoView({ block: 'center' })`);
+    await p.evaluate(`[...document.querySelectorAll('h2')].find((h) => h.textContent === 'Trenta-trenta in Val Seriana')?.scrollIntoView({ block: 'center' })`);
     await sleep(400);
     await p.shot('n5-02-zwo-fra-i-tuoi');
     await auditCheck(p, 'allenamenti col .zwo');
-    const zid = await p.evaluate(`(() => { const h = [...document.querySelectorAll('h2')].find((x) => x.textContent === 'Chamois Abuse'); return h?.closest('li')?.querySelector('[data-testid^=zwo-export-]')?.getAttribute('data-testid')?.replace('zwo-export-', '') ?? null; })()`);
+    const zid = await p.evaluate(`(() => { const h = [...document.querySelectorAll('h2')].find((x) => x.textContent === 'Trenta-trenta in Val Seriana'); return h?.closest('li')?.querySelector('[data-testid^=zwo-export-]')?.getAttribute('data-testid')?.replace('zwo-export-', '') ?? null; })()`);
     check(!!zid, 'zwo: l’allenamento importato ha «Inizia»', zid ?? '');
     // l'esportazione: Chrome headless non scrive i download dei blob, si legge il file dal blob stesso
     await p.evaluate(`(() => { window.__zwo = null; const orig = URL.createObjectURL; URL.createObjectURL = (b) => { b.text().then((t) => (window.__zwo = t)); return orig.call(URL, b); }; })()`);
     await p.click(`[data-testid="zwo-export-${zid}"]`);
     const exported = (await p.waitFor(`(window.__zwo ?? '').includes('</workout_file>')`, 8000)) ? await p.evaluate('window.__zwo') : '';
-    if (exported) writeFileSync(join(out, 'n5-chamois-abuse-esportato.zwo'), exported);
-    check(/<name>Chamois Abuse<\/name>/.test(exported) && /<IntervalsT Repeat="\d+" OnDuration="30" OffDuration="30"/.test(exported), 'zwo: esportato di nuovo, con gli IntervalsT', exported ? `${exported.length} caratteri` : 'niente');
+    if (exported) writeFileSync(join(out, 'n5-trenta-trenta-esportato.zwo'), exported);
+    check(/<name>Trenta-trenta in Val Seriana<\/name>/.test(exported) && /<IntervalsT Repeat="\d+" OnDuration="30" OffDuration="30"/.test(exported), 'zwo: esportato di nuovo, con gli IntervalsT', exported ? `${exported.length} caratteri` : 'niente');
     await p.click(`[data-testid="workout-${zid}"]`);
     check(await ready(), 'zwo → corsa: pronta');
     check(await p.waitFor(`!!document.querySelector('[data-testid=erg-target]')`, 10000), 'zwo → corsa: in ERG');

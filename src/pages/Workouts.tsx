@@ -309,9 +309,9 @@ function WorkoutCard({
         <Button variant="ghost" className="h-11" onClick={onCopy}>
           {t('actions.duplicate')}
         </Button>
-        <Button variant="ghost" className="h-11" onClick={() => downloadZwo(workout, workoutTitle(workout, t), ftp)} data-testid={`zwo-export-${workout.id}`}>
+        <button type="button" className="inline-flex h-11 items-center px-2 text-sm font-semibold text-muted" onClick={() => downloadZwo(workout, workoutTitle(workout, t), ftp)} data-testid={`zwo-export-${workout.id}`}>
           Esporta .zwo
-        </Button>
+        </button>
       </div>
     </li>
   );

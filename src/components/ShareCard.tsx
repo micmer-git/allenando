@@ -55,7 +55,7 @@ const DONE: Record<ShareOutcome, string> = {
 };
 
 function CartolinaSheet({ ride, onClose }: { ride: Ride; onClose: () => void }) {
-  const [card, setCard] = useState<{ blob: Blob; url: string; title: string } | null>(null);
+  const [card, setCard] = useState<{ blob: Blob; url: string; title: string; monuments: string[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const share = canShareFiles();
@@ -71,7 +71,7 @@ function CartolinaSheet({ ride, onClose }: { ride: Ride; onClose: () => void }) 
       const blob = await renderCard(input, world);
       if (!alive) return;
       url = URL.createObjectURL(blob);
-      setCard({ blob, url, title: input.title });
+      setCard({ blob, url, title: input.title, monuments: input.monuments.map((m) => m.name) });
     })().catch(() => alive && setError('Non sono riuscito a disegnare la cartolina.'));
     return () => {
       alive = false;
@@ -102,6 +102,7 @@ function CartolinaSheet({ ride, onClose }: { ride: Ride; onClose: () => void }) 
               className="mx-auto block max-h-[62dvh] w-auto max-w-full rounded-2xl border border-line"
               style={{ aspectRatio: `${CARD_W} / ${CARD_H}` }}
               data-testid="cartolina-img"
+              data-monumenti={card.monuments.join('|')}
             />
           ) : (
             <div className="mx-auto grid max-h-[62dvh] w-full place-items-center rounded-2xl border border-line bg-bg text-sm text-muted" style={{ aspectRatio: `${CARD_W} / ${CARD_H}` }}>

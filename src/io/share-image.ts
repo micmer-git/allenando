@@ -259,6 +259,11 @@ export interface WorldContext {
   far: Float32Array | null;
 }
 
+/** L'apostrofo tipografico: i nomi di OpenStreetMap hanno quello dritto («Sant'Agostino» → «Sant’Agostino»). */
+export function typo(s: string): string {
+  return s.replace(/'/g, '’');
+}
+
 /** Il nome e la riga sopra: un percorso del mondo si riconosce dal nome del giro. */
 export function cardTitle(ride: Pick<Ride, 'name' | 'routeId'>, rides: readonly { id: string; name: string; side: string }[]): { title: string; eyebrow: string } {
   const byRoute = ride.routeId?.startsWith('bergamo:') ? rides.find((r) => `bergamo:${r.id}` === ride.routeId) : undefined;
@@ -302,12 +307,12 @@ export function cardInputFromRide(ride: Ride, world: WorldData | null, monumenti
         }
       }
     }
-    for (const { m } of [...firstPass.values()].sort((a, c) => a.i - c.i)) passed.push({ name: m.name, x: m.x, z: m.z });
+    for (const { m } of [...firstPass.values()].sort((a, c) => a.i - c.i)) passed.push({ name: typo(m.name), x: m.x, z: m.z });
   }
   const t = cardTitle(ride, world?.rides ?? []);
   return {
-    title: t.title,
-    eyebrow: t.eyebrow,
+    title: typo(t.title),
+    eyebrow: typo(t.eyebrow),
     when: new Date(ride.startTime),
     durationSec: ride.durationSec,
     distanceM: ride.distanceM,
@@ -653,7 +658,7 @@ function placeLabels(g: Ctx, world: WorldContext | null, input: CardInput, layou
     if (n >= 7) break;
     const c = toCard(v, p.x, p.z);
     if (c.x < 0 || c.x > CARD_W || c.y < 150 || c.y > bottom) continue;
-    const s = p.name.toLocaleUpperCase('it-IT');
+    const s = typo(p.name).toLocaleUpperCase('it-IT');
     const w = measure(s, f, 3);
     // al suo posto, o appena sopra o sotto se lì passa la strada
     for (const dy of [0, -28, 28]) {
