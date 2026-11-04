@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { LineChart, ZoneBar } from '@/components/Charts';
 import { Button } from '@/components/ui';
+import { CartolinaButton } from '@/components/ShareCard';
 import { formatDateTime, formatDuration, formatKm, formatNumber, msToKmh } from '@/domain/format';
 import { HR_ZONES, POWER_ZONES } from '@/domain/zones';
 import { encodeActivityFit } from '@/io/fit';
@@ -103,6 +104,7 @@ export function RideDetailPage() {
             {t('history.exportGpx')}
           </Button>
         ) : null}
+        <CartolinaButton ride={ride} />
       </div>
       {ride.source === 'indoor' ? (
         <p className="mt-2 text-xs text-muted">

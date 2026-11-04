@@ -49,6 +49,8 @@ import { SEGMENT_STYLE } from '@/game/arches';
 import { sessionById } from '@/game/sessions';
 import { useGame, useLook } from '@/game/useGame';
 import { ErgAheadHud, LevelUp, PoiToast, RewardsSummary, SegmentHud, SessionHud } from './RideGameHud';
+import { formatGap, useRideGhosts } from '@/game/ghosts';
+import { CartolinaButton } from '@/components/ShareCard';
 
 const DEFAULT_ROUTE = 'selvino-nembro';
 
@@ -414,7 +416,10 @@ function RideScreen({
     () => (ghostSamples && ghostSamples.length > 1 ? () => ghostDistanceAt(ghostSamples, engine.elapsed) * ghostScale : undefined),
     [ghostSamples, ghostScale, engine],
   );
-  const gap = ghostSamples && ghostSamples.length > 1 ? gapSeconds(ghostSamples, engine.distance / ghostScale, engine.elapsed) : null;
+  // il tuo fantasma sui percorsi del mondo, sui tratti e sulle salite (src/game/ghosts.ts)
+  const ghosts = useRideGhosts({ engine, game, session: setup.world?.session ?? null, enabled: !setup.replayMode && !workout && !ghostSamples, sim: () => trainer.snapshot().mode === 'simulator' });
+  const own = ghosts.now();
+  const gap = ghostSamples && ghostSamples.length > 1 ? gapSeconds(ghostSamples, engine.distance / ghostScale, engine.elapsed) : (own?.gap ?? null);
   const hairpinsDone = track.hairpins.filter((h) => h.distance <= engine.distance).length;
   // un arco (traguardo, km, ERG) fra 15 e 110 m: è lì che lo copre la colonna dei tratti
   const archNear = !game.banner && game.arches.some((a) => a.role !== 'banner' && a.d != null && a.d - engine.distance > 15 && a.d - engine.distance < 110);
@@ -640,6 +645,7 @@ function RideScreen({
               ride={session.onRoute ? session.ride : null}
               arches={game.arches}
               look={look}
+              ghost={ghosts.pose}
             />
           ) : webgl ? (
             <RideScene
@@ -647,7 +653,7 @@ function RideScreen({
               engine={engine}
               route={setup.route}
               quality={quality}
-              ghostDistance={ghostDistance}
+              ghostDistance={ghostDistance ?? ghosts.trackDistance}
               remote={remote}
               selfColor={room.snap?.color != null ? RIDER_COLORS[room.snap.color % RIDER_COLORS.length] : undefined}
               onReady={() => setReady(true)}
@@ -753,8 +759,7 @@ function RideScreen({
                   className={`rounded-xl px-2.5 py-1 text-xs font-semibold backdrop-blur ${gap >= 0 ? 'bg-good/25 text-good' : 'bg-danger/25 text-danger'}`}
                   data-testid="ghost-gap"
                 >
-                  fantasma {gap >= 0 ? '+' : '−'}
-                  {formatDuration(Math.abs(gap))}
+                  {own?.label ?? 'Fantasma'} {formatGap(gap)}
                 </p>
               ) : null}
             </div>
@@ -789,7 +794,7 @@ function RideScreen({
               height={36}
               bin={Math.max(100, track.length / 80)}
               position={engine.distance}
-              ghost={ghostDistance ? ghostDistance() : null}
+              ghost={ghostDistance ? ghostDistance() : ghosts.distance()}
               marks={game.tracker.windows.map((w) => ({ from: w.from, to: w.to, color: SEGMENT_STYLE[w.seg.kind].color }))}
             />
           )}
@@ -1079,6 +1084,7 @@ function RideScreen({
                   {t('ride.keepRiding')}
                 </Button>
               ) : null}
+              <CartolinaButton ride={summary} />
               {!saved ? (
                 <Button variant="ghost" onClick={() => navigate('/')}>
                   {t('actions.discard')}

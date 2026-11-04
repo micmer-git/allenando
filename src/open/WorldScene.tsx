@@ -88,6 +88,8 @@ export interface WorldSceneProps {
   arches?: ArchSpec[];
   /** quello che indossi nel garage */
   look?: Look;
+  /** il tuo fantasma (src/game/ghosts.ts): la sua posa adesso, null quando non c'è */
+  ghost?: () => TrackPose | null;
 }
 
 export function WorldScene(props: WorldSceneProps) {
@@ -151,6 +153,7 @@ function WorldContent(props: WorldSceneProps) {
       {props.ride ? <RideSigns data={data} ride={props.ride} /> : null}
       <PlayerRider {...props} />
       <NpcRiders crowd={props.crowd} />
+      {props.ghost ? <GhostRider pose={props.ghost} /> : null}
       {props.remote.map((r) => (
         <RemoteRiderView key={r.id} rider={r} />
       ))}
@@ -1418,6 +1421,13 @@ function NpcRiders({ crowd }: { crowd: NpcCrowd }) {
       ))}
     </group>
   );
+}
+
+const HIDDEN: TrackPose = { x: 0, y: -5000, z: 0, heading: 0, grade: 0, altitude: 0, distance: 0 };
+
+/** Il fantasma del tuo giro migliore: trasparente, sotto terra quando non c'è. */
+function GhostRider({ pose }: { pose: () => TrackPose | null }) {
+  return <Rider ghost side={0} detail="media" getPose={() => pose() ?? HIDDEN} getCadence={() => 86} getSpeed={() => 6} />;
 }
 
 function RemoteRiderView({ rider }: { rider: RemoteWorldRider }) {
