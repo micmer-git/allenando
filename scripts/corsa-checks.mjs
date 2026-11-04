@@ -154,7 +154,8 @@ export async function collaudoCorsa({ b, base, check, out = '' }) {
   await p.go('/ride?world=bergamo&ride=citta-alta');
   await p.waitFor(ready, 150000);
   await p.clickText('10×');
-  await sleep(6500);
+  // si chiude la scheda a 60 s di giro (sul tempo del giro: col 3D lento il simulatore va più piano dell'orologio)
+  check(await p.waitFor(`(() => { const t = (document.querySelector('[data-testid=ride-time]')?.textContent ?? '0:0').split(':').map(Number); return t[0] * 60 + t[1] >= 60; })()`, 300000), 'ripresa: il giro arriva a 60 s');
   const atClose = await p.evaluate(`({ time: document.querySelector('[data-testid=ride-time]').textContent, km: document.querySelector('[data-testid=ride-km] [data-big]').textContent })`);
   await p.s('Page.close').catch(() => null);
   await sleep(1500);
