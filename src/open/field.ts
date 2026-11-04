@@ -1,5 +1,6 @@
 import { smoothstep } from '@/world/heightfield';
 import { FLAG, type WorldGraph } from './graph';
+import { inTube } from './tunnels';
 import type { Terrain, WorldFeatures } from './world';
 
 /**
@@ -12,8 +13,10 @@ import type { Terrain, WorldFeatures } from './world';
 
 const CELL = 32;
 
+/** numeri per segmento: ax, az, bx, bz, ay, by, hw, grado, imbocchi (1 = a, 2 = b) */
+const STRIDE = 9;
+
 interface SegIndex {
-  /** ax, az, bx, bz, ay, by, hw, grado: 8 numeri per segmento */
   seg: Float32Array;
   cells: Map<number, number[]>;
 }
@@ -25,9 +28,9 @@ function key(cx: number, cz: number): number {
 function buildIndex(segs: number[]): SegIndex {
   const seg = new Float32Array(segs);
   const cells = new Map<number, number[]>();
-  const count = seg.length / 8;
+  const count = seg.length / STRIDE;
   for (let i = 0; i < count; i++) {
-    const o = i * 8;
+    const o = i * STRIDE;
     const pad = seg[o + 6] + 2;
     const cx0 = Math.floor((Math.min(seg[o], seg[o + 2]) - pad) / CELL);
     const cx1 = Math.floor((Math.max(seg[o], seg[o + 2]) + pad) / CELL);
@@ -66,13 +69,17 @@ function nearest(ix: SegIndex, x: number, z: number, reach: number, out: FieldHi
       const bucket = ix.cells.get(key(cx + ox, cz + oz));
       if (!bucket) continue;
       for (const i of bucket) {
-        const o = i * 8;
+        const o = i * STRIDE;
         const ax = s[o];
         const az = s[o + 1];
         const dx = s[o + 2] - ax;
         const dz = s[o + 3] - az;
         const len2 = dx * dx + dz * dz || 1;
-        const u = Math.min(1, Math.max(0, ((x - ax) * dx + (z - az) * dz) / len2));
+        const raw = ((x - ax) * dx + (z - az) * dz) / len2;
+        // oltre l'imbocco di una galleria la strada d'accesso non scava: lì comincia il monte
+        const portal = s[o + 8];
+        if ((raw < 0 && portal % 2 === 1) || (raw > 1 && portal >= 2)) continue;
+        const u = Math.min(1, Math.max(0, raw));
         const px = ax + dx * u;
         const pz = az + dz * u;
         const d = Math.sqrt((x - px) ** 2 + (z - pz) ** 2);
@@ -101,23 +108,34 @@ export interface WorldField {
   lastWater(): boolean;
   /** quota della strada più vicina (entro reach) o null */
   roadAt(x: number, z: number, reach?: number): FieldHit | null;
+  /** (x, z) a quota y cade dentro la sagoma di una galleria (o poco sopra): niente alberi */
+  inTube(x: number, z: number, y: number): boolean;
   terrain: Terrain;
 }
 
 export function createWorldField(graph: WorldGraph, terrain: Terrain, features: WorldFeatures): WorldField {
+  // i nodi da cui parte una galleria: gli imbocchi
+  const portal = new Set<number>();
+  for (const e of graph.edges) {
+    if (!(e.flags & FLAG.tunnel)) continue;
+    portal.add(e.a);
+    portal.add(e.b);
+  }
   const segs: number[] = [];
   for (const e of graph.edges) {
     if (e.flags & (FLAG.bridge | FLAG.tunnel)) continue;
-    for (let k = 0; k < e.xs.length - 1; k++) {
+    const last = e.xs.length - 2;
+    for (let k = 0; k <= last; k++) {
       const run = e.cum[k + 1] - e.cum[k] || 1;
-      segs.push(e.xs[k], e.zs[k], e.xs[k + 1], e.zs[k + 1], e.ys[k], e.ys[k + 1], e.hw, Math.abs(e.ys[k + 1] - e.ys[k]) / run);
+      const ends = (k === 0 && portal.has(e.a) ? 1 : 0) + (k === last && portal.has(e.b) ? 2 : 0);
+      segs.push(e.xs[k], e.zs[k], e.xs[k + 1], e.zs[k + 1], e.ys[k], e.ys[k + 1], e.hw, Math.abs(e.ys[k + 1] - e.ys[k]) / run, ends);
     }
   }
   const roads = buildIndex(segs);
   const wsegs: number[] = [];
   for (const r of features.rivers) {
     const p = r.pts;
-    for (let i = 0; i + 5 < p.length; i += 3) wsegs.push(p[i], p[i + 1], p[i + 3], p[i + 4], p[i + 2], p[i + 5], r.hw, 0);
+    for (let i = 0; i + 5 < p.length; i += 3) wsegs.push(p[i], p[i + 1], p[i + 3], p[i + 4], p[i + 2], p[i + 5], r.hw, 0, 0);
   }
   const water = buildIndex(wsegs);
   const hit: FieldHit = { edgeDist: 0, dist: 0, y: 0, hw: 3, grade: 0 };
@@ -132,6 +150,7 @@ export function createWorldField(graph: WorldGraph, terrain: Terrain, features: 
       if (!nearest(roads, x, z, reach, hit)) return null;
       return { ...hit };
     },
+    inTube: (x, z, y) => inTube(graph, x, z, y),
     height(x, z, spacing) {
       let h = terrain.height(x, z);
       inWater = false;

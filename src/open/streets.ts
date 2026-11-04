@@ -4,7 +4,9 @@ import { hash2 } from '@/world/builders';
 import { DECAL, poiGeometry, RAIL_POST_STEP, railFrames, sculptureGeometry, SIGN, signPlateGeometry, sideYaw, sweepBeam, type Placed, type RailFrame, type SignKind, type Tri } from '@/world/roadside';
 import { CLS, FLAG, type Dir, type Edge, type WorldGraph } from './graph';
 import type { WorldField } from './field';
-import { bendAt, junctionClear, Mesh, roadLift, runsInside, URBAN, type TileMeshes, type TileSpec } from './tiles';
+import { bendAt, junctionClear, Mesh, ringLift, roadLift, runsInside, URBAN, type TileMeshes, type TileSpec } from './tiles';
+import { curbOffset, ringAt, ringBranch, ringsIn, type RingBranch } from './rings';
+import { portalClear } from './tunnels';
 import type { PoiKind, RoadMarks, TrafficSignal, WorldFeatures } from './world';
 
 /*
@@ -45,22 +47,12 @@ export interface StreetDetail {
 
 // ---------- indici, una volta per mondo ----------
 
-interface Ring {
-  cx: number;
-  cz: number;
-  hw: number;
-  lift: number;
-  /** punti dell'anello in ordine d'angolo intorno al centro */
-  pts: { x: number; y: number; z: number }[];
-}
-
 interface StreetIndex {
   crossings: Map<number, number[]>;
   yields: Map<number, RoadMarks['yields']>;
   signalNodes: Map<number, TrafficSignal>;
   signalMid: Map<number, TrafficSignal[]>;
   mini: Set<number>;
-  rings: Ring[];
   ringNodes: Set<number>;
 }
 
@@ -70,56 +62,6 @@ function push<K, V>(m: Map<K, V[]>, k: K, v: V): void {
   const l = m.get(k);
   if (l) l.push(v);
   else m.set(k, [v]);
-}
-
-/** Le rotatorie del grafo: archi dell'anello uniti per nodi, centro e punti in ordine d'angolo. */
-export function findRings(graph: WorldGraph): Ring[] {
-  const parent = new Map<number, number>();
-  const find = (x: number): number => {
-    let r = x;
-    while (parent.get(r) !== r) r = parent.get(r)!;
-    parent.set(x, r);
-    return r;
-  };
-  const ringEdges = graph.edges.filter((e) => e.flags & FLAG.roundabout);
-  for (const e of ringEdges) {
-    if (!parent.has(e.a)) parent.set(e.a, e.a);
-    if (!parent.has(e.b)) parent.set(e.b, e.b);
-    const ra = find(e.a);
-    const rb = find(e.b);
-    if (ra !== rb) parent.set(ra, rb);
-  }
-  const groups = new Map<number, Edge[]>();
-  for (const e of ringEdges) push(groups, find(e.a), e);
-  const out: Ring[] = [];
-  for (const list of groups.values()) {
-    const pts: { x: number; y: number; z: number }[] = [];
-    let hw = 0;
-    let cls: number = CLS.cycleway;
-    for (const e of list) {
-      hw = Math.max(hw, e.hw);
-      cls = Math.min(cls, e.cls);
-      for (let s = 0; s < e.length; s += 2) {
-        const p = graph.pose(e.id, s, 1);
-        pts.push({ x: p.x, y: p.y, z: p.z });
-      }
-    }
-    if (pts.length < 6) continue;
-    let cx = 0;
-    let cz = 0;
-    for (const p of pts) {
-      cx += p.x;
-      cz += p.z;
-    }
-    cx /= pts.length;
-    cz /= pts.length;
-    // un anello vero gira tutto intorno al centro: senza, è una «circular» aperta e non ha aiuola
-    const sectors = new Set(pts.map((p) => Math.floor(((Math.atan2(p.z - cz, p.x - cx) + Math.PI) / (Math.PI * 2)) * 8) % 8));
-    if (sectors.size < 7) continue;
-    pts.sort((a, b) => Math.atan2(a.z - cz, a.x - cx) - Math.atan2(b.z - cz, b.x - cx));
-    out.push({ cx, cz, hw, lift: roadLift(cls), pts });
-  }
-  return out;
 }
 
 function streetIndex(graph: WorldGraph, features: WorldFeatures): StreetIndex {
@@ -135,14 +77,13 @@ function streetIndex(graph: WorldGraph, features: WorldFeatures): StreetIndex {
     if (s.node >= 0) signalNodes.set(s.node, s);
     else push(signalMid, s.edge, s);
   }
-  const rings = findRings(graph);
   const ringNodes = new Set<number>();
   for (const e of graph.edges) {
     if (!(e.flags & FLAG.roundabout)) continue;
     ringNodes.add(e.a);
     ringNodes.add(e.b);
   }
-  const idx: StreetIndex = { crossings, yields, signalNodes, signalMid, mini: new Set(features.marks.mini), rings, ringNodes };
+  const idx: StreetIndex = { crossings, yields, signalNodes, signalMid, mini: new Set(features.marks.mini), ringNodes };
   indexCache.set(features, idx);
   return idx;
 }
@@ -209,6 +150,9 @@ const GRASS2 = new THREE.Color('#6a9a44');
 const BED = new THREE.Color('#6e5238');
 const CURB = new THREE.Color('#d8d4ca');
 const CURB_FACE = new THREE.Color('#bdb8ae');
+const APRON = new THREE.Color('#8b8176');
+const APRON2 = new THREE.Color('#968b7e');
+const APRON_FACE = new THREE.Color('#7a7167');
 
 /** Fin dove un modellino sta dal bordo strada, per tipo: una chiesa non sta sul ciglio. */
 const POI_SETBACK: Partial<Record<PoiKind, number>> = {
@@ -295,12 +239,17 @@ export function* streetJob(graph: WorldGraph, field: WorldField, features: World
     }
     if (pole) items.signPole.push({ x, y, z, ry });
   };
+  /**
+   * Un palo non sta sulla carreggiata di un'altra strada: dove due sensi unici confluiscono, o
+   * una via ne affianca un'altra, il ciglio dell'una è l'asfalto dell'altra.
+   */
+  const offRoad = (x: number, z: number, y: number, self: number) => graph.asphaltMargin(x, z, y, 1.5, self) < -0.3;
   /** Un cartello a destra di chi va in `dir`, a `s`, rivolto verso di lui. */
   const signRight = (e: Edge, dir: Dir, s: number, kind: SignKind, off = e.hw + 0.9) => {
     const p = graph.pose(e.id, Math.min(e.length, Math.max(0, s)), dir);
     const x = p.x - Math.cos(p.heading) * off;
     const z = p.z + Math.sin(p.heading) * off;
-    if (!own(x, z)) return;
+    if (!own(x, z) || !offRoad(x, z, p.y, e.id)) return;
     addSign(kind, x, p.y - 0.05, z, p.heading);
   };
 
@@ -317,8 +266,9 @@ export function* streetJob(graph: WorldGraph, field: WorldField, features: World
     const oneway = (e.flags & (FLAG.oneway | FLAG.onewayRev)) !== 0;
     const lift = roadLift(e.cls);
     const markLift = lift + 0.016;
-    const endA = junctionClear(graph, e.a, id);
-    const endB = junctionClear(graph, e.b, id);
+    // i guardrail e i delineatori si fermano anche davanti alla galleria artificiale di un imbocco
+    const endA = Math.max(junctionClear(graph, e.a, id), portalClear(graph, id, true));
+    const endB = Math.max(junctionClear(graph, e.b, id), portalClear(graph, id, false));
     const road = e.cls !== CLS.cycleway && e.cls !== CLS.pedestrian;
 
     // --- guardrail e delineatori: strade fuori dai paesi, dove il terreno scende ---
@@ -405,7 +355,7 @@ export function* streetJob(graph: WorldGraph, field: WorldField, features: World
           const off = e.hw + 0.75;
           const x = p.x + Math.cos(p.heading) * side * off;
           const z = p.z - Math.sin(p.heading) * side * off;
-          if (!own(x, z)) continue;
+          if (!own(x, z) || !offRoad(x, z, p.y, id)) continue;
           items.delineator.push({ x, y: p.y + lift - 0.12, z, ry: sideYaw(p.heading, side) });
         }
       }
@@ -476,7 +426,7 @@ export function* streetJob(graph: WorldGraph, field: WorldField, features: World
           const p = graph.pose(id, s, dir);
           const x = p.x - Math.cos(p.heading) * (e.hw + 0.6);
           const z = p.z + Math.sin(p.heading) * (e.hw + 0.6);
-          if (!own(x, z)) continue;
+          if (!own(x, z) || !offRoad(x, z, p.y, id)) continue;
           items.signal.push({ x, y: p.y + lift - 0.1, z, ry: p.heading });
           stopLine(paint, graph, e, dir, s, oneway, markLift);
         }
@@ -492,7 +442,11 @@ export function* streetJob(graph: WorldGraph, field: WorldField, features: World
         const node = dir > 0 ? e.b : e.a;
         const deg = graph.adjStart[node + 1] - graph.adjStart[node];
         if (deg < 3 && !ix.mini.has(node)) continue;
-        const clear = Math.max(3.5, junctionClear(graph, node, id) || 3.5);
+        // all'ingresso di una rotatoria liscia la linea sta sul bordo vero dell'anello, e il
+        // cartello sul cordolo del raccordo (non in mezzo all'asfalto che il raccordo allarga)
+        const br: RingBranch | null = ring ? null : ringBranch(graph, id, node === e.a);
+        const clear = br ? br.t0 + 0.45 : Math.max(3.5, junctionClear(graph, node, id) || 3.5);
+        const rightOff = (t: number) => (br ? curbOffset(br, 0, Math.abs(t)) + 0.7 : e.hw + 0.9);
         if (L < clear + 6) continue;
         const sLine = dir > 0 ? L - clear : clear;
         const pLine = graph.pose(id, sLine, dir);
@@ -501,7 +455,7 @@ export function* streetJob(graph: WorldGraph, field: WorldField, features: World
           // semaforo all'incrocio: palo a destra, lanterna verso chi arriva, sempre verde
           const x = pLine.x - Math.cos(pLine.heading) * (e.hw + 0.6);
           const z = pLine.z + Math.sin(pLine.heading) * (e.hw + 0.6);
-          if (own(x, z)) items.signal.push({ x, y: pLine.y + lift - 0.1, z, ry: pLine.heading });
+          if (own(x, z) && offRoad(x, z, pLine.y, id)) items.signal.push({ x, y: pLine.y + lift - 0.1, z, ry: pLine.heading });
           if (mine) stopLine(paint, graph, e, dir, sLine, oneway, markLift);
           continue;
         }
@@ -538,8 +492,9 @@ export function* streetJob(graph: WorldGraph, field: WorldField, features: World
           signRight(e, dir, at - dir * 0.5, 'stop');
         } else {
           teeth(paint, graph, e, dir, at, oneway, markLift);
-          signRight(e, dir, at - dir * 0.5, 'precedenza');
-          if (entry && L > clear + 30) signRight(e, dir, at - dir * 22, 'rotatoria');
+          const fromNode = (s: number) => (dir > 0 ? L - s : s);
+          signRight(e, dir, at - dir * 0.5, 'precedenza', rightOff(fromNode(at - dir * 0.5)));
+          if (entry && L > clear + 30) signRight(e, dir, at - dir * 22, 'rotatoria', rightOff(fromNode(at - dir * 22)));
         }
       }
 
@@ -577,14 +532,25 @@ export function* streetJob(graph: WorldGraph, field: WorldField, features: World
   yield;
 
   // --- aiuole delle rotatorie ---
-  for (const r of ix.rings) {
-    if (!own(r.cx, r.cz)) continue;
-    const inner = r.pts.map((p) => {
-      const dx = p.x - r.cx;
-      const dz = p.z - r.cz;
-      const d = Math.hypot(dx, dz) || 1;
-      return { x: p.x, y: p.y + r.lift, z: p.z, ux: dx / d, uz: dz / d, rr: d - r.hw - 0.3 };
-    });
+  // il bordo dell'aiuola è il bordo interno dell'asfalto, senza fessura: prima stava 30 cm più in
+  // dentro e lì si vedeva la banchina grigia (o il terreno, più in basso)
+  for (const r of ringsIn(graph, x0, z0, x1, z1)) {
+    const rLift = ringLift(r);
+    const inner = r.smooth
+      ? Array.from({ length: r.n }, (_, k) => {
+          const th = -Math.PI + (k / r.n) * Math.PI * 2;
+          const a = ringAt(r, th);
+          const ux = Math.cos(th);
+          const uz = Math.sin(th);
+          const rr = a.r - r.hw;
+          return { x: r.cx + ux * rr, y: a.y + rLift, z: r.cz + uz * rr, ux, uz, rr };
+        })
+      : r.pts.map((p) => {
+          const dx = p.x - r.cx;
+          const dz = p.z - r.cz;
+          const d = Math.hypot(dx, dz) || 1;
+          return { x: p.x, y: p.y + rLift, z: p.z, ux: dx / d, uz: dz / d, rr: d - r.hw };
+        });
     const meanR = inner.reduce((s, p) => s + p.rr, 0) / inner.length;
     let cy = 0;
     for (const p of inner) cy += p.y;
@@ -600,32 +566,50 @@ export function* streetJob(graph: WorldGraph, field: WorldField, features: World
       continue;
     }
     const n = inner.length;
-    const ringAt = (p: (typeof inner)[number], rr: number, y: number) => ({ x: r.cx + p.ux * rr, y, z: r.cz + p.uz * rr });
+    const onRing = (p: (typeof inner)[number], rr: number, y: number) => ({ x: r.cx + p.ux * rr, y, z: r.cz + p.uz * rr });
     const top = 0.18;
     const mound = cy + top + Math.min(0.9, meanR * 0.06);
+    // sulle rotatorie più grandi la corona sormontabile in porfido, un metro, fra asfalto e cordolo
+    const apron = meanR > 5.5 ? 1 : 0;
     for (let i = 0; i < n; i++) {
       const p = inner[i];
       const q = inner[(i + 1) % n];
-      const rp = Math.max(0.5, p.rr);
-      const rq = Math.max(0.5, q.rr);
-      // fianco del cordolo, dall'asfalto in su
-      const a = ringAt(p, rp, p.y - 0.02);
-      const b = ringAt(q, rq, q.y - 0.02);
-      const c = ringAt(p, rp, p.y + top);
-      const d = ringAt(q, rq, q.y + top);
+      if (apron) {
+        const a0 = onRing(p, p.rr, p.y - 0.2);
+        const b0 = onRing(q, q.rr, q.y - 0.2);
+        const a1 = onRing(p, p.rr, p.y + 0.04);
+        const b1 = onRing(q, q.rr, q.y + 0.04);
+        const k = island.vertex(a0.x, a0.y, a0.z, 0, 0, APRON_FACE);
+        island.vertex(b0.x, b0.y, b0.z, 0, 0, APRON_FACE);
+        island.vertex(a1.x, a1.y, a1.z, 0, 0, APRON_FACE);
+        island.vertex(b1.x, b1.y, b1.z, 0, 0, APRON_FACE);
+        island.idx.push(k, k + 2, k + 1, k + 1, k + 2, k + 3);
+        const col = i % 3 === 0 ? APRON2 : APRON;
+        const a2 = onRing(p, p.rr - apron, p.y + 0.05);
+        const b2 = onRing(q, q.rr - apron, q.y + 0.05);
+        triUp(island, a1, b1, a2, undefined, col);
+        triUp(island, b1, b2, a2, undefined, col);
+      }
+      const rp = Math.max(0.5, p.rr - apron);
+      const rq = Math.max(0.5, q.rr - apron);
+      // fianco del cordolo, da sotto l'asfalto in su: copre anche lo scalino col terreno
+      const a = onRing(p, rp, p.y - (apron ? 0 : 0.25));
+      const b = onRing(q, rq, q.y - (apron ? 0 : 0.25));
+      const c = onRing(p, rp, p.y + top);
+      const d = onRing(q, rq, q.y + top);
       const k = island.vertex(a.x, a.y, a.z, 0, 0, CURB_FACE);
       island.vertex(b.x, b.y, b.z, 0, 0, CURB_FACE);
       island.vertex(c.x, c.y, c.z, 0, 0, CURB_FACE);
       island.vertex(d.x, d.y, d.z, 0, 0, CURB_FACE);
       island.idx.push(k, k + 2, k + 1, k + 1, k + 2, k + 3);
       // testa del cordolo (25 cm), aiuola fiorita, prato fino al centro un po' rialzato
-      const c2 = ringAt(p, rp - 0.25, p.y + top);
-      const d2 = ringAt(q, rq - 0.25, q.y + top);
+      const c2 = onRing(p, rp - 0.25, p.y + top);
+      const d2 = onRing(q, rq - 0.25, q.y + top);
       triUp(island, c, d, c2, undefined, CURB);
       triUp(island, d, d2, c2, undefined, CURB);
       const bedR = meanR > 4 ? 1.1 : 0.5;
-      const c3 = ringAt(p, Math.max(0.3, rp - 0.25 - bedR), p.y + top + 0.05);
-      const d3 = ringAt(q, Math.max(0.3, rq - 0.25 - bedR), q.y + top + 0.05);
+      const c3 = onRing(p, Math.max(0.3, rp - 0.25 - bedR), p.y + top + 0.05);
+      const d3 = onRing(q, Math.max(0.3, rq - 0.25 - bedR), q.y + top + 0.05);
       triUp(island, c2, d2, c3, undefined, BED);
       triUp(island, d2, d3, c3, undefined, BED);
       triUp(island, c3, d3, { x: r.cx, y: mound, z: r.cz }, undefined, i % 2 ? GRASS : GRASS2);
@@ -637,10 +621,10 @@ export function* streetJob(graph: WorldGraph, field: WorldField, features: World
       for (let i = 0; i < n; i++) {
         const p = inner[i];
         const q = inner[(i + 1) % n];
-        run += Math.hypot(q.x - p.x, q.z - p.z) * Math.max(0, p.rr - 0.8) / Math.max(1, p.rr + r.hw);
+        run += Math.hypot(q.x - p.x, q.z - p.z) * Math.max(0, p.rr - apron - 0.8) / Math.max(1, p.rr);
         if (run < 2.2) continue;
         run = 0;
-        const rr = Math.max(0.5, p.rr - 0.25 - 0.55);
+        const rr = Math.max(0.5, p.rr - apron - 0.25 - 0.55);
         const h = hash2(r.cx + i, r.cz - i);
         items.shrub.push({ x: r.cx + p.ux * rr, y: p.y + top, z: r.cz + p.uz * rr, ry: h * 6.28, s: 0.55 + h * 0.4, c: FLOWERS[Math.floor(h * FLOWERS.length) % FLOWERS.length] });
       }

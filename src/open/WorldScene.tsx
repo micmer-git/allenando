@@ -18,6 +18,8 @@ import { atmosphere, CLEAR, sunFor, sunVector, type Daytime } from './sky';
 import type { WeatherNow } from './weather';
 import { loadBuildings, type Building, type RideDef, type Terrain, type WorldData } from './world';
 import { WorldPath } from './path';
+import { createFarMask, patchFarShader, updateFarMask, type FarMask } from './farMask';
+import { createTunnelCut, patchTerrainShader, updateTunnelCut, type TunnelCut } from './tunnels';
 import type { ArchSpec } from '@/game/arches';
 import { Arches } from '@/world/Arches';
 import { HairpinSigns, hairpinSigns } from '@/world/HairpinSigns';
@@ -126,15 +128,19 @@ function ReadyWhenTiles({ onReady }: { onReady: () => void }) {
 function WorldContent(props: WorldSceneProps) {
   const { data, field, terrain, quality } = props;
   const q = QUALITY[quality];
-  const farRect = useRef({ value: new THREE.Vector3(0, 0, -1) });
-  const mats = useMaterials(farRect.current);
+  // le mattonelle vicine possono essere fino a ring + 1 dal centro: tante per lato nella maschera
+  const farMask = useMemo(() => createFarMask(2 * q.ring + 3), [q.ring]);
+  useEffect(() => () => farMask.uReady.value.dispose(), [farMask]);
+  // il terreno che entra nelle gallerie vicine non si disegna (tunnels.ts)
+  const cut = useMemo(() => createTunnelCut(), []);
+  const mats = useMaterials(farMask, cut);
   const names = useMemo(() => new Set<THREE.Sprite>(), []);
   return (
     <group>
       <Atmosphere weather={props.weather} daytime={props.daytime} data={data} far={q.far} mats={mats} />
       {props.weather && props.weather.rain >= 0.1 ? <Rain mmh={props.weather.rain} weather={props.weather} /> : null}
       <FarTerrain terrain={terrain} stride={q.farStride} material={mats.far} />
-      <NearTiles {...props} mats={mats} rect={farRect.current} />
+      <NearTiles {...props} mats={mats} mask={farMask} cut={cut} />
       <Lakes data={data} />
       <Walls data={data} field={field} />
       <Labels data={data} engine={props.engine} playerPose={props.playerPose} names={names} />
@@ -155,7 +161,7 @@ function WorldContent(props: WorldSceneProps) {
 
 // ---------- materiali condivisi ----------
 
-function useMaterials(rect: { value: THREE.Vector3 }) {
+function useMaterials(mask: FarMask, cut: TunnelCut) {
   const mats = useMemo(() => {
     const asphaltTex = asphaltTexture();
     const stoneTex = settTexture();
@@ -163,25 +169,19 @@ function useMaterials(rect: { value: THREE.Vector3 }) {
     const tilesTex = roofTilesTexture();
     const groundTex = groundDetailTexture();
     const far = new THREE.MeshLambertMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: 3, polygonOffsetUnits: 6 });
-    far.onBeforeCompile = (shader) => {
-      shader.uniforms.uRect = rect;
-      shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;')
-        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-      shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nuniform vec3 uRect;')
-        .replace('void main() {', 'void main() {\n  if (uRect.z > 0.0 && abs(vWPos.x - uRect.x) < uRect.z && abs(vWPos.z - uRect.y) < uRect.z) discard;');
-    };
+    far.onBeforeCompile = (shader) => patchFarShader(shader, mask);
     return {
       far,
-      terrain: new THREE.MeshLambertMaterial({ vertexColors: true, map: groundTex }),
+      terrain: terrainMaterial(groundTex, cut),
       asphalt: new THREE.MeshLambertMaterial({ map: asphaltTex, color: '#c9cbd0', polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
       stone: new THREE.MeshLambertMaterial({ map: stoneTex, color: '#d8cfc2', polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
       cycle: new THREE.MeshLambertMaterial({ map: asphaltTex, color: '#c98f7d', polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
       paint: new THREE.MeshLambertMaterial({ color: '#efeee6', polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }),
       verge: new THREE.MeshLambertMaterial({ color: '#8f8574', side: THREE.DoubleSide }),
       concrete: new THREE.MeshLambertMaterial({ color: '#b3b1aa', side: THREE.DoubleSide }),
-      tunnel: new THREE.MeshLambertMaterial({ color: '#4b4a47', emissive: '#2a2618', side: THREE.DoubleSide }),
+      /** dentro le gallerie la luce è cotta nei colori (tunnels.ts): niente sole sotto il monte */
+      tunnel: new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }),
+      tunnelRoad: new THREE.MeshBasicMaterial({ map: asphaltTex, color: '#b9bbc0', vertexColors: true, side: THREE.DoubleSide }),
       rails: new THREE.MeshLambertMaterial({ color: '#7d756b' }),
       buildings: new THREE.MeshLambertMaterial({ vertexColors: true, map: facadeTex }),
       roofs: new THREE.MeshLambertMaterial({ vertexColors: true, map: tilesTex }),
@@ -206,7 +206,7 @@ function useMaterials(rect: { value: THREE.Vector3 }) {
       /** cartelli d'inizio paese, uno per nome */
       signs: new Map<string, THREE.MeshLambertMaterial>(),
     };
-  }, [rect]);
+  }, [mask, cut]);
   useEffect(
     () => () => {
       for (const [k, v] of Object.entries(mats)) {
@@ -225,6 +225,13 @@ function useMaterials(rect: { value: THREE.Vector3 }) {
     [mats],
   );
   return mats;
+}
+
+/** Il terreno vicino: colori di vertice, la grana, e il taglio dentro le gallerie. */
+function terrainMaterial(map: THREE.Texture, cut: TunnelCut): THREE.MeshLambertMaterial {
+  const m = new THREE.MeshLambertMaterial({ vertexColors: true, map });
+  m.onBeforeCompile = (shader) => patchTerrainShader(shader, cut);
+  return m;
 }
 
 /** Geometrie condivise dell'arredo: non si buttano con le mattonelle (userData.shared). */
@@ -549,8 +556,8 @@ interface TileEntry {
   items: RoadsideItems | null;
 }
 
-function NearTiles(props: WorldSceneProps & { mats: Mats; rect: { value: THREE.Vector3 } }) {
-  const { data, field, terrain, quality, mats, rect, playerPose } = props;
+function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: TunnelCut }) {
+  const { data, field, terrain, quality, mats, mask, cut, playerPose } = props;
   const q = QUALITY[quality];
   const root = useRef<THREE.Group>(null);
   const tiles = useRef(new Map<string, TileEntry>());
@@ -630,6 +637,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; rect: { value: THREE.V
     add(roads.concrete, mats.concrete);
     add(roads.kerb, mats.kerb);
     add(roads.tunnel, mats.tunnel);
+    add(roads.tunnelRoad, mats.tunnelRoad);
     add(bGeo.walls, mats.buildings);
     add(bGeo.roofs, mats.roofs);
     add(water, mats.water);
@@ -819,16 +827,9 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; rect: { value: THREE.V
         readyFlag.tiles++;
       }
     }
-    // il terreno lontano si nasconde dentro il quadrato di mattonelle tutte pronte
-    let k = -1;
-    for (let r = 0; r <= q.ring; r++) {
-      let all = true;
-      for (let dz = -r; dz <= r && all; dz++) for (let dx = -r; dx <= r && all; dx++) if (map.get(`${cx + dx}_${cz + dz}`)?.state !== 'ready') all = false;
-      if (!all) break;
-      k = r;
-    }
-    if (k >= 0) rect.value.set(b.x0 + (cx + 0.5) * T, b.z0 + (cz + 0.5) * T, (k + 0.5) * T - 3);
-    else rect.value.z = -1;
+    updateTunnelCut(cut, data.graph, pose.x, pose.z);
+    // il terreno lontano si nasconde sotto ogni mattonella pronta (farMask.ts)
+    updateFarMask(mask, b.x0, b.z0, T, cx, cz, (ix, iz) => map.get(`${ix}_${iz}`)?.state === 'ready');
     if (dirtyTrees.current && forest.current) {
       dirtyTrees.current = false;
       const all: TileMeshes['trees'] = [];
@@ -1522,6 +1523,15 @@ function WorldCam({ engine, path, field, playerPose }: WorldSceneProps) {
     const e = path.graph.edges[at.edge];
     const covered = (e.flags & FLAG.tunnel) !== 0;
     const raised = (e.flags & FLAG.bridge) !== 0;
+    // collaudo: scripts/world-shot.mjs con CAM="indietro,su[,lato]" guarda la strada da un altro punto
+    const dbg = (globalThis as { __orobiaCam?: number[] }).__orobiaCam;
+    if (dbg) {
+      const [b0, up, side = 0] = dbg;
+      camera.position.set(pose.x - Math.sin(h) * b0 + Math.cos(h) * side, pose.y + up, pose.z - Math.cos(h) * b0 - Math.sin(h) * side);
+      look.current.set(pose.x + Math.sin(pose.heading) * 7, pose.y + 1.2, pose.z + Math.cos(pose.heading) * 7);
+      camera.lookAt(look.current);
+      return;
+    }
     const back = covered ? 6 : 8.5;
     desired.current.set(pose.x - Math.sin(h) * back, pose.y + (covered ? 2.2 : 3.1), pose.z - Math.cos(h) * back);
     if (!covered && !raised) {

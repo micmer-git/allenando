@@ -68,6 +68,8 @@ export class WorldSession {
   gainM = 0;
   private lastAlt: number | null = null;
   private lane = -1.6;
+  /** la distanza a cui è stata calcolata la corsia l'ultima volta */
+  private laneAt: number | null = null;
   private towardCache = new Map<string, string>();
   client: WorldClient | null = null;
   /** meteo vero sopra Bergamo: se c'è, il vento entra nella fisica e nel rullo */
@@ -162,14 +164,32 @@ export class WorldSession {
     }
   }
 
-  /** La posa del giocatore, spostata a destra nella sua corsia (si tiene la destra). */
+  /**
+   * La posa del giocatore, spostata a destra nella sua corsia (si tiene la destra).
+   *
+   * La corsia cambia con la strada fatta, non coi fotogrammi: col telefono lento (o fermi) non
+   * resta indietro di venti metri su una strada più stretta. E non esce mai dall'asfalto: nelle
+   * svolte a destra il percorso taglia la curva verso l'interno, e la corsia aggiunta lì portava
+   * il ciclista sul ciglio grigio fuori dalla carreggiata. Si accorcia finché resta a 60 cm dal bordo.
+   */
   playerPose(distance: number): TrackPose {
     const p = this.path.poseAt(distance);
     const at = this.path.edgeAt(distance);
     const hw = this.graph.edges[at.edge].hw;
     const want = -Math.max(0.15, hw - 1.15);
-    this.lane += (want - this.lane) * 0.04;
-    return { ...p, x: p.x + Math.cos(p.heading) * this.lane, z: p.z - Math.sin(p.heading) * this.lane };
+    if (this.laneAt == null) this.lane = want;
+    else this.lane += (want - this.lane) * (1 - Math.exp(-Math.abs(distance - this.laneAt) / 12));
+    this.laneAt = distance;
+    const lx = Math.cos(p.heading);
+    const lz = -Math.sin(p.heading);
+    // verso il centro di quanto manca ai 60 cm: continuo, niente scatti di lato
+    let lane = this.lane;
+    for (let i = 0; i < 3 && lane < 0; i++) {
+      const m = this.graph.asphaltMargin(p.x + lx * lane, p.z + lz * lane, p.y);
+      if (m >= 0.6) break;
+      lane = Math.min(0, lane + 0.6 - m);
+    }
+    return { ...p, x: p.x + lx * lane, z: p.z + lz * lane };
   }
 
   tick(engine: RideEngine, dt: number, pose: TrackPose): void {
