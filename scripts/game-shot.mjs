@@ -289,8 +289,14 @@ try {
     await p.shot('g11-premi', true);
   }
 
+  // le novità girano in una scheda nuova: dopo le corse di prima il WebGL software scendeva a un
+  // fotogramma al secondo, e il primo giro su Maresana non finiva in un quarto d'ora
+  if (process.env.NOVITA) await p.s('Page.navigate', { url: 'about:blank' });
   if (process.env.NOVITA) {
     // ---------- le novità (pista 4): fantasma, cartolina, programmi, .zwo ----------
+    const p = await b.phone(base);
+    await p.go('/');
+    await p.waitFor(`!!document.querySelector('[data-testid=home-missions]')`, 15000);
     const basePath = new URL(base).pathname.replace(/\/$/, '');
     const nav = async (path) => {
       await p.evaluate(`(() => { history.pushState({}, '', ${JSON.stringify(basePath + '/')}); dispatchEvent(new PopStateEvent('popstate')); })()`);
@@ -316,10 +322,16 @@ try {
     // N2 · due giri su Maresana: il primo forte, il secondo più piano; al secondo il fantasma è in strada
     await nav('/ride?world=bergamo&ride=maresana');
     check(await ready(), 'fantasma: Maresana pronta');
+    // grafica bassa e cielo sereno (la pioggia vera costa fotogrammi): il simulatore a 10× è legato
+    // ai fotogrammi, e il fantasma si prova sul tempo simulato, non sulla grafica
+    await p.clickText('Sempre sereno');
+    await p.clickText('Bassa');
+    await sleep(1500);
+    await ready();
     await p.clickText('10×');
     await setEffort(160);
     check(await p.evaluate(`!document.querySelector('[data-testid=ghost-gap]')`), 'fantasma: al primo giro non c’è');
-    check(await p.waitFor(`!!document.querySelector('[data-testid=ride-summary]')`, 900000), 'fantasma: primo giro finito');
+    check(await p.waitFor(`!!document.querySelector('[data-testid=ride-summary]')`, 1800000), 'fantasma: primo giro finito');
     await sleep(1500);
     await p.shot('n2-01-primo-giro-riepilogo');
     // N3 · la cartolina dal riepilogo
@@ -356,7 +368,7 @@ try {
     // N3 · la cartolina dal dettaglio del giro salvato
     await nav('/history');
     await p.waitFor(`!!document.querySelector('a[href*="/history/ride-"]')`, 10000);
-    const detail = await p.evaluate(`document.querySelector('a[href*="/history/ride-"]')?.getAttribute('href')`);
+    const detail = (await p.evaluate(`document.querySelector('a[href*="/history/ride-"]')?.getAttribute('href')`)) ?? `${basePath}/history`;
     await nav(detail.replace(basePath, ''));
     check(await p.waitFor(`!!document.querySelector('[data-testid=ride-detail] [data-testid=cartolina-open]')`, 10000), 'cartolina: il tasto nel dettaglio');
     await p.click('[data-testid=cartolina-open]');
@@ -471,6 +483,7 @@ try {
     check(await p.waitFor(`(document.querySelector('[data-testid=ride-arches]')?.dataset.list ?? '').includes('erg:')`, 30000), 'zwo → corsa: gli archi dell’ERG');
     await sleep(1500);
     await p.shot('n5-03-zwo-in-erg');
+    check(p.errors.length === 0, 'novità: nessun errore di pagina', p.errors.slice(0, 5).join(' | '));
   }
 
   check(p.errors.length === 0, 'nessun errore di pagina', p.errors.slice(0, 5).join(' | '));
