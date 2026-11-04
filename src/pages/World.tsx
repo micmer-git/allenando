@@ -356,8 +356,9 @@ function FreeTab({ data, far }: { data: WorldData; far: Float32Array | null }) {
   const navigate = useNavigate();
   const [point, setPoint] = useState<{ x: number; z: number; label: string } | null>(null);
   const starts = useMemo(() => STARTS.map((n) => ({ name: n, p: startPoint(data, n) })).filter((s) => s.p), [data]);
-  function go(x: number, z: number) {
-    const hit = data.graph.nearest(x, z, 400, (e) => e.cls !== CLS.trunk);
+  function go(x: number, z: number, town = false) {
+    // una strada vera, non l'anellino di una pista attorno a un'aiuola (a Nembro girava a vuoto)
+    const hit = data.graph.freeStart(x, z, 400, town);
     if (!hit) return;
     const e = data.graph.edges[hit.edge];
     const dir = data.graph.allowed(hit.edge, 1) ? 1 : -1;
@@ -373,7 +374,7 @@ function FreeTab({ data, far }: { data: WorldData; far: Float32Array | null }) {
           height={320}
           markers={point ? [{ x: point.x, z: point.z, color: '#ffc814', label: point.label, ring: true }] : []}
           onPick={(x, z) => {
-            const hit = data.graph.nearest(x, z, 600, (e) => e.cls !== CLS.trunk);
+            const hit = data.graph.freeStart(x, z, 600);
             if (!hit) return;
             const p = data.graph.pose(hit.edge, hit.s);
             const e = data.graph.edges[hit.edge];
@@ -389,7 +390,7 @@ function FreeTab({ data, far }: { data: WorldData; far: Float32Array | null }) {
       <ul className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
         {starts.map((s) => (
           <li key={s.name}>
-            <button type="button" className="h-12 w-full rounded-2xl border border-line bg-elev px-3 text-left text-sm font-semibold" onClick={() => go(s.p!.x, s.p!.z)}>
+            <button type="button" className="h-12 w-full rounded-2xl border border-line bg-elev px-3 text-left text-sm font-semibold" onClick={() => go(s.p!.x, s.p!.z, true)}>
               {s.name}
             </button>
           </li>

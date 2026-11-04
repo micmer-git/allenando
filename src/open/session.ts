@@ -43,6 +43,8 @@ export interface Toast {
 }
 
 const LOOKAHEAD = 1600;
+/** quanti tratti indietro si guarda per non rifare la stessa strada nel giro libero */
+const RECENT_LEGS = 160;
 /** a che distanza da un luogo lo si considera «passato», per tipo */
 const PASS_RANGE: Record<string, number> = { cima: 2600, fiume: 450, paese: 350, citta: 900, passo: 200, lago: 600, mura: 200 };
 
@@ -148,17 +150,23 @@ export class WorldSession {
     // sul percorso scelto non si allunga: finisce dove finisce
     if (this.onRoute) return;
     let guard = 0;
+    // le strade fatte negli ultimi km: «dritto» non ci torna, se c'è un'altra via
+    const legs = this.path.legs;
+    const recent = new Map<number, number>();
+    const use = (edge: number) => recent.set(edge, (recent.get(edge) ?? 0) + 1);
+    for (let i = Math.max(0, legs.length - RECENT_LEGS); i < legs.length; i++) use(legs[i].edge);
     while (this.path.length - distance < LOOKAHEAD && guard++ < 200) {
-      const last = this.path.legs[this.path.legs.length - 1];
+      const last = legs[legs.length - 1];
       // in una rotatoria si fa l'anello fino all'uscita più dritta, non si esce al primo ramo
       const exits = this.graph.roundaboutExits(last.edge, last.dir);
-      const next = exits ? this.graph.straightestExit(last.edge, exits) : this.graph.straightest(last.edge, last.dir);
+      const next = exits ? this.graph.straightestExit(last.edge, exits, recent) : this.graph.straightest(last.edge, last.dir, recent);
       for (const l of next.via ?? []) {
         this.path.append(l.edge, l.dir);
         this.routeIndex.push(-1);
       }
       this.path.append(next.edge, next.dir);
       this.routeIndex.push(-1);
+      use(next.edge);
     }
   }
 

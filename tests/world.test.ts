@@ -1,10 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { WorldGraph, type Leg, type WorldGraphFile } from '../src/open/graph';
+import { CLS, WorldGraph, type Leg, type WorldGraphFile } from '../src/open/graph';
 import { suggestLoops } from '../src/open/loops';
 import { planAB } from '../src/open/ab';
-import { decodeFeatures, type RideDef } from '../src/open/world';
+import { WorldSession } from '../src/open/session';
+import { decodeFeatures, type RideDef, type WorldData } from '../src/open/world';
 import { WORLD_EDGES, WORLD_ID, WORLD_RIDES } from '../src/multiplayer/world-rides';
 
 // Il mondo di Bergamo come lo scarica la pagina: grafo e percorsi generati da build-world.
@@ -91,5 +92,25 @@ describe('mondo di Bergamo', () => {
     expect(graph.endNode(legs[legs.length - 1].edge, legs[legs.length - 1].dir)).toBe(graph.startNode(legs[0].edge, legs[0].dir));
     expect(both!.overlap).toBeLessThan(0.7);
     expect(both!.via.length).toBeGreaterThan(1);
+  });
+
+  // Michele, 04/11: «open giro start in Nembro loops in a weird way in a rotonda». Il punto più
+  // vicino al paese era un anellino di pista ciclabile di 26 m, e «dritto» non ne usciva più.
+  it('giro libero: da ogni paese si va avanti, senza girare a vuoto né fare avanti e indietro', () => {
+    const towns = ['Nembro', 'Albino', 'Alzano Lombardo', 'Gazzaniga', 'Zogno', 'Clusone', 'Selvino', 'Città Alta', 'Serina'];
+    for (const name of towns) {
+      const p = features.places.find((pl) => pl.name === name && pl.kind !== 'hamlet')!;
+      const hit = graph.freeStart(p.x, p.z, 400, true)!;
+      const e = graph.edges[hit.edge];
+      expect(e.cls, `${name}: si parte su una strada vera`).not.toBe(CLS.cycleway);
+      expect(graph.isRing(hit.edge), `${name}: non sull'anello di una rotatoria`).toBe(false);
+      const session = new WorldSession({ graph, features, rides } as unknown as WorldData, { edge: hit.edge, dir: graph.allowed(hit.edge, 1) ? 1 : -1, s: Math.min(e.length - 1, hit.s) }, 0);
+      const extend = (session as unknown as { extend(d: number): void }).extend.bind(session);
+      for (let m = 0; m <= 15000; m += 50) extend(m);
+      const seen = new Map<number, number>();
+      for (const l of session.path.legs) seen.set(l.edge, (seen.get(l.edge) ?? 0) + 1);
+      expect(session.path.length, `${name}: il percorso si allunga`).toBeGreaterThan(15000);
+      expect(Math.max(...seen.values()), `${name}: nessuna strada fatta più di due volte in 15 km`).toBeLessThanOrEqual(2);
+    }
   });
 });

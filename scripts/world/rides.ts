@@ -289,6 +289,26 @@ export const SPECS: RideSpec[] = [
     ],
   },
   {
+    // Michele, 04/11/2026: «ganda loop should be added»
+    id: 'ganda',
+    name: 'Il giro della Ganda',
+    side: 'Nembro, Gazzaniga, Orezzo, Selvino',
+    area: 'seriana',
+    kind: 'giro',
+    blurb: 'L’anello della media valle: su per il Serio fino a Gazzaniga, la salita di Orezzo fino al Passo di Ganda, l’altopiano di Aviatico e Selvino, poi giù per i tornanti fino a Nembro.',
+    via: [{ place: 'Nembro' }, { place: 'Albino' }, { place: 'Gazzaniga' }, { place: 'Orezzo' }, { pass: 'Passo di Ganda' }, { place: 'Aviatico' }, { place: 'Selvino' }, { place: 'Nembro' }],
+    landmarks: [
+      { q: { place: 'Nembro' }, kind: 'paese', note: 'Partenza e arrivo, sul Serio.' },
+      { q: { river: SERIO }, kind: 'fiume', note: 'Il Serio, fino a Gazzaniga.', within: 1500 },
+      { q: { place: 'Gazzaniga' }, kind: 'paese', note: 'Media valle: qui si lascia il fondovalle e comincia la salita.', within: 900 },
+      { q: { place: 'Orezzo' }, kind: 'paese', note: 'La frazione di Gazzaniga a metà salita, sopra la valle.', within: 700 },
+      { q: { pass: 'Passo di Ganda' }, kind: 'passo', note: 'Il passo a 1056 metri fra la Val Seriana e l’altopiano di Selvino.', within: 500 },
+      { q: { place: 'Aviatico' }, kind: 'paese', note: 'Il paese dell’altopiano, coi prati e il Monte Cornagera.', within: 900 },
+      { q: { place: 'Selvino' }, kind: 'paese', note: 'L’altopiano a quasi mille metri: poi venti tornanti in discesa.', within: 900 },
+      { q: { peak: 'Monte Misma' }, kind: 'cima', note: 'Di là dalla valle, salendo verso Orezzo.', within: 9000 },
+    ],
+  },
+  {
     id: 'due-valli',
     name: 'Il giro delle due valli',
     side: 'Bergamo, Val Seriana, Zambla, Val Brembana',
