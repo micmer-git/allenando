@@ -10,6 +10,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { launch, sleep } from './cdp.mjs';
 import { giroPagine } from './pagine-check.mjs';
+import { holdFinish } from './corsa-checks.mjs';
 
 const [base = 'http://127.0.0.1:5183/allenando', out = 'shots'] = process.argv.slice(2);
 mkdirSync(out, { recursive: true });
@@ -287,7 +288,8 @@ try {
     await sleep(2500);
     await p.shot('g10-sessione-griglia');
     // fine giro: il riepilogo coi premi
-    await p.click('[data-testid=ride-finish]');
+    // «Termina» si tiene premuto (pista 2): col dito, 1,1 s
+    await holdFinish(p);
     check(await p.waitFor(`!!document.querySelector('[data-testid=rewards]')`, 15000), 'fine: riepilogo con oro e traguardi');
     await sleep(800);
     await p.shot('g11-premi', true);
