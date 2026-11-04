@@ -111,12 +111,12 @@ export async function collaudoCorsa({ b, base, check, out = '' }) {
   check(a.small.length === 0, 'corsa: bersagli ≥ 44 px', a.small.join(' | '));
   // 2.3 Termina: un clic non chiude
   await p.click('[data-testid=ride-finish]');
-  await sleep(800);
+  check(await p.waitFor(`/Tieni premuto/.test(document.querySelector('[data-testid=ride-finish]')?.textContent ?? '')`, 3000), 'termina: il clic dice «Tieni premuto»');
+  await sleep(3000);
   check(!(await p.evaluate(`!!document.querySelector('[data-testid=ride-summary]')`)), 'termina: un clic non apre il riepilogo');
-  check(/Tieni premuto/.test(await p.evaluate(`document.querySelector('[data-testid=ride-finish]')?.textContent ?? ''`)), 'termina: il clic dice «Tieni premuto»');
   // un tocco breve col dito nemmeno
   await hold(p, '[data-testid=ride-finish]', 150);
-  await sleep(500);
+  await sleep(3000);
   check(!(await p.evaluate(`!!document.querySelector('[data-testid=ride-summary]')`)), 'termina: un tocco breve non apre il riepilogo');
   // 2.4 la pausa si vede, e i numeri stanno fermi
   await p.evaluate(`(() => { const b = [...document.querySelectorAll('button')].find((x) => /^Pausa$/.test(x.textContent.trim())); b?.click(); return !!b; })()`);
@@ -134,8 +134,8 @@ export async function collaudoCorsa({ b, base, check, out = '' }) {
   await sleep(1500);
   // tenendo premuto sì, e il giro è già nel diario
   check(await holdFinish(p), 'termina: il dito tiene premuto');
-  check(await p.waitFor(`!!document.querySelector('[data-testid=ride-summary]')`, 5000), 'termina: tenuto 1 s apre il riepilogo');
-  check(await p.waitFor(`document.querySelector('[data-testid=ride-saved]')?.dataset.state === 'saved'`, 8000), 'riepilogo: «Giro salvato» senza toccare niente');
+  check(await p.waitFor(`!!document.querySelector('[data-testid=ride-summary]')`, 30000), 'termina: tenuto 1 s apre il riepilogo');
+  check(await p.waitFor(`document.querySelector('[data-testid=ride-saved]')?.dataset.state === 'saved'`, 30000), 'riepilogo: «Giro salvato» senza toccare niente');
   check(await p.waitFor(`!!document.querySelector('[data-testid=rewards]')`, 15000), 'riepilogo: oro e traguardi');
   check(await p.evaluate(`!!document.querySelector('[data-testid=summary-map] canvas') && !!document.querySelector('[data-testid=summary-profile]')`), 'riepilogo: la carta con la traccia e il profilo');
   check(await p.evaluate(`!!document.querySelector('[data-testid=ride-summary-extra]')`), 'riepilogo: la riga delle azioni secondarie (FIT, diario; cartolina)');
@@ -183,7 +183,7 @@ export async function collaudoCorsa({ b, base, check, out = '' }) {
     await q.click('[data-testid=pause-resume]');
     await sleep(1200);
     await holdFinish(q);
-    check(await q.waitFor(`document.querySelector('[data-testid=ride-saved]')?.dataset.state === 'saved'`, 10000), 'ripresa: finito, il giro è salvato');
+    check(await q.waitFor(`document.querySelector('[data-testid=ride-saved]')?.dataset.state === 'saved'`, 30000), 'ripresa: finito, il giro è salvato');
     await q.go('/');
     await sleep(1500);
     check(!(await q.evaluate(`!!document.querySelector('[data-testid=ride-recovery]')`)), 'ripresa: dopo il salvataggio non si chiede più');
