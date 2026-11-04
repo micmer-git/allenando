@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OROBIA · Il rilascio</title>
+<meta name="description" content="OROBIA prima e dopo il rilascio del 4 novembre 2026: pagine, corsa, mondo 3D e quattro novità.">
+<meta name="robots" content="noindex">
+<link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #faf8f3; --carta: #fffdf8; --ink: #14150f; --ink-2: #3c3e33; --ink-3: #6f7363;
+    --rule: #e4e1d6; --rule-soft: #efece3; --dawn: #e0932f; --dawn-ink: #9a5f0f;
+    --serif: 'Instrument Serif', Georgia, serif; --sans: 'Inter', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 400 1rem/1.5 var(--sans); -webkit-text-size-adjust: 100%; }
+  a { color: inherit; }
+  .testa { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--rule); }
+  .testa .riga { max-width: 52rem; margin: 0 auto; padding: .55rem 1rem; display: flex; align-items: center; gap: .75rem; }
+  .testa .torna { display: inline-flex; align-items: center; gap: .35rem; min-height: 2.75rem; padding-right: .5rem; font-weight: 600; text-decoration: none; }
+  .testa .torna svg { width: 1.6rem; height: 1.6rem; }
+  .testa .sezione { color: var(--ink-3); font-size: .875rem; }
+  .testa .stato { margin-left: auto; color: var(--ink-3); font-size: .8125rem; white-space: nowrap; }
+  .filtri { position: sticky; top: 3.4rem; z-index: 4; background: var(--bg); border-bottom: 1px solid var(--rule-soft); }
+  .filtri .riga { max-width: 52rem; margin: 0 auto; padding: .5rem 1rem; display: flex; gap: .4rem; overflow-x: auto; scrollbar-width: none; }
+  .filtri .riga::-webkit-scrollbar { display: none; }
+  .filtri a { flex: none; display: inline-flex; align-items: center; min-height: 2.75rem; padding: 0 .95rem; border: 1px solid var(--rule); border-radius: 999px; background: var(--carta); color: var(--ink-2); font-size: .875rem; font-weight: 500; text-decoration: none; }
+  .filtri a[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--carta); }
+  .involucro { max-width: 52rem; margin: 0 auto; padding: 0 1rem 3rem; }
+  .verdetto { padding: 2rem 0 1rem; }
+  .occhiello { margin: 0; color: var(--dawn-ink); font-size: .75rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; }
+  h1 { margin: .35rem 0 .5rem; font: 400 2.75rem/1 var(--serif); letter-spacing: -.01em; }
+  h1 em { color: var(--dawn-ink); }
+  .riassunto { margin: 0; max-width: 36rem; color: var(--ink-2); }
+  .cifre { margin: 1.25rem 0 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: .75rem; overflow: hidden; }
+  .cifre div { background: var(--carta); padding: .8rem .9rem; }
+  .cifre dt { color: var(--ink-3); font-size: .8125rem; }
+  .cifre dd { margin: .1rem 0 0; font: 400 2rem/1 var(--serif); font-variant-numeric: tabular-nums; }
+  .cifre dd small { font: 400 .8125rem/1.3 var(--sans); color: var(--ink-3); display: block; margin-top: .2rem; }
+  section.blocco { padding-top: 2.25rem; scroll-margin-top: 7rem; }
+  h2 { margin: 0; font: 400 2rem/1.05 var(--serif); }
+  .cappello { margin: .35rem 0 1rem; color: var(--ink-2); max-width: 38rem; }
+  .coppia { margin: 0 0 1.5rem; }
+  .coppia .lati { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+  .coppia .lati.larghi { grid-template-columns: 1fr; }
+  @media (min-width: 44rem) { .coppia .lati.larghi { grid-template-columns: 1fr 1fr; } }
+  figure { margin: 0; }
+  .scatto { display: block; width: 100%; padding: 0; border: 0; background: none; cursor: zoom-in; position: relative; border-radius: .6rem; overflow: hidden; box-shadow: 0 0 0 1px var(--rule); }
+  .scatto img { display: block; width: 100%; height: auto; background: #d9d6cc; }
+  .etichetta { position: absolute; top: .45rem; left: .45rem; padding: .15rem .5rem; border-radius: 999px; font-size: .75rem; font-weight: 600; letter-spacing: .04em; }
+  .etichetta.prima { background: rgba(20, 21, 15, .78); color: #fffdf8; }
+  .etichetta.dopo { background: var(--dawn); color: #14150f; }
+  .didascalia { margin: .45rem 0 0; color: var(--ink-2); font-size: .875rem; }
+  .didascalia b { color: var(--ink); font-weight: 600; }
+  .griglia { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem .5rem; }
+  @media (min-width: 44rem) { .griglia { grid-template-columns: repeat(3, 1fr); } h1 { font-size: 3.5rem; } }
+  .griglia figcaption { margin-top: .35rem; color: var(--ink-2); font-size: .8125rem; line-height: 1.35; }
+  h3 { margin: 1.5rem 0 .6rem; font-size: .75rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
+  footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--rule); color: var(--ink-3); font-size: .8125rem; }
+  footer p { margin: 0 0 .5rem; }
+  dialog { border: 0; padding: 0; background: transparent; max-width: 100vw; max-height: 100vh; }
+  dialog::backdrop { background: rgba(20, 21, 15, .88); }
+  dialog img { display: block; max-width: 96vw; max-height: 88vh; width: auto; height: auto; border-radius: .5rem; }
+  dialog p { margin: .5rem 0 0; color: #fffdf8; font-size: .875rem; text-align: center; }
+  dialog button { position: fixed; top: .75rem; right: .75rem; width: 2.75rem; height: 2.75rem; border-radius: 999px; border: 0; background: #fffdf8; color: #14150f; font-size: 1.25rem; cursor: pointer; }
+</style>
+</head>
+<body>
+<header class="testa">
+  <div class="riga">
+    <a class="torna" href="../../" aria-label="Torna a OROBIA">
+      <svg viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#16130a"/><clipPath id="d"><circle cx="32" cy="32" r="24"/></clipPath><circle cx="32" cy="32" r="24" fill="#ffc814"/><g clip-path="url(#d)"><path d="M4 42 20.5 26.5l6.5 6.8L38.5 19 60 42v22H4Z" fill="#16130a"/><path d="M34.5 58 23.5 52.2 37 46.6 25.6 41.2l2.2-6.2" fill="none" stroke="#ffc814" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></g></svg>
+      <span>← OROBIA</span>
+    </a>
+    <span class="sezione">Il rilascio</span>
+    <span class="stato">4 novembre 2026</span>
+  </div>
+</header>
+<nav class="filtri" aria-label="Sezioni">
+  <div class="riga">
+    <a href="#pagine" aria-pressed="true">Pagine</a>
+    <a href="#corsa" aria-pressed="false">Corsa</a>
+    <a href="#mondo" aria-pressed="false">Mondo 3D</a>
+    <a href="#novita" aria-pressed="false">Novità</a>
+  </div>
+</nav>
+
+<main class="involucro">
+  <div class="verdetto">
+    <p class="occhiello">Rilascio · in onda</p>
+    <h1>OROBIA, <em>prima e dopo</em></h1>
+    <p class="riassunto">Stessa pagina, stesso punto: a sinistra stamattina, a destra il rilascio. Tocca una foto per ingrandirla.</p>
+    <dl class="cifre">
+      <div><dt>Peso all’apertura</dt><dd>269&nbsp;kB<small>Era 588, compressi</small></dd></div>
+      <div><dt>Mattonelle vicine al via</dt><dd>6 su 6<small>Era 0 su 6</small></dd></div>
+      <div><dt>Prove automatiche</dt><dd>370</dd></div>
+      <div><dt>Novità</dt><dd>4</dd></div>
+    </dl>
+  </div>
+
+  <section class="blocco" id="pagine">
+    <h2>Pagine</h2>
+    <p class="cappello">Un solo tasto pieno per schermata, tutto in maiuscola, niente testo tagliato, bersagli da 44&nbsp;px.</p>
+    <div class="coppia"><div class="lati">
+      <button class="scatto" data-zoom><img src="img/oggi-prima.jpg" alt="Oggi, prima" width="780" height="1651" loading="lazy" decoding="async"><span class="etichetta prima">Prima</span></button>
+      <button class="scatto" data-zoom><img src="img/oggi-dopo.jpg" alt="Oggi, dopo" width="780" height="1651" loading="lazy" decoding="async"><span class="etichetta dopo">Dopo</span></button>
+    </div><p class="didascalia"><b>Oggi.</b> Un solo tasto giallo, il conto alla rovescia con la sua parola, i numeri della settimana solo dopo il primo giro.</p></div>
+    <div class="coppia"><div class="lati">
+      <button class="scatto" data-zoom><img src="img/mondo-prima.jpg" alt="Mondo, prima" width="780" height="1651" loading="lazy" decoding="async"><span class="etichetta prima">Prima</span></button>
+      <button class="scatto" data-zoom><img src="img/mondo-dopo.jpg" alt="Mondo, dopo" width="780" height="1651" loading="lazy" decoding="async"><span class="etichetta dopo">Dopo</span></button>
+    </div><p class="didascalia"><b>Mondo.</b> La carta sale in cima; via il livello, le istruzioni e «In rete: –».</p></div>
+    <div class="coppia"><div class="lati">
+      <button class="scatto" data-zoom><img src="img/salita-prima.jpg" alt="Scheda della salita, prima" width="780" height="1651" loading="lazy" decoding="async"><span class="etichetta prima">Prima</span></button>
+      <button class="scatto" data-zoom><img src="img/salita-dopo.jpg" alt="Scheda della salita, dopo" width="780" height="1688" loading="lazy" decoding="async"><span class="etichetta dopo">Dopo</span></button>
+    </div><p class="didascalia"><b>Scheda della salita.</b> «Pedala» sempre in vista, i numeri interi, la legenda coi segni veri.</p></div>
+    <div class="coppia"><div class="lati">
+      <button class="scatto" data-zoom><img src="img/sessioni-prima.jpg" alt="Sessioni, prima" width="780" height="1651" loading="lazy" decoding="async"><span class="etichetta prima">Prima</span></button>
+      <button class="scatto" data-zoom><img src="img/sessioni-dopo.jpg" alt="Sessioni, dopo" width="780" height="1651" loading="lazy" decoding="async"><span class="etichetta dopo">Dopo</span></button>
+    </div><p class="didascalia"><b>Sessioni.</b> Il tipo col suo segno, «Aperta ora · Entra», niente barretta laterale.</p></div>
+    <div class="coppia"><div class="lati">
+      <button class="scatto" data-zoom><img src="img/traguardi-prima.jpg" alt="Traguardi, prima" width="780" height="1651" loading="lazy" decoding="async"><span class="etichetta prima">Prima</span></button>
+      <button class="scatto" data-zoom><img src="img/traguardi-dopo.jpg" alt="Traguardi, dopo" width="780" height="1651" loading="lazy" decoding="async"><span class="etichetta dopo">Dopo</span></button>
+    </div><p class="didascalia"><b>Traguardi.</b> I filtri su due righe, «Quasi tuoi» in cima, una sezione per tipo.</p></div>
+    <div class="coppia"><div class="lati">
+      <button class="scatto" data-zoom><img src="img/classifiche-prima.jpg" alt="Classifiche, prima" width="780" height="1651" loading="lazy" decoding="async"><span class="etichetta prima">Prima</span></button>
+      <button class="scatto" data-zoom><img src="img/classifiche-dopo.jpg" alt="Classifiche, dopo" width="780" height="1651" loading="lazy" decoding="async"><span class="etichetta dopo">Dopo</span></button>
+    </div><p class="didascalia"><b>Classifiche.</b> Numero e unità non si separano più.</p></div>
+    <div class="coppia"><div class="lati">
+      <button class="scatto" data-zoom><img src="img/allenamenti-prima.jpg" alt="Allenamenti, prima" width="780" height="1651" loading="lazy" decoding="async"><span class="etichetta prima">Prima</span></button>
+      <button class="scatto" data-zoom><img src="img/allenamenti-dopo.jpg" alt="Allenamenti, dopo" width="780" height="1651" loading="lazy" decoding="async"><span class="etichetta dopo">Dopo</span></button>
+    </div><p class="didascalia"><b>Allenamenti.</b> Il primo allenamento nel primo schermo; posto e durata in un foglio, i programmi a un tocco.</p></div>
+    <div class="coppia"><div class="lati">
+      <button class="scatto" data-zoom><img src="img/profilo-prima.jpg" alt="Profilo, prima" width="780" height="1651" loading="lazy" decoding="async"><span class="etichetta prima">Prima</span></button>
+      <button class="scatto" data-zoom><img src="img/profilo-dopo.jpg" alt="Profilo, dopo" width="780" height="1651" loading="lazy" decoding="async"><span class="etichetta dopo">Dopo</span></button>
+    </div><p class="didascalia"><b>Profilo.</b> Si salva da solo; «Cancella tutti i dati» chiuso nella zona pericolosa.</p></div>
+    <div class="coppia"><div class="lati larghi">
+      <button class="scatto" data-zoom><img src="img/oggi-largo-prima.jpg" alt="Telefono in orizzontale, prima" width="1688" height="780" loading="lazy" decoding="async"><span class="etichetta prima">Prima</span></button>
+      <button class="scatto" data-zoom><img src="img/oggi-largo-dopo.jpg" alt="Telefono in orizzontale, dopo" width="1688" height="780" loading="lazy" decoding="async"><span class="etichetta dopo">Dopo</span></button>
+    </div><p class="didascalia"><b>Telefono in orizzontale.</b> Il menu diventa una colonna di icone e la pagina ha tutto lo spazio.</p></div>
+  </section>
+
+  <section class="blocco" id="corsa">
+    <h2>Corsa</h2>
+    <p class="cappello">Il giro non si perde più: si salva da solo al «Termina», e dopo un crash si riprende da dove era.</p>
+    <div class="coppia"><div class="lati">
+      <button class="scatto" data-zoom><img src="img/carica-prima.jpg" alt="Il via, prima" width="780" height="1673" loading="lazy" decoding="async"><span class="etichetta prima">Prima</span></button>
+      <button class="scatto" data-zoom><img src="img/carica-dopo.jpg" alt="Il via, dopo" width="780" height="1688" loading="lazy" decoding="async"><span class="etichetta dopo">Dopo</span></button>
+    </div><p class="didascalia"><b>Il via.</b> Prima il cronometro partiva su un mondo vuoto. Ora c’è un velo col nome del percorso finché il mondo intorno non è pronto.</p></div>
+    <div class="coppia"><div class="lati">
+      <button class="scatto" data-zoom><img src="img/corsa-prima.jpg" alt="In sella, prima" width="780" height="1673" loading="lazy" decoding="async"><span class="etichetta prima">Prima</span></button>
+      <button class="scatto" data-zoom><img src="img/corsa-dopo.jpg" alt="In sella, dopo" width="780" height="1673" loading="lazy" decoding="async"><span class="etichetta dopo">Dopo</span></button>
+    </div><p class="didascalia"><b>In sella.</b> Watt, tempo e km grandi; il 3D più alto; a destra meteo e fantasma, a sinistra il tratto.</p></div>
+    <div class="coppia"><div class="lati">
+      <button class="scatto" data-zoom><img src="img/pausa-prima.jpg" alt="Pausa, prima" width="780" height="1673" loading="lazy" decoding="async"><span class="etichetta prima">Prima</span></button>
+      <button class="scatto" data-zoom><img src="img/pausa-dopo.jpg" alt="Pausa, dopo" width="780" height="1688" loading="lazy" decoding="async"><span class="etichetta dopo">Dopo</span></button>
+    </div><p class="didascalia"><b>Pausa.</b> Si vede: velo «In pausa», tempo fermo, «Riprendi» e «Termina e salva».</p></div>
+    <div class="coppia"><div class="lati">
+      <button class="scatto" data-zoom><img src="img/riepilogo-prima.jpg" alt="Riepilogo, prima" width="780" height="1685" loading="lazy" decoding="async"><span class="etichetta prima">Prima</span></button>
+      <button class="scatto" data-zoom><img src="img/riepilogo-dopo.jpg" alt="Riepilogo, dopo" width="780" height="1688" loading="lazy" decoding="async"><span class="etichetta dopo">Dopo</span></button>
+    </div><p class="didascalia"><b>Riepilogo.</b> Già salvato. Prima la strada, poi i numeri, poi oro e punti; «Fatto» è l’unico tasto pieno.</p></div>
+    <div class="coppia"><div class="lati">
+      <button class="scatto" data-zoom><img src="img/incrocio-prima.jpg" alt="Incrocio, prima" width="780" height="1673" loading="lazy" decoding="async"><span class="etichetta prima">Prima</span></button>
+      <button class="scatto" data-zoom><img src="img/incrocio-dopo.jpg" alt="Incrocio, dopo" width="780" height="1673" loading="lazy" decoding="async"><span class="etichetta dopo">Dopo</span></button>
+    </div><p class="didascalia"><b>Incrocio.</b> Al massimo tre frecce, con nomi diversi e interi.</p></div>
+    <div class="coppia"><div class="lati larghi">
+      <button class="scatto" data-zoom><img src="img/corsa-largo-prima.jpg" alt="Telefono in orizzontale, prima" width="1688" height="780" loading="lazy" decoding="async"><span class="etichetta prima">Prima</span></button>
+      <button class="scatto" data-zoom><img src="img/corsa-largo-dopo.jpg" alt="Telefono in orizzontale, dopo" width="1688" height="780" loading="lazy" decoding="async"><span class="etichetta dopo">Dopo</span></button>
+    </div><p class="didascalia"><b>Telefono in orizzontale.</b> Il 3D occupa tutto lo schermo, non più metà.</p></div>
+    <div class="coppia"><div class="lati larghi">
+      <button class="scatto" data-zoom><img src="img/corsa-desk-prima.jpg" alt="Computer, prima" width="1280" height="800" loading="lazy" decoding="async"><span class="etichetta prima">Prima</span></button>
+      <button class="scatto" data-zoom><img src="img/corsa-desk-dopo.jpg" alt="Computer, dopo" width="1280" height="800" loading="lazy" decoding="async"><span class="etichetta dopo">Dopo</span></button>
+    </div><p class="didascalia"><b>Computer.</b> Numeri a 48 px, il mondo a 1280×800.</p></div>
+  </section>
+
+  <section class="blocco" id="mondo">
+    <h2>Mondo 3D</h2>
+    <p class="cappello">Il motore 3D si scarica solo quando si pedala. Il mondo è più fitto e più leggero insieme.</p>
+    <div class="coppia"><div class="lati">
+      <button class="scatto" data-zoom><img src="img/valseriana-prima.jpg" alt="Val Seriana, prima" width="780" height="1673" loading="lazy" decoding="async"><span class="etichetta prima">Prima</span></button>
+      <button class="scatto" data-zoom><img src="img/valseriana-dopo.jpg" alt="Val Seriana, dopo" width="780" height="1673" loading="lazy" decoding="async"><span class="etichetta dopo">Dopo</span></button>
+    </div><p class="didascalia"><b>Val Seriana.</b> Il Serio aveva quota zero e il terreno scavava un canyon di 300 m: ora c’è il fiume.</p></div>
+    <div class="coppia"><div class="lati">
+      <button class="scatto" data-zoom><img src="img/ganda-prima.jpg" alt="Verso la Ganda, prima" width="780" height="1673" loading="lazy" decoding="async"><span class="etichetta prima">Prima</span></button>
+      <button class="scatto" data-zoom><img src="img/ganda-dopo.jpg" alt="Verso la Ganda, dopo" width="780" height="1673" loading="lazy" decoding="async"><span class="etichetta dopo">Dopo</span></button>
+    </div><p class="didascalia"><b>Verso la Ganda.</b> Bosco fitto a due specie, con il 44% di triangoli in meno.</p></div>
+    <div class="coppia"><div class="lati">
+      <button class="scatto" data-zoom><img src="img/citta-prima.jpg" alt="Bergamo, la stazione, prima" width="780" height="1673" loading="lazy" decoding="async"><span class="etichetta prima">Prima</span></button>
+      <button class="scatto" data-zoom><img src="img/citta-dopo.jpg" alt="Bergamo, la stazione, dopo" width="780" height="1673" loading="lazy" decoding="async"><span class="etichetta dopo">Dopo</span></button>
+    </div><p class="didascalia"><b>Bergamo, la stazione.</b> Il suolo di città è pavimentato, non più prato.</p></div>
+    <div class="coppia"><div class="lati">
+      <button class="scatto" data-zoom><img src="img/nomi-prima.jpg" alt="I nomi dei luoghi, prima" width="780" height="1673" loading="lazy" decoding="async"><span class="etichetta prima">Prima</span></button>
+      <button class="scatto" data-zoom><img src="img/nomi-dopo.jpg" alt="I nomi dei luoghi, dopo" width="780" height="1673" loading="lazy" decoding="async"><span class="etichetta dopo">Dopo</span></button>
+    </div><p class="didascalia"><b>I nomi dei luoghi.</b> Al massimo tre, mai tagliati, spenti dietro i monti e le case.</p></div>
+    <div class="coppia"><div class="lati">
+      <button class="scatto" data-zoom><img src="img/pendio-prima.jpg" alt="Il pendio, prima" width="780" height="1673" loading="lazy" decoding="async"><span class="etichetta prima">Prima</span></button>
+      <button class="scatto" data-zoom><img src="img/pendio-dopo.jpg" alt="Il pendio, dopo" width="780" height="1673" loading="lazy" decoding="async"><span class="etichetta dopo">Dopo</span></button>
+    </div><p class="didascalia"><b>Il pendio.</b> Una trama liscia al posto dei quadretti.</p></div>
+    <div class="griglia">
+      <figure><button class="scatto" data-zoom><img src="img/porta-dopo.jpg" alt="Porta Sant’Agostino: nessun nome disegnato sul muro del fornice" width="780" height="1673" loading="lazy" decoding="async"></button><figcaption>Porta Sant’Agostino: nessun nome disegnato sul muro del fornice</figcaption></figure>
+      <figure><button class="scatto" data-zoom><img src="img/marciapiede-dopo.jpg" alt="Giro libero da Bergamo: la banchina continua, senza i gradini dei pezzi di marciapiede isolati" width="780" height="1673" loading="lazy" decoding="async"></button><figcaption>Giro libero da Bergamo: la banchina continua, senza i gradini dei pezzi di marciapiede isolati</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="blocco" id="novita">
+    <h2>Novità</h2>
+    <p class="cappello">Quattro cose che prima non c’erano.</p>
+    <h3>Il tuo fantasma</h3>
+    <div class="griglia">
+      <figure><button class="scatto" data-zoom><img src="img/fantasma.jpg" alt="Al secondo giro su Maresana pedala accanto a te il tuo giro migliore" width="780" height="1673" loading="lazy" decoding="async"></button><figcaption>Al secondo giro su Maresana pedala accanto a te il tuo giro migliore</figcaption></figure>
+      <figure><button class="scatto" data-zoom><img src="img/fantasma-pillola.jpg" alt="La pillola dice chi è davanti, in secondi" width="780" height="1673" loading="lazy" decoding="async"></button><figcaption>La pillola dice chi è davanti, in secondi</figcaption></figure>
+    </div>
+    <h3>La cartolina del giro</h3>
+    <div class="griglia">
+      <figure><button class="scatto" data-zoom><img src="img/cartolina-citta.jpg" alt="Città Alta: la traccia d’oro, i nove monumenti passati, il profilo" width="1080" height="1350" loading="lazy" decoding="async"></button><figcaption>Città Alta: la traccia d’oro, i nove monumenti passati, il profilo</figcaption></figure>
+      <figure><button class="scatto" data-zoom><img src="img/cartolina-maresana.jpg" alt="Maresana" width="1080" height="1350" loading="lazy" decoding="async"></button><figcaption>Maresana</figcaption></figure>
+    </div>
+    <h3>Programmi a settimane</h3>
+    <div class="griglia">
+      <figure><button class="scatto" data-zoom><img src="img/programmi.jpg" alt="Tre programmi, ognuno col suo percorso" width="780" height="1651" loading="lazy" decoding="async"></button><figcaption>Tre programmi, ognuno col suo percorso</figcaption></figure>
+      <figure><button class="scatto" data-zoom><img src="img/programma-attivo.jpg" alt="La settimana giorno per giorno" width="780" height="1651" loading="lazy" decoding="async"></button><figcaption>La settimana giorno per giorno</figcaption></figure>
+      <figure><button class="scatto" data-zoom><img src="img/oggi-programma.jpg" alt="In Oggi, l’allenamento del giorno a un tocco" width="780" height="1651" loading="lazy" decoding="async"></button><figcaption>In Oggi, l’allenamento del giorno a un tocco</figcaption></figure>
+    </div>
+    <h3>Allenamenti di Zwift</h3>
+    <div class="griglia">
+      <figure><button class="scatto" data-zoom><img src="img/zwo.jpg" alt="Un file .zwo importato, fra i tuoi" width="780" height="1651" loading="lazy" decoding="async"></button><figcaption>Un file .zwo importato, fra i tuoi</figcaption></figure>
+      <figure><button class="scatto" data-zoom><img src="img/zwo-erg.jpg" alt="In corsa, in ERG con gli archi" width="780" height="1687" loading="lazy" decoding="async"></button><figcaption>In corsa, in ERG con gli archi</figcaption></figure>
+    </div>
+  </section>
+
+  <footer>
+    <p>Schermate da Chrome headless con WebGL software, telefono 390×844 (e 844×390, 1280×800 dove indicato). I «prima» sono la versione in onda stamattina, negli stessi punti.</p>
+    <p>Quattro squadre hanno lavorato in parallelo (pagine, corsa, mondo 3D, novità); un PM ha controllato ogni voce sulle schermate e rimandato indietro quelle da rifare.</p>
+  </footer>
+</main>
+
+<dialog id="zoom" aria-label="Foto ingrandita">
+  <button type="button" aria-label="Chiudi">×</button>
+  <img alt="">
+  <p></p>
+</dialog>
+
+<script>
+  // Tocca una foto: si apre grande. Tocca ovunque o Esc: si chiude.
+  const zoom = document.getElementById('zoom');
+  const big = zoom.querySelector('img');
+  const cap = zoom.querySelector('p');
+  document.querySelectorAll('[data-zoom]').forEach((b) => b.addEventListener('click', () => {
+    const img = b.querySelector('img');
+    big.src = img.src;
+    big.alt = img.alt;
+    cap.textContent = img.alt;
+    zoom.showModal();
+  }));
+  zoom.addEventListener('click', () => zoom.close());
+
+  // La scheda della sezione che si sta leggendo resta accesa.
+  const tabs = [...document.querySelectorAll('.filtri a')];
+  const seen = new Map();
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) seen.set(e.target.id, e.isIntersecting ? e.intersectionRatio : 0);
+    let best = null;
+    for (const t of tabs) {
+      const id = t.getAttribute('href').slice(1);
+      if ((seen.get(id) ?? 0) > 0 && best == null) best = t;
+    }
+    if (!best) return;
+    for (const t of tabs) t.setAttribute('aria-pressed', String(t === best));
+    best.parentElement.scrollTo({ left: Math.max(0, best.offsetLeft - 16) });
+  }, { rootMargin: '-35% 0px -55% 0px', threshold: [0, 0.01] });
+  document.querySelectorAll('section.blocco').forEach((s) => io.observe(s));
+</script>
+</body>
+</html>
