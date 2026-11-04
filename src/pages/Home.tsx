@@ -6,6 +6,7 @@ import { useGame } from '@/game/useGame';
 import { missionsFor } from '@/game/missions';
 import { phaseOf, SESSION_STYLE, upcoming, WORLD_RIDE_NAMES } from '@/game/sessions';
 import { LevelRing } from './Me';
+import { TodayWorkout } from './Plans';
 import { countdown, sessionHref } from './Sessions';
 import { InstallCard } from '@/components/Install';
 import { formatDateTime, formatDuration, formatKm, formatNumber } from '@/domain/format';
@@ -52,6 +53,7 @@ export function HomePage() {
         </p>
       ) : null}
 
+      <TodayWorkout className="mt-4" />
       <NextSession />
       <Missions done={career.missions.day === todayKey() ? career.missions.done : []} />
 

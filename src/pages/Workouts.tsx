@@ -23,6 +23,7 @@ import { freeStartQuery, loopStartQuery, START_TOWNS } from '@/open/starts';
 import { loadWorld, type WorldData } from '@/open/world';
 import { useApp } from '@/store/useApp';
 import { cn } from '@/lib/cn';
+import { downloadZwo, importZwoFiles } from '@/io/zwo';
 
 export function workoutTitle(workout: Workout, t: Translate): string {
   return workout.nameKey ? t(workout.nameKey) : workout.name || t('workouts.editorTitle');
@@ -83,6 +84,7 @@ export function WorkoutsPage() {
   const [world, setWorld] = useState<WorldData | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [zwoNote, setZwoNote] = useState<string | null>(null);
   const needWorld = choice.where !== 'salita';
 
   useEffect(() => {
@@ -143,9 +145,19 @@ export function WorkoutsPage() {
     <main className="mx-auto w-full max-w-3xl px-4 pb-nav pt-6 md:px-8 md:pt-10">
       <h1 className="font-display text-5xl tracking-tight">{t('workouts.title')}</h1>
       <p className="mt-3 max-w-xl text-lg text-muted">{t('workouts.lead')}</p>
-      <Link to="/workouts/edit/new" className="mt-5 inline-flex h-12 items-center rounded-full bg-accent px-5 font-semibold text-accent-ink">
-        {t('workouts.new')}
-      </Link>
+      <div className="mt-5 flex flex-wrap gap-2">
+        <Link to="/workouts/edit/new" className="inline-flex h-12 items-center rounded-full bg-accent px-5 font-semibold text-accent-ink">
+          {t('workouts.new')}
+        </Link>
+        <Link to="/programmi" className="inline-flex h-12 items-center rounded-full bg-elev2 px-5 font-semibold" data-testid="workouts-plans">
+          Programmi
+        </Link>
+        <label className="inline-flex h-12 cursor-pointer items-center rounded-full border border-line px-5 font-semibold" data-testid="zwo-import">
+          Importa .zwo
+          <input type="file" accept=".zwo,application/xml,text/xml" multiple className="sr-only" onChange={(e) => { const el = e.currentTarget; void importZwoFiles(el.files, saveWorkout).then((m) => { setZwoNote(m); el.value = ''; }); }} />
+        </label>
+      </div>
+      {zwoNote ? <p className="mt-2 text-sm text-muted" role="status" data-testid="zwo-note">{zwoNote}</p> : null}
 
       <section className="mt-6 rounded-3xl border border-line bg-elev p-4" data-testid="workout-where">
         <h2 className="eyebrow">Dove pedali</h2>
@@ -299,6 +311,9 @@ function WorkoutCard({
         ) : null}
         <Button variant="ghost" className="h-11" onClick={onCopy}>
           {t('actions.duplicate')}
+        </Button>
+        <Button variant="ghost" className="h-11" onClick={() => downloadZwo(workout, workoutTitle(workout, t), ftp)} data-testid={`zwo-export-${workout.id}`}>
+          Esporta .zwo
         </Button>
       </div>
     </li>
