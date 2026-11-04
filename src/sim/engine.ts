@@ -9,6 +9,27 @@ import type { TelemetrySource } from './source';
 
 export type RidePhase = 'riding' | 'paused' | 'finished';
 
+/** Secondi a 0 W e 0 rpm col rullo vero prima della pausa automatica. */
+export const AUTO_PAUSE_SEC = 3;
+
+/**
+ * Quanto serve per riprendere un giro dopo un crash o una scheda chiusa: il resto (la strada,
+ * l'allenamento, il profilo) si ricostruisce dal link della pedalata.
+ */
+export interface EngineCheckpoint {
+  rideId: string;
+  startedAt: string;
+  elapsed: number;
+  /** metri sul percorso di adesso */
+  distance: number;
+  /** metri fatti prima che il percorso ricominciasse da 0 (giro libero ripreso) */
+  base: number;
+  samples: RideSample[];
+  workoutDone: boolean;
+  effort: number;
+  speed: number;
+}
+
 export interface EngineOptions {
   track: Track;
   source: TelemetrySource;
@@ -34,6 +55,8 @@ export interface EngineOptions {
    * «giro virtuale» sulla mappa). Null per la strada neutra, che non è da nessuna parte.
    */
   geoAt?: (distance: number) => { lat: number; lon: number } | null;
+  /** pausa automatica col rullo vero (0 W e 0 rpm per 3 s); mai col simulatore. Di serie sì. */
+  autoPause?: boolean;
 }
 
 export class RideEngine {
@@ -63,7 +86,13 @@ export class RideEngine {
   /** vento contro (positivo) o a favore, m/s: lo mette il mondo aperto col meteo vero */
   wind = 0;
   samples: RideSample[] = [];
-  readonly startedAt: Date;
+  /** L'id del giro: resta lo stesso dopo «Continua a pedalare» e dopo una ripresa, così il salvataggio sovrascrive. */
+  rideId = `ride-${crypto.randomUUID()}`;
+  /** Metri fatti prima che il percorso ricominciasse da 0 (un giro libero ripreso dopo un crash). */
+  base = 0;
+  /** La pausa l'ha messa il motore (rullo fermo): riparte da sola alla prima pedalata. */
+  autoPaused = false;
+  startedAt: Date;
   readonly withCamilla: boolean;
   readonly workout: Workout | null;
 
@@ -79,6 +108,9 @@ export class RideEngine {
   private readonly cw: number;
   private readonly powerTarget: EngineOptions['powerTarget'];
   private readonly geoAt: EngineOptions['geoAt'];
+  private readonly autoPause: boolean;
+  /** secondi di fila a 0 W e 0 rpm */
+  private idle = 0;
   private sampleAcc = 0;
   private powerBuf: { t: number; p: number }[] = [];
   private listeners = new Set<() => void>();
@@ -101,6 +133,7 @@ export class RideEngine {
     this.cw = opts.cw;
     this.powerTarget = opts.powerTarget;
     this.geoAt = opts.geoAt;
+    this.autoPause = opts.autoPause ?? true;
     this.startedAt = new Date();
     this.mode = this.workout ? 'erg' : 'free';
     // il bersaglio è giusto già prima del primo fotogramma, non 0 W
@@ -127,9 +160,15 @@ export class RideEngine {
     return this.track.poseAt(this.distance);
   }
 
+  /** Il contachilometri del giro: i metri sul percorso più quelli di prima di una ripresa. */
+  get odometer(): number {
+    return this.base + this.distance;
+  }
+
   pause(): void {
     if (this.phase === 'riding') {
       this.phase = 'paused';
+      this.autoPaused = false;
       this.emit();
     }
   }
@@ -137,8 +176,48 @@ export class RideEngine {
   resume(): void {
     if (this.phase === 'paused') {
       this.phase = 'riding';
+      this.autoPaused = false;
+      this.idle = 0;
       this.emit();
     }
+  }
+
+  /** Lo stato da mettere da parte ogni 15 s: con questo il giro riprende dove era. */
+  checkpoint(): EngineCheckpoint {
+    return {
+      rideId: this.rideId,
+      startedAt: this.startedAt.toISOString(),
+      elapsed: this.elapsed,
+      distance: this.distance,
+      base: this.base,
+      samples: this.samples.slice(),
+      workoutDone: this.workoutDone,
+      effort: this.effort,
+      speed: this.speed,
+    };
+  }
+
+  /** Riprende un giro messo da parte: stesso id, stesso tempo, stessi metri, stessi campioni. */
+  restore(cp: EngineCheckpoint): void {
+    this.rideId = cp.rideId;
+    const started = new Date(cp.startedAt);
+    if (Number.isFinite(started.getTime())) this.startedAt = started;
+    this.elapsed = Math.max(0, cp.elapsed);
+    this.base = Math.max(0, cp.base);
+    this.distance = Math.max(0, this.track.closed ? cp.distance : Math.min(cp.distance, this.track.length - 1));
+    this.samples = cp.samples.slice();
+    this.workoutDone = cp.workoutDone;
+    this.effort = cp.effort;
+    this.speed = Math.max(0, cp.speed);
+    this.sampleAcc = 0;
+    this.powerBuf = [];
+    this.closingSample = false;
+    this.arrived = false;
+    const pose = this.track.poseAt(this.distance);
+    this.grade = pose.grade;
+    this.altitude = pose.altitude;
+    if (this.workout && !this.workoutDone) this.targetPower = workoutAt(this.workout, this.elapsed, this.ftp).targetPower;
+    this.emit();
   }
 
   finish(): void {
@@ -160,6 +239,10 @@ export class RideEngine {
 
   /** Avanza di `dt` secondi di orologio. timeScale vale solo per il simulatore. */
   tick(dt: number): void {
+    if (this.phase === 'paused' && this.autoPaused) {
+      this.watchPedals(dt);
+      return;
+    }
     if (this.phase !== 'riding') return;
     const scaled = dt * (this.source.mode === 'simulator' ? this.timeScale : 1);
     const steps = Math.max(1, Math.ceil(scaled / 0.05));
@@ -188,7 +271,7 @@ export class RideEngine {
   toRide(name: string): Ride {
     const samples = this.samples.length > 0 ? this.samples : [this.currentSample()];
     return buildRide({
-      id: `ride-${crypto.randomUUID()}`,
+      id: this.rideId,
       name,
       sport: 'cycling',
       source: 'indoor',
@@ -200,7 +283,7 @@ export class RideEngine {
       withCamilla: this.withCamilla,
       workoutId: this.workout?.id,
       workoutName: name,
-      distanceM: this.distance,
+      distanceM: this.odometer,
     });
   }
 
@@ -241,6 +324,18 @@ export class RideEngine {
     this.power = Math.max(0, this.source.power);
     this.hr = Math.max(0, this.source.hr);
     this.cadence = Math.max(0, this.source.cadence);
+    // il rullo fermo (0 W e 0 rpm per 3 s) mette in pausa: il tempo non corre mentre si beve
+    if (this.autoPause && this.source.mode !== 'simulator') {
+      this.idle = this.power <= 0 && this.cadence <= 0 ? this.idle + dt : 0;
+      if (this.idle >= AUTO_PAUSE_SEC) {
+        this.idle = 0;
+        this.phase = 'paused';
+        this.autoPaused = true;
+        this.speed = 0;
+        this.emit();
+        return;
+      }
+    }
 
     const pose = this.track.poseAt(this.distance);
     this.grade = pose.grade;
@@ -269,6 +364,29 @@ export class RideEngine {
     if (this.arrived) this.finish();
   }
 
+  /** In pausa automatica: si ascolta il rullo, e alla prima pedalata si riparte. */
+  private watchPedals(dt: number): void {
+    this.source.update({
+      dt,
+      grade: this.grade,
+      targetPower: this.mode === 'erg' ? this.targetPower : null,
+      effort: this.effort,
+      ftp: this.ftp,
+      maxHr: this.maxHr,
+      restHr: this.restHr,
+      erg: this.mode === 'erg',
+      crr: this.crr * this.rolling,
+      cw: this.cw * this.aero,
+      windSpeedMs: this.wind,
+    });
+    if (this.source.mode === 'simulator' || this.source.power > 0 || this.source.cadence > 0) {
+      this.autoPaused = false;
+      this.idle = 0;
+      this.phase = 'riding';
+      this.emit();
+    }
+  }
+
   private currentSample(): RideSample {
     const sample: RideSample = {
       t: this.elapsed,
@@ -276,7 +394,7 @@ export class RideEngine {
       hr: this.hr,
       cadence: this.cadence,
       speed: this.speed,
-      distance: this.distance,
+      distance: this.odometer,
       altitude: this.altitude,
       grade: this.grade,
     };

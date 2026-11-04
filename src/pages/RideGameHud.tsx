@@ -32,15 +32,15 @@ export function SegmentHud({ game }: { game: RideGame }) {
     const st = SEGMENT_STYLE[banner.seg.kind];
     const delta = banner.prev != null ? banner.sec - banner.prev : null;
     return (
-      <div className="pop-in pointer-events-none overflow-hidden rounded-2xl shadow-lg" style={{ background: st.color, color: st.ink }} data-testid="segment-banner">
-        <div className="px-4 py-2 text-center">
-          <p className="text-[11px] font-bold uppercase tracking-[0.14em] opacity-90">{segTitle(banner.seg, st.short)}</p>
-          <p className="num font-display text-4xl leading-none">{clock(banner.sec)}</p>
-          <p className="mt-0.5 text-xs font-semibold">
-            {banner.prev == null ? 'Primo tempo' : banner.isPb ? `Record! −${formatDuration(Math.abs(delta!))}` : `+${formatDuration(Math.abs(delta!))} dal record`}
-            {banner.rank ? ` · ${banner.rank}` : ''}
-          </p>
+      <div className="pop-in pointer-events-none w-[15.5rem] max-w-full overflow-hidden rounded-2xl px-3 py-1.5 shadow-lg" style={{ background: st.color, color: st.ink }} data-testid="segment-banner">
+        <div className="flex items-start justify-between gap-2">
+          <p className="min-w-0 break-words pt-0.5 text-[11px] font-bold uppercase leading-tight tracking-[0.12em] opacity-90">{segTitle(banner.seg, st.short)}</p>
+          <p className="num shrink-0 font-display text-[28px] leading-none">{clock(banner.sec)}</p>
         </div>
+        <p className="text-xs font-semibold">
+          {banner.prev == null ? 'Primo tempo' : banner.isPb ? `Record! −${formatDuration(Math.abs(delta!))}` : `+${formatDuration(Math.abs(delta!))} dal record`}
+          {banner.rank ? ` · ${banner.rank}` : ''}
+        </p>
       </div>
     );
   }
@@ -51,22 +51,22 @@ export function SegmentHud({ game }: { game: RideGame }) {
     const f = Math.min(1, Math.max(0, (e.distance - live.from) / Math.max(1, live.to - live.from)));
     const pb = game.pbOf(live.seg.id);
     return (
-      <div className="pointer-events-none min-w-56 overflow-hidden rounded-2xl bg-bg/80 backdrop-blur" data-testid="segment-live">
-        <div className="flex items-center gap-2 px-3 pt-2">
-          <span className="grid h-7 w-7 place-items-center rounded-full" style={{ background: st.color, color: st.ink }}>
+      <div className="pointer-events-none w-[15.5rem] max-w-full overflow-hidden rounded-2xl bg-bg/80 backdrop-blur-md" data-testid="segment-live">
+        <div className="flex items-center gap-2 px-2.5 pt-1.5">
+          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full" style={{ background: st.color, color: st.ink }}>
             <Glyph name={live.seg.kind} size={16} />
           </span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: st.color }}>
+          <span className="min-w-0 flex-1 break-words text-sm font-semibold leading-tight">
+            <span className="mr-1 text-[11px] font-bold tracking-[0.1em]" style={{ color: st.color }}>
               {st.short}
             </span>
-            <span className="block truncate text-sm font-semibold leading-tight">{live.seg.kind === 'cassonetto' ? live.seg.name.split(' · ').pop() : live.seg.name}</span>
+            {live.seg.kind === 'cassonetto' ? live.seg.name.split(' · ').pop() : live.seg.name}
           </span>
-          <span className="num font-display text-3xl leading-none">{clock(t)}</span>
+          <span className="num shrink-0 font-display text-[28px] leading-none">{clock(t)}</span>
         </div>
-        <div className="num flex justify-between px-3 pb-1.5 pt-1 text-[11px] text-muted">
+        <div className="num flex justify-between gap-2 px-2.5 pb-1 pt-0.5 text-[11px] text-muted">
           <span>{left >= 1000 ? `${formatKm(left)} km` : `${Math.round(left)} m`} all’arrivo</span>
-          {pb != null ? <span>record {formatDuration(pb)}</span> : <span>primo tempo</span>}
+          {pb != null ? <span>Record {formatDuration(pb)}</span> : <span>Primo tempo</span>}
         </div>
         <div className="h-1 bg-elev2">
           <div className="h-full" style={{ width: `${f * 100}%`, background: st.color }} />
@@ -78,8 +78,8 @@ export function SegmentHud({ game }: { game: RideGame }) {
   if (next && next.from - e.distance < 600) {
     const st = SEGMENT_STYLE[next.seg.kind];
     return (
-      <p className="pointer-events-none inline-flex items-center gap-2 rounded-full bg-bg/75 px-3 py-1.5 text-xs font-semibold backdrop-blur" data-testid="segment-ahead">
-        <span className="h-2.5 w-2.5 rounded-full" style={{ background: st.color }} />
+      <p className="pointer-events-none inline-flex max-w-full items-center gap-2 rounded-2xl bg-bg/75 px-3 py-1.5 text-xs font-semibold backdrop-blur-md" data-testid="segment-ahead">
+        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: st.color }} />
         Fra {Math.round(next.from - e.distance)} m · {next.seg.kind === 'cassonetto' ? next.seg.name : `${st.short} ${next.seg.name}`}
       </p>
     );
@@ -93,8 +93,8 @@ export function ErgAheadHud({ game }: { game: RideGame }) {
   const left = a ? a.d - game.engine.distance : Infinity;
   if (!a || left > 600 || left < 0) return null;
   return (
-    <p className="pointer-events-none inline-flex items-center gap-2 rounded-full bg-bg/75 px-3 py-1.5 text-xs font-semibold backdrop-blur" data-testid="erg-ahead">
-      <span className="h-2.5 w-2.5 rounded-full" style={{ background: ARCH_STYLE.erg.color }} />
+    <p className="pointer-events-none inline-flex max-w-full items-center gap-2 rounded-2xl bg-bg/75 px-3 py-1.5 text-xs font-semibold backdrop-blur-md" data-testid="erg-ahead">
+      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: ARCH_STYLE.erg.color }} />
       Fra {Math.round(left)} m · {a.role === 'start' ? a.label : 'Fine intervallo'}
     </p>
   );
@@ -105,9 +105,9 @@ export function PoiToast({ game }: { game: RideGame }) {
   const t = game.poiToast;
   if (!t) return null;
   return (
-    <p className="rise-in pointer-events-none inline-flex items-center gap-2 rounded-full bg-bg/80 px-3 py-1.5 text-xs font-semibold backdrop-blur" data-testid="poi-toast">
+    <p className="rise-in pointer-events-none inline-flex max-w-full items-center gap-2 rounded-2xl bg-bg/80 px-3 py-1.5 text-xs font-semibold backdrop-blur-md" data-testid="poi-toast">
       <Glyph name={t.kind === 'fontanella' || t.kind === 'fontana' ? 'goccia' : t.kind === 'belvedere' ? 'mappa' : 'campana'} size={15} />
-      {t.name}
+      {t.name.charAt(0).toUpperCase() + t.name.slice(1)}
       <span className="num inline-flex items-center gap-1 text-accent">
         +4 <Coin size={12} />
       </span>
@@ -115,30 +115,35 @@ export function PoiToast({ game }: { game: RideGame }) {
   );
 }
 
-/** La sessione: il conto alla rovescia in griglia, poi dov'è il gruppo. */
+/** La sessione in griglia: il conto alla rovescia sopra il mondo, finché non si parte tutti insieme. */
+export function SessionGrid({ game }: { game: RideGame }) {
+  const def = game.sessionDef;
+  if (!def || game.stage !== 'griglia') return null;
+  const st = SESSION_STYLE[def.kind];
+  const s = Math.ceil(game.countdown);
+  return (
+    <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center bg-black/35" data-testid="session-grid">
+      <div className="rounded-3xl bg-black/55 px-7 py-4 text-center backdrop-blur-sm">
+        <p className="text-xs font-bold uppercase tracking-[0.18em]" style={{ color: st.color }}>
+          {def.title}
+        </p>
+        <p className="num mt-1 font-display text-8xl leading-none text-white drop-shadow">{s >= 60 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` : s}</p>
+        <p className="mt-2 text-sm text-white/85">Partenza alle {new Date(def.start).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}. Tutti insieme.</p>
+      </div>
+    </div>
+  );
+}
+
+/** La sessione in corsa: dov'è il gruppo, e quanto ci si è stati dentro. */
 export function SessionHud({ game }: { game: RideGame }) {
   const def = game.sessionDef;
-  if (!def) return null;
+  if (!def || game.stage === 'griglia') return null;
   const st = SESSION_STYLE[def.kind];
-  if (game.stage === 'griglia') {
-    const s = Math.ceil(game.countdown);
-    return (
-      <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center bg-black/35" data-testid="session-grid">
-        <div className="rounded-3xl bg-black/55 px-7 py-4 text-center backdrop-blur-sm">
-          <p className="text-xs font-bold uppercase tracking-[0.18em]" style={{ color: st.color }}>
-            {def.title}
-          </p>
-          <p className="num mt-1 font-display text-8xl leading-none text-white drop-shadow">{s >= 60 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` : s}</p>
-          <p className="mt-2 text-sm text-white/85">Partenza alle {new Date(def.start).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}. Tutti insieme.</p>
-        </div>
-      </div>
-    );
-  }
   const gap = game.packGap;
   if (gap == null) {
     return (
-      <p className="pointer-events-none inline-flex items-center gap-2 rounded-full bg-bg/75 px-3 py-1.5 text-xs font-semibold backdrop-blur" data-testid="session-chip">
-        <span className="h-2.5 w-2.5 rounded-full" style={{ background: st.color }} />
+      <p className="pointer-events-none inline-flex max-w-full items-center gap-2 rounded-2xl bg-bg/75 px-3 py-1.5 text-xs font-semibold backdrop-blur-md" data-testid="session-chip">
+        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: st.color }} />
         {def.title}
         {game.sessionRank ? ` · ${game.sessionRank}` : ''}
       </p>
@@ -147,10 +152,10 @@ export function SessionHud({ game }: { game: RideGame }) {
   const inPack = Math.abs(gap) < 25;
   return (
     <p
-      className={cn('pointer-events-none inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold backdrop-blur', inPack ? 'bg-good/30 text-good' : 'bg-bg/75')}
+      className={cn('pointer-events-none inline-flex max-w-full flex-wrap items-center gap-x-2 rounded-2xl px-3 py-1.5 text-xs font-semibold backdrop-blur-md', inPack ? 'bg-good/30 text-good' : 'bg-bg/75')}
       data-testid="session-chip"
     >
-      <span className="h-2.5 w-2.5 rounded-full" style={{ background: st.color }} />
+      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: st.color }} />
       {inPack ? 'Nel gruppo' : gap > 0 ? `${Math.round(gap)} m davanti al gruppo` : `Gruppo a ${Math.round(-gap)} m`}
       <span className="num text-muted">· {Math.round(game.withPack * 100)}% col gruppo</span>
     </p>
@@ -164,7 +169,7 @@ export function LevelUp({ xp, gained }: { xp: number; gained: number }) {
   if (now.level <= before.level) return null;
   const opened = ITEMS.filter((i) => i.level && i.level > before.level && i.level <= now.level);
   return (
-    <div className="pop-in mt-4 flex items-center gap-4 rounded-3xl bg-accent p-4 text-accent-ink" data-testid="level-up">
+    <div className="pop-in flex items-center gap-4 rounded-3xl border border-accent bg-accent/10 p-4" data-testid="level-up">
       <span className="num grid h-16 w-16 shrink-0 place-items-center rounded-full bg-accent-ink font-display text-4xl text-accent">{now.level}</span>
       <span className="min-w-0">
         <span className="block text-xs font-bold uppercase tracking-[0.14em]">Livello {now.level}</span>
@@ -182,7 +187,7 @@ export function LevelUp({ xp, gained }: { xp: number; gained: number }) {
 /** Il riepilogo del gioco: oro, traguardi presi, missioni, pezzi nuovi, tratti cronometrati. */
 export function RewardsSummary({ outcome, results }: { outcome: CareerOutcome; results: SegmentResult[] }) {
   return (
-    <section className="mt-4 flex flex-col gap-3" data-testid="rewards">
+    <section className="flex flex-col gap-3" data-testid="rewards">
       {outcome.unlocked.length ? (
         <div className="rounded-3xl border border-accent bg-accent/10 p-4">
           <p className="eyebrow text-accent">{outcome.unlocked.length === 1 ? 'Traguardo preso' : `${outcome.unlocked.length} traguardi presi`}</p>
@@ -221,8 +226,8 @@ export function RewardsSummary({ outcome, results }: { outcome: CareerOutcome; r
                   <span className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase" style={{ background: st.color, color: st.ink }}>
                     {st.short}
                   </span>
-                  <span className="min-w-0 flex-1 truncate">{r.name}</span>
-                  {outcome.pbs.includes(r.id) ? <span className="text-xs font-semibold text-accent">record</span> : null}
+                  <span className="min-w-0 flex-1 break-words">{r.name}</span>
+                  {outcome.pbs.includes(r.id) ? <span className="text-xs font-semibold text-accent">Record</span> : null}
                   <span className="num font-semibold">{clock(r.sec)}</span>
                 </li>
               );
@@ -242,7 +247,7 @@ export function RewardsSummary({ outcome, results }: { outcome: CareerOutcome; r
         <ul className="mt-2 flex flex-col gap-1 text-sm">
           {outcome.lines.map((l, i) => (
             <li key={i} className="flex justify-between gap-3">
-              <span className="min-w-0 truncate text-muted">{l.label}</span>
+              <span className="min-w-0 break-words text-muted">{l.label.charAt(0).toUpperCase() + l.label.slice(1)}</span>
               <span className="num shrink-0">+{l.oro}</span>
             </li>
           ))}
