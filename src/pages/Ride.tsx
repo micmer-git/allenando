@@ -1525,7 +1525,7 @@ function PauseVeil({ engine, shown, onResume, onFinish, children }: { engine: Ri
  */
 function HoldButton({ onDone, disabled, children, className, testid, ms = HOLD_MS }: { onDone: () => void; disabled?: boolean; children: ReactNode; className?: string; testid?: string; ms?: number }) {
   const ring = useRef<SVGCircleElement>(null);
-  const hold = useRef<{ t0: number; raf: number } | null>(null);
+  const hold = useRef<{ t0: number; raf: number; timer: number } | null>(null);
   const hintTimer = useRef(0);
   const [hint, setHint] = useState(false);
   const C = 2 * Math.PI * 8.5;
@@ -1537,33 +1537,46 @@ function HoldButton({ onDone, disabled, children, className, testid, ms = HOLD_M
     window.clearTimeout(hintTimer.current);
     hintTimer.current = window.setTimeout(() => setHint(false), 1800);
   };
+  // la fine la decide l'orologio, non i fotogrammi: con il 3D lento (un fotogramma ogni mezzo
+  // secondo) il fotogramma dopo gli 0,8 s può arrivare quando il dito si è già alzato
+  const complete = () => {
+    const h = hold.current;
+    if (!h) return;
+    cancelAnimationFrame(h.raf);
+    window.clearTimeout(h.timer);
+    hold.current = null;
+    paint(0);
+    onDone();
+  };
   const start = () => {
     if (disabled || hold.current) return;
     const t0 = performance.now();
     const step = (now: number) => {
-      const f = Math.min(1, (now - t0) / ms);
-      paint(f);
-      if (f >= 1) {
-        hold.current = null;
-        paint(0);
-        onDone();
-        return;
-      }
-      hold.current = { t0, raf: requestAnimationFrame(step) };
+      paint(Math.min(1, (now - t0) / ms));
+      if (hold.current) hold.current.raf = requestAnimationFrame(step);
     };
-    hold.current = { t0, raf: requestAnimationFrame(step) };
+    hold.current = { t0, raf: requestAnimationFrame(step), timer: window.setTimeout(complete, ms) };
   };
   const stop = () => {
     const h = hold.current;
     if (!h) return;
+    // tenuto abbastanza ma il timer non è ancora passato (il telefono era occupato): vale
+    if (performance.now() - h.t0 >= ms) {
+      complete();
+      return;
+    }
     cancelAnimationFrame(h.raf);
+    window.clearTimeout(h.timer);
     hold.current = null;
     paint(0);
     nudge();
   };
   useEffect(
     () => () => {
-      if (hold.current) cancelAnimationFrame(hold.current.raf);
+      if (hold.current) {
+        cancelAnimationFrame(hold.current.raf);
+        window.clearTimeout(hold.current.timer);
+      }
       window.clearTimeout(hintTimer.current);
     },
     [],

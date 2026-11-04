@@ -80,12 +80,14 @@ export async function collaudoCorsa({ b, base, check, out = '' }) {
   // il profilo c'è già nel browser (onboarding fatto da chi chiama): si entra
   // 2.2 il velo prima del mondo
   await p.go('/ride?world=bergamo&ride=citta-alta');
-  await sleep(500);
+  // l'app si avvia (sotto carico anche qualche secondo), poi la corsa si monta sotto il velo e aspetta il mondo
+  await p.waitFor(`!!document.querySelector('[data-testid=ride-loading]') || ${ready}`, 60000);
   await p.shot('c2-20-velo');
+  await p.waitFor(`!!document.querySelector('[data-testid=ride-screen]') || ${ready}`, 120000);
   const early = await p.evaluate(probe);
   const before = await p.evaluate(`({ ready: ${ready}, veil: !!document.querySelector('[data-testid=ride-loading]'), title: document.querySelector('[data-testid=ride-loading-title]')?.textContent ?? '' })`);
-  check(before.ready || before.veil, 'corsa: prima del mondo c’è il velo', JSON.stringify(before));
-  check(!early || (!early.live && !early.poi && /^00:00$/.test(early.time)), 'corsa: prima del mondo tempo 00:00, niente tratti né punti caldi', JSON.stringify(early));
+  check(before.veil && !before.ready, 'corsa: prima del mondo c’è il velo col nome del percorso', JSON.stringify(before));
+  check(!!early && !early.live && !early.poi && /^00:00$/.test(early.time), 'corsa: prima del mondo tempo 00:00, niente tratti né punti caldi', JSON.stringify(early));
   check(await p.waitFor(ready, 150000), 'corsa: mondo pronto');
   await sleep(600);
   check(!(await p.evaluate(`!!document.querySelector('[data-testid=ride-loading]')`)), 'corsa: il velo se ne va');
