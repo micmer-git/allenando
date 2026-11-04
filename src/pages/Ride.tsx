@@ -1537,8 +1537,9 @@ function HoldButton({ onDone, disabled, children, className, testid, ms = HOLD_M
     window.clearTimeout(hintTimer.current);
     hintTimer.current = window.setTimeout(() => setHint(false), 1800);
   };
-  // la fine la decide l'orologio, non i fotogrammi: con il 3D lento (un fotogramma ogni mezzo
-  // secondo) il fotogramma dopo gli 0,8 s può arrivare quando il dito si è già alzato
+  // due strade per finire: il dito ancora giù quando l'anello è pieno (timer + fotogramma), oppure
+  // il dito alzato dopo 0,8 s misurati sui tempi degli eventi (con il 3D lento, un fotogramma ogni
+  // mezzo secondo, il dito può alzarsi prima che arrivi il fotogramma)
   const complete = () => {
     const h = hold.current;
     if (!h) return;
@@ -1558,9 +1559,12 @@ function HoldButton({ onDone, disabled, children, className, testid, ms = HOLD_M
       paint(Math.min(1, (now - t0) / ms));
       if (hold.current) hold.current.raf = requestAnimationFrame(step);
     };
-    hold.current = { t0, raf: requestAnimationFrame(step), timer: window.setTimeout(complete, Math.max(120, ms - (performance.now() - t0))) };
+    // l'anello pieno chiude il giro dentro il fotogramma dopo: Chrome consegna prima gli eventi del
+    // dito arrivati intanto, così un tocco breve gestito in ritardo non viene scambiato per una pressione
+    const timer = window.setTimeout(() => requestAnimationFrame(complete), ms);
+    hold.current = { t0, raf: requestAnimationFrame(step), timer };
   };
-  // (almeno 120 ms al timer: se il dito si è già alzato mentre la pagina era occupata, il suo evento passa prima)
+  // il dito che si alza decide coi tempi degli eventi: tenuto 0,8 s vale anche se la pagina era in ritardo
   const stop = (stamp?: number) => {
     const h = hold.current;
     if (!h) return;
