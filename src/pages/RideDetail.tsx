@@ -121,7 +121,7 @@ export function RideDetailPage() {
       <div className="mt-6 flex flex-wrap gap-2">
         <Button
           variant={armed ? 'danger' : 'ghost'}
-          className={armed ? '' : 'text-danger'}
+          className={armed ? '' : 'text-danger!'}
           onClick={() => {
             if (!armed) {
               setArmed(true);

@@ -131,7 +131,7 @@ function Editor({ initial, isNew }: { initial: Workout; isNew: boolean }) {
         {!isNew ? (
           <Button
             variant="ghost"
-            className="text-danger"
+            className="text-danger!"
             onClick={() => {
               void deleteWorkout(initial.id).then(() => navigate('/workouts'));
             }}

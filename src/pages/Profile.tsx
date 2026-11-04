@@ -123,7 +123,7 @@ export function ProfilePage() {
           <p className="text-sm text-muted">{t('profile.resetHint')}</p>
           <Button
             variant={armed ? 'danger' : 'ghost'}
-            className={cn('mt-3', !armed && 'text-danger')}
+            className={cn('mt-3', !armed && 'text-danger!')}
             data-testid="profile-reset"
             onClick={() => {
               if (!armed) {
