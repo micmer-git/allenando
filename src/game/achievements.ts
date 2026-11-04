@@ -6,7 +6,7 @@ import type { Career, RideFacts } from './career';
  * dicono anche a che punto si è, così la pagina mostra la barra.
  */
 
-export type Glyph = 'km' | 'salita' | 'volata' | 'gpm' | 'crono' | 'gruppo' | 'luna' | 'pioggia' | 'alba' | 'fiamma' | 'stella' | 'mappa' | 'fulmine' | 'coppa' | 'goccia' | 'campana' | 'maglia' | 'ingranaggio';
+export type Glyph = 'km' | 'salita' | 'volata' | 'gpm' | 'crono' | 'cassonetto' | 'gruppo' | 'luna' | 'pioggia' | 'alba' | 'fiamma' | 'stella' | 'mappa' | 'fulmine' | 'coppa' | 'goccia' | 'campana' | 'maglia' | 'ingranaggio';
 
 export type AchievementGroup = 'strada' | 'salite' | 'traguardi' | 'mondo' | 'costanza' | 'motore';
 
@@ -61,7 +61,7 @@ const gain = (id: string, name: string, goal: number, oro: number, rare = false)
   progress: (c) => [Math.floor(c.counts.gainM), goal],
 });
 
-const count = (id: string, name: string, desc: string, group: AchievementGroup, glyph: Glyph, key: 'volata' | 'gpm' | 'crono' | 'sessions' | 'workouts' | 'rides' | 'pois', goal: number, oro: number, rare = false): Achievement => ({
+const count = (id: string, name: string, desc: string, group: AchievementGroup, glyph: Glyph, key: 'volata' | 'gpm' | 'crono' | 'cassonetto' | 'sessions' | 'workouts' | 'rides' | 'pois', goal: number, oro: number, rare = false): Achievement => ({
   id,
   name,
   desc,
@@ -112,6 +112,8 @@ export const ACHIEVEMENTS: Achievement[] = [
   count('gpm-25', 'Scalatore puro', 'Venticinque GPM.', 'traguardi', 'gpm', 'gpm', 25, 500, true),
   count('crono-1', 'Contro il tempo', 'Una cronometro finita. Vale il casco da crono.', 'traguardi', 'crono', 'crono', 1, 60),
   count('crono-3', 'Cronoman', 'Tre cronometro. Vale la maglia oro crono.', 'traguardi', 'crono', 'crono', 3, 150),
+  count('cassonetto-1', 'Porta a porta', 'La prima volata del cassonetto, fino ai bidoni.', 'traguardi', 'cassonetto', 'cassonetto', 1, 30),
+  count('cassonetto-10', 'Re del cassonetto', 'Dieci volate del cassonetto. Vale la maglia Differenziata.', 'traguardi', 'cassonetto', 'cassonetto', 10, 200),
   { id: 'record-1', name: 'Più forte di prima', desc: 'Un record personale su un tratto già fatto.', group: 'traguardi', glyph: 'coppa', oro: 60, check: (c) => Object.values(c.pbs).some((p) => p.count >= 2) },
   // mondo
   { id: 'mondo-citta-alta', name: 'Dentro le Mura', desc: 'Il percorso Città Alta, tutto. Vale la maglia Città Alta.', group: 'mondo', glyph: 'mappa', oro: 100, check: (c) => (c.counts.worldRides['citta-alta'] ?? 0) > 0 },

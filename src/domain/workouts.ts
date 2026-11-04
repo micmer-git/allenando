@@ -167,8 +167,130 @@ function repeat<T>(n: number, fn: (i: number) => T): T[] {
   return Array.from({ length: n }, (_, i) => fn(i));
 }
 
+// ---------- la libreria lunga: da mezz'ora a due ore ----------
+
+/** Un blocco: secondi, % FTP (e % finale se è una rampa), nome del tipo, cadenza. */
+interface Block {
+  s: number;
+  p: number;
+  e?: number;
+  n?: 'warmup' | 'cooldown' | 'rec' | 'work' | 'z2' | 'acc' | 'spin';
+  c?: number;
+}
+
+const min = (m: number) => Math.round(m * 60);
+const W = (m: number, from = 45, to = 70): Block => ({ s: min(m), p: from, e: to, n: 'warmup' });
+const C = (m: number, from = 60, to = 40): Block => ({ s: min(m), p: from, e: to, n: 'cooldown' });
+const R = (m: number, p = 55, c?: number): Block => ({ s: min(m), p, n: 'rec', c });
+const Z = (m: number, p = 67, c?: number): Block => ({ s: min(m), p, n: 'z2', c });
+const L = (m: number, p: number, c?: number): Block => ({ s: min(m), p, n: 'work', c });
+const S = (sec: number, p: number): Block => ({ s: sec, p, n: 'work' });
+
+/** Ripete un gruppo di blocchi `n` volte; l'ultimo recupero (se `drop`) si toglie. */
+function reps(n: number, group: Block[], drop = true): Block[] {
+  const out = repeat(n, () => group).flat();
+  return drop && out[out.length - 1]?.n === 'rec' ? out.slice(0, -1) : out;
+}
+
+/** Dai blocchi ai passi, con nomi unici (warmup, work, work-1, rec, rec-1…). */
+function build(blocks: Block[]): WorkoutStep[] {
+  const seen = new Map<string, number>();
+  return blocks.map((b) => {
+    const base = b.n ?? 'work';
+    const k = seen.get(base) ?? 0;
+    seen.set(base, k + 1);
+    const name = k ? `${base}-${k}` : base;
+    const st: WorkoutStep = { id: name, name, durationSec: b.s, powerPct: b.p };
+    if (b.e != null) st.powerEndPct = b.e;
+    if (b.c) st.cadence = b.c;
+    return st;
+  });
+}
+
+function lib(id: string, name: string, description: string, kind: Workout['kind'], blocks: Block[]): Workout {
+  return { id, name, description, builtin: true, kind, steps: build(blocks) };
+}
+
+/** La libreria lunga: fondo, tempo, sweet spot, soglia, over-under, VO2, piramidi, sprint, cadenza, gara, recupero. */
+export const LIBRARY_WORKOUTS: Workout[] = [
+  lib('fondo-lungo-acc', 'Fondo lungo con accelerazioni', 'Due ore in zona 2, con sei accelerazioni da 20″ per svegliare le gambe.', 'endurance', [
+    W(12),
+    ...reps(6, [Z(15 + 40 / 60, 68), { s: 20, p: 130, n: 'acc' }], false),
+    C(12),
+  ]),
+  lib('fondo-90', 'Fondo, novanta minuti', 'Settanta minuti regolari al 67%: la base di tutto.', 'endurance', [W(10), Z(70, 67), C(10)]),
+  lib('fondo-colline', 'Fondo con colline', 'Cinque strappi da 3′ all’85% dentro il fondo, come le salitelle di valle.', 'endurance', [W(10), ...reps(5, [Z(8, 68), L(3, 85)], false), C(10)]),
+  lib('tempo-lungo', 'Tempo lungo', 'Tre volte 25′ al 78%: il passo da granfondo, per due ore.', 'tempo', [W(15), ...reps(3, [L(25, 78), R(5, 60)]), Z(5, 65), C(10)]),
+  lib('tempo-3x15', 'Tempo 3×15′', 'Tre blocchi all’82% con 5′ facili in mezzo.', 'tempo', [W(12), ...reps(3, [L(15, 82), R(5, 58)]), C(8)]),
+  lib('tempo-60', 'Un’ora di tempo', 'Sessanta minuti filati all’80%. Testa e regolarità.', 'tempo', [W(10), L(60, 80), C(10)]),
+  lib('sweet-2x20', 'Sweet spot 2×20′', 'Due volte venti minuti al 90%: tanto lavoro, poca fatica da smaltire.', 'sweetspot', [W(10), ...reps(2, [L(20, 90), R(5)]), C(10)]),
+  lib('sweet-3x15', 'Sweet spot 3×15′', 'Tre blocchi al 90% e una chiusura in fondo.', 'sweetspot', [W(12), ...reps(3, [L(15, 90), R(5)]), Z(5, 65), C(8)]),
+  lib('sweet-4x12', 'Sweet spot 4×12′', 'Quattro blocchi al 92%, recupero breve: un’ora e mezza densa.', 'sweetspot', [W(12), ...reps(4, [L(12, 92), R(4)]), Z(14, 66), C(10)]),
+  lib('soglia-3x12', 'Soglia 3×12′', 'Tre volte dodici minuti alla FTP, cinque di recupero.', 'threshold', [W(12), ...reps(3, [L(12, 100), R(5)]), C(12)]),
+  lib('soglia-4x10', 'Soglia 4×10′', 'Quattro blocchi appena sopra la FTP.', 'threshold', [W(10), ...reps(4, [L(10, 102), R(4)]), C(13)]),
+  lib('soglia-lunga', 'Soglia lunga 2×30′', 'Due mezz’ore al 95%: per chi prepara una cronoscalata.', 'threshold', [W(15), ...reps(2, [L(30, 95), R(8)]), Z(10, 65), C(10)]),
+  lib('over-under-3x9', 'Over-under 3×9′', 'Due minuti al 95% e uno al 105%, tre volte per blocco: si impara a stare sopra soglia.', 'threshold', [
+    W(15),
+    ...reps(3, [...reps(3, [L(2, 95), L(1, 105)], false), R(5)]),
+    C(13),
+  ]),
+  lib('over-under-4x8', 'Over-under 4×8′', 'Un minuto al 110% e uno al 90%, quattro volte per blocco.', 'threshold', [
+    W(15),
+    ...reps(4, [...reps(4, [L(1, 110), L(1, 90)], false), R(4)]),
+    C(11),
+  ]),
+  lib('vo2-30-30', 'VO2max 30/30', 'Tre serie da dieci: 30″ al 125%, 30″ facili.', 'vo2', [
+    W(12),
+    ...reps(3, [...reps(10, [S(30, 125), { s: 30, p: 50, n: 'rec' }], false), R(5)]),
+    C(8),
+  ]),
+  lib('vo2-4x5', 'VO2max 4×5′', 'Quattro ripetute da 5′ al 112%, recupero pari.', 'vo2', [W(15), ...reps(4, [L(5, 112), R(5, 50)]), C(10)]),
+  lib('vo2-6x3', 'VO2max 6×3′', 'Sei volte tre minuti al 120%: corte e cattive.', 'vo2', [W(12), ...reps(6, [L(3, 120), R(3, 50)]), C(10)]),
+  lib('piramide', 'Piramide 1-2-3-4-3-2-1', 'Su e giù al 110%, recupero lungo quanto lo sforzo.', 'vo2', [W(15), ...reps(1, [1, 2, 3, 4, 3, 2, 1].flatMap((m) => [L(m, 110), R(m, 50)])), C(14)]),
+  lib('piramide-soglia', 'Piramide di soglia', 'Cinque, dieci, quindici, dieci, cinque minuti fra il 95 e il 100%.', 'threshold', [
+    W(12),
+    ...reps(1, [5, 10, 15, 10, 5].flatMap((m) => [L(m, m === 15 ? 95 : m === 10 ? 97 : 100), R(4)])),
+    C(12),
+  ]),
+  lib('sprint-10x15', 'Sprint 10×15″', 'Due serie da cinque sprint al doppio della FTP, recupero completo.', 'sprint', [
+    W(15),
+    ...reps(2, [...reps(5, [S(15, 200), { s: 165, p: 50, n: 'rec' }], false), R(5)]),
+    C(10),
+  ]),
+  lib('volate-lanciate', 'Volate lanciate', 'Un minuto di lancio all’85%, poi 20″ a tutta: sei volte.', 'sprint', [W(12), ...reps(6, [L(1, 85), S(20, 180), R(3 + 40 / 60, 50)]), C(8)]),
+  lib('agilita', 'Agilità', 'Frulla: due minuti a 110 rpm, poi uno a 120. Watt bassi, gambe veloci.', 'cadence', [
+    W(8),
+    ...reps(6, [L(2, 70, 110), R(2, 60, 90)], false),
+    ...reps(4, [L(1, 65, 120), R(1, 55, 90)]),
+    C(5),
+  ]),
+  lib('forza-resistente', 'Forza resistente', 'Cinque blocchi da 5′ all’85% a 55 rpm: la salita senza la salita.', 'cadence', [W(12), ...reps(5, [L(5, 85, 55), R(3, 55, 90)]), C(11)]),
+  lib('rifinitura', 'Rifinitura pre-gara', 'Quaranta minuti per arrivare freschi: qualche apertura, niente fatica.', 'race', [
+    W(12, 50, 70),
+    L(3, 90),
+    R(3),
+    ...reps(3, [L(1, 115), R(2)], false),
+    ...reps(2, [S(10, 180), R(1 + 50 / 60, 50)], false),
+    C(9),
+  ]),
+  lib('simulazione-gara', 'Simulazione di gara', 'Novanta minuti con gli scatti, il forcing e la volata finale.', 'race', [
+    W(15),
+    Z(25, 75),
+    ...reps(3, [L(2, 115), R(3, 65)], false),
+    L(10, 90),
+    ...reps(5, [S(30, 150), R(1.5, 60)], false),
+    Z(5, 65),
+    C(10),
+  ]),
+  lib('recupero-attivo', 'Recupero attivo', 'Mezz’ora facile a cadenza alta, per smaltire.', 'recovery', [W(5, 40, 50), Z(20, 52, 95), C(5, 50, 40)]),
+  lib('scarico-45', 'Scarico', 'Tre quarti d’ora sotto il 60%, il giorno dopo la fatica.', 'recovery', [W(5, 40, 55), Z(35, 57), C(5, 50, 40)]),
+];
+
+/** Tutti gli allenamenti pronti: i sei di sempre e la libreria lunga. */
+export const ALL_BUILTIN: Workout[] = [...BUILTIN_WORKOUTS, ...LIBRARY_WORKOUTS];
+
 export function builtinById(id: string): Workout | undefined {
-  return BUILTIN_WORKOUTS.find((w) => w.id === id);
+  return ALL_BUILTIN.find((w) => w.id === id);
 }
 
 export function findWorkout(id: string, custom: Workout[]): Workout | undefined {
@@ -199,4 +321,68 @@ export function emptyWorkout(): Workout {
     description: '',
     steps: [{ id: crypto.randomUUID(), durationSec: 60, powerPct: 60 }],
   };
+}
+
+// ---------- dove pedalarlo, e i filtri della pagina ----------
+
+/** Dove si pedala un allenamento: una salita verificata, un percorso del mondo, il giro libero da un paese, un anello. */
+export type WorkoutPlace =
+  | { kind: 'salita'; route: string }
+  | { kind: 'percorso'; ride: string }
+  /** `query`: i parametri del punto di partenza nel mondo (world=…&edge=…&s=…&dir=… oppure world=…&plan=…) */
+  | { kind: 'libero' | 'anello'; query: string };
+
+/** Il link della pedalata: l'allenamento e il posto insieme. */
+export function workoutRideLink(id: string, place: WorkoutPlace): string {
+  const q = new URLSearchParams({ workout: id });
+  if (place.kind === 'salita') q.set('route', place.route);
+  else if (place.kind === 'percorso') {
+    q.set('world', 'bergamo');
+    q.set('ride', place.ride);
+  } else for (const [k, v] of new URLSearchParams(place.query)) q.set(k, v);
+  return `/ride?${q.toString()}`;
+}
+
+/** I tipi del filtro, ognuno coi suoi `kind`. */
+export const WORKOUT_TYPES: { id: string; label: string; kinds: Workout['kind'][] }[] = [
+  { id: 'tutti', label: 'Tutti', kinds: [] },
+  { id: 'fondo', label: 'Fondo', kinds: ['endurance', 'recovery'] },
+  { id: 'tempo', label: 'Tempo', kinds: ['tempo', 'sweetspot'] },
+  { id: 'soglia', label: 'Soglia', kinds: ['threshold'] },
+  { id: 'vo2', label: 'VO2max', kinds: ['vo2'] },
+  { id: 'sprint', label: 'Sprint', kinds: ['sprint'] },
+  { id: 'cadenza', label: 'Cadenza', kinds: ['cadence'] },
+  { id: 'gara', label: 'Gara e test', kinds: ['race', 'opener', 'ramp'] },
+];
+
+export const WORKOUT_KIND_LABEL: Record<Workout['kind'], string> = {
+  endurance: 'Fondo',
+  recovery: 'Recupero',
+  tempo: 'Tempo',
+  sweetspot: 'Sweet spot',
+  threshold: 'Soglia',
+  vo2: 'VO2max',
+  sprint: 'Sprint',
+  cadence: 'Cadenza',
+  race: 'Gara',
+  ramp: 'Test',
+  opener: 'Attivazione',
+  custom: 'Tuo',
+};
+
+/** Le fasce di durata del filtro, in minuti: [da, a). */
+export const DURATION_BANDS: { id: string; label: string; from: number; to: number }[] = [
+  { id: 'tutte', label: 'Tutte', from: 0, to: Infinity },
+  { id: 'corti', label: 'Fino a 45′', from: 0, to: 46 },
+  { id: 'medi', label: '45–75′', from: 46, to: 76 },
+  { id: 'lunghi', label: 'Oltre 75′', from: 76, to: Infinity },
+];
+
+export function filterWorkouts(list: Workout[], type: string, band: string): Workout[] {
+  const t = WORKOUT_TYPES.find((x) => x.id === type);
+  const b = DURATION_BANDS.find((x) => x.id === band) ?? DURATION_BANDS[0];
+  return list.filter((w) => {
+    const m = workoutDuration(w) / 60;
+    return (!t || t.kinds.length === 0 || t.kinds.includes(w.kind)) && m >= b.from && m < b.to;
+  });
 }

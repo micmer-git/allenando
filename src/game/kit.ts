@@ -55,6 +55,7 @@ export const ITEMS: Item[] = [
   // maglie dei traguardi
   M('m-citta-alta', 'Città Alta', 'Terracotta e pietra delle Mura.', { jersey: '#b5522e', accent: '#efe3c8', pattern: 'spalle', shorts: '#2b140b', socks: '#efe3c8' }, 0, { achievement: 'mondo-citta-alta' }),
   M('m-azzurra', 'Maglia azzurra', 'Il re della montagna: cinque GPM.', { jersey: '#1f7fe0', accent: '#ffffff', pattern: 'spalle', shorts: '#0b2a4d', socks: '#ffffff' }, 0, { achievement: 'gpm-5', rare: true }),
+  M('m-differenziata', 'Differenziata', 'Verde vetro, giallo plastica, grigio secco: il re del cassonetto.', { jersey: '#2f8a3a', accent: '#f2c200', pattern: 'righe', shorts: '#5a5e64', socks: '#f2c200' }, 0, { achievement: 'cassonetto-10' }),
   M('m-ciclamino', 'Maglia ciclamino', 'Cinque volate: sei un velocista.', { jersey: '#d6267a', accent: '#ffffff', pattern: 'fascia', shorts: '#3a0a22', socks: '#ffffff' }, 0, { achievement: 'volata-5', rare: true }),
   M('m-crono', 'Oro crono', 'Tre cronometro sotto le lancette.', { jersey: '#ffb000', accent: '#ff6a00', pattern: 'sfumato', shorts: '#16130a', socks: '#16130a' }, 0, { achievement: 'crono-3', rare: true }),
   M('m-stelvio', 'Stelvio', 'Bianco ghiaccio, 48 tornanti blu.', { jersey: '#eef4fb', accent: '#1f5fbf', pattern: 'chevron', shorts: '#0d2547', socks: '#eef4fb' }, 0, { achievement: 'salita-stelvio' }),

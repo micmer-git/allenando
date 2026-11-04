@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type Ref } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button, Segmented } from '@/components/ui';
 import { WorldMap, legsBounds, type MapMarker, type MapOverlay } from '@/components/WorldMap';
@@ -16,6 +16,7 @@ import { Terrain, loadWorld, type RideDef, type WorldData } from '@/open/world';
 import { kindLabel } from '@/open/WorldScene';
 import { savePlan } from '@/open/plan';
 import { planAB, type AbRoute } from '@/open/ab';
+import { pickRoute } from '@/open/pick';
 
 const AREAS: { id: RideDef['area']; label: string }[] = [
   { id: 'citta', label: 'Bergamo città' },
@@ -137,19 +138,36 @@ function Stat({ label, value }: { label: string; value: string }) {
 function RidesTab({ data, far, progress, picked, setPicked }: { data: WorldData; far: Float32Array | null; progress: WorldProgress; picked: string | null; setPicked: (id: string | null) => void }) {
   const navigate = useNavigate();
   const sel = data.rides.find((r) => r.id === picked) ?? null;
+  const cardStart = useRef<HTMLDivElement>(null);
+  const [fromMap, setFromMap] = useState(0);
   const overlays = useMemo<MapOverlay[]>(() => {
     if (!sel) return data.rides.map((r, i) => ({ legs: r.legs.map(([edge, dir]) => ({ edge, dir })), color: ROUTE_COLORS[i % ROUTE_COLORS.length], width: 3 }));
-    // sopra il percorso, i suoi tratti cronometrati nei loro colori
+    // gli altri percorsi restano, sottili e grigi, per poterli toccare; sopra quello scelto e i suoi tratti
     const segs = worldSegments(data).anchors.filter((a) => a.rideId === sel.id);
     return [
-      { legs: sel.legs.map(([edge, dir]) => ({ edge, dir })), color: '#ffc814', width: 5 },
-      ...segs.map((a) => ({ legs: a.legs, color: SEGMENT_STYLE[a.seg.kind].color, width: 7 })),
+      ...data.rides.filter((r) => r.id !== sel.id).map((r) => ({ legs: r.legs.map(([edge, dir]) => ({ edge, dir })), color: 'rgba(58,62,70,0.55)', width: 2 })),
+      { legs: sel.legs.map(([edge, dir]) => ({ edge, dir })), color: '#ffc814', width: 6 },
+      ...segs.map((a) => ({ legs: a.legs, color: SEGMENT_STYLE[a.seg.kind].color, width: 8 })),
     ];
   }, [data, sel]);
+  // scelto dalla carta: si porta in vista il pulsante «Pedala», senza perdere la carta
+  useEffect(() => {
+    if (fromMap) cardStart.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [fromMap]);
   const focus = useMemo(() => (sel ? legsBounds(data, sel.legs.map(([edge, dir]) => ({ edge, dir }))) : null), [data, sel]);
   const markers = useMemo<MapMarker[]>(() => {
     if (!sel) return [];
     const out: MapMarker[] = [];
+    // partenza e arrivo del percorso scelto, col nome
+    const legs = sel.legs.map(([edge, dir]) => ({ edge, dir }));
+    const a = legs[0];
+    const b = legs[legs.length - 1];
+    const ea = data.graph.edges[a.edge];
+    const eb = data.graph.edges[b.edge];
+    const ia = a.dir > 0 ? 0 : ea.xs.length - 1;
+    const ib = b.dir > 0 ? eb.xs.length - 1 : 0;
+    out.push({ x: ea.xs[ia], z: ea.zs[ia], color: '#ffc814', label: sel.name, ring: true });
+    if (Math.hypot(eb.xs[ib] - ea.xs[ia], eb.zs[ib] - ea.zs[ia]) > 300) out.push({ x: eb.xs[ib], z: eb.zs[ib], color: '#16130a' });
     for (const l of sel.landmarks) {
       const lm = data.features.landmarks.find((x) => x.id === l.id);
       if (lm) out.push({ x: lm.x, z: lm.z, color: progress.visited[lm.id] ? '#ffc814' : '#ffffff', label: lm.name });
@@ -158,8 +176,22 @@ function RidesTab({ data, far, progress, picked, setPicked }: { data: WorldData;
   }, [data, sel, progress]);
   return (
     <section className="mt-4">
-      <WorldMap data={data} far={far} overlays={overlays} markers={markers} focus={focus} height={340} />
-      {sel ? <RideCard data={data} ride={sel} progress={progress} onClose={() => setPicked(null)} onRide={() => navigate(`/ride?world=bergamo&ride=${sel.id}`)} /> : null}
+      <p className="mb-2 text-sm text-muted">Tocca una linea sulla carta, o scegli dalla lista.</p>
+      <WorldMap
+        data={data}
+        far={far}
+        overlays={overlays}
+        markers={markers}
+        focus={focus}
+        height={340}
+        onPick={(x, z, mpp) => {
+          const r = pickRoute(data.graph, data.rides, x, z, mpp);
+          if (!r) return;
+          setPicked(r.id);
+          setFromMap((n) => n + 1);
+        }}
+      />
+      {sel ? <RideCard data={data} ride={sel} progress={progress} startRef={cardStart} onClose={() => setPicked(null)} onRide={() => navigate(`/ride?world=bergamo&ride=${sel.id}`)} /> : null}
       {AREAS.map((a) => {
         const list = data.rides.filter((r) => r.area === a.id);
         if (list.length === 0) return null;
@@ -202,7 +234,7 @@ function pctStr(g: number): string {
   return `${(g * 100).toFixed(1).replace('.', ',')}%`;
 }
 
-function RideCard({ data, ride, progress, onClose, onRide }: { data: WorldData; ride: RideDef; progress: WorldProgress; onClose: () => void; onRide: () => void }) {
+function RideCard({ data, ride, progress, onClose, onRide, startRef }: { data: WorldData; ride: RideDef; progress: WorldProgress; onClose: () => void; onRide: () => void; startRef?: Ref<HTMLDivElement> }) {
   const [sim, setSim] = useState(false);
   const [board, setBoard] = useState<{ total: number; rows: BoardRow[]; mine: { rank: number; sec: number } | null } | null | 'loading'>('loading');
   useEffect(() => {
@@ -231,6 +263,11 @@ function RideCard({ data, ride, progress, onClose, onRide }: { data: WorldData; 
         <Stat label="Quote" value={`${ride.startAlt}→${ride.endAlt}`} />
         <Stat label="Max 200 m" value={pctStr(ride.maxGrade)} />
       </dl>
+      <div ref={startRef} className="mt-3 scroll-mb-4">
+        <Button className="w-full" onClick={onRide} data-testid="world-ride-start">
+          Pedala {ride.name}
+        </Button>
+      </div>
       <h3 className="mt-4 text-xs font-semibold uppercase tracking-wider text-muted">Da riconoscere lungo la strada</h3>
       <ol className="mt-2 flex flex-col gap-1.5">
         {ride.landmarks.map((l) => {
@@ -264,9 +301,6 @@ function RideCard({ data, ride, progress, onClose, onRide }: { data: WorldData; 
         </div>
       </div>
       <BoardList board={board} />
-      <Button className="mt-4 w-full" onClick={onRide} data-testid="world-ride-start">
-        Pedala {ride.name}
-      </Button>
     </section>
   );
 }

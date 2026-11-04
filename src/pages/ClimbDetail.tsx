@@ -6,7 +6,7 @@ import { BoardPanel } from '@/components/Board';
 import { formatDuration, formatKm, formatNumber } from '@/domain/format';
 import { projector } from '@/domain/geo';
 import { osmUrl, routeMeta, routeStats, streetViewUrl } from '@/domain/routes';
-import { BUILTIN_WORKOUTS } from '@/domain/workouts';
+import { ALL_BUILTIN } from '@/domain/workouts';
 import { useI18n } from '@/i18n';
 import { useApp } from '@/store/useApp';
 import { workoutTitle } from './Workouts';
@@ -106,7 +106,7 @@ export function ClimbDetailPage() {
                       onChange={(e) => setWorkoutId(e.target.value)}
                     >
                       <option value="">Allenamento ERG…</option>
-                      {[...BUILTIN_WORKOUTS, ...custom].map((w) => (
+                      {[...ALL_BUILTIN, ...custom].map((w) => (
                         <option key={w.id} value={w.id}>
                           {workoutTitle(w, t)}
                         </option>

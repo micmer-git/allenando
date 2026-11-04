@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Coin, Glyph } from '@/components/Glyph';
 import { formatDuration, formatKm } from '@/domain/format';
-import { SEGMENT_STYLE } from '@/game/arches';
+import { ARCH_STYLE, SEGMENT_STYLE } from '@/game/arches';
 import type { CareerOutcome, SegmentResult } from '@/game/career';
 import { ITEM_BY_ID, ITEMS } from '@/game/kit';
 import { levelOf } from '@/open/progress';
@@ -82,6 +82,19 @@ export function SegmentHud({ game }: { game: RideGame }) {
     );
   }
   return null;
+}
+
+/** In ERG: l'arco del prossimo cambio d'intervallo, quando è a meno di 600 m. */
+export function ErgAheadHud({ game }: { game: RideGame }) {
+  const a = game.ergArch;
+  const left = a ? a.d - game.engine.distance : Infinity;
+  if (!a || left > 600 || left < 0) return null;
+  return (
+    <p className="pointer-events-none inline-flex items-center gap-2 rounded-full bg-bg/75 px-3 py-1.5 text-xs font-semibold backdrop-blur" data-testid="erg-ahead">
+      <span className="h-2.5 w-2.5 rounded-full" style={{ background: ARCH_STYLE.erg.color }} />
+      Fra {Math.round(left)} m · {a.role === 'start' ? a.label : 'Fine intervallo'}
+    </p>
+  );
 }
 
 /** Un punto caldo appena passato: una riga, cinque secondi, e quattro monete. */

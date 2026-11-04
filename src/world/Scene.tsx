@@ -406,19 +406,15 @@ function Instances({
 
 // ---------- cartelli ----------
 
+/**
+ * Partenza, arrivo e frecce dei tornanti. I chilometri non stanno più qui: sono i portali alla
+ * Zwift che mette il gioco (src/game/arches.ts, kmMarks), uno a ogni km con la pendenza.
+ */
 function Signs({ track, title }: { track: Track; title: string }) {
   const data = useMemo(() => {
-    const km: { pose: TrackPose; tex: THREE.CanvasTexture }[] = [];
     const total = track.length;
-    for (let d = 1000; d < total - 300; d += 1000) {
-      const a = track.poseAt(d);
-      const b = track.poseAt(Math.min(total, d + 1000));
-      const grade = (b.altitude - a.altitude) / (b.distance - a.distance || 1);
-      km.push({ pose: a, tex: kmTexture(Math.round((total - d) / 1000), grade, Math.round(a.altitude)) });
-    }
     const chevrons = track.hairpins.map((h) => ({ pose: track.poseAt(h.distance), side: h.side }));
     return {
-      km,
       chevrons,
       start: track.poseAt(Math.min(20, total * 0.05)),
       finish: track.poseAt(Math.max(0, total - 8)),
@@ -429,7 +425,6 @@ function Signs({ track, title }: { track: Track; title: string }) {
   }, [track, title]);
   useEffect(
     () => () => {
-      data.km.forEach((k) => k.tex.dispose());
       data.startTex.dispose();
       data.finishTex.dispose();
       data.chevronTex.dispose();
@@ -441,18 +436,6 @@ function Signs({ track, title }: { track: Track; title: string }) {
     <group>
       <Gate pose={data.start} texture={data.startTex} hw={hw} />
       <Gate pose={data.finish} texture={data.finishTex} hw={hw} />
-      {data.km.map((k, i) => (
-        <group key={i} position={offset(k.pose, -(hw + 1.3))} rotation={[0, k.pose.heading + Math.PI, 0]}>
-          <mesh position={[0, 0.7, 0]}>
-            <boxGeometry args={[0.07, 1.4, 0.07]} />
-            <meshLambertMaterial color="#666b72" />
-          </mesh>
-          <mesh position={[0, 1.65, 0]}>
-            <planeGeometry args={[1.2, 0.6]} />
-            <meshBasicMaterial map={k.tex} side={THREE.DoubleSide} />
-          </mesh>
-        </group>
-      ))}
       {data.chevrons.map((c, i) => (
         // pannello a frecce sul lato esterno del tornante
         <group key={i} position={offset(c.pose, -c.side * (hw + 1.6))} rotation={[0, c.pose.heading + Math.PI, 0]}>

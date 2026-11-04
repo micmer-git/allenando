@@ -48,7 +48,7 @@ import { RideGame } from '@/game/rideGame';
 import { SEGMENT_STYLE } from '@/game/arches';
 import { sessionById } from '@/game/sessions';
 import { useGame, useLook } from '@/game/useGame';
-import { LevelUp, PoiToast, RewardsSummary, SegmentHud, SessionHud } from './RideGameHud';
+import { ErgAheadHud, LevelUp, PoiToast, RewardsSummary, SegmentHud, SessionHud } from './RideGameHud';
 
 const DEFAULT_ROUTE = 'selvino-nembro';
 
@@ -496,7 +496,9 @@ function RideScreen({
     const c = committed.current;
     const sim = snap.mode === 'simulator';
     const climbId = !session && setup.routeId && engine.arrived && !setup.replayMode && !workout ? setup.routeId : undefined;
-    const completed = session ? engine.arrived && session.rankable : !!climbId;
+    // un allenamento più lungo del percorso prosegue libero: il percorso è fatto quando si passa la sua fine
+    const routeFinished = !!session && (engine.arrived || (session.routeEnd != null && engine.distance >= session.routeEnd));
+    const completed = session ? routeFinished && session.rankable : !!climbId;
     // dislivello: il mondo lo conta da sé; sulle salite e nei replay dai campioni
     const fresh = engine.samples.slice(c.sample);
     let climbGain = 0;
@@ -507,7 +509,8 @@ function RideScreen({
     const out = applyRide(prev, {
       rideId: session ? session.ride?.id : climbId ? `salita:${climbId}` : undefined,
       completed,
-      sec: completed ? engine.elapsed : undefined,
+      // con un allenamento il tempo non è quello del percorso: niente record
+      sec: completed && !workout ? engine.elapsed : undefined,
       sim,
       distanceM: engine.distance - c.distance,
       gainM,
@@ -518,7 +521,8 @@ function RideScreen({
     const total = out.lines.reduce((a, l) => a + l.xp, 0);
     let rank: string | null = null;
     let rankNote: string | undefined;
-    if (session && completed && session.ride && profile.name) {
+    if (session?.ride && workout) rankNote = 'Con un allenamento il tempo non va in classifica.';
+    else if (session && completed && session.ride && profile.name) {
       const avg = engine.samples.length ? engine.samples.reduce((a, x) => a + x.power, 0) / engine.samples.length : engine.power3s;
       const res = await postResult({ nick: profile.name, ride: session.ride.id, sec: engine.elapsed, wkg: profile.weightKg > 0 ? avg / profile.weightKg : 0, sim });
       if (res.ok && res.rank) rank = `${res.rank}° in classifica${sim ? ' (simulatore)' : ''}${res.best ? ', il tuo tempo migliore' : ''}`;
@@ -558,7 +562,7 @@ function RideScreen({
     };
     const outcome = applyCareer(useGame.getState().career, facts);
     // il tempo del percorso intero, per i record della pagina Classifiche
-    if (facts.worldRideDone) {
+    if (facts.worldRideDone && !workout) {
       const key = `w:${facts.worldRideDone}`;
       const old = outcome.next.pbs[key];
       if (!old || engine.elapsed < old.sec) outcome.next.pbs[key] = { sec: Math.round(engine.elapsed), at: new Date().toISOString(), sim, count: (old?.count ?? 0) + 1 };
@@ -745,6 +749,7 @@ function RideScreen({
         <div className="pointer-events-none absolute inset-x-0 top-[8rem] flex flex-col items-center gap-1.5 px-14">
           <SessionHud game={game} />
           <SegmentHud game={game} />
+          <ErgAheadHud game={game} />
           <PoiToast game={game} />
           {session ? <Toasts session={session} /> : null}
         </div>
@@ -786,7 +791,10 @@ function RideScreen({
                 <p className="text-xs font-semibold uppercase tracking-wide text-accent" data-testid="erg-target">
                   {t('ride.erg')} {formatNumber(engine.targetPower, 0)} {t('units.watt')}
                 </p>
-                <p className="font-display text-2xl leading-none">{step ? stepLabel(step, t) : ''}</p>
+                <p className="font-display text-2xl leading-none">
+                  {step ? stepLabel(step, t) : ''}
+                  {step?.cadence ? <span className="num ml-1.5 font-sans text-sm font-semibold text-muted">{step.cadence} rpm</span> : null}
+                </p>
               </div>
               <p className="num font-display text-3xl" data-testid="interval-clock">{formatDuration(progress.stepRemaining)}</p>
             </div>
@@ -1206,6 +1214,8 @@ function stepLabel(step: WorkoutStep, t: Translate): string {
   if (name.startsWith('cool')) return t('workouts.stepCooldown');
   if (name.startsWith('rec') || name.startsWith('rest') || name === 'easy' || name === 'spin') return t('workouts.stepRest');
   if (name.startsWith('ramp')) return t('workouts.stepRamp');
+  if (name.startsWith('z2')) return t('workouts.stepZ2');
+  if (name.startsWith('acc')) return t('workouts.stepAcc');
   return t('workouts.stepWork');
 }
 
