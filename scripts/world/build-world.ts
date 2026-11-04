@@ -1244,6 +1244,25 @@ const riverOut = rivers.map((r) => {
 
 // i monumenti (scripts/world/monumenti.ts): il loro modello prende il posto dell'edificio generico
 const monumenti = buildMonumenti({ toLocal, demAt, graph, osmDir: OSM, outDir: OUT, log });
+{
+  // Sotto le porte delle Mura la strada passa nel fornice: OSM lo segna come galleria, ma la volta
+  // è quella del modello della porta, non un tubo col portale di cemento (a Porta Sant'Agostino si
+  // vedeva l'imbocco di una galleria di montagna dentro l'arco). Si toglie il flag e si riscrive.
+  const porte = monumenti.file.monumenti.filter((m) => m.kind === 'porta');
+  let passaggi = 0;
+  for (const e of graph.edges) {
+    if (!(e.flags & FLAG.tunnel) || e.length > 60) continue;
+    const mid = graph.pose(e.id, e.length / 2);
+    if (!porte.some((m) => Math.hypot(m.x - mid.x, m.z - mid.z) < Math.max(m.w, m.d) * 0.75)) continue;
+    e.flags &= ~FLAG.tunnel;
+    (graphFile.edges[e.id] as unknown[])[5] = e.flags;
+    passaggi++;
+  }
+  if (passaggi) {
+    writeFileSync(join(OUT, 'graph.json'), JSON.stringify(graphFile));
+    log(`monumenti: ${passaggi} passaggi sotto le porte non più gallerie`);
+  }
+}
 
 // ---------- edifici ----------
 

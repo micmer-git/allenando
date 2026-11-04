@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { CLS, WorldGraph, type Leg, type WorldGraphFile } from '../src/open/graph';
+import { CLS, FLAG, WorldGraph, type Leg, type WorldGraphFile } from '../src/open/graph';
 import { suggestLoops } from '../src/open/loops';
 import { planAB } from '../src/open/ab';
 import { WorldSession } from '../src/open/session';
@@ -94,6 +94,17 @@ describe('mondo di Bergamo', () => {
     expect(graph.endNode(legs[legs.length - 1].edge, legs[legs.length - 1].dir)).toBe(graph.startNode(legs[0].edge, legs[0].dir));
     expect(both!.overlap).toBeLessThan(0.7);
     expect(both!.via.length).toBeGreaterThan(1);
+  });
+
+  it('sotto le porte delle Mura la strada passa nel fornice, non in una galleria', () => {
+    const mon = JSON.parse(readFileSync(join(dir, 'monumenti.json'), 'utf8')) as { monumenti: { kind: string; x: number; z: number; w: number; d: number }[] };
+    const porte = mon.monumenti.filter((m) => m.kind === 'porta');
+    expect(porte.length).toBe(4);
+    for (const e of graph.edges) {
+      if (!(e.flags & FLAG.tunnel) || e.length > 60) continue;
+      const mid = graph.pose(e.id, e.length / 2);
+      for (const m of porte) expect(Math.hypot(m.x - mid.x, m.z - mid.z), `galleria ${e.id} sotto una porta`).toBeGreaterThanOrEqual(Math.max(m.w, m.d) * 0.75);
+    }
   });
 
   // Michele, 04/11: «open giro start in Nembro loops in a weird way in a rotonda». Il punto più
