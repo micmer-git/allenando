@@ -114,13 +114,20 @@ export interface WorkoutStep {
   powerEndPct?: number;
   powerWatts?: number;
   powerEndWatts?: number;
+  /** cadenza consigliata, rpm (negli allenamenti di agilità e di forza) */
+  cadence?: number;
 }
 
 export type WorkoutKind =
   | 'endurance'
+  | 'recovery'
+  | 'tempo'
   | 'sweetspot'
-  | 'vo2'
   | 'threshold'
+  | 'vo2'
+  | 'sprint'
+  | 'cadence'
+  | 'race'
   | 'ramp'
   | 'opener'
   | 'custom';

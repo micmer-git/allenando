@@ -2,16 +2,19 @@ import type { Track } from '@/domain/track';
 import type { RideEngine } from '@/sim/engine';
 import type { WorldSession } from '@/open/session';
 import { POI_LABEL, type PoiKind, type WorldData } from '@/open/world';
+import { monumentiPronti, monumentoPoiKind } from '@/open/monumenti';
 import { postResult } from '@/open/progress';
-import { archSpecs, type ArchSpec, type Segment } from './arches';
+import { archSpecs, kmArchSpecs, kmClimbs, kmMarks, type ArchSpec, type KmMark, type Segment } from './arches';
+import { ErgArchPlanner, ergGates } from './ergArches';
 import type { PersonalBest, SegmentResult } from './career';
 import { PacerPack } from './pacers';
-import { climbSegments, SegmentTracker, windowsOnPath, worldSegments, type Window } from './segments';
+import { climbSegments, findClimbs, SegmentTracker, trackProfile, windowsOnPath, worldSegments, type Window } from './segments';
 import { sessionBoardId, type SessionDef } from './sessions';
 
 /**
- * Il gioco dentro una pedalata: cronometra i tratti (volate, GPM, crono), mette gli archi
- * sulla strada, fa correre il gruppo di una sessione e manda i tempi alle classifiche.
+ * Il gioco dentro una pedalata: cronometra i tratti (volate, GPM, crono, cassonetti), mette
+ * gli archi sulla strada (traguardi, chilometri, cambi d'intervallo in ERG), fa correre il
+ * gruppo di una sessione e manda i tempi alle classifiche.
  * Non è React: gira nello stesso ciclo del motore, e la pagina ne legge lo stato.
  */
 
@@ -75,6 +78,12 @@ export class RideGame {
   private readonly opts: RideGameOptions;
   private pbs: Record<string, PersonalBest>;
   private sessionPosted = false;
+  /** archi dei tratti e dei km: cambiano solo quando cambia il percorso */
+  private baseArches: ArchSpec[] = [];
+  /** l'arco dell'ERG che viene, se c'è un allenamento */
+  private readonly erg: ErgArchPlanner | null;
+  private ergCur: { gate: { id: string; role: 'start' | 'finish'; label: string; sub?: string }; d: number } | null = null;
+  private ergSpec: ArchSpec | null = null;
 
   constructor(opts: RideGameOptions) {
     this.opts = opts;
@@ -93,6 +102,7 @@ export class RideGame {
     }
     this.tracker = new SegmentTracker(windows);
     this.tracker.prime(this.engine.distance, this.engine.elapsed);
+    this.erg = this.engine.workout ? new ErgArchPlanner(ergGates(this.engine.workout, this.engine.ftp)) : null;
     this.rebuildArches();
     // la sessione: in griglia fino al via; il gruppo solo nelle uscite di gruppo
     const def = this.sessionDef;
@@ -137,13 +147,16 @@ export class RideGame {
       } else if (this.engine.phase === 'riding') this.engine.pause();
       return;
     }
+    const e = this.engine;
+    // il percorso finisce prima dell'allenamento: non ci si ferma, si prosegue libero
+    if (this.world && e.workout && !e.workoutDone && this.world.session.planned && this.world.session.path.length - e.distance < 400) this.world.session.continueFree(e.distance);
     // il percorso del mondo cambia a ogni svolta: i tratti si rimettono sul percorso nuovo
     if (this.world && this.anchors && this.world.session.path.version !== this.pathVersion) {
       this.pathVersion = this.world.session.path.version;
       this.tracker.windows = windowsOnPath(this.world.session.path, this.anchors);
       this.rebuildArches();
     }
-    const e = this.engine;
+    this.updateErg(dt);
     for (const ev of this.tracker.update(e.distance, e.elapsed, e.power, e.altitude)) {
       if (ev.type !== 'finish') continue;
       const old = this.pbs[ev.seg.id];
@@ -174,6 +187,14 @@ export class RideGame {
           this.poisPassed.push(poi.id);
           this.poiToast = { name: poi.name || POI_LABEL[poi.kind], kind: poi.kind, at: performance.now() };
         }
+      }
+      // i monumenti (src/open/monumenti.ts): punti caldi anche loro, col nome, entro la loro portata
+      // (non quelli che sono già un luogo del percorso: il loro avviso lo dà la sessione)
+      for (const m of monumentiPronti()) {
+        if (seen.has(`m${m.id}`) || (m.x - p.x) ** 2 + (m.z - p.z) ** 2 > m.reach * m.reach) continue;
+        if (this.world.data.features.landmarks.some((l) => l.name === m.name)) continue;
+        this.poisPassed.push(`m${m.id}`);
+        this.poiToast = { name: m.name, kind: monumentoPoiKind(m), at: performance.now() };
       }
     }
     if (this.poiToast && performance.now() - this.poiToast.at > 5000) this.poiToast = null;
@@ -215,17 +236,63 @@ export class RideGame {
     return this.pbs[id]?.sec ?? null;
   }
 
+  private readonly halfWidth = (d: number): number => {
+    if (this.world) {
+      const at = this.world.session.path.edgeAt(Math.max(0, Math.min(this.track.length, d)));
+      return this.world.data.graph.edges[at.edge]?.hw ?? 3;
+    }
+    return (this.track as { halfWidth?: number }).halfWidth ?? 3;
+  };
+
+  private readonly poseAt = (d: number) => this.track.poseAt(Math.max(0, Math.min(this.track.length, d)));
+
+  /**
+   * I portali dei km: sulle salite verificate uno a ogni km fino in cima; sui percorsi del
+   * mondo (e sugli anelli) uno a ogni km nelle salite e ogni 5 km altrove, finché si è sul
+   * percorso; nel giro libero niente, perché non c'è un arrivo da contare.
+   */
+  private kmMarks(): KmMark[] {
+    const t = this.track;
+    if (t.closed) return [];
+    if (this.world && !this.world.session.onRoute) return [];
+    const alt = (d: number) => this.poseAt(d).altitude;
+    if (!this.world && this.opts.climb) return kmMarks(t.length, alt, [{ from: 0, to: t.length }]);
+    return kmMarks(t.length, alt, kmClimbs(findClimbs(trackProfile(t), 60, 0.03), alt));
+  }
+
   private rebuildArches(): void {
-    const windows = this.tracker.windows;
-    const segs = windows.map((w) => w.seg);
-    const halfWidth = (d: number) => {
-      if (this.world) {
-        const at = this.world.session.path.edgeAt(Math.max(0, Math.min(this.track.length, d)));
-        return this.world.data.graph.edges[at.edge]?.hw ?? 3;
-      }
-      return (this.track as { halfWidth?: number }).halfWidth ?? 3;
-    };
-    this.arches = archSpecs(segs, (d) => this.track.poseAt(Math.max(0, Math.min(this.track.length, d))), halfWidth);
+    const segs = this.tracker.windows.map((w) => w.seg);
+    const seg = archSpecs(segs, this.poseAt, this.halfWidth);
+    const near = (a: ArchSpec, b: ArchSpec) => Math.hypot(a.x - b.x, a.z - b.z) < 40;
+    // un portale dei km sotto un arco di un tratto non si mette (se ne vede uno solo); un
+    // cartellino a bordo strada sotto un portale dei km è di troppo («1 km» e «Ultimo km»)
+    const km = kmArchSpecs(this.kmMarks(), this.poseAt, this.halfWidth).filter((k) => !seg.some((a) => a.role !== 'banner' && near(a, k)));
+    this.baseArches = [...seg.filter((a) => a.role !== 'banner' || !km.some((k) => near(a, k))), ...km];
+    this.arches = this.ergSpec ? [...this.baseArches, this.ergSpec] : this.baseArches;
     this.archVersion++;
+  }
+
+  /** L'arco dell'ERG: si sposta con la velocità finché non è a 50 m, poi resta lì. */
+  private updateErg(dt: number): void {
+    if (!this.erg) return;
+    const e = this.engine;
+    if (e.phase === 'riding') this.ergCur = this.erg.update(e.elapsed, e.distance, e.speed, dt);
+    const cur = this.ergCur;
+    let spec: ArchSpec | null = null;
+    if (cur && cur.d < this.track.length - 1) {
+      const p = this.poseAt(cur.d);
+      spec = { id: `erg:${cur.gate.id}`, kind: 'erg', role: cur.gate.role, label: cur.gate.label, sub: cur.gate.sub, x: p.x, y: p.y, z: p.z, heading: p.heading, halfWidth: this.halfWidth(cur.d), d: cur.d };
+    }
+    const old = this.ergSpec;
+    if (old && spec ? old.id === spec.id && Math.hypot(old.x - spec.x, old.z - spec.z) < 0.5 : old === spec) return;
+    this.ergSpec = spec;
+    this.arches = spec ? [...this.baseArches, spec] : this.baseArches;
+    this.archVersion++;
+  }
+
+  /** Dove sta l'arco dell'ERG che viene, metri sul percorso (per le prove e l'HUD). */
+  get ergArch(): { d: number; label: string; role: 'start' | 'finish' } | null {
+    const c = this.ergCur;
+    return c ? { d: c.d, label: c.gate.label, role: c.gate.role } : null;
   }
 }

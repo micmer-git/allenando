@@ -43,6 +43,8 @@ export interface Toast {
 }
 
 const LOOKAHEAD = 1600;
+/** quanti tratti indietro si guarda per non rifare la stessa strada nel giro libero */
+const RECENT_LEGS = 160;
 /** a che distanza da un luogo lo si considera «passato», per tipo */
 const PASS_RANGE: Record<string, number> = { cima: 2600, fiume: 450, paese: 350, citta: 900, passo: 200, lago: 600, mura: 200 };
 
@@ -68,6 +70,8 @@ export class WorldSession {
   gainM = 0;
   private lastAlt: number | null = null;
   private lane = -1.6;
+  /** la distanza a cui è stata calcolata la corsia l'ultima volta */
+  private laneAt: number | null = null;
   private towardCache = new Map<string, string>();
   client: WorldClient | null = null;
   /** meteo vero sopra Bergamo: se c'è, il vento entra nella fisica e nel rullo */
@@ -148,28 +152,52 @@ export class WorldSession {
     // sul percorso scelto non si allunga: finisce dove finisce
     if (this.onRoute) return;
     let guard = 0;
+    // le strade fatte negli ultimi km: «dritto» non ci torna, se c'è un'altra via
+    const legs = this.path.legs;
+    const recent = new Map<number, number>();
+    const use = (edge: number) => recent.set(edge, (recent.get(edge) ?? 0) + 1);
+    for (let i = Math.max(0, legs.length - RECENT_LEGS); i < legs.length; i++) use(legs[i].edge);
     while (this.path.length - distance < LOOKAHEAD && guard++ < 200) {
-      const last = this.path.legs[this.path.legs.length - 1];
+      const last = legs[legs.length - 1];
       // in una rotatoria si fa l'anello fino all'uscita più dritta, non si esce al primo ramo
       const exits = this.graph.roundaboutExits(last.edge, last.dir);
-      const next = exits ? this.graph.straightestExit(last.edge, exits) : this.graph.straightest(last.edge, last.dir);
+      const next = exits ? this.graph.straightestExit(last.edge, exits, recent) : this.graph.straightest(last.edge, last.dir, recent);
       for (const l of next.via ?? []) {
         this.path.append(l.edge, l.dir);
         this.routeIndex.push(-1);
       }
       this.path.append(next.edge, next.dir);
       this.routeIndex.push(-1);
+      use(next.edge);
     }
   }
 
-  /** La posa del giocatore, spostata a destra nella sua corsia (si tiene la destra). */
+  /**
+   * La posa del giocatore, spostata a destra nella sua corsia (si tiene la destra).
+   *
+   * La corsia cambia con la strada fatta, non coi fotogrammi: col telefono lento (o fermi) non
+   * resta indietro di venti metri su una strada più stretta. E non esce mai dall'asfalto: nelle
+   * svolte a destra il percorso taglia la curva verso l'interno, e la corsia aggiunta lì portava
+   * il ciclista sul ciglio grigio fuori dalla carreggiata. Si accorcia finché resta a 60 cm dal bordo.
+   */
   playerPose(distance: number): TrackPose {
     const p = this.path.poseAt(distance);
     const at = this.path.edgeAt(distance);
     const hw = this.graph.edges[at.edge].hw;
     const want = -Math.max(0.15, hw - 1.15);
-    this.lane += (want - this.lane) * 0.04;
-    return { ...p, x: p.x + Math.cos(p.heading) * this.lane, z: p.z - Math.sin(p.heading) * this.lane };
+    if (this.laneAt == null) this.lane = want;
+    else this.lane += (want - this.lane) * (1 - Math.exp(-Math.abs(distance - this.laneAt) / 12));
+    this.laneAt = distance;
+    const lx = Math.cos(p.heading);
+    const lz = -Math.sin(p.heading);
+    // verso il centro di quanto manca ai 60 cm: continuo, niente scatti di lato
+    let lane = this.lane;
+    for (let i = 0; i < 3 && lane < 0; i++) {
+      const m = this.graph.asphaltMargin(p.x + lx * lane, p.z + lz * lane, p.y);
+      if (m >= 0.6) break;
+      lane = Math.min(0, lane + 0.6 - m);
+    }
+    return { ...p, x: p.x + lx * lane, z: p.z + lz * lane };
   }
 
   tick(engine: RideEngine, dt: number, pose: TrackPose): void {
@@ -394,6 +422,22 @@ export class WorldSession {
       this.routeIndex.push(-1);
     }
     this.junction = null;
+  }
+
+  /** dove finiva il percorso scelto, se lo si è passato proseguendo libero (allenamento più lungo del percorso) */
+  routeEnd: number | null = null;
+
+  /**
+   * Il percorso finisce ma l'allenamento no: da qui si prosegue libero, la strada si allunga
+   * da sola come nel giro libero. Il percorso conta come fatto quando si passa `routeEnd`.
+   */
+  continueFree(distance: number): void {
+    // fuori dal percorso la strada si allunga già da sola
+    if (!this.onRoute || this.routeEnd != null) return;
+    this.routeEnd = this.path.length;
+    this.routeLegs = [];
+    this.toast('Fine del percorso', 'L’allenamento continua: prosegui libero, agli incroci scegli tu.', 'info');
+    this.extend(distance);
   }
 
   /** Il nodo da cui partirebbe un anello: il prossimo incrocio. */

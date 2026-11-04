@@ -65,6 +65,25 @@ describe('giro esportato con il GPS vero', () => {
     expect(Math.abs(p.lat! - r.samples[0].lat!)).toBeLessThan(1e-5);
   });
 
+  // Michele, 04/11: «fit to strava save also quota?» Sì: ogni punto ha la quota della strada,
+  // nei campi vecchi e in quelli «enhanced» che Strava legge per primi, e la sessione il dislivello.
+  it('il FIT ha la quota punto per punto e il dislivello', () => {
+    const r = ride(true);
+    const { messages } = new Decoder(Stream.fromByteArray(encodeActivityFit(r))).read();
+    const records = (messages.recordMesgs ?? []) as { altitude?: number; enhancedAltitude?: number }[];
+    expect(records.length).toBe(r.samples.length);
+    const lastAlt = r.samples[r.samples.length - 1].altitude;
+    expect(lastAlt).toBeGreaterThan(r.samples[0].altitude + 1);
+    records.forEach((m, i) => {
+      expect(Math.abs(m.enhancedAltitude! - r.samples[i].altitude)).toBeLessThan(0.3);
+      expect(Math.abs(m.altitude! - r.samples[i].altitude)).toBeLessThan(0.3);
+    });
+    const s = messages.sessionMesgs![0] as { totalAscent?: number; totalDescent?: number; maxAltitude?: number };
+    expect(s.totalAscent).toBeGreaterThan(0);
+    expect(s.totalDescent).toBe(0);
+    expect(Math.abs(s.maxAltitude! - lastAlt)).toBeLessThan(0.5);
+  });
+
   it('senza GPS resta un giro indoor, senza coordinate inventate', () => {
     const r = ride(false);
     expect(r.samples.every((s) => s.lat == null)).toBe(true);

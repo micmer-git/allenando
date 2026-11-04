@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CLS, type Leg } from '@/open/graph';
 import type { WorldData } from '@/open/world';
+import { drawMonumenti, loadMonumenti, type Monumento } from '@/open/monumenti';
 
 /**
  * La carta del mondo: rilievo ombreggiato dal DEM a 250 m, fiumi, laghi, strade per classe,
@@ -63,7 +64,8 @@ export function WorldMap({
   markers?: MapMarker[];
   /** rettangolo da inquadrare all'inizio e quando cambia */
   focus?: { x0: number; z0: number; x1: number; z1: number } | null;
-  onPick?: (x: number, z: number) => void;
+  /** un tocco senza trascinare: il punto nel mondo e i metri per pixel (per misurare il dito) */
+  onPick?: (x: number, z: number, mpp: number) => void;
   className?: string;
   height?: number;
 }) {
@@ -72,6 +74,8 @@ export function WorldMap({
   const b = data.graph.bounds;
   const [view, setView] = useState<View>({ cx: (b.x0 + b.x1) / 2, cz: (b.z0 + b.z1) / 2, mpp: 120 });
   const [width, setWidth] = useState(360);
+  const [monumenti, setMonumenti] = useState<readonly Monumento[]>([]);
+  useEffect(() => void loadMonumenti(data.graph.id).then(setMonumenti), [data]);
 
   // rilievo: un'immagine sola dalla griglia lontana, calcolata una volta
   const relief = useMemo(() => (far ? hillshade(data, far) : null), [data, far]);
@@ -104,7 +108,8 @@ export function WorldMap({
     if (!g) return;
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     draw(g, data, relief, view, width, height, overlays, markers);
-  }, [data, relief, view, width, height, overlays, markers]);
+    drawMonumenti(g, monumenti, view, width, height);
+  }, [data, relief, view, width, height, overlays, markers, monumenti]);
 
   // trascinare, rotella, pizzico
   const drag = useRef<{ x: number; y: number; moved: boolean; pts: Map<number, { x: number; y: number }>; dist0: number; mpp0: number } | null>(null);
@@ -157,7 +162,7 @@ export function WorldMap({
             if (!d.moved && onPick) {
               const r = (e.target as HTMLElement).getBoundingClientRect();
               const w = toWorld(e.clientX - r.left, e.clientY - r.top);
-              onPick(w.x, w.z);
+              onPick(w.x, w.z, view.mpp);
             }
             drag.current = null;
           }
@@ -303,17 +308,24 @@ function draw(g: CanvasRenderingContext2D, data: WorldData, relief: HTMLCanvasEl
   }
 
   // segnaposti, poi città, paesi e cime: un nome che si accavalla a uno già scritto non si scrive
-  const taken: { x0: number; y0: number; x1: number; y1: number }[] = [];
+  // (l'angolo dei pulsanti + e − è già occupato, e la riga dei diritti in basso pure)
+  const taken: { x0: number; y0: number; x1: number; y1: number }[] = [
+    { x0: W - 58, y0: 0, x1: W, y1: 106 },
+    { x0: 0, y0: H - 14, x1: 170, y1: H },
+  ];
   const room = (x: number, y: number, w: number, h: number) => {
     const r = { x0: x - w / 2 - 2, y0: y - h - 1, x1: x + w / 2 + 2, y1: y + 1 };
     for (const t of taken) if (r.x0 < t.x1 && r.x1 > t.x0 && r.y0 < t.y1 && r.y1 > t.y0) return false;
     taken.push(r);
     return true;
   };
-  const halo = (text: string, x: number, y: number, font: string, fill: string, edge = 'rgba(255,255,255,0.88)') => {
+  const halo = (text: string, x0: number, y0: number, font: string, fill: string, edge = 'rgba(255,255,255,0.88)') => {
     g.font = font;
     const w = g.measureText(text).width;
     const h = parseInt(font.split(' ')[1], 10) || 11;
+    // un nome vicino al bordo rientra nella carta invece di uscirne a metà
+    const x = Math.min(W - w / 2 - 4, Math.max(w / 2 + 4, x0));
+    const y = Math.min(H - 3, Math.max(h + 3, y0));
     if (!room(x, y, w, h)) return false;
     g.lineWidth = 3;
     g.strokeStyle = edge;

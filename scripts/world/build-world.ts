@@ -16,6 +16,7 @@ import { CITY, DEM_STEP, FAR_STEP, HORIZON, ORIGIN, REGION, TILE } from './confi
 import { loadDem } from './dem.mjs';
 import { CLS, FLAG, WorldGraph, type WorldGraphFile } from '../../src/open/graph';
 import { buildRides, resolveWaypoints } from './rides';
+import { buildMonumenti } from './monumenti';
 import { isPaintedCrossing, poiKind, POI_BUILT, POI_REACH, snapSignals, snapToRoad } from '../../src/open/snap';
 import type { PoiKind } from '../../src/open/world';
 
@@ -1241,6 +1242,28 @@ const riverOut = rivers.map((r) => {
   log(`orizzonte: ${FAR.nx}×${FAR.nz} a ${FAR.step} m, ${(z.length / 1e6).toFixed(2)} MB`);
 }
 
+// i monumenti (scripts/world/monumenti.ts): il loro modello prende il posto dell'edificio generico
+const monumenti = buildMonumenti({ toLocal, demAt, graph, osmDir: OSM, outDir: OUT, log });
+{
+  // Sotto le porte delle Mura la strada passa nel fornice: OSM lo segna come galleria, ma la volta
+  // è quella del modello della porta, non un tubo col portale di cemento (a Porta Sant'Agostino si
+  // vedeva l'imbocco di una galleria di montagna dentro l'arco). Si toglie il flag e si riscrive.
+  const porte = monumenti.file.monumenti.filter((m) => m.kind === 'porta');
+  let passaggi = 0;
+  for (const e of graph.edges) {
+    if (!(e.flags & FLAG.tunnel) || e.length > 60) continue;
+    const mid = graph.pose(e.id, e.length / 2);
+    if (!porte.some((m) => Math.hypot(m.x - mid.x, m.z - mid.z) < Math.max(m.w, m.d) * 0.75)) continue;
+    e.flags &= ~FLAG.tunnel;
+    (graphFile.edges[e.id] as unknown[])[5] = e.flags;
+    passaggi++;
+  }
+  if (passaggi) {
+    writeFileSync(join(OUT, 'graph.json'), JSON.stringify(graphFile));
+    log(`monumenti: ${passaggi} passaggi sotto le porte non più gallerie`);
+  }
+}
+
 // ---------- edifici ----------
 
 const KIND = { house: 0, apartments: 1, industrial: 2, church: 3, tower: 4, civic: 5, castle: 6 };
@@ -1284,6 +1307,7 @@ function buildingInfo(t: Tags, inCity: boolean, area: number): { kind: number; h
   for (const a of read<OsmArea>('buildings')) {
     if (a.tags.building === 'no' || a.tags.building === 'construction' || a.tags.building === 'ruins' && !a.tags.name) continue;
     if (a.tags.location === 'underground' || Number(a.tags.layer ?? 0) < 0) continue;
+    if (monumenti.skip(a)) continue;
     for (const outer of a.outer) {
       const ring = simplifyRing(ringLocal(outer), 0.6);
       if (ring.length < 3) continue;
@@ -1392,6 +1416,7 @@ const lakes = read<OsmArea | OsmWay>('water')
 
 const ctx = { graph, toLocal, toGeo, demAt, peaks, places, pois: poisRaw, rivers: riverOut.map(({ r, ys }) => ({ ...r, ys })), named, log };
 const { rides, landmarks, limits } = buildRides(ctx);
+log(`monumenti: ${monumenti.alza(landmarks)} cartelli dei luoghi alzati sopra il tetto`);
 
 const delta3 = (xz: [number, number][], ys: number[]) => {
   const p: number[] = [];
@@ -1494,6 +1519,7 @@ const poiList: PoiOut[] = [];
     const kind = poiKind(tags);
     if (!kind) return;
     const [x, z] = toLocal(lat, lon);
+    if (monumenti.hides(x, z, tags.name)) return;
     // i bar di città sono centinaia: contano quelli dei paesi, dove ci si ferma in bici
     if (kind === 'bar' && inCity(x, z)) return;
     const hit = graph.nearest(x, z, POI_REACH[kind]);

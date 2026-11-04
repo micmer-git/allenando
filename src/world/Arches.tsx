@@ -1,12 +1,23 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
-import { SEGMENT_STYLE, type ArchSpec } from '@/game/arches';
+import { ARCH_STYLE, gradeText, type ArchSpec } from '@/game/arches';
 
 /**
- * Gli archi dei traguardi: un arco gonfiabile che scavalca la strada (un metro di margine per
- * lato) col nome grande sulle due facce, nel colore del traguardo (ciclamino la volata, azzurro il
- * GPM, oro la crono); i cartelli a bordo strada coi metri che mancano. Il contratto delle pose è in
- * src/game/arches.ts: avanti = (sin h, 0, cos h), la faccia principale guarda chi arriva.
+ * Gli archi sulla strada. Il contratto delle pose è in src/game/arches.ts: avanti =
+ * (sin h, 0, cos h), la faccia principale guarda chi arriva.
+ *
+ * - traguardi dei tratti e cambi d'intervallo in ERG: un arco gonfiabile che scavalca la
+ *   strada (un metro di margine per lato) col nome grande sulle due facce, nel colore del
+ *   traguardo (ciclamino la volata, azzurro il GPM, oro la crono, verde il cassonetto, viola
+ *   l'ERG);
+ * - l'arrivo della volata del cassonetto: tre bidoni veri della differenziata a bordo strada;
+ * - i chilometri: un portale leggero, numero grande e pendenza del km che viene; l'ultimo
+ *   chilometro è rosso, con la fiamma appesa;
+ * - i cartelli a bordo strada coi metri che mancano.
+ *
+ * Ogni arco si costruisce una volta sola per contenuto (testo, tipo, larghezza): se cambia
+ * solo la posizione (l'arco dell'ERG che si sposta con la velocità, un percorso rifatto a
+ * un incrocio) si sposta e basta.
  */
 
 const TUBE = 0.55;
@@ -14,51 +25,123 @@ const TUBE = 0.55;
 function fitText(g: CanvasRenderingContext2D, text: string, weight: number, size: number, max: number): number {
   let s = size;
   g.font = `${weight} ${s}px sans-serif`;
-  while (g.measureText(text).width > max && s > 18) {
-    s -= 4;
+  while (g.measureText(text).width > max && s > 14) {
+    s -= 3;
     g.font = `${weight} ${s}px sans-serif`;
   }
   return s;
 }
 
-/** La scritta: fondo del colore del traguardo, titolo grande, nome sotto. */
-function labelTexture(spec: ArchSpec, w: number, h: number): THREE.CanvasTexture {
-  const st = SEGMENT_STYLE[spec.kind];
+function canvasTexture(w: number, h: number, draw: (g: CanvasRenderingContext2D) => void): THREE.CanvasTexture {
   const c = document.createElement('canvas');
   c.width = w;
   c.height = h;
-  const g = c.getContext('2d')!;
-  g.fillStyle = st.color;
-  g.fillRect(0, 0, w, h);
-  // bordo chiaro e fascia scura in basso: si stacca dal cielo e dal bosco
-  g.strokeStyle = 'rgba(255,255,255,0.85)';
-  g.lineWidth = h * 0.05;
-  g.strokeRect(h * 0.04, h * 0.04, w - h * 0.08, h - h * 0.08);
-  g.fillStyle = st.ink;
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  const sub = (spec.sub ?? '').toUpperCase();
-  fitText(g, spec.label.toUpperCase(), 800, Math.round(h * (sub ? 0.5 : 0.66)), w * 0.9);
-  g.fillText(spec.label.toUpperCase(), w / 2, sub ? h * 0.4 : h * 0.53);
-  if (sub) {
-    fitText(g, sub, 700, Math.round(h * 0.2), w * 0.86);
-    g.globalAlpha = 0.92;
-    g.fillText(sub, w / 2, h * 0.77);
-    g.globalAlpha = 1;
-  }
+  draw(c.getContext('2d')!);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 4;
   return t;
 }
 
+/** La scritta: fondo del colore del traguardo, titolo grande, nome sotto. */
+function labelTexture(spec: ArchSpec, w: number, h: number): THREE.CanvasTexture {
+  const st = ARCH_STYLE[spec.kind];
+  return canvasTexture(w, h, (g) => {
+    g.fillStyle = st.color;
+    g.fillRect(0, 0, w, h);
+    // bordo chiaro: si stacca dal cielo e dal bosco
+    g.strokeStyle = 'rgba(255,255,255,0.85)';
+    g.lineWidth = h * 0.05;
+    g.strokeRect(h * 0.04, h * 0.04, w - h * 0.08, h - h * 0.08);
+    g.fillStyle = st.ink;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    const sub = (spec.sub ?? '').toUpperCase();
+    fitText(g, spec.label.toUpperCase(), 800, Math.round(h * (sub ? 0.5 : 0.66)), w * 0.9);
+    g.fillText(spec.label.toUpperCase(), w / 2, sub ? h * 0.4 : h * 0.53);
+    if (sub) {
+      fitText(g, sub, 700, Math.round(h * 0.2), w * 0.86);
+      g.globalAlpha = 0.92;
+      g.fillText(sub, w / 2, h * 0.77);
+      g.globalAlpha = 1;
+    }
+  });
+}
+
+/** Colore della pendenza: verde in piano, giallo, arancio, rosso dal 10%. */
+function gradeColor(g: number): string {
+  return g >= 0.1 ? '#e8322f' : g >= 0.07 ? '#ff8a1f' : g >= 0.04 ? '#ffd23a' : '#4cc35a';
+}
+
+/**
+ * Il cartello del portale dei km, fatto per leggersi da lontano su un telefono. Coi numeri corti
+ * («3 KM», «15 KM») il numero grande a sinistra e a destra «ALLA VETTA» con la pendenza in un
+ * riquadro colorato, oppure «ALL'ARRIVO»; con «ULTIMO KM» due righe: la scritta grande sopra,
+ * vetta o arrivo e pendenza sotto.
+ */
+function kmTexture(spec: ArchSpec): THREE.CanvasTexture {
+  const w = 512;
+  const h = 160;
+  const st = ARCH_STYLE[spec.kind];
+  return canvasTexture(w, h, (g) => {
+    g.fillStyle = st.color;
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = spec.kind === 'ultimo' ? '#ffffff' : '#ffc814';
+    g.fillRect(0, h - 9, w, 9);
+    g.textBaseline = 'middle';
+    const label = spec.label.toUpperCase();
+    const sub = (spec.sub ?? '').toUpperCase();
+    const pct = spec.grade != null ? gradeText(spec.grade) : '';
+    g.fillStyle = st.ink;
+    if (label.length > 6) {
+      g.textAlign = 'center';
+      fitText(g, label, 800, 92, w * 0.92);
+      g.fillText(label, w / 2, 58);
+      const line = pct ? `${sub} · ${pct}` : sub;
+      fitText(g, line, 800, 42, w * 0.9);
+      g.fillText(line, w / 2, 122);
+      return;
+    }
+    const right = 210;
+    g.textAlign = 'left';
+    fitText(g, label, 800, 112, w - right - 36);
+    g.fillText(label, 20, h * 0.5);
+    const x0 = w - right;
+    if (pct) {
+      g.textAlign = 'center';
+      fitText(g, sub, 700, 32, right - 20);
+      g.globalAlpha = 0.92;
+      g.fillText(sub, x0 + (right - 16) / 2, 30);
+      g.globalAlpha = 1;
+      g.fillStyle = gradeColor(spec.grade!);
+      g.beginPath();
+      g.roundRect(x0, 54, right - 16, 90, 14);
+      g.fill();
+      g.fillStyle = spec.grade! >= 0.04 && spec.grade! < 0.07 ? '#16130a' : '#ffffff';
+      fitText(g, pct, 800, 66, right - 36);
+      g.fillText(pct, x0 + (right - 16) / 2, 101);
+    } else if (sub) {
+      g.textAlign = 'center';
+      g.globalAlpha = 0.95;
+      fitText(g, sub, 800, 44, right - 16);
+      g.fillText(sub, x0 + (right - 16) / 2, h * 0.5);
+      g.globalAlpha = 1;
+    }
+  });
+}
+
 interface Built {
-  group: THREE.Group;
+  root: THREE.Group;
   dispose: () => void;
 }
 
-function buildArches(specs: ArchSpec[]): Built {
-  const group = new THREE.Group();
+/** Il contenuto di un arco: se non cambia, l'arco non si rifà. */
+function contentKey(s: ArchSpec): string {
+  return `${s.id}|${s.kind}|${s.role}|${s.label}|${s.sub ?? ''}|${s.grade?.toFixed(3) ?? ''}|${s.halfWidth.toFixed(1)}`;
+}
+
+function buildOne(s: ArchSpec): Built {
+  const root = new THREE.Group();
   const geos: THREE.BufferGeometry[] = [];
   const mats: THREE.Material[] = [];
   const texs: THREE.Texture[] = [];
@@ -72,60 +155,162 @@ function buildArches(specs: ArchSpec[]): Built {
     }
     return m;
   };
+  const geo = <G extends THREE.BufferGeometry>(g: G): G => {
+    geos.push(g);
+    return g;
+  };
   const white = matOf('#f4f4ef');
   const dark = matOf('#24272c');
+  const st = ARCH_STYLE[s.kind];
   const plane = (w: number, h: number, tex: THREE.Texture, y: number, z: number, back: boolean) => {
-    const geo = new THREE.PlaneGeometry(w, h);
-    geos.push(geo);
     const mat = new THREE.MeshLambertMaterial({ map: tex, emissive: '#ffffff', emissiveMap: tex, emissiveIntensity: 0.18 });
     mats.push(mat);
-    const m = new THREE.Mesh(geo, mat);
+    const m = new THREE.Mesh(geo(new THREE.PlaneGeometry(w, h)), mat);
     m.position.set(0, y, z);
     // PlaneGeometry guarda +z: la faccia davanti guarda chi arriva (−z), quella dietro chi l'ha passato
     if (!back) m.rotation.y = Math.PI;
     return m;
   };
-  for (const s of specs) {
-    const st = SEGMENT_STYLE[s.kind];
-    const root = new THREE.Group();
-    root.position.set(s.x, s.y, s.z);
-    root.rotation.y = s.heading;
-    group.add(root);
-    if (s.role === 'banner') {
-      // cartello a destra di chi arriva: due paletti e un pannello scritto sulle due facce
-      const side = new THREE.Group();
-      side.position.x = -(s.halfWidth + 1.4);
-      root.add(side);
-      const tex = labelTexture(s, 512, 192);
-      texs.push(tex);
-      const pole = new THREE.CylinderGeometry(0.04, 0.04, 2.1, 6);
-      pole.translate(0, 1.05, 0);
-      geos.push(pole);
-      for (const dx of [-0.9, 0.9]) {
-        const p = new THREE.Mesh(pole, dark);
-        p.position.x = dx;
-        side.add(p);
-      }
-      const boardGeo = new THREE.BoxGeometry(2.3, 0.9, 0.05);
-      geos.push(boardGeo);
-      const board = new THREE.Mesh(boardGeo, matOf(st.color));
-      board.position.y = 1.75;
-      side.add(board);
-      side.add(plane(2.2, 0.82, tex, 1.75, -0.03, false));
-      side.add(plane(2.2, 0.82, tex, 1.75, 0.03, true));
-      continue;
+  const roadLine = (depth: number, mat: THREE.Material) => {
+    const g = geo(new THREE.PlaneGeometry(s.halfWidth * 2, depth));
+    g.rotateX(-Math.PI / 2);
+    g.translate(0, 0.07, 0);
+    root.add(new THREE.Mesh(g, mat));
+  };
+  /** cartello a destra di chi arriva: due paletti e un pannello scritto sulle due facce */
+  const sideBoard = (x: number, y: number, bw: number, bh: number) => {
+    const side = new THREE.Group();
+    side.position.x = x;
+    root.add(side);
+    const tex = labelTexture(s, 512, 192);
+    texs.push(tex);
+    const pole = geo(new THREE.CylinderGeometry(0.04, 0.04, y + bh / 2 - 0.1, 6));
+    pole.translate(0, (y + bh / 2 - 0.1) / 2, 0);
+    for (const dx of [-bw * 0.39, bw * 0.39]) {
+      const p = new THREE.Mesh(pole, dark);
+      p.position.x = dx;
+      side.add(p);
     }
+    const board = new THREE.Mesh(geo(new THREE.BoxGeometry(bw, bh, 0.05)), matOf(st.color));
+    board.position.y = y;
+    side.add(board);
+    side.add(plane(bw * 0.96, bh * 0.91, tex, y, -0.03, false));
+    side.add(plane(bw * 0.96, bh * 0.91, tex, y, 0.03, true));
+    return side;
+  };
+
+  if (s.role === 'banner') {
+    sideBoard(-(s.halfWidth + 1.4), 1.75, 2.3, 0.9);
+  } else if (s.role === 'km') {
+    // portale leggero: due pali sottili e il cartello in alto, sopra la strada
+    const half = s.halfWidth + 0.9;
+    const H = 6.2;
+    const bw = half * 2 + 0.4;
+    const bh = Math.min(3, Math.max(1.8, bw / 3.2));
+    const poleMat = s.kind === 'ultimo' ? white : matOf('#3a3e46');
+    const pole = geo(new THREE.CylinderGeometry(0.1, 0.12, H, 10));
+    pole.translate(0, H / 2, 0);
+    for (const x of [-half, half]) {
+      const p = new THREE.Mesh(pole, poleMat);
+      p.position.x = x;
+      root.add(p);
+    }
+    const board = new THREE.Mesh(geo(new THREE.BoxGeometry(bw, bh, 0.14)), matOf(st.color));
+    board.position.y = H - bh / 2;
+    root.add(board);
+    const tex = kmTexture(s);
+    texs.push(tex);
+    root.add(plane(bw - 0.08, bh - 0.08, tex, H - bh / 2, -0.08, false));
+    root.add(plane(bw - 0.08, bh - 0.08, tex, H - bh / 2, 0.08, true));
+    if (s.kind === 'ultimo') {
+      // la fiamma rossa: un triangolo appeso sotto il cartello, a punta in giù
+      const flame = new THREE.Shape();
+      flame.moveTo(-0.85, 0);
+      flame.lineTo(0.85, 0);
+      flame.lineTo(0, -1.25);
+      flame.closePath();
+      const fm = new THREE.MeshLambertMaterial({ color: '#e0141b', side: THREE.DoubleSide, emissive: '#5a0000' });
+      mats.push(fm);
+      const f = new THREE.Mesh(geo(new THREE.ShapeGeometry(flame)), fm);
+      f.position.y = H - bh - 0.05;
+      root.add(f);
+      roadLine(0.3, matOf('#e0141b'));
+    }
+  } else if (s.kind === 'cassonetto' && s.role === 'finish') {
+    // l'arrivo del cassonetto: la riga bianca per terra e tre bidoni della differenziata a destra
+    roadLine(0.6, white);
+    const bins = new THREE.Group();
+    bins.position.x = -(s.halfWidth + 1.05);
+    root.add(bins);
+    const W = 1.35; // lungo la strada
+    const D = 1.0; // di profondità
+    const Hb = 1.05;
+    const body = geo(new THREE.BoxGeometry(D, Hb, W));
+    body.translate(0, 0.2 + Hb / 2, 0);
+    // il coperchio tondo: mezzo cilindro coricato lungo la strada
+    const lid = geo(new THREE.CylinderGeometry(D / 2 + 0.03, D / 2 + 0.03, W + 0.04, 16, 1, false, 0, Math.PI));
+    // l'asse da y a z (lungo la strada), poi la metà piena in su
+    lid.rotateX(Math.PI / 2);
+    lid.rotateZ(Math.PI / 2);
+    lid.scale(1, 0.55, 1);
+    lid.translate(0, 0.2 + Hb, 0);
+    const wheel = geo(new THREE.CylinderGeometry(0.1, 0.1, 0.07, 10));
+    wheel.rotateZ(Math.PI / 2);
+    const handle = geo(new THREE.BoxGeometry(0.06, 0.06, W * 0.8));
+    const COLORS: [string, string][] = [
+      ['#2f8a3a', '#226b2c'],
+      ['#767b82', '#5a5e64'],
+      ['#f2c200', '#d1a400'],
+    ];
+    COLORS.forEach(([c, l], i) => {
+      const bin = new THREE.Group();
+      bin.position.z = (i - 1) * (W + 0.18);
+      bin.add(new THREE.Mesh(body, matOf(c)));
+      bin.add(new THREE.Mesh(lid, matOf(l)));
+      const hd = new THREE.Mesh(handle, dark);
+      hd.position.set(D / 2 + 0.05, 0.2 + Hb * 0.82, 0);
+      bin.add(hd);
+      for (const [wx, wz] of [
+        [-D / 2 + 0.15, -W / 2 + 0.15],
+        [-D / 2 + 0.15, W / 2 - 0.15],
+        [D / 2 - 0.15, -W / 2 + 0.15],
+        [D / 2 - 0.15, W / 2 - 0.15],
+      ]) {
+        const wh = new THREE.Mesh(wheel, dark);
+        wh.position.set(wx, 0.1, wz);
+        bin.add(wh);
+      }
+      bins.add(bin);
+    });
+    // la bandiera a scacchi sul bidone di mezzo, e il cartello col paese dietro
+    const flagTex = canvasTexture(64, 48, (g) => {
+      for (let y = 0; y < 4; y++) for (let x = 0; x < 6; x++) {
+        g.fillStyle = (x + y) % 2 ? '#111111' : '#ffffff';
+        g.fillRect(x * 11, y * 12, 11, 12);
+      }
+    });
+    texs.push(flagTex);
+    const stick = geo(new THREE.CylinderGeometry(0.025, 0.025, 1.1, 6));
+    stick.translate(0, 0.55, 0);
+    const st0 = new THREE.Mesh(stick, dark);
+    st0.position.set(0.2, 0.2 + Hb + 0.25, 0);
+    bins.add(st0);
+    const flagMat = new THREE.MeshLambertMaterial({ map: flagTex, side: THREE.DoubleSide });
+    mats.push(flagMat);
+    const flag = new THREE.Mesh(geo(new THREE.PlaneGeometry(0.7, 0.5)), flagMat);
+    flag.rotation.y = Math.PI / 2;
+    flag.position.set(0.2, 0.2 + Hb + 1.1, 0.36);
+    bins.add(flag);
+    sideBoard(-(s.halfWidth + 3.1), 2.65, 3.2, 1.05);
+  } else {
     // arco gonfiabile: mezzo toro che scavalca la carreggiata con un metro di margine per lato
     const R = s.halfWidth + 1 + TUBE;
-    const torus = new THREE.TorusGeometry(R, TUBE, 12, 40, Math.PI);
-    geos.push(torus);
-    root.add(new THREE.Mesh(torus, matOf(st.color)));
+    root.add(new THREE.Mesh(geo(new THREE.TorusGeometry(R, TUBE, 12, 40, Math.PI)), matOf(st.color)));
     // fasce bianche ai piedi, come le cuciture dei gonfiabili
-    const band = new THREE.CylinderGeometry(TUBE * 1.04, TUBE * 1.08, 0.5, 12);
+    const band = geo(new THREE.CylinderGeometry(TUBE * 1.04, TUBE * 1.08, 0.5, 12));
     band.translate(0, 0.25, 0);
-    const foot = new THREE.CylinderGeometry(TUBE * 1.25, TUBE * 1.35, 0.22, 12);
+    const foot = geo(new THREE.CylinderGeometry(TUBE * 1.25, TUBE * 1.35, 0.22, 12));
     foot.translate(0, 0.11, 0);
-    geos.push(band, foot);
     for (const x of [-R, R]) {
       const b = new THREE.Mesh(band, white);
       b.position.set(x, 0.6, 0);
@@ -141,16 +326,11 @@ function buildArches(specs: ArchSpec[]): Built {
     const y = R + TUBE * 0.15;
     root.add(plane(w, h, tex, y, -(TUBE + 0.04), false));
     root.add(plane(w, h, tex, y, TUBE + 0.04, true));
-    // la linea per terra: bianca all'arrivo, a scacchi nel colore del tratto alla partenza
-    const lineGeo = new THREE.PlaneGeometry(s.halfWidth * 2, s.role === 'finish' ? 0.6 : 0.35);
-    lineGeo.rotateX(-Math.PI / 2);
-    lineGeo.translate(0, 0.07, 0);
-    geos.push(lineGeo);
-    const line = new THREE.Mesh(lineGeo, s.role === 'finish' ? white : matOf(st.color));
-    root.add(line);
+    // la linea per terra: bianca all'arrivo, nel colore del tratto alla partenza
+    roadLine(s.role === 'finish' ? 0.6 : 0.35, s.role === 'finish' ? white : matOf(st.color));
   }
   return {
-    group,
+    root,
     dispose: () => {
       geos.forEach((g) => g.dispose());
       mats.forEach((m) => m.dispose());
@@ -160,13 +340,40 @@ function buildArches(specs: ArchSpec[]): Built {
 }
 
 export function Arches({ specs }: { specs: ArchSpec[] }) {
-  // si ricostruisce solo se cambiano davvero gli archi, non a ogni nuovo array con gli stessi id
-  const key = specs.map((s) => `${s.id}|${s.label}|${s.sub ?? ''}|${s.x.toFixed(1)}|${s.z.toFixed(1)}|${s.halfWidth.toFixed(1)}`).join(';');
-  const built = useMemo(
-    () => buildArches(specs),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [key],
+  const group = useMemo(() => new THREE.Group(), []);
+  const built = useRef(new Map<string, Built>());
+  // a ogni giro di React: si costruisce quello che manca, si sposta quello che c'è, si butta il resto
+  useEffect(() => {
+    const seen = new Set<string>();
+    for (const s of specs) {
+      const k = contentKey(s);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      let b = built.current.get(k);
+      if (!b) {
+        b = buildOne(s);
+        built.current.set(k, b);
+        group.add(b.root);
+      }
+      b.root.position.set(s.x, s.y, s.z);
+      b.root.rotation.y = s.heading;
+    }
+    for (const [k, b] of built.current) {
+      if (seen.has(k)) continue;
+      group.remove(b.root);
+      b.dispose();
+      built.current.delete(k);
+    }
+  }, [specs, group]);
+  useEffect(
+    () => () => {
+      for (const b of built.current.values()) {
+        group.remove(b.root);
+        b.dispose();
+      }
+      built.current.clear();
+    },
+    [group],
   );
-  useEffect(() => () => built.dispose(), [built]);
-  return <primitive object={built.group} />;
+  return <primitive object={group} />;
 }

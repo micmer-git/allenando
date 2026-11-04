@@ -152,14 +152,22 @@ export interface BuildingColors {
 /**
  * Pareti e tetto di un edificio. `walls` va con la trama delle facciate, `roofs` con quella dei coppi.
  * Ritorna la quota del colmo (per la cuspide delle torri, e per le prove).
+ *
+ * `ground` è il piano terra (le finestre e l'altezza partono da lì); `plinth`, se è più in basso,
+ * è il piede dello zoccolo: su un pendio la facciata scende a valle di un piano al massimo (il
+ * seminterrato), e sotto c'è il muro di sostegno in pietra fino al terreno.
  */
-export function addBuilding(walls: Tris, roofs: Tris, b: Building, ground: number, c: BuildingColors): { top: number; shape: RoofShape } {
+export function addBuilding(walls: Tris, roofs: Tris, b: Building, ground: number, c: BuildingColors, plinth = ground): { top: number; shape: RoofShape } {
   const r = b.ring;
   const m = r.length / 2;
   const area = Math.abs(ringArea(r));
   const obb = minRect(r);
   const shape = roofShape(b, obb, area);
   const bottom = ground + b.minH;
+  // dove comincia la facciata: sui portici (minH) resta sospesa, altrimenti scende verso lo zoccolo
+  const face = b.minH > 0 || plinth >= bottom - 0.05 ? bottom : Math.max(plinth + 1, bottom - FLOOR);
+  const foot = b.minH > 0 ? bottom : Math.min(plinth, bottom);
+  const stone = { r: c.base.r * 0.86, g: c.base.g * 0.84, b: c.base.b * 0.8 };
   const height = Math.max(2.6, b.h);
   const rise = shape === 'flat' ? 0 : Math.min(7, obb.hs * PITCH);
   // l'altezza OSM comprende il tetto: il muro si ferma sotto, ma mai sotto un piano
@@ -183,10 +191,15 @@ export function addBuilding(walls: Tris, roofs: Tris, b: Building, ground: numbe
     const u1 = blind ? BLANK_UV : bays / 4;
     const u0 = blind ? BLANK_UV : 0;
     const vv = (y: number) => (blind ? BLANK_UV : (y - bottom) / (FLOOR * 2));
+    // lo zoccolo cieco, dal piede alla facciata
+    if (face > foot + 0.01) {
+      walls.facing(v(ax, foot, az), v(bx, foot, bz), v(ax, face, az), out, stone);
+      walls.facing(v(bx, foot, bz), v(bx, face, bz), v(ax, face, az), out, stone);
+    }
     // piano terra più scuro, sopra il colore della casa
     const mid = Math.min(wallTop, bottom + FLOOR);
-    walls.facing(v(ax, bottom, az, u0, vv(bottom)), v(bx, bottom, bz, u1, vv(bottom)), v(ax, mid, az, u0, vv(mid)), out, c.base);
-    walls.facing(v(bx, bottom, bz, u1, vv(bottom)), v(bx, mid, bz, u1, vv(mid)), v(ax, mid, az, u0, vv(mid)), out, c.base);
+    walls.facing(v(ax, face, az, u0, vv(face)), v(bx, face, bz, u1, vv(face)), v(ax, mid, az, u0, vv(mid)), out, c.base);
+    walls.facing(v(bx, face, bz, u1, vv(face)), v(bx, mid, bz, u1, vv(mid)), v(ax, mid, az, u0, vv(mid)), out, c.base);
     if (wallTop > mid + 0.01) {
       walls.facing(v(ax, mid, az, u0, vv(mid)), v(bx, mid, bz, u1, vv(mid)), v(ax, wallTop, az, u0, vv(wallTop)), out, c.wall);
       walls.facing(v(bx, mid, bz, u1, vv(mid)), v(bx, wallTop, bz, u1, vv(wallTop)), v(ax, wallTop, az, u0, vv(wallTop)), out, c.wall);

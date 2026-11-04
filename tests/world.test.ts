@@ -1,11 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { WorldGraph, type Leg, type WorldGraphFile } from '../src/open/graph';
+import { CLS, FLAG, WorldGraph, type Leg, type WorldGraphFile } from '../src/open/graph';
 import { suggestLoops } from '../src/open/loops';
 import { planAB } from '../src/open/ab';
-import { decodeFeatures, type RideDef } from '../src/open/world';
+import { WorldSession } from '../src/open/session';
+import { decodeFeatures, type RideDef, type WorldData } from '../src/open/world';
 import { WORLD_EDGES, WORLD_ID, WORLD_RIDES } from '../src/multiplayer/world-rides';
+import { ringsOf } from '../src/open/rings';
+import { portalClear, tunnelDepth } from '../src/open/tunnels';
 
 // Il mondo di Bergamo come lo scarica la pagina: grafo e percorsi generati da build-world.
 const dir = join(__dirname, '..', 'public', 'world', 'bergamo');
@@ -91,5 +94,67 @@ describe('mondo di Bergamo', () => {
     expect(graph.endNode(legs[legs.length - 1].edge, legs[legs.length - 1].dir)).toBe(graph.startNode(legs[0].edge, legs[0].dir));
     expect(both!.overlap).toBeLessThan(0.7);
     expect(both!.via.length).toBeGreaterThan(1);
+  });
+
+  it('sotto le porte delle Mura la strada passa nel fornice, non in una galleria', () => {
+    const mon = JSON.parse(readFileSync(join(dir, 'monumenti.json'), 'utf8')) as { monumenti: { kind: string; x: number; z: number; w: number; d: number }[] };
+    const porte = mon.monumenti.filter((m) => m.kind === 'porta');
+    expect(porte.length).toBe(4);
+    for (const e of graph.edges) {
+      if (!(e.flags & FLAG.tunnel) || e.length > 60) continue;
+      const mid = graph.pose(e.id, e.length / 2);
+      for (const m of porte) expect(Math.hypot(m.x - mid.x, m.z - mid.z), `galleria ${e.id} sotto una porta`).toBeGreaterThanOrEqual(Math.max(m.w, m.d) * 0.75);
+    }
+  });
+
+  // Michele, 04/11: «open giro start in Nembro loops in a weird way in a rotonda». Il punto più
+  // vicino al paese era un anellino di pista ciclabile di 26 m, e «dritto» non ne usciva più.
+  it('giro libero: da ogni paese si va avanti, senza girare a vuoto né fare avanti e indietro', () => {
+    const towns = ['Nembro', 'Albino', 'Alzano Lombardo', 'Gazzaniga', 'Zogno', 'Clusone', 'Selvino', 'Città Alta', 'Serina'];
+    for (const name of towns) {
+      const p = features.places.find((pl) => pl.name === name && pl.kind !== 'hamlet')!;
+      const hit = graph.freeStart(p.x, p.z, 400, true)!;
+      const e = graph.edges[hit.edge];
+      expect(e.cls, `${name}: si parte su una strada vera`).not.toBe(CLS.cycleway);
+      expect(graph.isRing(hit.edge), `${name}: non sull'anello di una rotatoria`).toBe(false);
+      const session = new WorldSession({ graph, features, rides } as unknown as WorldData, { edge: hit.edge, dir: graph.allowed(hit.edge, 1) ? 1 : -1, s: Math.min(e.length - 1, hit.s) }, 0);
+      const extend = (session as unknown as { extend(d: number): void }).extend.bind(session);
+      for (let m = 0; m <= 15000; m += 50) extend(m);
+      const seen = new Map<number, number>();
+      for (const l of session.path.legs) seen.set(l.edge, (seen.get(l.edge) ?? 0) + 1);
+      expect(session.path.length, `${name}: il percorso si allunga`).toBeGreaterThan(15000);
+      expect(Math.max(...seen.values()), `${name}: nessuna strada fatta più di due volte in 15 km`).toBeLessThanOrEqual(2);
+    }
+  });
+});
+
+describe('strade vere: rotatorie e gallerie', () => {
+  it('quasi tutte le rotatorie diventano anelli lisci, con numeri sani', () => {
+    const rings = ringsOf(graph);
+    expect(rings.length).toBeGreaterThan(300);
+    expect(rings.filter((r) => r.smooth).length / rings.length).toBeGreaterThan(0.95);
+    for (const r of rings) {
+      if (!r.smooth) continue;
+      for (const v of r.rad) expect(Number.isFinite(v) && v > r.hw).toBe(true);
+      for (const b of r.branches) for (const f of b.fillets) if (f) expect(Number.isFinite(f.fx + f.fz + f.t1)).toBe(true);
+    }
+    // piazzale Marconi (22134): un anello di ~10 m, due rami, ognuno col suo raccordo
+    const marconi = rings.find((r) => r.edges.includes(22134))!;
+    expect(marconi.smooth).toBe(true);
+    expect(marconi.branches.length).toBe(2);
+  });
+
+  it('la galleria Goggia sulla SS470: profonda a metà, galleria artificiale ai due imbocchi', () => {
+    const e = graph.edges[1784];
+    expect(e.name).toContain('Goggia');
+    expect(tunnelDepth(graph, e, e.length / 2)).toBeGreaterThan(250);
+    let ext = 0;
+    for (const node of [e.a, e.b]) {
+      for (let i = graph.adjStart[node]; i < graph.adjStart[node + 1]; i++) {
+        const q = graph.edges[graph.adjEdges[i]];
+        if (q.id !== e.id) ext += portalClear(graph, q.id, q.a === node) > 0 ? 1 : 0;
+      }
+    }
+    expect(ext).toBe(2);
   });
 });

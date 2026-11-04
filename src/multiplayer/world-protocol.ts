@@ -123,7 +123,7 @@ export const CLIMB_BOARD: Record<string, { lengthM: number; gainM: number }> = {
   'stelvio-bormio': { lengthM: 21_600, gainM: 1535 },
 };
 
-const SEG_RE = /^w:[a-z0-9-]{2,30}:(gpm|volata|crono)\d$/;
+const SEG_RE = /^w:[a-z0-9-]{2,30}:(gpm|volata|crono|cassonetto)\d$/;
 const CLIMB_RE = /^salita:([a-z0-9-]{2,30})(:fine)?$/;
 const EVENT_RE = /^ev:(\d{5,9}):([a-z0-9-]{2,30})$/;
 
@@ -136,7 +136,7 @@ export function minSecFor(len: number, gain: number): number {
 /**
  * Che classifica è? Un percorso del mondo, una sessione (ev:fascia:percorso), una salita
  * verificata (salita:id, o salita:id:fine per gli ultimi 3 km), un tratto del mondo
- * (w:percorso:gpm1 / volata1 / crono1). Ritorna il tempo minimo credibile, o null.
+ * (w:percorso:gpm1 / volata1 / crono1 / cassonetto1). Ritorna il tempo minimo credibile, o null.
  */
 export function boardLimit(id: string, len?: number, gain?: number): number | null {
   if (id in WORLD_RIDES) return WORLD_RIDES[id].minSec;

@@ -6,7 +6,7 @@ import type { Segment, SegmentKind } from './arches';
 /**
  * I tratti cronometrati: volate, gran premi della montagna, cronometro.
  *
- * Nel mondo si ricavano dai 13 percorsi: dal profilo (un punto ogni 25 m) si cercano la
+ * Nel mondo si ricavano dai percorsi: dal profilo (un punto ogni 25 m) si cercano la
  * salita più dura, un rettilineo piatto prima dell'arrivo, un tratto regolare da crono. Poi
  * ogni tratto si «ancora» agli archi del grafo che percorre: così vale anche nel giro libero,
  * per chiunque passi di lì nel verso giusto, non solo per chi ha scelto quel percorso.
@@ -117,6 +117,81 @@ export function deriveSegments(prefix: string, p: ProfilePoint[], name: (kind: S
   return segs.sort((a, b) => a.from - b.from);
 }
 
+/** Raggio del paese, metri dal centro: oltre questa distanza si è in campagna. */
+const TOWN_R: Partial<Record<Place['kind'], number>> = { town: 700, village: 450 };
+
+/**
+ * Le volate del cassonetto: brevi (150-300 m), in piano o in leggera discesa, e finiscono
+ * dove la strada entra in un paese, contro i bidoni della differenziata. Si cercano nel
+ * profilo i punti in cui si passa da fuori a dentro il raggio di un paese; si tengono quelle
+ * che non si accavallano con gli altri tratti, al più `max`, distanti almeno 2 km.
+ */
+export function deriveCassonetti(prefix: string, p: ProfilePoint[], places: Place[], taken: Segment[], max = 2): Segment[] {
+  if (p.length < 20) return [];
+  const length = p[p.length - 1].d;
+  let x0 = Infinity;
+  let x1 = -Infinity;
+  let z0 = Infinity;
+  let z1 = -Infinity;
+  for (const q of p) {
+    x0 = Math.min(x0, q.x);
+    x1 = Math.max(x1, q.x);
+    z0 = Math.min(z0, q.z);
+    z1 = Math.max(z1, q.z);
+  }
+  const near = places.filter((pl) => TOWN_R[pl.kind] != null && pl.x > x0 - 800 && pl.x < x1 + 800 && pl.z > z0 - 800 && pl.z < z1 + 800);
+  // il profilo comincia dentro un paese: quel paese non ha un ingresso, si parte da lì
+  const startIn = new Set(near.filter((pl) => Math.hypot(p[0].x - pl.x, p[0].z - pl.z) < TOWN_R[pl.kind]!).map((pl) => pl.name));
+  const cands: (Segment & { score: number })[] = [];
+  // prima in piano davvero; se il percorso non ne ha (le salite), si accetta un filo di salita, fino al 2%
+  const collect = (maxRise: (len: number) => number, maxUp: number) => {
+  for (const pl of near) {
+    if (startIn.has(pl.name)) continue;
+    const r = TOWN_R[pl.kind]!;
+    for (let i = 1; i < p.length; i++) {
+      const inside = Math.hypot(p[i].x - pl.x, p[i].z - pl.z) < r;
+      const before = Math.hypot(p[i - 1].x - pl.x, p[i - 1].z - pl.z) < r;
+      if (!inside || before) continue;
+      const to = p[i].d;
+      // il primo ingresso nel paese, uno solo per paese
+      for (const len of [250, 200, 300, 150]) {
+        const n = Math.round(len / STEP);
+        const a = i - n;
+        if (a < 0 || p[a].d < 300 || to > length - 100) continue;
+        const rise = p[i].alt - p[a].alt;
+        // in piano o in leggera discesa: al più 2 m di salita, al più il 4% di discesa media
+        if (rise > maxRise(len) || rise < -len * 0.04) continue;
+        let bad = false;
+        for (let k = a + 1; k <= i && !bad; k++) {
+          const g = (p[k].alt - p[k - 1].alt) / STEP;
+          if (g > maxUp || g < -0.06) bad = true;
+        }
+        if (bad) continue;
+        const from = p[a].d;
+        // dentro un GPM o una crono va bene (si cronometrano insieme), sopra un'altra volata no;
+        // e gli archi non cadono uno sull'altro
+        if (taken.some((t) => (t.kind === 'volata' && overlaps(t, { from, to }, 100)) || [t.from, t.to].some((e) => Math.abs(e - from) < 80 || Math.abs(e - to) < 80))) continue;
+        // meglio in leggera discesa che in salita, e meglio un paese che una frazione
+        const score = -rise / len + (pl.kind === 'town' ? 0.01 : 0) + (len >= 200 && len <= 250 ? 0.005 : 0);
+        cands.push({ id: '', kind: 'cassonetto', name: `Volata del cassonetto · ${pl.name}`, from, to, score });
+        break;
+      }
+      break;
+    }
+  }
+  };
+  collect(() => 2, 0.03);
+  if (cands.length === 0) collect((len) => len * 0.02, 0.045);
+  cands.sort((a, b) => b.score - a.score);
+  const out: Segment[] = [];
+  for (const c of cands) {
+    if (out.length >= max) break;
+    if (out.some((s) => overlaps(s, c, 2000))) continue;
+    out.push({ id: '', kind: c.kind, name: c.name, from: c.from, to: c.to });
+  }
+  return out.sort((a, b) => a.from - b.from).map((s, k) => ({ ...s, id: `${prefix}:cassonetto${k + 1}` }));
+}
+
 /** Il paese più vicino a un punto, per dare un nome al tratto. */
 export function nearestPlace(places: Place[], x: number, z: number, max = 2500): Place | null {
   let best: Place | null = null;
@@ -151,6 +226,16 @@ export function rideProfile(graph: WorldGraph, legs: Leg[]): ProfilePoint[] {
   return out;
 }
 
+/** Il profilo di una strada qualunque (salita, percorso del mondo, replay), un punto ogni 25 m. */
+export function trackProfile(track: { length: number; poseAt: (d: number) => { x: number; z: number; altitude: number } }): ProfilePoint[] {
+  const out: ProfilePoint[] = [];
+  for (let d = 0; d <= track.length; d += STEP) {
+    const q = track.poseAt(d);
+    out.push({ d, alt: q.altitude, x: q.x, z: q.z });
+  }
+  return out;
+}
+
 /** Un tratto ancorato agli archi del grafo: vale in qualunque giro che li percorra nel verso giusto. */
 export interface SegmentAnchor {
   seg: Segment;
@@ -179,7 +264,7 @@ export function anchorSegments(graph: WorldGraph, rideId: string, legs: Leg[], s
 
 const cache = new WeakMap<object, { anchors: SegmentAnchor[]; byRide: Map<string, Segment[]> }>();
 
-const LABEL: Record<SegmentKind, string> = { volata: 'Volata', gpm: 'GPM', crono: 'Crono' };
+const LABEL: Record<SegmentKind, string> = { volata: 'Volata', gpm: 'GPM', crono: 'Crono', cassonetto: 'Cassonetto' };
 
 /** Tutti i tratti del mondo, ancorati: si calcolano una volta per mondo caricato. */
 export function worldSegments(data: { graph: WorldGraph; rides: RideDef[]; features: { places: Place[]; peaks?: { name: string; x: number; z: number; pass: boolean }[] } }): { anchors: SegmentAnchor[]; byRide: Map<string, Segment[]> } {
@@ -202,7 +287,8 @@ export function worldSegments(data: { graph: WorldGraph; rides: RideDef[]; featu
       if (kind === 'volata') return pb ?? pa ?? ride.name;
       return pa && pb && pa !== pb ? `${pa} – ${pb}` : pa ?? pb ?? ride.name;
     };
-    const segs = deriveSegments(`w:${ride.id}`, prof, name);
+    const main = deriveSegments(`w:${ride.id}`, prof, name);
+    const segs = [...main, ...deriveCassonetti(`w:${ride.id}`, prof, data.features.places, main)].sort((a, b) => a.from - b.from);
     byRide.set(ride.id, segs);
     for (const a of anchorSegments(data.graph, ride.id, legs, segs)) {
       // due percorsi che passano dallo stesso tratto nello stesso verso: uno solo

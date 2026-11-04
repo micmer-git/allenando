@@ -344,6 +344,42 @@ export class WorldGraph {
     return best;
   }
 
+  /**
+   * Quanto (x, z) sta dentro l'asfalto disegnato: metri dal bordo della carreggiata più vicina,
+   * positivi dentro, negativi fuori. Contano solo le strade a ±2,5 m dalla quota y, così un ponte
+   * sopra la testa non vale come asfalto sotto le ruote. −Infinity se non c'è strada entro `reach`.
+   * `except`: un arco da non contare (per sapere se il marciapiede di una strada cade su un'altra).
+   */
+  asphaltMargin(x: number, z: number, y: number, reach = 12, except = -1): number {
+    // solo le celle che il quadrato ±reach tocca davvero: di solito una
+    const cx0 = Math.floor((x - reach) / CELL);
+    const cx1 = Math.floor((x + reach) / CELL);
+    const cz0 = Math.floor((z - reach) / CELL);
+    const cz1 = Math.floor((z + reach) / CELL);
+    let best = -Infinity;
+    for (let cz = cz0; cz <= cz1; cz++) {
+      for (let cx = cx0; cx <= cx1; cx++) {
+        const bucket = this.grid.get(cellKey(cx, cz));
+        if (!bucket) continue;
+        for (const code of bucket) {
+          if (Math.floor(code / 4096) === except) continue;
+          const e = this.edges[Math.floor(code / 4096)];
+          const k = code % 4096;
+          const ax = e.xs[k];
+          const az = e.zs[k];
+          const dx = e.xs[k + 1] - ax;
+          const dz = e.zs[k + 1] - az;
+          const len2 = dx * dx + dz * dz || 1;
+          const u = Math.min(1, Math.max(0, ((x - ax) * dx + (z - az) * dz) / len2));
+          if (Math.abs(e.ys[k] + (e.ys[k + 1] - e.ys[k]) * u - y) > 2.5) continue;
+          const m = e.hw - Math.hypot(x - ax - dx * u, z - az - dz * u);
+          if (m > best) best = m;
+        }
+      }
+    }
+    return best;
+  }
+
   /** Gli archi con almeno un segmento nelle celle entro r metri da (x, z). */
   edgesNear(x: number, z: number, r: number): Set<number> {
     const out = new Set<number>();
@@ -450,13 +486,27 @@ export class WorldGraph {
   }
 
   /** Fra le uscite di una rotatoria, quella che va più dritta (come straightest). */
-  straightestExit(edge: number, exits: RoundaboutExit[]): RoundaboutExit {
-    return pickStraight(this, edge, exits);
+  straightestExit(edge: number, exits: RoundaboutExit[], used?: ReadonlyMap<number, number>): RoundaboutExit {
+    return pickStraight(this, edge, exits, used);
   }
 
-  /** La strada più dritta all'incrocio: a parità, quella con lo stesso nome o la stessa classe. */
-  straightest(edge: number, dir: Dir): TurnOption {
-    return pickStraight(this, edge, this.options(edge, dir));
+  /**
+   * La strada più dritta all'incrocio: a parità, quella con lo stesso nome o la stessa classe.
+   * `used`: gli archi già fatti, per il giro libero (vedi pickStraight).
+   */
+  straightest(edge: number, dir: Dir, used?: ReadonlyMap<number, number>): TurnOption {
+    return pickStraight(this, edge, this.options(edge, dir), used);
+  }
+
+  /**
+   * Dove partire per un giro libero vicino a (x, z): una strada vera, non il ramo di una pista
+   * ciclabile, una zona pedonale, una superstrada o l'anello di una rotatoria. Se non c'è, la più vicina.
+   */
+  freeStart(x: number, z: number, maxD = 400, main = false): { edge: number; s: number; d: number } | null {
+    const good = (e: Edge) => e.cls !== CLS.trunk && e.cls !== CLS.pedestrian && e.cls !== CLS.cycleway && (e.flags & FLAG.roundabout) === 0 && e.length >= 25;
+    // dal paese si parte sulla strada che lo attraversa, non in un vicolo del quartiere
+    const through = main ? this.nearest(x, z, 350, (e) => good(e) && e.cls <= CLS.tertiary) : null;
+    return through ?? this.nearest(x, z, maxD, good) ?? this.nearest(x, z, maxD, (e) => e.cls !== CLS.trunk);
   }
 
   /** Costo di un arco per il navigatore: metri, pesati per quanto la strada è adatta a una bici. */
@@ -576,7 +626,25 @@ export class WorldGraph {
   }
 }
 
-function pickStraight<T extends TurnOption>(g: WorldGraph, edge: number, opts: T[]): T {
+/**
+ * Arrivati in fondo a (edge, dir) si può solo tornare indietro, anche guardando `depth` incroci
+ * più in là: un vicolo cieco, un senso unico contro, o una sacca di vie tagliate dal bordo del mondo.
+ */
+function leadsNowhere(g: WorldGraph, edge: number, dir: Dir, depth: number): boolean {
+  const next = g.options(edge, dir).filter((o) => !o.uTurn);
+  if (next.length === 0) return true;
+  if (depth === 0) return false;
+  return next.every((o) => leadsNowhere(g, o.edge, o.dir, depth - 1));
+}
+
+/**
+ * La più dritta fra le uscite. Con `used` (quante volte ogni arco è stato fatto di recente) è la
+ * scelta del giro libero: una strada già fatta pesa più di una svolta secca, ogni volta di più, e
+ * un vicolo cieco pesa più di una strada già fatta. Così non si resta chiusi in un anellino (una
+ * pista di 26 m attorno a un'aiuola a Nembro) né a fare avanti e indietro fra i vicoli tagliati dal
+ * bordo del mondo. L'inversione resta l'ultima scelta.
+ */
+function pickStraight<T extends TurnOption>(g: WorldGraph, edge: number, opts: T[], used?: ReadonlyMap<number, number>): T {
   const here = g.edges[edge];
   let best = opts[0];
   let bestScore = Infinity;
@@ -584,6 +652,10 @@ function pickStraight<T extends TurnOption>(g: WorldGraph, edge: number, opts: T
     const e = g.edges[o.edge];
     let score = Math.abs(o.turn);
     if (o.uTurn) score += 1000;
+    if (used) {
+      score += (used.get(o.edge) ?? 0) * 400;
+      if (!o.uTurn && leadsNowhere(g, o.edge, o.dir, 2)) score += 900;
+    }
     if (here.name && e.name === here.name) score -= 25;
     else if (here.ref && e.ref === here.ref) score -= 25;
     score += Math.abs(e.cls - here.cls) * 6;

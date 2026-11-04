@@ -55,8 +55,12 @@ export function encodeActivityFit(ride: Ride): Uint8Array {
       positionLat: gps ? degreesToSemicircles(sample.lat!) : undefined,
       positionLong: gps ? degreesToSemicircles(sample.lon!) : undefined,
       distance: round(sample.distance, 2),
+      // la quota della strada: i campi «enhanced» sono quelli che scrivono i Garmin e che Strava
+      // legge per primi; i vecchi restano per chi legge solo quelli
       altitude: round(sample.altitude, 1),
+      enhancedAltitude: round(sample.altitude, 1),
       speed: round(Math.max(0, sample.speed), 3),
+      enhancedSpeed: round(Math.max(0, sample.speed), 3),
       power: Math.max(0, Math.round(sample.power)),
       heartRate: sample.hr > 0 ? Math.round(sample.hr) : undefined,
       cadence: sample.cadence > 0 ? Math.round(sample.cadence) : undefined,
@@ -132,7 +136,25 @@ function sessionFields(ride: Ride, start: Date, end: Date) {
     trainingStressScore: ride.tss,
     intensityFactor: ride.intensityFactor,
     totalAscent: Math.round(ride.elevationGainM),
+    ...altitudeRange(ride.samples),
   };
+}
+
+/** Discesa totale e quote estreme, dai campioni: con la salita, il riassunto della quota. */
+function altitudeRange(samples: RideSample[]): { totalDescent?: number; maxAltitude?: number; minAltitude?: number } {
+  if (samples.length < 2) return {};
+  let down = 0;
+  let max = -Infinity;
+  let min = Infinity;
+  for (let i = 0; i < samples.length; i++) {
+    const a = samples[i].altitude;
+    if (!Number.isFinite(a)) continue;
+    max = Math.max(max, a);
+    min = Math.min(min, a);
+    if (i > 0 && Number.isFinite(samples[i - 1].altitude) && a < samples[i - 1].altitude) down += samples[i - 1].altitude - a;
+  }
+  if (!Number.isFinite(max)) return {};
+  return { totalDescent: Math.round(down), maxAltitude: round(max, 1), minAltitude: round(min, 1) };
 }
 
 function synthetic(ride: Ride): RideSample {
