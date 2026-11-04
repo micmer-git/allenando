@@ -99,7 +99,7 @@ export function SessionsPage() {
                 </div>
                 {can ? (
                   <div className="flex shrink-0 flex-col items-center gap-1" data-testid={`session-open-${i}`}>
-                    <span className="text-[11px] font-semibold uppercase tracking-wide text-accent">{ph === 'via' ? 'Partita' : 'Aperta ora'}</span>
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-accent">{ph === 'via' ? 'In corso' : 'Aperta ora'}</span>
                     <Link to={sessionHref(s)} data-testid={`session-join-${i}`} className="grid h-11 place-items-center rounded-full bg-accent px-4 text-sm font-semibold text-accent-ink">
                       Entra
                     </Link>
