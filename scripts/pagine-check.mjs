@@ -42,13 +42,15 @@ export const UNITA_A_CAPO = `(() => {
     while ((m = re.exec(n.textContent))) {
       const r = document.createRange(); r.setStart(n, m.index); r.setEnd(n, m.index + m[0].length);
       const rs = r.getClientRects(); if (!rs.length) continue;
-      words.push({ t: m[0], top: rs[0].top, box: el.closest('li, section, div') });
+      words.push({ t: m[0], top: rs[0].top, left: rs[0].left, el });
     }
   }
   const out = [];
   for (let i = 1; i < words.length; i++) {
     const a = words[i - 1], b = words[i];
-    if (a.box === b.box && /\\d$/.test(a.t) && b.top > a.top + 4 && /^(km|m|%|W|W\\/kg|bpm|rpm|min|h)([·,.;:)]|$)/.test(b.t)) out.push(a.t + ' ⏎ ' + b.t);
+    // a capo vuol dire: la parola dopo ricomincia più in basso e più a sinistra, nello stesso testo o in un suo span
+    const stesso = a.el === b.el || b.el.parentElement === a.el;
+    if (stesso && /\\d$/.test(a.t) && b.top > a.top && b.left < a.left &&/^(km|m|%|W|W\\/kg|bpm|rpm|min|h)([·,.;:)]|$)/.test(b.t)) out.push(a.t + ' ⏎ ' + b.t);
   }
   return out.slice(0, 20);
 })()`;
@@ -84,6 +86,7 @@ const top = (sel) => `(() => { const e = document.querySelector(${JSON.stringify
 export async function minuscoleSu(p, check, paths) {
   for (const path of paths) {
     await p.go(path);
+    await p.waitFor(`!!document.body && !!document.querySelector('main')`, 30000);
     await sleep(path === '/mondo' ? 2500 : 900);
     const min = await p.evaluate(MINUSCOLE);
     check(min.length === 0, `${path}: niente testi in minuscolo`, min.join(' | '));
@@ -116,6 +119,7 @@ export async function giroPagine(p, check, { shot = null } = {}) {
   };
   const go = async (name, path, wait = null, ms = 900) => {
     await p.go(path);
+    await p.waitFor(`!!document.body && !!document.querySelector('main')`, 30000);
     if (wait) await p.waitFor(wait, 30000);
     await sleep(ms);
     await p.evaluate('scrollTo(0, 0)');
