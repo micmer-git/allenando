@@ -293,17 +293,22 @@ export function RidePage() {
   // il giro a metà, se c'è. Stesso link (la scheda riaperta dopo un crash): si chiede; con ?resume=1
   // si riprende; un giro diverso salva quello vecchio nel diario e parte, senza perdere niente
   const saveRide = useApp((s) => s.saveRide);
-  const [cp, setCp] = useState<RideCheckpoint | null | undefined>(undefined);
+  // letto per questo link: da un giro all'altro senza uscire, la pedalata di prima si smonta (e mette
+  // da parte il suo punto di ripresa) prima che si rilegga
+  const rideKey = useMemo(() => rideSearch(params, ['room']), [params]);
+  const [cpState, setCpState] = useState<{ key: string; cp: RideCheckpoint | null } | null>(null);
+  const cp = cpState && cpState.key === rideKey ? cpState.cp : undefined;
+  const setCp = (c: RideCheckpoint | null) => setCpState({ key: rideKey, cp: c });
   const [keptNote, setKeptNote] = useState(false);
   useEffect(() => {
     let alive = true;
     void loadCheckpoint()
-      .then((c) => alive && setCp(c))
-      .catch(() => alive && setCp(null));
+      .then((c) => alive && setCpState({ key: rideKey, cp: c }))
+      .catch(() => alive && setCpState({ key: rideKey, cp: null }));
     return () => {
       alive = false;
     };
-  }, []);
+  }, [rideKey]);
   const resuming = params.get('resume') === '1';
   const same = !!cp && sameRide(cp, params);
   useEffect(() => {
@@ -563,6 +568,8 @@ function RideScreen({
   const look = useLook();
   const [ready, setReady] = useState(false);
   const [slow, setSlow] = useState(false);
+  // l'avanzamento del mondo, da 0 a 1: lo darà WorldScene con onProgress (pista 3). Finché manca, la barra è indeterminata
+  const [worldProgress] = useState<number | undefined>(undefined);
   const [webgl, setWebgl] = useState(true);
   const [sensorsOpen, setSensorsOpen] = useState(false);
   const [effort, setEffort] = useState(() => Math.round(engine.effort * 100));
@@ -1068,9 +1075,9 @@ function RideScreen({
                 >
                   <BackIcon />
                 </button>
-                <div className="min-w-0 flex-1 rounded-[1.375rem] bg-bg/70 px-3.5 py-1.5 backdrop-blur-md" data-testid="ride-route">
-                  <p className="break-words font-display text-lg uppercase leading-tight lg:text-xl">{setup.route.title}</p>
-                  <p className="break-words text-[13px] leading-tight text-muted" data-testid="ride-where">
+                <div className="min-w-0 flex-1 rounded-[1.375rem] bg-bg/70 px-3.5 py-1.5 backdrop-blur-md landscape:max-w-[40rem]" data-testid="ride-route">
+                  <p className="break-words font-display text-lg uppercase leading-tight lg:text-2xl">{setup.route.title}</p>
+                  <p className="break-words text-[13px] leading-tight text-muted lg:text-[15px]" data-testid="ride-where">
                     {where}
                     {session && engine.aero < 0.93 ? <span className="font-semibold text-good"> · In scia −{Math.round((1 - engine.aero) * 100)}% aria</span> : null}
                     {session && engine.rolling > 1.2 ? <span className="text-warn"> · {engine.rolling > 2 ? 'Sterrato' : 'Porfido'}</span> : null}
@@ -1081,7 +1088,7 @@ function RideScreen({
                     type="button"
                     aria-label="Pedala insieme"
                     data-testid="room-open"
-                    className={cn('pointer-events-auto relative grid h-11 w-11 shrink-0 place-items-center rounded-full bg-bg/70 backdrop-blur-md', room.client && 'text-accent ring-2 ring-accent ring-inset')}
+                    className={cn('pointer-events-auto relative grid h-11 w-11 shrink-0 place-items-center rounded-full bg-bg/70 backdrop-blur-md landscape:ml-auto', room.client && 'text-accent ring-2 ring-accent ring-inset')}
                     onClick={() => room.setSheet(true)}
                   >
                     <PeopleIcon />
@@ -1093,7 +1100,7 @@ function RideScreen({
                 <button
                   type="button"
                   aria-label={snap.mode === 'bluetooth' ? snap.deviceName || t('ride.connected') : t('ride.simulator')}
-                  className={`pointer-events-auto grid h-11 w-11 shrink-0 place-items-center rounded-full backdrop-blur-md ${snap.mode === 'bluetooth' && snap.status === 'connected' ? 'bg-good/30 text-good' : 'bg-bg/70'}`}
+                  className={`pointer-events-auto grid h-11 w-11 shrink-0 place-items-center rounded-full backdrop-blur-md ${room.available ? '' : 'landscape:ml-auto'} ${snap.mode === 'bluetooth' && snap.status === 'connected' ? 'bg-good/30 text-good' : 'bg-bg/70'}`}
                   onClick={() => setSensorsOpen(true)}
                   data-testid="ride-sensors"
                 >
@@ -1338,6 +1345,7 @@ function RideScreen({
         <LoadingVeil
           title={setup.route.title}
           subtitle={setup.route.subtitle}
+          progress={worldProgress}
           leaving={!veil.shown || ready}
           onBack={() => (window.history.length > 1 ? navigate(-1) : navigate('/'))}
         >
@@ -1767,7 +1775,7 @@ function SummaryMap({ ride, engine, setup }: { ride: Ride; engine: RideEngine; s
   return (
     <section className="overflow-hidden rounded-3xl bg-elev" data-testid="summary-map" aria-label="La strada fatta">
       {data && legs.length ? (
-        <div className="pointer-events-none">
+        <div className="pointer-events-none [&_button]:hidden">
           <WorldMap data={data} far={null} overlays={overlays} markers={markers} focus={focus} height={210} className="rounded-none!" />
         </div>
       ) : hasRoad ? (
