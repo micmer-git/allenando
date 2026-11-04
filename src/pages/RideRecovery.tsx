@@ -51,8 +51,7 @@ export function RecoveryCard({ cp, onResume, onDone, saveLabel = 'Salva com’è
   const e = cp.engine;
   return (
     <div className="text-left">
-      <p className="eyebrow text-accent">Giro a metà</p>
-      <h2 id="recovery-title" className="mt-1 font-display text-3xl leading-tight">
+      <h2 id="recovery-title" className="font-display text-3xl leading-tight">
         Hai un giro a metà
       </h2>
       <p className="mt-1 break-words font-semibold">{cp.name}</p>

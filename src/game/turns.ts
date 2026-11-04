@@ -78,7 +78,8 @@ export function pickTurns(options: TurnOptionLike[], selected: number, max = MAX
 function candidates(o: TurnOptionLike): string[] {
   const out: string[] = [];
   const add = (s: string | undefined) => {
-    const raw = (s ?? '').trim();
+    // l'apostrofo tipografico, come nella cartolina: OSM scrive «de' Calvi» con quello dritto
+    const raw = (s ?? '').trim().replace(/'/g, '’');
     const t = raw.charAt(0).toUpperCase() + raw.slice(1);
     if (t && !out.includes(t)) out.push(t);
   };
