@@ -464,7 +464,7 @@ function branchesOf(graph: WorldGraph, g: RingGeo, list: Edge[]): void {
         }
       }
       const t1 = Math.max(fillets[0]?.t1 ?? 0, fillets[1]?.t1 ?? 0);
-      g.branches.push({ edge: e.id, node, atA, hw: e.hw, cls: e.cls, ux, uz, th, t0, fillets, clear: Math.max(t0 + 0.8, t1 + 0.3) });
+      g.branches.push({ edge: e.id, node, atA, hw: e.hw, cls: e.cls, ux, uz, th, t0, fillets, clear: Math.max(t0 + 0.8, t1) });
     }
   }
   mouths(graph, g);
@@ -579,7 +579,7 @@ function splitter(graph: WorldGraph, g: RingGeo, m: Mouth, next: Mouth): { pts: 
   const sB = next.sideLo === 0 ? 1 : -1;
   const eA = graph.edges[A.edge];
   const eB = graph.edges[B.edge];
-  const run = (br: RingBranch, s: number, other: Edge, otherAtA: boolean, self: Edge): { pts: Pt[]; t: number } => {
+  const run = (br: RingBranch, s: number, other: Edge, otherAtA: boolean, self: Edge): { pts: Pt[]; t: number; atRing: boolean } => {
     const pts: Pt[] = [];
     let t = br.t0;
     // dal bordo dell'anello in fuori
@@ -588,24 +588,34 @@ function splitter(graph: WorldGraph, g: RingGeo, m: Mouth, next: Mouth): { pts: 
       if (Math.hypot(p.x - g.cx, p.z - g.cz) > ringAt(g, Math.atan2(p.z - g.cz, p.x - g.cx)).r + g.hw + 0.05) break;
     }
     const tStart = t;
+    // i due rami possono toccarsi all'anello e aprirsi più in là (una Y): l'isola comincia dove si aprono
+    let atRing = false;
     for (; t <= Math.min(self.length, 30); t += 1) {
       const p = edgeSide(graph, br, t, s);
       const gap = outside(other, otherAtA, p.x, p.z);
-      if (gap < 0.5 || gap > 9) break;
+      const open = gap >= 0.5 && gap <= 9;
+      if (!pts.length) {
+        if (open) {
+          atRing = t - tStart < 1.5;
+          pts.push(p);
+        } else if (t - tStart > 15) break;
+        continue;
+      }
+      if (!open) break;
       pts.push(p);
     }
-    return { pts, t: t - tStart < 2 ? 0 : t };
+    return { pts, t: pts.length >= 3 ? t : 0, atRing };
   };
   const a = run(A, sA, eB, B.atA, eA);
   const b = run(B, sB, eA, A.atA, eB);
-  if (a.pts.length < 2 || b.pts.length < 2 || !a.t || !b.t) return null;
-  // chiusa lungo il bordo dell'anello, da b a a
+  if (a.pts.length < 3 || b.pts.length < 3 || !a.t || !b.t) return null;
+  // chiusa lungo il bordo dell'anello, da b a a; se si apre più in là, chiusa dritta
   const th0 = Math.atan2(b.pts[0].z - g.cz, b.pts[0].x - g.cx);
   let th1 = Math.atan2(a.pts[0].z - g.cz, a.pts[0].x - g.cx);
   if (Math.abs(wrap(th1 - th0)) > 1.2) return null;
   th1 = th0 + wrap(th1 - th0);
   const arc: Pt[] = [];
-  const steps = Math.max(1, Math.ceil((Math.abs(th1 - th0) * g.meanR) / 1.2));
+  const steps = a.atRing && b.atRing ? Math.max(1, Math.ceil((Math.abs(th1 - th0) * g.meanR) / 1.2)) : 0;
   for (let i = 1; i < steps; i++) {
     const th = th0 + ((th1 - th0) * i) / steps;
     const at = ringAt(g, th);

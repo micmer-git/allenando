@@ -392,8 +392,10 @@ export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec):
     const offOthers = (p: P, off: number) => (p.d > 60 && p.d < e.length - 60) || graph.asphaltMargin(p.x + Math.cos(p.h) * off, p.z - Math.sin(p.h) * off, p.y, 1.5, id) < -0.05;
     // ai rami delle rotatorie i cordoli ripartono dopo il raccordo (o dopo l'isola spartitraffico)
     // e dentro la galleria artificiale davanti a un imbocco (tunnels.ts) niente marciapiedi
-    const endA = Math.max(junctionClear(graph, e.a, id), ringBranch(graph, id, true)?.clear ?? 0, portalClear(graph, id, true));
-    const endB = Math.max(junctionClear(graph, e.b, id), ringBranch(graph, id, false)?.clear ?? 0, portalClear(graph, id, false));
+    const ringA = ringBranch(graph, id, true)?.clear ?? 0;
+    const ringB = ringBranch(graph, id, false)?.clear ?? 0;
+    const endA = Math.max(junctionClear(graph, e.a, id), ringA, portalClear(graph, id, true));
+    const endB = Math.max(junctionClear(graph, e.b, id), ringB, portalClear(graph, id, false));
     if (tun) {
       // la galleria: tubo, luce, portali (tunnels.ts), campionata fitta per le pozze di luce
       tunnelGeometry(graph, (x, z) => field.terrain.height(x, z), e, runsInside(graph, e, x0, z0, x1, z1, 1.5), { x0, z0, x1, z1 }, lift, { road: tunnelRoad, inner: tunnel, shell: concrete });
@@ -402,7 +404,10 @@ export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec):
     }
     // marciapiede: nei paesi, sulle strade da provinciale in giù, lontano dagli incroci
     const walkable = !bridge && !tun && !ring && e.cls >= CLS.secondary && e.cls <= CLS.residential && !(e.flags & FLAG.cobbles);
-    const walkAt = (p: P) => walkable && p.d > endA + 1 && p.d < e.length - endB - 1 && URBAN.has(field.terrain.cover(p.x, p.z));
+    // dopo un raccordo di rotatoria il marciapiede riparte subito, dove finisce il cordolo del raccordo
+    const walkA = ringA ? Math.max(ringA, junctionClear(graph, e.a, id) + 1) : endA + 1;
+    const walkB = ringB ? Math.max(ringB, junctionClear(graph, e.b, id) + 1) : endB + 1;
+    const walkAt = (p: P) => walkable && p.d > walkA && p.d < e.length - walkB && URBAN.has(field.terrain.cover(p.x, p.z));
     // e mai sopra un'altra strada: due sensi unici che si uniscono, o una via che corre accanto,
     // si prendevano il marciapiede dell'altra in mezzo alla carreggiata
     const walkSide = (side: number) => (p: P) =>

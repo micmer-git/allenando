@@ -5,7 +5,7 @@ import { DECAL, poiGeometry, RAIL_POST_STEP, railFrames, sculptureGeometry, SIGN
 import { CLS, FLAG, type Dir, type Edge, type WorldGraph } from './graph';
 import type { WorldField } from './field';
 import { bendAt, junctionClear, Mesh, ringLift, roadLift, runsInside, URBAN, type TileMeshes, type TileSpec } from './tiles';
-import { curbOffset, ringAt, ringBranch, ringsIn, type RingBranch } from './rings';
+import { curbOffset, ringAt, ringBranch, ringsIn, smoothRingOf, type RingBranch } from './rings';
 import { portalClear } from './tunnels';
 import type { PoiKind, RoadMarks, TrafficSignal, WorldFeatures } from './world';
 
@@ -264,7 +264,9 @@ export function* streetJob(graph: WorldGraph, field: WorldField, features: World
     const tun = (e.flags & FLAG.tunnel) !== 0;
     const ring = (e.flags & FLAG.roundabout) !== 0;
     const oneway = (e.flags & (FLAG.oneway | FLAG.onewayRev)) !== 0;
-    const lift = roadLift(e.cls);
+    // sull'anello liscio i segni stanno sopra il suo asfalto, che è più alto di quello dei rami
+    const smooth = ring ? smoothRingOf(graph, id) : null;
+    const lift = smooth ? ringLift(smooth) : roadLift(e.cls);
     const markLift = lift + 0.016;
     // i guardrail e i delineatori si fermano anche davanti alla galleria artificiale di un imbocco
     const endA = Math.max(junctionClear(graph, e.a, id), portalClear(graph, id, true));
