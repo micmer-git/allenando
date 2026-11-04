@@ -327,15 +327,16 @@ describe('N3 · la cartolina', () => {
     expect(cardTitle({ name: 'Giro libero' }, rides)).toEqual({ title: 'Giro libero', eyebrow: 'Bergamo e le valli' });
   });
 
-  it('il disegno: ogni scritta cade dentro i 1080×1350, coi caratteri dell’app', () => {
-    const input = cardInputFromRide(rideOn('maresana'), world, monumenti);
+  it.each(['maresana', 'citta-alta', 'ganda'])('il disegno di %s: ogni scritta, anche i nomi sulla carta, cade dentro il margine, coi caratteri dell’app', (id) => {
+    const input = cardInputFromRide(rideOn(id), world, monumenti);
     const layout = layoutCard(input, measure);
-    const calls: { text: string; x: number; y: number; font: string }[] = [];
+    const calls: { text: string; x: number; y: number; w: number; font: string }[] = [];
     let font = '';
+    let spacing = 0;
     const grad = { addColorStop: () => undefined };
     const ctx = new Proxy({} as Record<string, unknown>, {
       get(target, key) {
-        if (key === 'fillText') return (text: string, x: number, y: number) => calls.push({ text, x, y, font });
+        if (key === 'fillText') return (text: string, x: number, y: number) => calls.push({ text, x, y, w: measure(text, font, spacing), font });
         if (key === 'createLinearGradient') return () => grad;
         if (key === 'measureText') return (s: string) => ({ width: measure(s, font, 0) });
         if (key in target) return target[key as string];
@@ -343,6 +344,7 @@ describe('N3 · la cartolina', () => {
       },
       set(target, key, value) {
         if (key === 'font') font = value as string;
+        if (key === 'letterSpacing') spacing = parseFloat(String(value)) || 0;
         target[key as string] = value;
         return true;
       },
@@ -352,16 +354,20 @@ describe('N3 · la cartolina', () => {
       lineTo() {}
       closePath() {}
     };
-    paintCard(ctx as unknown as CanvasRenderingContext2D, input, layout, null);
-    expect(calls.length).toBe(layout.texts.length);
+    paintCard(ctx as unknown as CanvasRenderingContext2D, input, layout, { data: world, far: null });
+    // le scritte del riquadro, più i nomi sulla carta (paesi, monumenti)
+    expect(calls.length).toBeGreaterThanOrEqual(layout.texts.length);
     for (const c of calls) {
-      expect(c.x).toBeGreaterThanOrEqual(CARD_MARGIN - 0.5);
-      expect(c.x).toBeLessThanOrEqual(CARD_W - CARD_MARGIN);
-      expect(c.y).toBeGreaterThan(0);
-      expect(c.y).toBeLessThan(CARD_H);
+      expect(c.x, c.text).toBeGreaterThanOrEqual(CARD_MARGIN - 6.5);
+      expect(c.x + c.w, c.text).toBeLessThanOrEqual(CARD_W - CARD_MARGIN + 6.5);
+      expect(c.y, c.text).toBeGreaterThan(40);
+      expect(c.y, c.text).toBeLessThan(CARD_H - 40);
       expect(c.font).toMatch(/Barlow Condensed|Outfit/);
     }
+    // i nomi sulla carta stanno sopra la riga del titolo
+    const titleTop = Math.min(...layout.texts.filter((t) => t.id === 'eyebrow' || t.id.startsWith('title-')).map((t) => t.box.y0));
+    for (const c of calls.filter((x) => !layout.texts.some((t) => t.text === x.text && t.y === x.y))) expect(c.y, c.text).toBeLessThan(titleTop);
     expect(calls.map((c) => c.text)).toContain('OROBIA');
-    expect(calls.map((c) => c.text)).toContain('MARESANA');
+    if (id === 'citta-alta') expect(calls.map((c) => c.text)).toContain('Stazione di Bergamo');
   });
 });

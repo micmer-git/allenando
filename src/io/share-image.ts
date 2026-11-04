@@ -219,7 +219,7 @@ export function layoutCard(input: CardInput, measure: Measure): CardLayout {
   const mapBottom = Math.round(y + 120);
 
   // la carta: la traccia sta fra la fascia del marchio e la sfumatura in basso
-  const fit: Box = { x0: M, y0: 172, x1: W - M, y1: Math.max(420, y - 70) };
+  const fit: Box = { x0: M, y0: 172, x1: W - M, y1: Math.max(420, y - 46) };
   const view = fitView(input.track, fit);
   return { texts, mark, mapBottom, fit, view, profile, monumentsMark };
 }
@@ -352,7 +352,8 @@ export function paintCard(g: Ctx, input: CardInput, layout: CardLayout, world: W
   top.addColorStop(1, 'rgba(12,11,9,0)');
   g.fillStyle = top;
   g.fillRect(0, 0, W, 230);
-  const fade0 = layout.mapBottom - 300;
+  // la sfumatura comincia sotto la traccia: il via e l'arrivo restano accesi
+  const fade0 = Math.min(layout.fit.y1 + 12, layout.mapBottom - 120);
   const bottom = g.createLinearGradient(0, fade0, 0, layout.mapBottom);
   bottom.addColorStop(0, 'rgba(12,11,9,0)');
   bottom.addColorStop(1, 'rgba(12,11,9,1)');
@@ -396,6 +397,7 @@ function paintMark(g: Ctx, x: number, y: number, size: number): void {
   g.restore();
 }
 
+/** Il segno dei monumenti, sulla carta e nella riga in basso: un rombo chiaro, distinto dall'oro della traccia. */
 function diamond(g: Ctx, x: number, y: number, r: number): void {
   g.beginPath();
   g.moveTo(x, y - r);
@@ -403,7 +405,7 @@ function diamond(g: Ctx, x: number, y: number, r: number): void {
   g.lineTo(x, y + r);
   g.lineTo(x - r, y);
   g.closePath();
-  g.fillStyle = C.gold;
+  g.fillStyle = C.ink;
   g.fill();
   g.lineWidth = 3;
   g.strokeStyle = C.night;
@@ -490,7 +492,6 @@ function paintMap(g: Ctx, input: CardInput, layout: CardLayout, world: WorldCont
   }
   const last = P(input.track[input.track.length - 1].x, input.track[input.track.length - 1].z);
   pts.push(last);
-  if (world) placeLabels(g, world, layout, pts, H);
   const path = new Path2D();
   pts.forEach((p, i) => (i === 0 ? path.moveTo(p.x, p.y) : path.lineTo(p.x, p.y)));
   g.lineCap = 'round';
@@ -510,8 +511,9 @@ function paintMap(g: Ctx, input: CardInput, layout: CardLayout, world: WorldCont
   g.stroke(path);
   for (const m of input.monuments) {
     const p = P(m.x, m.z);
-    diamond(g, p.x, p.y, 10);
+    diamond(g, p.x, p.y, 8);
   }
+  placeLabels(g, world, input, layout, pts, H);
   // il via: un pallino chiaro; l'arrivo: il disco d'oro
   const start = pts[0];
   g.lineWidth = 5;
@@ -573,11 +575,11 @@ function paintRelief(g: Ctx, world: WorldContext, layout: CardLayout, H: number)
       const n = Math.hypot(dx, 1, dz);
       const shade = Math.max(0, (dx * 0.6 + 0.55 + dz * 0.6) / n / L);
       const tt = Math.min(1, Math.max(0, (hz - 200) / 1800));
-      const s = 0.5 + shade * 0.95;
+      const s = 0.5 + shade * 1.1;
       const o = (py * w + px) * 4;
-      img.data[o] = Math.min(255, (25 + tt * 22) * s);
-      img.data[o + 1] = Math.min(255, (23 + tt * 19) * s);
-      img.data[o + 2] = Math.min(255, (18 + tt * 13) * s);
+      img.data[o] = Math.min(255, (27 + tt * 26) * s);
+      img.data[o + 1] = Math.min(255, (25 + tt * 22) * s);
+      img.data[o + 2] = Math.min(255, (20 + tt * 15) * s);
       img.data[o + 3] = 255;
     }
   }
@@ -587,35 +589,84 @@ function paintRelief(g: Ctx, world: WorldContext, layout: CardLayout, H: number)
   g.drawImage(c, 0, 0, w * k, h * k);
 }
 
-/** I paesi intorno, in maiuscoletto chiaro: mai sopra la traccia, il marchio o un altro nome. */
-function placeLabels(g: Ctx, world: WorldContext, layout: CardLayout, track: { x: number; y: number }[], H: number): void {
+/**
+ * I nomi sulla carta: prima alcuni monumenti passati (il primo, l'ultimo e quelli in mezzo più
+ * distanti), accanto al loro rombo; poi i paesi e i quartieri intorno, in maiuscoletto tenue.
+ * Mai sopra la traccia, il marchio, il testo in basso o un altro nome.
+ */
+function placeLabels(g: Ctx, world: WorldContext | null, input: CardInput, layout: CardLayout, track: { x: number; y: number }[], H: number): void {
   const v = layout.view;
-  const rank = (k: string) => (k === 'city' ? 0 : k === 'town' ? 1 : k === 'village' ? 2 : 9);
-  const max = v.mpp < 6 ? 8 : 6;
-  const taken: Box[] = [{ x0: 0, y0: 0, x1: CARD_W, y1: 150 }];
   const measure = canvasMeasure(g);
-  const size = 21;
-  const f = font(600, size, SANS);
+  const taken: Box[] = [{ x0: 0, y0: 0, x1: CARD_W, y1: 150 }];
+  const bottom = layout.fit.y1 + 30;
+  const free = (b: Box, pad: number) =>
+    b.x0 >= CARD_MARGIN - 6 &&
+    b.x1 <= CARD_W - CARD_MARGIN + 6 &&
+    b.y0 >= 150 &&
+    b.y1 <= Math.min(bottom, H) &&
+    !taken.some((t) => b.x0 < t.x1 && b.x1 > t.x0 && b.y0 < t.y1 && b.y1 > t.y0) &&
+    !track.some((q) => q.x > b.x0 - pad && q.x < b.x1 + pad && q.y > b.y0 - pad && q.y < b.y1 + pad);
   g.textBaseline = 'alphabetic';
-  g.fillStyle = 'rgba(246,242,230,0.46)';
+  g.lineJoin = 'round';
+
+  // i monumenti: fino a quattro, il primo e l'ultimo prima degli altri; chi non trova posto lascia il turno
+  const mons = input.monuments;
+  const order = mons.length > 1 ? [mons[0], mons[mons.length - 1], ...mons.slice(1, -1).sort((a, b) => Math.abs(mons.indexOf(a) - mons.length / 2) - Math.abs(mons.indexOf(b) - mons.length / 2))] : mons;
+  const mf = font(600, 22, SANS);
+  let placed = 0;
+  for (const m of order) {
+    if (placed >= 4) break;
+    const c = toCard(v, m.x, m.z);
+    const w = measure(m.name, mf, 0);
+    // a destra, a sinistra, sopra o sotto il rombo: il primo posto libero
+    const spots = [
+      [c.x + 16, c.y + 7],
+      [c.x - 16 - w, c.y + 7],
+      [c.x - w / 2, c.y - 18],
+      [c.x - w / 2, c.y + 34],
+    ];
+    for (const [x0, base] of spots) {
+      const box = { x0: x0 - 4, y0: base - 20, x1: x0 + w + 4, y1: base + 5 };
+      if (!free(box, 3)) continue;
+      taken.push(box);
+      g.font = mf;
+      setSpacing(g, 0);
+      g.lineWidth = 6;
+      g.strokeStyle = 'rgba(12,11,9,0.85)';
+      g.strokeText(m.name, x0, base);
+      g.fillStyle = 'rgba(246,242,230,0.92)';
+      g.fillText(m.name, x0, base);
+      placed++;
+      break;
+    }
+  }
+
+  // i paesi: città e paesi sempre, i villaggi da vicino, i quartieri e le frazioni da molto vicino
+  if (!world) return;
+  const rank = (k: string) => (k === 'city' ? 0 : k === 'town' ? 1 : k === 'village' ? 2 : k === 'suburb' || k === 'quarter' ? 3 : 4);
+  const deepest = v.mpp < 4 ? 4 : v.mpp < 8 ? 3 : v.mpp < 25 ? 2 : 1;
+  const size = 20;
+  const f = font(600, size, SANS);
   let n = 0;
-  const list = world.data.features.places
-    .filter((p) => rank(p.kind) <= (v.mpp < 14 ? 2 : 1))
-    .sort((a, b) => rank(a.kind) - rank(b.kind));
+  const list = world.data.features.places.filter((p) => rank(p.kind) <= deepest).sort((a, b) => rank(a.kind) - rank(b.kind));
   for (const p of list) {
-    if (n >= max) break;
+    if (n >= 7) break;
     const c = toCard(v, p.x, p.z);
+    if (c.x < 0 || c.x > CARD_W || c.y < 150 || c.y > bottom) continue;
     const s = p.name.toLocaleUpperCase('it-IT');
     const w = measure(s, f, 3);
-    const box = { x0: c.x - w / 2 - 8, y0: c.y - size - 8, x1: c.x + w / 2 + 8, y1: c.y + 10 };
-    if (box.x0 < CARD_MARGIN / 2 || box.x1 > CARD_W - CARD_MARGIN / 2 || box.y0 < 150 || box.y1 > H - 220) continue;
-    if (taken.some((t) => box.x0 < t.x1 && box.x1 > t.x0 && box.y0 < t.y1 && box.y1 > t.y0)) continue;
-    if (track.some((q) => q.x > box.x0 - 12 && q.x < box.x1 + 12 && q.y > box.y0 - 12 && q.y < box.y1 + 12)) continue;
-    taken.push(box);
-    g.font = f;
-    setSpacing(g, 3);
-    g.fillText(s, box.x0 + 8, c.y);
-    n++;
+    // al suo posto, o appena sopra o sotto se lì passa la strada
+    for (const dy of [0, -28, 28]) {
+      const box = { x0: c.x - w / 2 - 6, y0: c.y + dy - size - 6, x1: c.x + w / 2 + 6, y1: c.y + dy + 8 };
+      if (!free(box, 8)) continue;
+      taken.push(box);
+      g.font = f;
+      setSpacing(g, 3);
+      g.fillStyle = 'rgba(246,242,230,0.5)';
+      g.fillText(s, box.x0 + 6, c.y + dy);
+      n++;
+      break;
+    }
   }
   setSpacing(g, 0);
 }
