@@ -88,29 +88,27 @@ export function InstallCard({ className }: { className?: string }) {
     }
   };
   return (
-    <section className={cn('rounded-2xl border border-line bg-elev p-4', className)} data-testid="install-card">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="font-display text-2xl uppercase leading-none">Mettila sul telefono</h2>
-          <p className="mt-1 text-sm leading-snug text-muted">A schermo intero, si apre dall’icona e le salite funzionano anche senza rete.</p>
-        </div>
-        <button type="button" onClick={dismiss} aria-label="Non ora" className="-mr-2 -mt-2 grid h-11 w-11 shrink-0 place-items-center rounded-full text-muted">
-          <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+    <section className={cn('rounded-2xl border border-line px-4 py-2', className)} data-testid="install-card">
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="min-w-0 flex-1 text-sm font-semibold">Mettila sul telefono</h2>
+        {install.canPrompt ? (
+          <button
+            type="button"
+            data-testid="install-button"
+            className="inline-flex h-11 shrink-0 items-center rounded-full px-3 text-sm font-semibold text-accent"
+            onClick={() => void install.prompt()}
+          >
+            Installa
+          </button>
+        ) : null}
+        <button type="button" onClick={dismiss} aria-label="Non ora" className="-mr-2 grid h-11 w-11 shrink-0 place-items-center rounded-full text-muted">
+          <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M6 6l12 12M18 6 6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
           </svg>
         </button>
       </div>
-      {install.canPrompt ? (
-        <button
-          type="button"
-          data-testid="install-button"
-          className="mt-3 inline-flex h-12 w-full items-center justify-center rounded-full bg-accent font-semibold text-accent-ink"
-          onClick={() => void install.prompt()}
-        >
-          Installa OROBIA
-        </button>
-      ) : install.ios ? (
-        <ol className="mt-3 space-y-2 text-sm" data-testid="install-ios">
+      {install.canPrompt ? null : install.ios ? (
+        <ol className="mb-2 space-y-2 text-sm" data-testid="install-ios">
           <li className="flex items-center gap-3">
             <Step n={1} />
             <span>
@@ -125,12 +123,12 @@ export function InstallCard({ className }: { className?: string }) {
           </li>
           <li className="flex items-center gap-3">
             <Step n={3} />
-            <span>icona Apri’icona: niente barre del browser</span>
+            <span>Apri dall’icona: niente barre del browser</span>
           </li>
         </ol>
       ) : (
-        <p className="mt-3 text-sm leading-snug text-muted" data-testid="install-manual">
-          Dal menu del browser scegli <b className="text-ink">Installa app</b> o <b className="text-ink">Aggiungi a schermata Home</b>.
+        <p className="mb-2 text-sm leading-snug text-muted" data-testid="install-manual">
+          Dal menu del browser: <b className="text-ink">Installa app</b> o <b className="text-ink">Aggiungi a schermata Home</b>.
         </p>
       )}
     </section>

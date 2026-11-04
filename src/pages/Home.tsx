@@ -4,16 +4,17 @@ import { Wordmark } from '@/components/ui';
 import { Coin, Glyph } from '@/components/Glyph';
 import { useGame } from '@/game/useGame';
 import { missionsFor } from '@/game/missions';
-import { phaseOf, SESSION_STYLE, upcoming, WORLD_RIDE_NAMES } from '@/game/sessions';
+import { phaseOf, upcoming, WORLD_RIDE_NAMES } from '@/game/sessions';
 import { LevelRing } from './Me';
-import { countdown, sessionHref } from './Sessions';
+import { paceLabel, sessionClock, sessionHref, SessionKindToken } from './Sessions';
 import { InstallCard } from '@/components/Install';
-import { formatDateTime, formatDuration, formatKm, formatNumber } from '@/domain/format';
+import { cap, formatDateTime, formatDuration, formatKm, formatKmText, formatNumber, formatTss } from '@/domain/format';
 import { localDateKey, trainingLoad } from '@/domain/load';
 import { VERIFIED_ROUTES } from '@/domain/routes';
 import { WORLD_RIDES } from '@/multiplayer/world-rides';
 import { useI18n } from '@/i18n';
 import { useApp } from '@/store/useApp';
+import { cn } from '@/lib/cn';
 
 export function HomePage() {
   const { t } = useI18n();
@@ -25,6 +26,7 @@ export function HomePage() {
   useEffect(() => {
     void hydrateGame();
   }, [hydrateGame]);
+  const now = useNow();
   const load = trainingLoad(rides.map((ride) => ({ date: localDateKey(new Date(ride.startTime)), tss: ride.tss ?? 0 })));
   const form = load[load.length - 1];
   const weekAgo = Date.now() - 7 * 86400_000;
@@ -32,38 +34,46 @@ export function HomePage() {
   const weekKm = week.reduce((s, r) => s + r.distanceM, 0);
   const weekTss = week.reduce((s, r) => s + (r.tss ?? 0), 0);
   const recent = rides.slice(0, 3);
+  const session = upcoming(now, 1)[0];
+  const phase = phaseOf(session, now);
+  // una sola azione piena per schermata: la sessione quando è aperta, altrimenti il mondo
+  const sessionOpen = phase === 'aperta' || phase === 'via';
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 pb-nav pt-5 md:px-8 md:pt-10">
       <header className="flex items-center justify-between gap-2">
-        <Wordmark className="md:hidden" />
+        <Wordmark className="rail:hidden wide:hidden" />
         <Link to="/garage" className="num ml-auto inline-flex h-11 items-center gap-1.5 rounded-full border border-line bg-elev px-3 text-sm font-semibold" data-testid="home-oro">
           <Coin size={16} />
           {formatNumber(career.oro, 0)}
         </Link>
-        <Link to="/tu" aria-label={t('a11y.openProfile')} className="rounded-full" data-testid="home-level">
-          <LevelRing xp={progress.xp} size={44} />
+        <Link to="/tu" aria-label={t('a11y.openProfile')} className="inline-flex h-11 items-center gap-1.5 rounded-full border border-line bg-elev pl-3 pr-0.5 text-sm font-semibold" data-testid="home-level">
+          <span className="text-muted">Liv.</span>
+          <LevelRing xp={progress.xp} size={40} />
         </Link>
       </header>
       <h1 className="mt-5 font-display text-5xl uppercase leading-[0.9]">{t('home.hello', { name: profile.name || 'Atleta' })}</h1>
       {career.streak.days >= 2 ? (
         <p className="mt-1 inline-flex items-center gap-1.5 text-sm font-semibold text-accent">
-          <Glyph name="fiamma" size={16} /> {career.streak.days} giorni di fila
+          <Glyph name="fiamma" size={16} /> {`${career.streak.days} giorni di fila`}
         </p>
       ) : null}
 
-      <NextSession />
+      <NextSession now={now} />
       <Missions done={career.missions.day === todayKey() ? career.missions.done : []} />
 
       {/* il mondo è la cosa da fare: una carta grande col suo ingresso, e tre scorciatoie */}
-      <section className="mt-5 overflow-hidden rounded-3xl border border-accent/50 bg-elev">
+      <section className="mt-3 overflow-hidden rounded-3xl border border-accent/50 bg-elev">
         <Link to="/mondo" data-testid="home-world" className="flex items-center gap-3 p-4 transition hover:bg-elev2/50">
           <span className="min-w-0 flex-1">
             <span className="eyebrow text-accent">Mondo aperto</span>
             <span className="mt-1 block font-display text-3xl uppercase leading-none">Bergamo e le valli</span>
-            <span className="num mt-1.5 block text-sm text-muted">{Object.keys(WORLD_RIDES).length} percorsi · Città Alta, Val Brembana, Val Seriana</span>
+            <span className="num mt-1.5 block text-sm text-muted">{`${Object.keys(WORLD_RIDES).length} percorsi · Città Alta, Val Brembana, Val Seriana`}</span>
           </span>
-          <span aria-hidden="true" className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-accent text-2xl text-accent-ink">
+          <span
+            aria-hidden="true"
+            className={cn('grid h-12 w-12 shrink-0 place-items-center rounded-full text-2xl', sessionOpen ? 'border border-accent/70 text-accent' : 'bg-accent text-accent-ink')}
+          >
             →
           </span>
         </Link>
@@ -80,8 +90,6 @@ export function HomePage() {
         </nav>
       </section>
 
-      <InstallCard className="mt-3" />
-
       <section className="mt-6">
         <div className="mb-2 flex items-baseline justify-between">
           <h2 className="eyebrow">{t('home.climbs')}</h2>
@@ -92,7 +100,7 @@ export function HomePage() {
             <li key={r.id}>
               <Link to={`/salite/${r.id}`} data-testid={`home-climb-${r.id}`} className="block rounded-2xl border border-line bg-elev p-3 transition hover:border-accent/60">
                 <span className="block font-display text-2xl uppercase leading-none">{r.name}</span>
-                <span className="mt-1 block text-sm text-muted">{r.side}</span>
+                <span className="mt-1 block text-sm text-muted">{cap(r.side)}</span>
               </Link>
             </li>
           ))}
@@ -116,14 +124,17 @@ export function HomePage() {
         </Link>
       </div>
 
-      <div className="mt-3 grid grid-cols-3 gap-2">
-        <Stat label="km · 7 gg" value={weekKm > 0 ? formatKm(weekKm) : '–'} />
-        <Stat label="TSS · 7 gg" value={weekTss > 0 ? formatNumber(weekTss, 0) : '–'} />
-        <Link to="/load" className="rounded-2xl border border-line bg-elev p-3">
-          <span className="eyebrow block">{t('home.form')}</span>
-          <span className="num mt-1 block font-display text-3xl">{form ? formatNumber(form.tsb, 0) : '–'}</span>
-        </Link>
-      </div>
+      {/* i numeri della settimana compaiono col primo giro: prima sarebbero tre trattini */}
+      {rides.length > 0 ? (
+        <div className="mt-3 grid grid-cols-3 gap-2" data-testid="home-week">
+          <Stat label="Km · 7 gg" value={weekKm > 0 ? formatKm(weekKm) : '–'} />
+          <Stat label="TSS · 7 gg" value={weekTss > 0 ? formatTss(weekTss) : '–'} />
+          <Link to="/load" className="rounded-2xl border border-line bg-elev p-3">
+            <span className="eyebrow block">{t('home.form')}</span>
+            <span className="num mt-1 block font-display text-3xl">{form ? formatNumber(form.tsb, 0) : '–'}</span>
+          </Link>
+        </div>
+      ) : null}
 
       <section className="mt-6">
         <div className="mb-2 flex items-baseline justify-between">
@@ -136,17 +147,14 @@ export function HomePage() {
           <ul className="flex flex-col gap-2">
             {recent.map((ride) => (
               <li key={ride.id}>
-                <Link to={`/history/${ride.id}`} className="flex items-center justify-between rounded-2xl bg-elev px-4 py-3">
-                  <span>
+                <Link to={`/history/${ride.id}`} className="flex items-center justify-between gap-3 rounded-2xl bg-elev px-4 py-3">
+                  <span className="min-w-0">
                     <span className="block font-semibold">{ride.name}</span>
-                    <span className="text-sm text-muted">{formatDateTime(ride.startTime)}</span>
+                    <span className="text-sm text-muted">{cap(formatDateTime(ride.startTime))}</span>
                   </span>
-                  <span className="text-right">
-                    <span className="num block font-semibold">{formatKm(ride.distanceM)} km</span>
-                    <span className="text-sm text-muted">
-                      {formatDuration(ride.durationSec)}
-                      {ride.tss != null ? ` · ${formatNumber(ride.tss, 0)} TSS` : ''}
-                    </span>
+                  <span className="shrink-0 text-right">
+                    <span className="num block font-semibold">{`${formatKmText(ride.distanceM)}`}</span>
+                    <span className="text-sm text-muted">{`${formatDuration(ride.durationSec)}${ride.tss != null ? ` · ${formatTss(ride.tss)} TSS` : ''}`}</span>
                   </span>
                 </Link>
               </li>
@@ -154,6 +162,8 @@ export function HomePage() {
           </ul>
         )}
       </section>
+
+      <InstallCard className="mt-6" />
     </main>
   );
 }
@@ -163,30 +173,40 @@ function todayKey(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-/** La prossima sessione, col conto alla rovescia e l'ingresso se è aperta. */
-function NextSession() {
+/** L'ora che scorre, un tick al secondo: il conto alla rovescia della sessione. */
+function useNow(): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const t = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(t);
   }, []);
+  return now;
+}
+
+/** La prossima sessione, col conto alla rovescia e l'ingresso se è aperta. */
+function NextSession({ now }: { now: number }) {
   const s = upcoming(now, 1)[0];
   const ph = phaseOf(s, now);
-  const st = SESSION_STYLE[s.kind];
   const can = ph === 'aperta' || ph === 'via';
   const name = WORLD_RIDE_NAMES[s.rideId] ?? s.rideId;
+  const clock = sessionClock(s, now);
   return (
-    <section className="relative mt-4 overflow-hidden rounded-3xl border border-line bg-elev" data-testid="home-session">
-      <span className="absolute inset-y-0 left-0 w-1.5" style={{ background: st.color }} aria-hidden="true" />
-      <div className="flex items-center gap-3 py-3 pl-5 pr-3">
+    <section className={cn('mt-4 rounded-3xl border bg-elev', can ? 'border-accent/60' : 'border-line')} data-testid="home-session">
+      <div className="flex items-center gap-3 py-3 pl-4 pr-3">
         <div className="min-w-0 flex-1">
-          <span className="eyebrow">{ph === 'via' ? 'Sessione in corso' : 'Prossima sessione'}</span>
-          <span className="mt-0.5 block truncate font-semibold">{s.title}</span>
-          <span className="block truncate text-sm text-muted">
-            {name} · {new Date(s.start).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}
+          <span className="eyebrow block" style={can ? { color: 'var(--accent)' } : undefined}>{ph === 'via' ? 'Sessione in corso' : ph === 'aperta' ? 'Sessione aperta ora' : 'Prossima sessione'}</span>
+          <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+            <SessionKindToken kind={s.kind} />
+            <span className="font-semibold leading-snug">{name}</span>
+          </span>
+          <span className="num mt-0.5 block text-sm leading-snug text-muted">
+            {`${s.pace ? `${paceLabel(s.pace)} · ` : ''}${new Date(s.start).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`}
           </span>
         </div>
-        <span className="num shrink-0 font-display text-3xl leading-none">{ph === 'via' ? 'VIA' : countdown(s.start - now)}</span>
+        <p className="num shrink-0 text-right leading-none" data-testid="home-session-clock" aria-label={clock.text}>
+          <span className="block text-[11px] font-semibold uppercase tracking-wide text-muted">{clock.label}</span>
+          <span className="mt-1 block font-display text-3xl">{clock.value}</span>
+        </p>
         {can ? (
           <Link to={sessionHref(s)} className="grid h-11 shrink-0 place-items-center rounded-full bg-accent px-4 text-sm font-semibold text-accent-ink" data-testid="home-session-join">
             Entra

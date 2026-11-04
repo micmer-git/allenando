@@ -30,12 +30,32 @@ export function formatDuration(sec: number): string {
   return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`;
 }
 
+/**
+ * Lo spazio fra un numero e la sua unità non si spezza: «1288 m» non va a capo prima della «m».
+ * U+00A0, lo spazio non separabile.
+ */
+export const NBSP = '\u00a0';
+
+export function withUnit(value: string, unit: string): string {
+  return `${value}${NBSP}${unit}`;
+}
+
+/** «4,83 km», con lo spazio che non va a capo. */
+export function formatKmText(meters: number): string {
+  return withUnit(formatKm(meters), 'km');
+}
+
+/** «1288 m», con lo spazio che non va a capo. */
+export function formatMetersText(meters: number): string {
+  return withUnit(formatNumber(meters, 0), 'm');
+}
+
 export function formatHours(seconds: number): string {
   const h = Math.floor(seconds / 3600);
   const m = Math.round((seconds % 3600) / 60);
-  if (h <= 0) return `${m} min`;
-  if (m === 0) return `${h} h`;
-  return `${h} h ${String(m).padStart(2, '0')}`;
+  if (h <= 0) return withUnit(String(m), 'min');
+  if (m === 0) return withUnit(String(h), 'h');
+  return `${withUnit(String(h), 'h')}${NBSP}${String(m).padStart(2, '0')}`;
 }
 
 export function formatDateTime(iso: string): string {
@@ -78,4 +98,25 @@ export function parseNumberInput(value: string, min: number, max: number, fallba
 export function toDatetimeLocalValue(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/**
+ * La maiuscola iniziale di un testo che arriva dai dati («da Nembro», «dalla stazione al
+ * castello»): sullo schermo ogni riga comincia con la maiuscola, i dati restano come sono.
+ */
+export function cap(text: string): string {
+  if (!text) return text;
+  const first = text.codePointAt(0)!;
+  const ch = String.fromCodePoint(first);
+  return ch.toLocaleUpperCase('it-IT') + text.slice(ch.length);
+}
+
+/**
+ * Il TSS, uguale ovunque: riepilogo, dettaglio, diario, Oggi. Sotto 10 con un decimale
+ * (un giro di un minuto fa 0,3, non 0), sopra intero. Senza valore, il trattino.
+ */
+export function formatTss(tss: number | null | undefined): string {
+  if (tss == null || !Number.isFinite(tss)) return '–';
+  const v = Math.max(0, tss);
+  return formatNumber(v, v < 10 ? 1 : 0);
 }

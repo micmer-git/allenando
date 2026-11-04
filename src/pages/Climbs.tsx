@@ -1,18 +1,15 @@
 import { Link } from 'react-router-dom';
 import { ProfileChart, RouteMap, useVerifiedRoute } from '@/components/RouteViz';
-import { formatKm, formatNumber } from '@/domain/format';
+import { cap, formatKm, formatMetersText, formatNumber } from '@/domain/format';
+import { PageHeader } from '@/components/ui';
 import { CATALOG, routeStats, VERIFIED_ROUTES, type RouteMeta } from '@/domain/routes';
 
 export function ClimbsPage() {
   const missing = CATALOG.filter((c) => !c.routeId);
   return (
     <main className="mx-auto w-full max-w-4xl px-4 pb-nav pt-6 md:px-8 md:pt-10" data-testid="climbs-page">
-      <p className="eyebrow">Strade vere · OSM + EU-DEM</p>
-      <h1 className="mt-1 font-display text-5xl uppercase leading-none">Salite</h1>
-      <p className="mt-3 max-w-2xl text-muted">
-        Tre salite, quattro versanti. La pianta è la strada di OpenStreetMap, nodo per nodo; la quota viene dal modello del terreno europeo a 25 m.
-      </p>
-      <ul className="mt-6 grid gap-3 md:grid-cols-2">
+      <PageHeader title="Salite" />
+      <ul className="mt-4 grid gap-3 md:grid-cols-2">
         {VERIFIED_ROUTES.map((meta) => (
           <ClimbCard key={meta.id} meta={meta} />
         ))}
@@ -21,13 +18,8 @@ export function ClimbsPage() {
       <section className="mt-10">
         <div className="flex items-baseline justify-between">
           <h2 className="font-display text-3xl uppercase">Catalogo</h2>
-          <span className="text-sm text-muted">
-            {CATALOG.length - missing.length} su {CATALOG.length} con traccia
-          </span>
+          <span className="num text-sm text-muted">{`${CATALOG.length - missing.length} su ${CATALOG.length} con traccia`}</span>
         </div>
-        <p className="mt-1 max-w-2xl text-sm text-muted">
-          Le altre grandi salite arrivano quando c’è una traccia verificata. Fino ad allora niente numeri inventati: se hai il GPX di un tuo giro lassù, importalo e pedalalo.
-        </p>
         <ul className="mt-4 divide-y divide-line overflow-hidden rounded-2xl border border-line bg-elev">
           {CATALOG.map((c) => (
             <li key={`${c.name}-${c.side}`}>
@@ -37,13 +29,11 @@ export function ClimbsPage() {
                 className="flex min-h-14 items-center justify-between gap-3 px-4 py-3 transition hover:bg-elev2"
               >
                 <span className="min-w-0">
-                  <span className="block truncate font-semibold">{c.name}</span>
-                  <span className="block truncate text-sm text-muted">
-                    {c.side} · {c.region}
-                  </span>
+                  <span className="block font-semibold leading-snug">{c.name}</span>
+                  <span className="block text-sm leading-snug text-muted">{`${cap(c.side ?? '')}${c.side ? ' · ' : ''}${c.region}`}</span>
                 </span>
                 {c.routeId ? (
-                  <span className="shrink-0 rounded-full bg-accent px-3 py-1 text-xs font-bold uppercase tracking-wide text-accent-ink">Traccia verificata</span>
+                  <span className="shrink-0 rounded-full border border-accent/60 px-3 py-1 text-xs font-bold uppercase tracking-wide text-accent">Traccia verificata</span>
                 ) : (
                   <span className="shrink-0 rounded-full border border-line px-3 py-1 text-xs font-semibold uppercase tracking-wide text-muted">Traccia da acquisire</span>
                 )}
@@ -66,15 +56,12 @@ function ClimbCard({ meta }: { meta: RouteMeta }) {
           <div className="min-w-0 flex-1">
             <p className="eyebrow">{meta.region}</p>
             <h3 className="mt-1 font-display text-3xl uppercase leading-none">{meta.name}</h3>
-            <p className="text-muted">{meta.side}</p>
+            <p className="text-muted">{cap(meta.side)}</p>
             {stats ? (
               <dl className="mt-3 grid grid-cols-3 gap-x-3 gap-y-1 text-sm">
-                <Fact label="km" value={formatKm(stats.lengthM)} />
-                <Fact label="D+" value={`${formatNumber(stats.endAlt - stats.startAlt, 0)} m`} />
-                <Fact label="media" value={`${formatNumber(stats.avgGrade * 100, 1)}%`} />
-                <Fact label="arrivo" value={`${formatNumber(stats.endAlt, 0)} m`} />
-                <Fact label="km duro" value={`${formatNumber(stats.maxKmGrade * 100, 1)}%`} />
-                <Fact label="tornanti" value={String(stats.hairpins)} />
+                <Fact label="Km" value={formatKm(stats.lengthM)} />
+                <Fact label="D+" value={`${formatMetersText(stats.endAlt - stats.startAlt)}`} />
+                <Fact label="Media" value={`${formatNumber(stats.avgGrade * 100, 1)}%`} />
               </dl>
             ) : (
               <p className="mt-3 text-sm text-muted">{error ?? 'Carico la traccia…'}</p>
