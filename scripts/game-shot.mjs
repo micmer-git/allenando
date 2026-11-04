@@ -473,10 +473,12 @@ try {
     await auditCheck(p, 'allenamenti col .zwo');
     const zid = await p.evaluate(`(() => { const h = [...document.querySelectorAll('h2')].find((x) => x.textContent === 'Chamois Abuse'); return h?.closest('li')?.querySelector('[data-testid^=zwo-export-]')?.getAttribute('data-testid')?.replace('zwo-export-', '') ?? null; })()`);
     check(!!zid, 'zwo: l’allenamento importato ha «Inizia»', zid ?? '');
-    await p.s('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: out });
+    // l'esportazione: Chrome headless non scrive i download dei blob, si legge il file dal blob stesso
+    await p.evaluate(`(() => { window.__zwo = null; const orig = URL.createObjectURL; URL.createObjectURL = (b) => { b.text().then((t) => (window.__zwo = t)); return orig.call(URL, b); }; })()`);
     await p.click(`[data-testid="zwo-export-${zid}"]`);
-    await sleep(1500);
-    check((await import('node:fs')).existsSync(join(out, 'chamois-abuse.zwo')), 'zwo: esportato di nuovo (chamois-abuse.zwo)');
+    const exported = (await p.waitFor(`(window.__zwo ?? '').includes('</workout_file>')`, 8000)) ? await p.evaluate('window.__zwo') : '';
+    if (exported) writeFileSync(join(out, 'n5-chamois-abuse-esportato.zwo'), exported);
+    check(/<name>Chamois Abuse<\/name>/.test(exported) && /<IntervalsT Repeat="\d+" OnDuration="30" OffDuration="30"/.test(exported), 'zwo: esportato di nuovo, con gli IntervalsT', exported ? `${exported.length} caratteri` : 'niente');
     await p.click(`[data-testid="workout-${zid}"]`);
     check(await ready(), 'zwo → corsa: pronta');
     check(await p.waitFor(`!!document.querySelector('[data-testid=erg-target]')`, 10000), 'zwo → corsa: in ERG');
