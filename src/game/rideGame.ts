@@ -177,8 +177,10 @@ export class RideGame {
         }
       }
       // i monumenti (src/open/monumenti.ts): punti caldi anche loro, col nome, entro la loro portata
+      // (non quelli che sono già un luogo del percorso: il loro avviso lo dà la sessione)
       for (const m of monumentiPronti()) {
         if (seen.has(`m${m.id}`) || (m.x - p.x) ** 2 + (m.z - p.z) ** 2 > m.reach * m.reach) continue;
+        if (this.world.data.features.landmarks.some((l) => l.name === m.name)) continue;
         this.poisPassed.push(`m${m.id}`);
         this.poiToast = { name: m.name, kind: monumentoPoiKind(m), at: performance.now() };
       }

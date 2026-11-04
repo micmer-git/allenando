@@ -59,7 +59,7 @@ export const SPECS: MonumentoSpec[] = [
     kind: 'chiesa',
     h: 27,
     front: 'w',
-    p: { mat: 'marmo', trim: 'marmo', facciata: 'neoclassica', colonne: 6, cupola: 'cupola', cupolaZ: -0.35, cupolaH: 56, statua: true },
+    p: { mat: 'marmo', trim: 'marmo', facciata: 'neoclassica', colonne: 6, cupola: 'cupola', cupolaZ: -0.35, cupolaH: 56, cupolaR: 9.5, statua: true },
   },
   { ref: 'w79808370', osm: 'Battistero', kind: 'tempietto', h: 15 },
   { ref: 'w53001239', osm: 'Palazzo della Ragione', kind: 'palazzo', h: 20, front: 'n', p: { mat: 'pietra', portico: 'tutto', porticoH: 7.5, trifore: true, leone: true, piani: 1 } },
@@ -236,6 +236,12 @@ export interface MonumentiBuild {
   skip: (a: { id: number; way: boolean }) => boolean;
   /** un luogo da passare che il monumento ha già (stesso posto o stesso nome): non si duplica */
   hides: (x: number, z: number, name?: string) => boolean;
+  /**
+   * I luoghi dei percorsi che stanno su un monumento: il loro cartello (16 m sopra il punto)
+   * finirebbe dentro una torre di 50 m. Si alza il punto, così il nome sta sopra il tetto e il
+   * paletto resta nascosto dentro il monumento.
+   */
+  alza: (landmarks: { x: number; z: number; y: number }[]) => number;
 }
 
 export function buildMonumenti(ctx: Ctx): MonumentiBuild {
@@ -379,7 +385,12 @@ export function buildMonumenti(ctx: Ctx): MonumentiBuild {
     want = [want[0] / wl, want[1] / wl];
     let front: P2;
     if (!all.length) front = want;
-    else {
+    else if (spec.kind === 'porta' && roadPose && road!.d < 30) {
+      // una porta si allinea alla strada che la attraversa, non al rettangolo: il fornice è la strada
+      front = want;
+      const out2: P2 = [c0[0] - pc[0], c0[1] - pc[1]];
+      if (front[0] * out2[0] + front[1] * out2[1] < 0) front = [-front[0], -front[1]];
+    } else {
       // le chiese guardano da un lato corto: la navata corre lungo il lato lungo
       let cands = normals;
       if (spec.kind === 'chiesa' && !spec.front) {
@@ -450,6 +461,28 @@ export function buildMonumenti(ctx: Ctx): MonumentiBuild {
     }
     if (spec.kind === 'statua' || spec.kind === 'caduti') y = Math.min(yMax, yMin + 1.5);
     const p: Params = { ...(spec.p ?? {}) };
+    if (spec.kind === 'porta' && roadPose && road!.d < 30) {
+      // dove passa la strada dentro il blocco, e quanto è larga: il fornice la lascia passare tutta
+      const [px] = toModel([roadPose.x, roadPose.z], c);
+      const hw = graph.edges[road!.edge].hw;
+      p.passaggio = r1(px);
+      p.fornice = r1(Math.min(w - 2.2, Math.max(Number(spec.p?.fornice ?? 0), 2 * hw + 0.8)));
+    }
+    if (all.length && spec.kind !== 'porta') {
+      // lo spazio libero davanti alla facciata, fino al bordo della strada: protiri, pronai e
+      // portici non ci entrano
+      const fx = c[0] + front[0] * (d / 2);
+      const fz = c[1] + front[1] * (d / 2);
+      let free = 10;
+      for (let t = 0; t <= 10; t += 0.5) {
+        const hit = graph.nearest(fx + front[0] * t, fz + front[1] * t, 20);
+        if (hit && hit.d - graph.edges[hit.edge].hw < 0.4) {
+          free = t;
+          break;
+        }
+      }
+      p.davanti = free;
+    }
     if (spec.p?.tipo === 'funicolare') {
       // la pendenza della linea davanti alla stazione, per la vettura
       const f = funicL.map((line) => ({ line, d: Math.min(...line.map((q) => Math.hypot(q[0] - c[0], q[1] - c[1]))) })).sort((a, b) => a.d - b.d)[0];
@@ -509,6 +542,17 @@ export function buildMonumenti(ctx: Ctx): MonumentiBuild {
   log(`monumenti: ${out.length} (${[...new Set(out.map((m) => m.kind))].map((k) => `${k} ${out.filter((m) => m.kind === k).length}`).join(', ')}), ${skipKeys.size} edifici generici tolti`);
   return {
     file,
+    alza: (landmarks) => {
+      let n = 0;
+      for (const l of landmarks) {
+        const m = out.find((q) => q.kind !== 'statua' && q.kind !== 'caduti' && Math.hypot(q.x - l.x, q.z - l.z) < Math.max(25, Math.min(q.w, q.d) / 2));
+        if (m && m.y + m.h - 12 > l.y) {
+          l.y = Math.round(m.y + m.h - 12);
+          n++;
+        }
+      }
+      return n;
+    },
     skip: (a) => skipKeys.has(bKey(a)),
     hides: (x, z, name) => {
       if (name) {

@@ -69,7 +69,7 @@ function Model({ item, at, scale, label }: { item: Item; at: [number, number, nu
         <mesh geometry={item.geo} material={mat} />
       </group>
       {label ? (
-        <sprite position={[0, 0.2, 7]} scale={[9, 2.25, 1]}>
+        <sprite position={[0, 0.2, 8]} scale={[10, 2.5, 1]}>
           <spriteMaterial map={tex} depthTest={false} />
         </sprite>
       ) : null}
@@ -143,8 +143,9 @@ function Scene({ items }: { items: Item[] }) {
   const cols = narrow ? 2 : items.length <= 8 ? 4 : 8;
   const rows = Math.ceil(items.length / cols);
   const cell = 16;
+  const rowStep = 22;
   const W = cols * cell;
-  const D = rows * cell;
+  const D = rows * rowStep;
   return (
     <>
       <Light />
@@ -152,13 +153,13 @@ function Scene({ items }: { items: Item[] }) {
         const c = i % cols;
         const r = Math.floor(i / cols);
         const s = 10 / Math.max(it.m.w, it.m.d, it.m.h);
-        return <Model key={it.m.id} item={it} at={[(c - (cols - 1) / 2) * cell, 0, (r - (rows - 1) / 2) * cell]} scale={s} label />;
+        return <Model key={it.m.id} item={it} at={[(c - (cols - 1) / 2) * cell, 0, (r - (rows - 1) / 2) * rowStep]} scale={s} label />;
       })}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]}>
         <planeGeometry args={[W + 20, D + 20]} />
         <meshLambertMaterial color="#7d7f72" />
       </mesh>
-      <Cam pos={[0, Math.max(W * 0.42, D * 1.1), D * 0.5 + Math.max(W * 0.5, D * 0.9)]} at={[0, 1, D * 0.04]} fov={narrow ? 58 : 40} />
+      <Cam pos={[0, Math.max(W, D) * (narrow ? 0.9 : 0.62), D * 0.5 + Math.max(W, D) * (narrow ? 0.55 : 0.68)]} at={[0, 0, D * 0.08]} fov={narrow ? 58 : 44} />
     </>
   );
 }

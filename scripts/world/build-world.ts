@@ -1397,6 +1397,7 @@ const lakes = read<OsmArea | OsmWay>('water')
 
 const ctx = { graph, toLocal, toGeo, demAt, peaks, places, pois: poisRaw, rivers: riverOut.map(({ r, ys }) => ({ ...r, ys })), named, log };
 const { rides, landmarks, limits } = buildRides(ctx);
+log(`monumenti: ${monumenti.alza(landmarks)} cartelli dei luoghi alzati sopra il tetto`);
 
 const delta3 = (xz: [number, number][], ys: number[]) => {
   const p: number[] = [];

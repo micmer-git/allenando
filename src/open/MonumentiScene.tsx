@@ -32,6 +32,8 @@ export function Monumenti({ playerPose }: { playerPose: () => TrackPose }) {
 
   useEffect(() => {
     let on = true;
+    // ?monumenti=0 nell'indirizzo: il mondo senza monumenti, per il collaudo a confronto
+    if (typeof location !== 'undefined' && new URLSearchParams(location.search).get('monumenti') === '0') return;
     void loadMonumenti().then((l) => on && setList(l));
     return () => {
       on = false;

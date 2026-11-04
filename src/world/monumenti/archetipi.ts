@@ -17,7 +17,7 @@ import { Mesh, PAL, mix, ringArea, tone, type Col, type V2, type V3 } from './ki
 export type Dettaglio = 'alta' | 'bassa';
 
 /** Triangoli al massimo per un modello: il telefono ne disegna pochi alla volta, ma tutti insieme no. */
-export const TRI_CAP: Record<Dettaglio, number> = { alta: 9000, bassa: 1200 };
+export const TRI_CAP: Record<Dettaglio, number> = { alta: 6000, bassa: 1200 };
 
 /** Oltre questa distanza (m) basta il modello «basso». */
 export const LOD_NEAR = 320;
@@ -328,28 +328,48 @@ function porta(c: Ctx): void {
   const d = M.d * 0.92;
   const h = M.h;
   const aw = num(p, 'fornice', clamp(w * 0.26, 3, 6.4));
-  const ah = Math.min(h * 0.6, aw * 1.6);
-  const corn = h * 0.78;
+  // il fornice sta dove passa la strada (scripts/world/monumenti.ts lo misura), non per forza in mezzo
+  const px = clamp(num(p, 'passaggio', 0), -w / 2 + aw / 2 + 1, w / 2 - aw / 2 - 1);
+  const ah = Math.max(5.2, Math.min(h * 0.62, aw * 1.5));
+  const corn = Math.max(h * 0.78, ah + 1.6);
   const r = aw / 2;
   const spring = ah - r;
   // il blocco della porta col fornice che lo passa da parte a parte (la strada ci passa sotto)
-  m.arches(-w / 2, w / 2, -drop, corn, -d / 2, d / 2, [{ cx: 0, w: aw, h: ah + drop, y: -drop }], col, hi ? 10 : 5, tone(col, 0.78));
+  m.arches(-w / 2, w / 2, -drop, corn, -d / 2, d / 2, [{ cx: px, w: aw, h: ah + drop, y: -drop }], col, hi ? 10 : 5, tone(col, 0.78));
   // cornicione e attico, un po' rientrato
   m.box(-w / 2 - 0.35, corn, -d / 2 - 0.35, w / 2 + 0.35, corn + 0.7, d / 2 + 0.35, trim);
-  m.box(-w / 2 + 0.4, corn + 0.7, -d / 2 + 0.4, w / 2 - 0.4, h, d / 2 - 0.4, col, { top: tone(col, 0.9) });
+  const top = Math.max(h, corn + 3);
+  m.box(-w / 2 + 0.4, corn + 0.7, -d / 2 + 0.4, w / 2 - 0.4, top, d / 2 - 0.4, col, { top: tone(col, 0.9) });
   if (!hi) return;
-  m.box(-w / 2 + 0.2, h - 0.5, -d / 2 + 0.2, w / 2 - 0.2, h, d / 2 - 0.2, trim);
+  m.box(-w / 2 + 0.2, top - 0.5, -d / 2 + 0.2, w / 2 - 0.2, top, d / 2 - 0.2, trim, { top: tone(col, 0.82) });
   for (const zf of [1, -1]) {
     const sm = new Mesh();
     const z = d / 2;
+    // dietro, girato di mezzo giro, il fornice sta dall'altra parte
+    const qx = zf === 1 ? px : -px;
     // bugnato: fasce di pietra sporgenti sui due lati del fornice
     if (stile !== 'intonaco') {
-      const rows = Math.floor(corn / 0.8);
+      // bugnato: conci sporgenti a file sfalsate, coi giunti, sui due lati del fornice
+      const rows = Math.floor((corn * 0.92) / 0.85);
+      const runs: [number, number][] = [
+        [-w / 2 + 0.6, qx - r - 0.9],
+        [qx + r + 0.9, w / 2 - 0.6],
+      ];
       for (let i = 0; i < rows; i++) {
-        const y0 = i * 0.8 + 0.06;
-        const k = i % 2 ? 0.93 : 1.04;
-        sm.box(-w / 2, y0, z, -r - 0.9, y0 + 0.68, z + 0.14, tone(col, k), { open: 'z-' });
-        sm.box(r + 0.9, y0, z, w / 2, y0 + 0.68, z + 0.14, tone(col, k), { open: 'z-' });
+        const y0 = i * 0.85 + 0.08;
+        for (const [a, b] of runs) {
+          if (b - a < 0.6) continue;
+          const n = Math.max(1, Math.round((b - a) / 1.7));
+          const L = (b - a) / n;
+          for (let j = -1; j < n; j++) {
+            // file alterne spostate di mezzo concio
+            const x0 = Math.max(a, a + j * L + (i % 2 ? L / 2 : 0) + 0.06);
+            const x1 = Math.min(b, a + (j + 1) * L + (i % 2 ? L / 2 : 0) - 0.06);
+            if (x1 - x0 < 0.25) continue;
+            const k = 0.92 + ((i * 7 + j * 3) % 5) * 0.035;
+            sm.box(x0, y0, z, x1, y0 + 0.72, z + (i % 2 ? 0.16 : 0.2), tone(col, k), { open: 'z-' });
+          }
+        }
       }
     }
     // la ghiera dei conci attorno all'arco, con la chiave in cima
@@ -359,15 +379,15 @@ function porta(c: Ctx): void {
       const a1 = Math.PI - ((i + 1) / seg) * Math.PI;
       const r0 = r;
       const r1 = r + 0.85;
-      const pt = (a: number, rr: number, zz: number): V3 => [Math.cos(a) * rr, spring + Math.sin(a) * rr, zz];
+      const pt = (a: number, rr: number, zz: number): V3 => [qx + Math.cos(a) * rr, spring + Math.sin(a) * rr, zz];
       sm.quad(pt(a0, r0, z + 0.22), pt(a1, r0, z + 0.22), pt(a1, r1, z + 0.22), pt(a0, r1, z + 0.22), i % 2 ? trim : tone(trim, 0.92), [0, spring, z - 1]);
       sm.quad(pt(a0, r1, z), pt(a1, r1, z), pt(a1, r1, z + 0.22), pt(a0, r1, z + 0.22), trim, [0, spring, z]);
     }
-    sm.box(-0.45, spring + r - 0.1, z, 0.45, spring + r + 1.2, z + 0.32, tone(trim, 1.05), { open: 'z-' });
+    sm.box(qx - 0.45, spring + r - 0.1, z, qx + 0.45, Math.min(corn, spring + r + 1.2), z + 0.32, tone(trim, 1.05), { open: 'z-' });
     // lesene ai lati del fornice e agli spigoli
-    for (const x of [-r - 0.9, r + 0.3, -w / 2, w / 2 - 0.6]) sm.box(x, 0, z, x + 0.6, corn, z + 0.3, trim, { open: 'z-y-' });
-    if (zf === 1 && yes(p, 'leone')) leone(sm, 0, corn + 0.7 + (h - corn - 0.7) / 2, d / 2 - 0.4, clamp((h - corn) / 2.6, 0.7, 1.5), col);
-    if (zf === 1 && yes(p, 'lapide')) sm.panel(-2.2, corn - 1.6, 2.2, corn - 0.3, z + 0.15, tone(col, 0.9), 0.1);
+    for (const x of [qx - r - 0.9, qx + r + 0.3, -w / 2, w / 2 - 0.6]) if (x >= -w / 2 - 0.01 && x + 0.6 <= w / 2 + 0.01) sm.box(x, 0, z, x + 0.6, corn, z + 0.3, trim, { open: 'z-y-' });
+    if (zf === 1 && yes(p, 'leone')) leone(sm, qx, corn + 0.7 + Math.max(1.2, (h - corn - 0.7) / 2), d / 2 - 0.4, clamp((h - corn) / 2.6, 0.7, 1.5), col);
+    if (zf === 1 && yes(p, 'lapide')) sm.panel(qx - 2.2, Math.min(corn - 0.3, spring + r + 1.3), qx + 2.2, corn - 0.3, z + 0.15, tone(col, 0.9), 0.1);
     m.append(sm, 0, 0, 0, zf === 1 ? 0 : Math.PI);
   }
 }
@@ -516,13 +536,15 @@ function chiesa(c: Ctx): void {
   const [sx0, sx1] = spanX(ring, (fz + bz) / 2);
   const cw = Math.min(sx1 - sx0, M.w);
   const cx = (sx0 + sx1) / 2;
-  // il tetto a capanna sulla navata, lungo z
-  const rise = Math.min(cw * 0.3, H - eave + 1);
-  m.gable(cx, (fz + bz) / 2 - 0.4, cw, fz - bz - 1.6, eave, rise, PAL.coppi, col, true, 0.5);
   // facciata
   const [fx0, fx1] = spanX(ring, fz - 0.6);
   const fw = Math.min(fx1 - fx0, cw + 2);
   const fc = (fx0 + fx1) / 2;
+  const free = num(p, 'davanti', 10);
+  // il tetto a capanna sulla navata (larga quanto la facciata), lungo z; transetti e cappelle restano piani
+  const nw = Math.min(cw, fw + 1);
+  const rise = Math.min(nw * 0.3, H - eave + 1);
+  m.gable(fc, (fz + bz) / 2 - 0.4, nw, fz - bz - 1.6, eave, rise, PAL.coppi, col, true, 0.5);
   const z0 = fz - 1.1;
   const z1 = fz + 0.25;
   if (stile === 'barocca') {
@@ -552,7 +574,7 @@ function chiesa(c: Ctx): void {
   } else if (stile === 'neoclassica') {
     // il pronao: colonne, trabeazione, timpano (il Duomo di Bergamo, bianco)
     const n = num(p, 'colonne', 6);
-    const pd = 3.2;
+    const pd = clamp(free - 1.3, 0.8, 3.2);
     const ch = Math.min(eave * 0.85, 16);
     m.box(fc - fw / 2, 0, z0, fc + fw / 2, H - fw * 0.14, z1, col);
     m.gable(fc, (z0 + z1) / 2, fw + 0.6, z1 - z0 + 0.4, H - fw * 0.14, fw * 0.14, trim, col, false, 0);
@@ -567,13 +589,32 @@ function chiesa(c: Ctx): void {
     m.box(fc - fw / 2, 0, z0, fc + fw / 2, eave + 0.3, z1, col);
     m.gable(fc, (z0 + z1) / 2, fw, z1 - z0, eave + 0.3, Math.min(fw * 0.32, H - eave), PAL.coppi, col, false, 0.35);
     if (p.rosone !== false) rosone(m, fc, eave * 0.62 + (H - eave) * 0.2, z1, clamp(fw * 0.1, 0.8, 2.4), hi, trim);
+    if (yes(p, 'affresco')) {
+      // la facciata dipinta (a Clusone il Trionfo e la Danza della Morte): un fondo chiaro e una
+      // fila di figure scure, e in alto la figura grande del Trionfo
+      const ax0 = fc - fw / 2 + 0.8;
+      const ax1 = fc + fw / 2 - 0.8;
+      m.panel(ax0, eave * 0.18, ax1, eave * 0.95, z1, PAL.affresco, 0.05);
+      if (hi) {
+        const n = Math.max(4, Math.floor((ax1 - ax0) / 1.3));
+        for (let i = 0; i < n; i++) {
+          const x = ax0 + ((i + 0.5) * (ax1 - ax0)) / n;
+          const dark = i % 2 ? PAL.marmoNero : tone(PAL.affresco, 0.55);
+          m.panel(x - 0.16, eave * 0.24, x + 0.16, eave * 0.24 + 1.35, z1 + 0.06, dark, 0.03);
+          m.disc(x, eave * 0.24 + 1.55, z1 + 0.1, 0.2, 6, dark);
+        }
+        m.panel(fc - 0.5, eave * 0.55, fc + 0.5, eave * 0.55 + 2.4, z1 + 0.06, PAL.marmoNero, 0.03);
+        m.disc(fc, eave * 0.55 + 2.75, z1 + 0.1, 0.38, 8, PAL.marmoNero);
+        m.panel(ax0, eave * 0.5, ax1, eave * 0.5 + 0.12, z1 + 0.05, tone(PAL.affresco, 0.7), 0.02);
+      }
+    }
     const dw = clamp(fw * 0.14, 1.6, 3);
     const dh = clamp(eave * 0.32, 2.6, 5);
     portale(m, fc, z1, dw, dh, trim, hi);
-    if (yes(p, 'protiro')) {
+    if (yes(p, 'protiro') && free > 1.8) {
       // il protiro: due colonne su leoni stilofori, l'arco, un tetto a capanna (e la loggia sopra)
       const pw = dw + 2.4;
-      const pz = z1 + 3;
+      const pz = z1 + Math.min(3, free - 0.6);
       for (const sgn of [-1, 1]) {
         if (hi) m.boxAt(fc + (sgn * pw) / 2, 0, pz, 0.9, 0.9, 1.5, PAL.marmoRosa);
         colonna(m, fc + (sgn * pw) / 2, pz, 0.28, hi ? 0.9 : 0, dh + 1.2, PAL.marmoRosa, hi);
@@ -586,9 +627,9 @@ function chiesa(c: Ctx): void {
         if (hi) m.boxAt(fc, dh + 2.6, pz - 0.6, 1.2, 1.8, 0.6, PAL.marmo);
       }
     }
-    if (yes(p, 'portico')) {
+    if (yes(p, 'portico') && free > 2.2) {
       // il portico del santuario: archi sul davanti e il tetto a falda
-      const pd = 4;
+      const pd = Math.min(4, free - 0.4);
       const n = Math.max(2, Math.round(fw / 4));
       const hw = fw / n;
       m.arches(fc - fw / 2, fc + fw / 2, 0, 4.4, z1 + pd - 0.6, z1 + pd, Array.from({ length: n }, (_, i) => ({ cx: fc - fw / 2 + hw * (i + 0.5), w: hw * 0.62, h: 3.4 })), col, hi ? 6 : 3);
@@ -617,9 +658,9 @@ function chiesa(c: Ctx): void {
     const cz = num(p, 'cupolaZ', -0.15) * (fz - bz) * 0.5 + (fz + bz) / 2;
     const top = num(p, 'cupolaH', H * 1.5);
     if (cup === 'tiburio') {
-      const r = cw * 0.36;
-      const y1 = eave + (top - eave) * 0.55;
-      m.cyl(cx, cz, r, r, eave - 1, y1, 8, col, true, false, Math.PI / 8);
+      const r = Math.min(nw * 0.42, cw * 0.3);
+      const y1 = eave + (top - eave) * 0.7;
+      m.cyl(fc, cz, r, r, eave - 1, y1, 8, col, true, false, Math.PI / 8);
       if (hi) {
         // la loggetta del tiburio: archetti scuri tutto intorno
         for (let i = 0; i < 8; i++) {
@@ -627,31 +668,31 @@ function chiesa(c: Ctx): void {
           const sm = new Mesh();
           const fwi = 2 * r * Math.sin(Math.PI / 8);
           for (let k = 0; k < 3; k++) sm.panel(-fwi / 2 + (fwi * (k + 0.25)) / 3, y1 - 2.6, -fwi / 2 + (fwi * (k + 0.75)) / 3, y1 - 0.8, r * Math.cos(Math.PI / 8), PAL.buio, 0.06);
-          m.append(sm, cx, 0, cz, Math.PI / 2 - a);
+          m.append(sm, fc, 0, cz, Math.PI / 2 - a);
         }
       }
-      m.cyl(cx, cz, r * 1.08, 0, y1, top, 8, PAL.piombo, false, false, Math.PI / 8);
-      m.cyl(cx, cz, 0.5, 0.5, top - 0.6, top + 1.2, 6, col);
+      m.cyl(fc, cz, r * 1.08, 0, y1, top, 8, PAL.piombo, false, false, Math.PI / 8);
+      m.cyl(fc, cz, 0.5, 0.5, top - 0.6, top + 1.2, 6, col);
     } else {
       // tamburo, cupola, lanterna e la statua dorata in cima
-      const r = num(p, 'cupolaR', cw * 0.4);
+      const r = num(p, 'cupolaR', Math.min(nw * 0.48, cw * 0.38));
       const dh = r * 0.95;
       const lan = r * 0.45;
       const drumTop = Math.max(eave + 3, top - dh - lan);
-      m.cyl(cx, cz, r, r, eave - 1, drumTop, hi ? 16 : 10, col, false);
+      m.cyl(fc, cz, r, r, eave - 1, drumTop, hi ? 16 : 10, col, false);
       if (hi) {
-        m.cyl(cx, cz, r + 0.35, r + 0.35, drumTop - 0.7, drumTop, 16, trim, true);
+        m.cyl(fc, cz, r + 0.35, r + 0.35, drumTop - 0.7, drumTop, 16, trim, true);
         for (let i = 0; i < 8; i++) {
           const sm = new Mesh();
           sm.panel(-0.6, eave + (drumTop - eave) * 0.3, 0.6, drumTop - 1.6, r, PAL.vetro, 0.08);
           sm.disc(0, drumTop - 1.6, r + 0.1, 0.6, 6, PAL.vetro);
-          m.append(sm, cx, 0, cz, (i / 8) * Math.PI * 2);
+          m.append(sm, fc, 0, cz, (i / 8) * Math.PI * 2);
         }
       }
-      m.dome(cx, drumTop, cz, r + 0.2, dh, hi ? 16 : 10, hi ? 5 : 3, mat(p, 'cupolaMat', 'pietra') === MAT.pietra ? PAL.rame : mat(p, 'cupolaMat', 'pietra'), 0.92);
-      m.cyl(cx, cz, r * 0.2, r * 0.2, drumTop + dh * 0.85, drumTop + dh * 0.85 + lan * 0.6, 8, trim);
-      m.cyl(cx, cz, r * 0.24, 0, drumTop + dh * 0.85 + lan * 0.6, drumTop + dh * 0.85 + lan, 8, PAL.rame);
-      if (hi && yes(p, 'statua')) m.append(persona(3, PAL.oro, { braccio: 'alzato', hi }), cx, drumTop + dh * 0.85 + lan, cz);
+      m.dome(fc, drumTop, cz, r + 0.2, dh, hi ? 16 : 10, hi ? 5 : 3, mat(p, 'cupolaMat', 'pietra') === MAT.pietra ? PAL.rame : mat(p, 'cupolaMat', 'pietra'), 0.92);
+      m.cyl(fc, cz, r * 0.2, r * 0.2, drumTop + dh * 0.85, drumTop + dh * 0.85 + lan * 0.6, 8, trim);
+      m.cyl(fc, cz, r * 0.24, 0, drumTop + dh * 0.85 + lan * 0.6, drumTop + dh * 0.85 + lan, 8, PAL.rame);
+      if (hi && yes(p, 'statua')) m.append(persona(3, PAL.oro, { braccio: 'alzato', hi }), fc, drumTop + dh * 0.85 + lan, cz);
     }
   }
   // il campanile
@@ -830,7 +871,8 @@ function palazzo(c: Ctx): void {
   };
   const trifore = yes(p, 'trifore');
   for (const side of [0, 1, 2, 3] as const) {
-    if (!hi && side % 2) continue;
+    // da lontano bastano le finestre della facciata
+    if (!hi && side !== 0) continue;
     onSide(c, side, (sm, fz, x0, x1) => {
       if (trifore) {
         // trifore gotiche: tre luci strette sotto un arco
@@ -840,7 +882,7 @@ function palazzo(c: Ctx): void {
           for (const dx of [-0.9, 0, 0.9]) sm.panel(x + dx - 0.32, y0 + 2.2, x + dx + 0.32, H - 3, fz + 0.3, PAL.vetro, 0.06);
           if (hi) sm.disc(x, H - 3, fz + 0.34, 1.3, 6, tone(PAL.pietra, 1.05));
         }
-      } else windows(sm, x0 + 0.8, x1 - 0.8, fz, winRows(y0 + (portico === 'tutto' ? 0 : 0)), { step: num(p, 'passo', 3.8), w: num(p, 'finestra', 1.2), frame: hi ? trim : undefined, arched: yes(p, 'archi'), skip: side === 0 && (yes(p, 'pronao') || p.colonne) ? [-num(p, 'colonne', 6) * 1.6, num(p, 'colonne', 6) * 1.6] : undefined });
+      } else windows(sm, x0 + 0.8, x1 - 0.8, fz, winRows(y0), { step: num(p, 'passo', 3.8) * (hi ? 1 : 2), w: num(p, 'finestra', 1.2), frame: hi ? trim : undefined, arched: yes(p, 'archi'), skip: side === 0 && (yes(p, 'pronao') || p.colonne) ? [-num(p, 'colonne', 6) * 1.6, num(p, 'colonne', 6) * 1.6] : undefined });
       if (hi) {
         // marcapiano e cornicione
         sm.box(x0 - 0.2, H - 0.7, fz - 0.2, x1 + 0.2, H, fz + 0.45, trim, { open: 'z-' });
@@ -854,7 +896,7 @@ function palazzo(c: Ctx): void {
   if (nc > 0) {
     const ch = num(p, 'colonneH', Math.min(H * 0.62, 12));
     const span = Math.min(M.w - 2, nc * 3.2);
-    const pd = num(p, 'pronaoD', 3.4);
+    const pd = clamp(Math.min(num(p, 'pronaoD', 3.4), num(p, 'davanti', 10) - 1.2), 0.8, 3.4);
     m.box(-span / 2 - 0.5, 0, fz, span / 2 + 0.5, 0.6, fz + pd + 0.7, tone(trim, 0.95));
     for (let i = 0; i < nc; i++) colonna(m, -span / 2 + (span * i) / (nc - 1), fz + pd, 0.42, 0.6, ch, trim, hi);
     m.box(-span / 2 - 0.5, ch, fz, span / 2 + 0.5, ch + 1.3, fz + pd + 0.8, trim);
@@ -869,22 +911,28 @@ function palazzo(c: Ctx): void {
     for (const x of xs) {
       const fzx = reachZ(ring, x);
       const ph = H + (x === 0 ? 4 : 2.5);
-      m.box(x - pw / 2, 0, fzx - 3, x + pw / 2, ph, fzx + 1.2, col, { open: 'y-' });
+      const out = clamp(num(p, 'davanti', 10) - 0.4, 0, 1.2);
+      m.box(x - pw / 2, 0, fzx - 3, x + pw / 2, ph, fzx + out, col, { open: 'y-' });
       if (hi) {
-        windows(m, x - pw / 2 + 0.6, x + pw / 2 - 0.6, fzx + 1.2, winRows(0), { step: 2.6, w: 1.3, frame: trim, arched: true });
-        m.box(x - pw / 2 - 0.3, ph - 0.6, fzx - 3.3, x + pw / 2 + 0.3, ph, fzx + 1.6, trim);
+        windows(m, x - pw / 2 + 0.6, x + pw / 2 - 0.6, fzx + out, winRows(0), { step: 2.6, w: 1.3, frame: trim, arched: true });
+        m.box(x - pw / 2 - 0.3, ph - 0.6, fzx - 3.3, x + pw / 2 + 0.3, ph, fzx + out + 0.4, trim);
       }
       if (yes(p, 'cupole')) {
-        const r = pw * 0.42;
+        const r = pw * (x === 0 ? 0.5 : 0.4);
         m.cyl(x, fzx - 0.9, r, r, ph, ph + 1.4, hi ? 12 : 8, trim, false);
         m.dome(x, ph + 1.4, fzx - 0.9, r, r * (x === 0 ? 1.15 : 0.95), hi ? 12 : 8, hi ? 4 : 2, mat(p, 'cupoleMat', 'verde') === MAT.verde ? PAL.rame : mat(p, 'cupoleMat', 'verde'), 0.95);
         m.cyl(x, fzx - 0.9, 0.35, 0, ph + 1.4 + r * 1.05, ph + 1.4 + r * 1.05 + 1.8, 6, PAL.ferro);
       } else m.pyramid(x, fzx - 0.9, pw + 0.4, 4.6, ph, 2.6, PAL.ardesia);
     }
   }
-  // tetto
+  // tetto: su un'impronta a corte o a L un padiglione sul rettangolo coprirebbe il cortile
   const tetto = str(p, 'tetto', 'padiglione');
-  if (tetto === 'padiglione' || tetto === 'mansarda') {
+  const fill = Math.abs(ringArea(ring)) / Math.max(1, M.w * M.d);
+  if (fill < 0.8 && portico !== 'tutto' && (tetto === 'padiglione' || tetto === 'mansarda')) {
+    cornice(m, ring, H - 0.1, trim, 0.4, 0.5);
+    // la mansarda segue l'impronta, rientrata, col tetto piano sopra
+    if (tetto === 'mansarda') m.prism(offsetRing(ring, -1.4), H + 0.4, H + 3, PAL.ardesia, PAL.piombo);
+  } else if (tetto === 'padiglione' || tetto === 'mansarda') {
     const w = M.w * 0.94;
     const d = M.d * 0.94;
     const rh = Math.min(w, d) * (tetto === 'mansarda' ? 0.14 : 0.2);
@@ -935,10 +983,17 @@ function castello(c: Ctx): void {
   };
   if (M.rings.length > 1) {
     // più anelli (San Vigilio): ogni anello è un bastione, e le mura li uniscono in giro
-    const cs = M.rings.map((r) => [r.reduce((s, q) => s + q[0], 0) / r.length, r.reduce((s, q) => s + q[1], 0) / r.length] as V2);
+    const small = M.rings.filter((r) => Math.abs(ringArea(r)) <= 400);
+    const cs = small.map((r) => [r.reduce((s, q) => s + q[0], 0) / r.length, r.reduce((s, q) => s + q[1], 0) / r.length] as V2);
     const order = cs.map((q, i) => ({ i, a: Math.atan2(q[1], q[0]) })).sort((x, y) => x.a - y.a);
-    for (let k = 0; k < order.length; k++) wall(cs[order[k].i], cs[order[(k + 1) % order.length].i], mh);
+    // se c'è già il recinto, i bastioni non si collegano fra loro
+    if (small.length === M.rings.length) for (let k = 0; k < order.length; k++) wall(cs[order[k].i], cs[order[(k + 1) % order.length].i], mh);
     for (const r of M.rings) {
+      if (Math.abs(ringArea(r)) > 400) {
+        // il recinto grande: mura lungo l'anello, non un blocco pieno
+        for (let i = 0; i < r.length; i++) wall(r[i], r[(i + 1) % r.length], mh);
+        continue;
+      }
       m.prism(r, -drop, th, col, tone(col, 0.85));
       if (hi) for (let i = 0; i < r.length; i++) merli(m, r[i], r[(i + 1) % r.length], th, 0.7, col);
     }
@@ -1066,12 +1121,10 @@ function stazione(c: Ctx): void {
   }
   const col = mat(p, 'mat', 'giallo');
   const H = M.h;
-  zoccolo(c, tone(col, 0.8));
-  m.prism(ring, 0, H, col, tone(col, 0.8));
-  cornice(m, ring, H - 0.1, tone(col, 1.12), 0.35, 0.45);
+  // il corpo è un palazzetto: finestre, cornicione, tetto; poi quello che lo fa riconoscere
+  palazzo({ ...c, p: { piani: 2, tetto: tipo === 'funivia' ? 'piano' : 'padiglione', ...p, padiglioni: '', colonne: 0 } });
   const fz = reachZ(ring, 0);
   const [x0, x1] = spanX(ring, fz - 0.4);
-  if (hi) windows(m, x0 + 0.8, x1 - 0.8, fz, [[H * 0.55, H * 0.8]], { step: 3.2, w: 1.1, frame: tone(col, 1.12) });
   if (tipo === 'funicolare') {
     // il vano verso valle e la vettura rossa sul piano inclinato
     const aw = Math.min(5, (x1 - x0) * 0.6);
@@ -1107,7 +1160,7 @@ function stazione(c: Ctx): void {
     const hd = Math.min(M.d * 0.9, 12);
     const hy = H;
     m.box(-hw / 2, hy, fz - hd, hw / 2, hy + 4.2, fz - hd + 0.4, tone(col, 0.9));
-    m.box(-hw / 2, hy + 4.2, fz - hd, hw / 2, hy + 4.6, fz + 1.5, PAL.ferro, { open: '' });
+    m.box(-hw / 2, hy + 4.2, fz - hd, hw / 2, hy + 4.6, fz + 1.5, PAL.piombo, { open: '' });
     for (const sgn of [-1, 1]) m.box(sgn * hw / 2 - 0.3, hy, fz - hd, sgn * hw / 2 + 0.3, hy + 4.2, fz + 1.5, tone(col, 0.9));
     m.cyl(0, fz - hd / 2, hw * 0.32, hw * 0.32, hy + 3.2, hy + 3.6, hi ? 16 : 8, PAL.ferro, true, true);
     const cab = new Mesh();

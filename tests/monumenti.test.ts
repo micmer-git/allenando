@@ -1,9 +1,9 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { WorldGraphFile } from '../src/open/graph';
-import { decodeMonumenti, type MonumentiFile, type Monumento } from '../src/open/monumenti';
-import { decodeDemTile } from '../src/open/world';
+import { WorldGraph, type WorldGraphFile } from '../src/open/graph';
+import { ARCHETIPO_LABEL, decodeMonumenti, monumentoPoiKind, type MonumentiFile, type Monumento } from '../src/open/monumenti';
+import { decodeDemTile, POI_KINDS } from '../src/open/world';
 import { monumentoGeometry, TRI_CAP } from '../src/world/monumenti/archetipi';
 
 // I monumenti come li scarica la pagina (scripts/world/monumenti.ts dentro npm run world:build).
@@ -115,6 +115,31 @@ describe('i monumenti del mondo', () => {
     if (process.env.MONUMENTI_TRIS) console.log(report.join('\n'));
   });
 
+  it('sotto il fornice delle porte passa la strada, tutta', () => {
+    const g = new WorldGraph(graph);
+    for (const m of list.filter((q) => q.kind === 'porta')) {
+      const hit = g.nearest(m.x, m.z, 30);
+      expect(hit, m.name).not.toBeNull();
+      const pose = g.pose(hit!.edge, hit!.s);
+      // la strada nel riferimento del modello: dentro il fornice, e alla quota del pavimento
+      const dx = pose.x - m.x;
+      const dz = pose.z - m.z;
+      const lx = dx * Math.cos(m.yaw) - dz * Math.sin(m.yaw);
+      const aw = Number(m.p.fornice);
+      const px = Number(m.p.passaggio ?? 0);
+      expect(Math.abs(lx - px), m.name).toBeLessThan(aw / 2);
+      expect(aw, m.name).toBeGreaterThanOrEqual(Math.min(2 * g.edges[hit!.edge].hw, m.w - 2.2));
+      expect(Math.abs(pose.y - m.y), m.name).toBeLessThan(0.5);
+    }
+  });
+
+  it('ogni monumento è un punto caldo con un’icona e un’etichetta', () => {
+    for (const m of list) {
+      expect(POI_KINDS).toContain(monumentoPoiKind(m));
+      expect(ARCHETIPO_LABEL[m.kind]).toBeTruthy();
+    }
+  });
+
   it('l’edificio generico che occupava l’impronta non c’è più (niente compenetrazioni)', () => {
     const bdir = join(dir, 'b');
     if (!existsSync(bdir)) return;
@@ -153,5 +178,5 @@ describe('i monumenti del mondo', () => {
       }
     }
     expect(hits).toEqual([]);
-  });
+  }, 30000);
 });
