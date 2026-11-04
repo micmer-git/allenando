@@ -10,9 +10,13 @@ const ready = `document.querySelector('[data-testid=world-ready]')?.dataset.read
 export async function hold(p, sel, ms = 1100) {
   const at = await p.evaluate(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
   if (!at) return false;
-  await p.s('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: at.x, y: at.y }] });
+  // come un dito vero: il dito si alza dopo `ms` dal tocco, anche se la pagina (occupata dal 3D)
+  // non ha ancora gestito il tocco. Aspettare la risposta di Chrome al touchStart allungherebbe
+  // la pressione di tutto il tempo in cui la pagina è occupata
+  const down = p.s('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: at.x, y: at.y }] });
   await sleep(ms);
-  await p.s('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  const up = p.s('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await Promise.all([down, up]);
   return true;
 }
 
