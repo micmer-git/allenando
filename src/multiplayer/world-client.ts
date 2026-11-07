@@ -1,6 +1,7 @@
 import { PING } from './protocol';
 import { ROOMS_URL } from './room';
 import { WORLD_CLOSE, WORLD_SEND_MS, type WorldPeer, type WorldServerMessage } from './world-protocol';
+import { WORLD_ID } from './world-rides';
 
 /**
  * Il collegamento al mondo condiviso: chi pedala adesso nella provincia, dovunque sia.
@@ -213,7 +214,7 @@ export class WorldClient {
 }
 
 /** Quanti stanno pedalando adesso nel mondo (per la pagina Mondo), o null se non si sa. */
-export async function worldCount(world = 'bergamo', base = ROOMS_URL): Promise<number | null> {
+export async function worldCount(world = WORLD_ID, base = ROOMS_URL): Promise<number | null> {
   try {
     const res = await fetch(`${base.replace(/\/$/, '')}/world/${world}/count`);
     if (!res.ok) return null;

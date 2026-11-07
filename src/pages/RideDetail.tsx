@@ -4,7 +4,8 @@ import { LineChart, ZoneBar } from '@/components/Charts';
 import { Button, PageHeader } from '@/components/ui';
 import { CartolinaButton } from '@/components/ShareCard';
 import { WorldMap, type MapMarker, type MapOverlay } from '@/components/WorldMap';
-import { loadWorld, Terrain, type WorldData } from '@/open/world';
+import { loadWorld, Terrain, WORLD_KV, type WorldData } from '@/open/world';
+import { loadKv } from '@/db/db';
 import type { Ride } from '@/domain/types';
 import { cap, formatDateTime, formatDuration, formatKmText, formatNumber, formatTss, msToKmh } from '@/domain/format';
 import { HR_ZONES, POWER_ZONES } from '@/domain/zones';
@@ -15,6 +16,7 @@ import { validPosition } from '@/domain/metrics';
 import { useI18n } from '@/i18n';
 import { downloadBytes, downloadText, safeFileName } from '@/lib/download';
 import { useApp } from '@/store/useApp';
+import { worldOfRide } from '@/open/worlds';
 
 export function RideDetailPage() {
   const { id } = useParams();
@@ -156,7 +158,8 @@ function RideTrackMap({ ride }: { ride: Ride }) {
   useEffect(() => {
     if (pts.length < 2) return;
     let alive = true;
-    void loadWorld()
+    // il mondo del giro: il campo, il prefisso del percorso o il GPS; sennò l'ultimo scelto
+    void (async () => loadWorld(worldOfRide(ride) ?? (await loadKv<string>(WORLD_KV))))()
       .then((d) => {
         if (!alive) return;
         setWorld(d);
@@ -166,7 +169,8 @@ function RideTrackMap({ ride }: { ride: Ride }) {
     return () => {
       alive = false;
     };
-  }, [pts.length]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pts.length, ride.id]);
   const local = useMemo(() => {
     if (!world || world === 'fuori') return null;
     const b = world.graph.bounds;

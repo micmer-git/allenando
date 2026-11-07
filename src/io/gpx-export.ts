@@ -1,6 +1,14 @@
 import type { Ride } from '@/domain/types';
 import { validPosition } from '@/domain/metrics';
+import { worldName } from '@/open/worlds';
 import { xmlEscape } from './xml';
+
+/** «Il giro della Ganda · Bergamo e le valli»: il percorso e il mondo, per i file esportati. Vuoto se il giro non è nel mondo. */
+export function rideDescription(ride: Pick<Ride, 'name' | 'world' | 'routeId'>): string {
+  const world = ride.world ?? (ride.routeId?.includes(':') ? ride.routeId.split(':')[0] : undefined);
+  if (!world) return '';
+  return `${ride.name} · ${worldName(world)}`;
+}
 
 /**
  * GPX 1.1 con le estensioni Garmin TrackPointExtension (FC, cadenza) e la potenza come le
@@ -16,8 +24,10 @@ export function encodeGpx(ride: Ride, app = 'OROBIA'): string | null {
   lines.push(
     `<gpx version="1.1" creator="${xmlEscape(app)}" xmlns="http://www.topografix.com/GPX/1/1" xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">`,
   );
-  lines.push(`<metadata><name>${xmlEscape(ride.name)}</name><time>${new Date(start).toISOString()}</time></metadata>`);
-  lines.push(`<trk><name>${xmlEscape(ride.name)}</name><type>VirtualRide</type><trkseg>`);
+  // il percorso e il mondo nel file (F.17): «Selvino da Nembro · Bergamo e le valli»
+  const desc = rideDescription(ride);
+  lines.push(`<metadata><name>${xmlEscape(ride.name)}</name>${desc ? `<desc>${xmlEscape(desc)}</desc>` : ''}<time>${new Date(start).toISOString()}</time></metadata>`);
+  lines.push(`<trk><name>${xmlEscape(ride.name)}</name>${desc ? `<desc>${xmlEscape(desc)}</desc>` : ''}<type>VirtualRide</type><trkseg>`);
   for (const s of pts) {
     const ext: string[] = [];
     if (s.hr > 0) ext.push(`<gpxtpx:hr>${Math.round(s.hr)}</gpxtpx:hr>`);

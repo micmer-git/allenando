@@ -3,6 +3,9 @@ import { Glyph, Coin } from '@/components/Glyph';
 import { ACHIEVEMENTS, GROUPS, type AchievementGroup, type Glyph as GlyphName } from '@/game/achievements';
 import { PageHeader } from '@/components/ui';
 import { ITEM_BY_ID } from '@/game/kit';
+import { SERIES } from '@/game/missions';
+import { seriesProgress } from '@/game/career';
+import { worldInfo } from '@/open/worlds';
 import { useGame } from '@/game/useGame';
 import { formatDateTime } from '@/domain/format';
 import { cn } from '@/lib/cn';
@@ -71,6 +74,47 @@ export function AchievementsPage() {
             {near.map((a) => (
               <AchItem key={a.id} a={a} career={career} testId={`near-${a.id}`} />
             ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {group === 'tutti' || group === 'mondo' ? (
+        <section className="mt-6" data-testid="ach-series">
+          <h2 className="flex items-center gap-2 font-display text-2xl uppercase">
+            <span className="grid h-8 w-8 place-items-center rounded-full bg-elev2 text-accent">
+              <Glyph name="maglia" size={18} />
+            </span>
+            Serie
+          </h2>
+          <ul className="mt-2 grid gap-2 sm:grid-cols-2">
+            {SERIES.map((s) => {
+              const p = seriesProgress(career, s.id);
+              const done = new Set(career.series[s.id] ?? []);
+              const reward = [...ITEM_BY_ID.values()].find((i) => i.series === s.id);
+              return (
+                <li key={s.id} className={cn('rounded-2xl border p-3', p.finished ? 'border-accent bg-accent/10' : 'border-line bg-elev/60')} data-testid={`series-${s.id}`}>
+                  <span className="flex items-baseline justify-between gap-2">
+                    <span className="font-semibold">{s.name}</span>
+                    <span className="num text-xs text-muted">{`${p.done}/${p.total} · ${worldInfo(s.world).short}`}</span>
+                  </span>
+                  <span className="block text-sm leading-snug text-muted">{s.blurb}</span>
+                  <ol className="mt-2 flex flex-col gap-1">
+                    {s.steps.map((st, i) => (
+                      <li key={st.id} className="flex items-center gap-2 text-sm">
+                        <span className={cn('grid h-5 w-5 shrink-0 place-items-center rounded-full border text-[11px]', done.has(st.id) ? 'border-accent bg-accent text-accent-ink' : 'border-line text-muted')} aria-hidden="true">
+                          {done.has(st.id) ? '✓' : i + 1}
+                        </span>
+                        <span className={done.has(st.id) ? 'text-muted line-through' : ''}>{st.title}</span>
+                        <span className="num ml-auto inline-flex items-center gap-1 text-xs text-muted">
+                          <Coin size={12} /> {st.oro}
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                  {reward ? <span className="mt-1.5 block text-xs text-accent">{`Sblocca: ${reward.name}`}</span> : null}
+                </li>
+              );
+            })}
           </ul>
         </section>
       ) : null}

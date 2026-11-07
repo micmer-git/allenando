@@ -21,6 +21,26 @@ export interface WeatherNow extends WeatherLook {
 const CACHE_KEY = 'allenando-meteo-v1';
 const FRESH_MS = 15 * 60 * 1000;
 
+/** La cache è per punto: il meteo del Sella non è quello di Bergamo (F.12). */
+export function weatherCacheKey(lat: number, lon: number): string {
+  return `${CACHE_KEY}:${lat.toFixed(2)}:${lon.toFixed(2)}`;
+}
+
+/**
+ * La quota della neve di oggi, dal meteo vero: la temperatura cala di 6,5 °C ogni mille metri,
+ * e dove arriva a zero comincia la neve (con un margine: la neve resta anche un po' sopra zero).
+ * `baseAlt` è la quota del punto misurato. Chi disegna il 3D (pista S2) la usa al posto della
+ * linea di stagione quando il meteo è «vero»; senza meteo ritorna null.
+ */
+export function snowLine(w: Pick<WeatherNow, 'tempC' | 'code'> | null, baseAlt: number): number | null {
+  if (!w) return null;
+  const toZero = (w.tempC - 1) / 0.0065;
+  let line = baseAlt + toZero;
+  // sta nevicando: la neve è già qui
+  if (weatherLabel(w.code) === 'neve') line = Math.min(line, baseAlt);
+  return Math.max(0, Math.round(line / 50) * 50);
+}
+
 export function weatherUrl(lat: number, lon: number): string {
   const p = new URLSearchParams({
     latitude: lat.toFixed(3),
@@ -51,8 +71,9 @@ export function parseWeather(json: unknown): WeatherNow | null {
 }
 
 export async function fetchWeather(lat: number, lon: number, fetcher: typeof fetch = fetch): Promise<WeatherNow | null> {
+  const key = weatherCacheKey(lat, lon);
   try {
-    const raw = sessionStorage.getItem(CACHE_KEY);
+    const raw = sessionStorage.getItem(key);
     if (raw) {
       const hit = JSON.parse(raw) as { t: number; w: WeatherNow };
       if (Date.now() - hit.t < FRESH_MS) return hit.w;
@@ -68,7 +89,7 @@ export async function fetchWeather(lat: number, lon: number, fetcher: typeof fet
     const w = parseWeather(await res.json());
     if (w) {
       try {
-        sessionStorage.setItem(CACHE_KEY, JSON.stringify({ t: Date.now(), w }));
+        sessionStorage.setItem(key, JSON.stringify({ t: Date.now(), w }));
       } catch {
         // la cache è un di più
       }

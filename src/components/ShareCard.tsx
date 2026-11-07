@@ -4,7 +4,9 @@ import { validPosition } from '@/domain/metrics';
 import type { Ride } from '@/domain/types';
 import type { ShareOutcome, WorldContext } from '@/io/share-image';
 import { loadMonumenti } from '@/open/monumenti';
-import { loadWorld, Terrain } from '@/open/world';
+import { loadWorld, Terrain, WORLD_KV } from '@/open/world';
+import { loadKv } from '@/db/db';
+import { worldOfRide } from '@/open/worlds';
 
 // il disegno della cartolina si carica al primo tocco: non pesa sull'avvio dell'app
 const CARD_W = 1080;
@@ -27,11 +29,11 @@ export function CartolinaButton({ ride, className }: { ride: Ride; className?: s
   );
 }
 
-/** Il mondo di Bergamo per la carta: solo se il giro ha il GPS (sennò non c'è niente da mettere sotto). */
+/** Il mondo del giro per la carta (F.9): solo se il giro ha il GPS (sennò non c'è niente da mettere sotto). */
 async function worldFor(ride: Ride): Promise<WorldContext | null> {
   if (!ride.samples.some((s) => validPosition(s.lat, s.lon))) return null;
   try {
-    const data = await loadWorld();
+    const data = await loadWorld(worldOfRide(ride) ?? (await loadKv<string>(WORLD_KV)));
     const far = await new Terrain(data.graph).loadFar();
     return { data, far };
   } catch {

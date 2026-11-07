@@ -25,6 +25,8 @@ import {
 interface Attachment {
   peer: WorldPeer;
   rate: RateState;
+  /** il mondo della stanza (bergamo, sellaronda): un arco vale solo nel suo grafo */
+  world?: string;
 }
 
 export class World extends DurableObject<Env> {
@@ -43,7 +45,7 @@ export class World extends DurableObject<Env> {
     const pair = new WebSocketPair();
     const [client, server] = [pair[0], pair[1]];
     if (!parsed.ok) return this.refuse(client, server, parsed.error, WORLD_CLOSE.bad);
-    const { nick, pid } = parsed.join;
+    const { nick, pid, world } = parsed.join;
     const now = Date.now();
     let color: number | null = null;
     const others: WebSocket[] = [];
@@ -64,7 +66,7 @@ export class World extends DurableObject<Env> {
     const peers = others.map((ws) => this.att(ws)!.peer).filter((p) => p.at > 0);
     const peer: WorldPeer = { id: pid, nick, color: color ?? pickColor(peers.map((p) => p.color)), e: 0, s: 0, r: 1, w: 0, v: 0, idle: true, at: 0 };
     this.ctx.acceptWebSocket(server, [pid]);
-    server.serializeAttachment({ peer, rate: { last: 0, drops: 0, windowStart: now } } satisfies Attachment);
+    server.serializeAttachment({ peer, rate: { last: 0, drops: 0, windowStart: now }, world } satisfies Attachment);
     this.send(server, { t: 'welcome', you: pid, color: peer.color, peers, max: MAX_WORLD });
     if ((await this.ctx.storage.getAlarm()) == null) await this.ctx.storage.setAlarm(now + 60_000);
     return new Response(null, { status: 101, webSocket: client });
@@ -73,7 +75,7 @@ export class World extends DurableObject<Env> {
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
     const att = this.att(ws);
     if (!att) return;
-    const msg = parseWorldMessage(typeof message === 'string' ? message : null);
+    const msg = parseWorldMessage(typeof message === 'string' ? message : null, att.world);
     const now = Date.now();
     if (!msg) {
       att.rate.drops += 1;
