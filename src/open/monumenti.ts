@@ -8,6 +8,11 @@ import { WORLD_ID, worldBase } from './world';
  * public/world/<id>/monumenti.json; qui si leggono.
  */
 
+/**
+ * Gli archetipi. Dal 07/11/2026 (Sellaronda) anche quelli dei passi: `chiesetta` (la cappella
+ * alpina bianca col tetto a scandole e il campaniletto), `rifugio` (pietra sotto, legno e balconi
+ * sopra, due-tre piani) e `ossario` (il sacrario del Pordoi: la rotonda di pietra con la torre).
+ */
 export type Archetipo = 'porta' | 'torre' | 'chiesa' | 'cappella' | 'tempietto' | 'mausoleo' | 'palazzo' | 'castello' | 'statua' | 'caduti' | 'stazione' | 'casa' | 'chiesetta' | 'rifugio' | 'ossario';
 
 /** Parametri dell'archetipo: numeri, parole, sì/no. */

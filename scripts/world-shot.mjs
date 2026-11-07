@@ -9,6 +9,8 @@
 // SPOTS="nome|/ride?...;nome2|/ride?..." visita solo quei punti del mondo (dopo l'accesso) e ne
 // fa una schermata quando il 3D è pronto: serve a guardare l'arredo stradale in un posto preciso
 // (es. /ride?world=bergamo&edge=27&dir=-1&s=70). WIDE=1: telefono in orizzontale (844×390).
+// CAM="indietro,su[,lato[,gradi]]" (o il terzo campo di un punto): la camera di collaudo; i gradi
+// girano lo sguardo di lato (negativi a sinistra), per guardare una parete o un impianto.
 
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync, mkdtempSync } from 'node:fs';
@@ -165,10 +167,20 @@ try {
       const t0 = Date.now();
       const ok = await a.waitFor(`document.querySelector('[data-testid=world-ready]')?.dataset.ready === 'yes'`, 120000);
       check(ok, `${name}: mondo 3D pronto`, `${((Date.now() - t0) / 1000).toFixed(1)} s`);
-      // NOON=1: luce di mezzogiorno (dal pannello «Impostazioni»), per vedere i colori veri
-      if (process.env.NOON) {
-        await a.evaluate(`(() => { const d = [...document.querySelectorAll('details')].find((x) => x.textContent.includes('Impostazioni')); if (d) d.open = true;
-          [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Mezzodì')?.click(); return true; })()`);
+      // NOON=1: luce di mezzogiorno, SERENO=1: meteo «Sempre sereno» (per confrontare con le foto
+      // col cielo blu). Il pannello «Impostazioni» sta nel velo della pausa: si mette in pausa, si
+      // sceglie, si riprende. Le scelte restano salvate per i punti dopo.
+      const wanted = [['NOON', 'Mezzodì'], ['SERENO', 'Sempre sereno']].filter(([flag]) => process.env[flag]);
+      if (wanted.length) {
+        await a.evaluate(`(() => { [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Pausa')?.click(); return true; })()`);
+        await sleep(600);
+        for (const [, label] of wanted) {
+          await a.evaluate(`(() => { const d = document.querySelector('[data-testid=ride-settings]'); if (d) d.open = true;
+            [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === ${JSON.stringify(label)})?.click(); return true; })()`);
+          await sleep(300);
+        }
+        await a.evaluate(`(() => { document.querySelector('[data-testid=pause-resume]')?.click(); return true; })()`);
+        await sleep(600);
       }
       // CAM="indietro,su[,lato]" (o un terzo campo del punto): la camera di collaudo di WorldCam, per guardare un incrocio dall'alto
       const view = cam ?? process.env.CAM;

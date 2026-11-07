@@ -47,6 +47,19 @@ Passa i test (geometria, terreno sotto la strada, replay, Intervals con API simu
 - Nomi nel cielo: si spengono dietro il terreno (DEM), le case e i monumenti entro 120 m; dietro alberi, mura e case più lontane restano accesi.
 - Marciapiedi: lo scivolo di 4 m c’è solo alle fini vere (incroci, cambio d’uso del suolo), e i pezzi isolati sotto i 15 m non si disegnano. Dove il terreno accanto è più basso, il fianco esterno del marciapiede resta un piccolo gradino laterale, visibile solo dalle camere di lato.
 
+## Il paesaggio di montagna (pista S2, 07/11/2026)
+
+- I dati del Sellaronda non c'erano ancora quando il paesaggio è stato costruito: tutto quello che segue è stato visto **sulle quote alte di Bergamo** (Presolana, San Marco, Foppolo) con l'aspetto `bergamo`, e in Node con l'aspetto `sellaronda` (`tests/mondo-look.test.ts`). Le schermate al Sella, al Pordoi, al Gardena, a Corvara e ad Arabba vanno fatte quando `public/world/sellaronda/` esiste (S1), col pannello di `look.ts` da ritoccare a occhio contro le foto.
+- Le bande della roccia hanno un passo fisso (3,5 m, uno strato su sei più spesso): la dolomia vera ha strati da 2 a 6 m e pareti con cenge larghe che qui non ci sono. Il ghiaione è un colore sui pendii di 22–34°, non un ventaglio dalla parete.
+- La neve segue il calendario, non il meteo del giorno (F.12 la legherà al meteo «vero»): a novembre il San Marco è bianco anche in un anno senza neve. Il ghiacciaio della Marmolada arriva da `COVER.glacier` del build; la grotta di neve dei canaloni a nord sopra i 2800 è solo la regola dell'esposizione.
+- Il muro di sostegno a monte regge il primo tratto del taglio (da 0,75 a 2,4 m); la scarpata sopra resta quella del raccordo del campo (`field.ts`), non un muro alto quanto il taglio. I paracarri dei tornanti sono i delineatori già presenti (uno ogni 20 m in curva), non i cippi bianchi e neri di pietra.
+- Gli impianti di risalita hanno i piloni ai vertici della linea OSM (dove mancano, uno ogni 160 m con la quota del terreno lontano, che può essere di qualche metro sopra o sotto il suolo vicino), altezze per tipo (13, 9, 5,5 m), niente seggiole sulle seggiovie, niente animazione, e si costruiscono entro 6 km dal ciclista.
+- Il cartello del passo sta a 1,6 m dal ciglio della strada più vicina al nodo `mountain_pass` di OSM (entro 60 m); se il nodo è lontano dalla strada il cartello sta sul valico, in mezzo al prato. Il nome è quello di OSM.
+- Le case ladine sono un archetipo di colori, tetto (14°, gronda di 1,1 m, scandole scure) e facciata (balconi di legno a tutta facciata nella trama): le impronte restano quelle di OSM, quindi un hotel a L resta un volume a L col tetto piano se la pianta non regge le falde (oltre 2200 m²).
+- Gli archetipi `chiesetta`, `rifugio` e `ossario` sono pronti ma nessun `monumenti.json` li usa ancora: li aggancia S1 nel suo `monumenti.ts` per il Sellaronda.
+- Il cielo d'alta quota cambia con la quota della camera (ogni 30 s o ogni 250 m di dislivello); la foschia resta una nebbia per distanza, non una coltre nelle valli lontane.
+- Le misure FPS sono con la grafica software (swiftshader) e ballano da un giro all'altro (p50 da 26 a 450 ms nello stesso punto): valgono solo come confronto fra due build misurate una dopo l'altra. L'anello in più delle mattonelle (`ringExtra`) vale solo per i mondi di montagna, quindi su Bergamo non costa niente.
+
 ## Replay e Intervals.icu
 
 - Il client Intervals.icu è provato con risposte simulate e con le intestazioni CORS reali (preflight e 401), **non con una chiave vera**: il primo import reale va controllato.

@@ -82,7 +82,18 @@ export function worldBase(id = WORLD_ID): string {
   return `${base}world/${id}/`;
 }
 
-/** Uso del suolo nella griglia del terreno. */
+/**
+ * Uso del suolo nella griglia del terreno. `piste` (dal 07/11/2026, Sellaronda) è una pista da
+ * sci: nel 3D una radura senza alberi, prato più chiaro; la scrive il build da `piste:type`.
+ *
+ * Le altre cose nuove del Sellaronda non hanno bisogno di campi nuovi in features.json: gli
+ * impianti di risalita sono già `cables` (k = aerialway: gondola, chair_lift, cable_car,
+ * platter, t-bar…; piloni, cavo, stazioni e cabine li disegna src/open/Lifts.tsx), i passi sono
+ * i `peaks` con pass = 1 (cartello «Passo Sella 2240 m» in src/open/Passi.tsx), cappelle,
+ * rifugi e ossario arrivano da monumenti.json con gli archetipi `chiesetta`, `rifugio`, `ossario`
+ * (src/world/monumenti/archetipi.ts). L'aspetto del mondo (roccia, linea del bosco, neve, case)
+ * sta in src/open/look.ts: `lookFor(graph.id)`.
+ */
 export const COVER = {
   open: 0,
   forest: 1,

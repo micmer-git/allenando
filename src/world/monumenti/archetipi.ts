@@ -1207,8 +1207,108 @@ function casa(c: Ctx): void {
   }
 }
 
-// chiesetta, rifugio e ossario (i passi del Sellaronda) li disegna la pista S2: qui il ripiego sugli archetipi di Bergamo
-const BUILD: Record<Monumento['kind'], (c: Ctx) => void> = { porta, torre, chiesa, cappella, tempietto, mausoleo, palazzo, castello, statua, caduti, stazione, casa, chiesetta: cappella, rifugio: casa, ossario: mausoleo };
+// ---------- i passi delle Dolomiti (Sellaronda, 07/11/2026) ----------
+
+/** Scandole di larice, grigie d'argento col tempo. */
+const SCANDOLE: Col = [0.48, 0.45, 0.4];
+/** Il legno chiaro delle facciate dei rifugi. */
+const LEGNO_CHIARO: Col = [0.62, 0.47, 0.31];
+
+/**
+ * La cappella alpina dei passi (Sella, Pordoi, km 10 verso il Gardena): un'aula bianca, il tetto
+ * ripido a scandole, il campaniletto sul fronte con la cipolla, l'abside tonda dietro.
+ */
+function chiesetta(c: Ctx): void {
+  const { m, M, hi, p } = c;
+  const H = Math.max(5, M.h);
+  const w = M.w * 0.96;
+  const d = M.d * 0.96;
+  const wallH = H * 0.56;
+  const wall = mat(p, 'mat', 'bianco');
+  zoccolo(c, PAL.pietraScura);
+  m.box(-w / 2, 0, -d / 2, w / 2, wallH, d / 2, wall);
+  // il colmo lungo il lato lungo; la facciata è +z (reachZ)
+  m.gable(0, 0, w, d, wallH, H - wallH, SCANDOLE, wall, d >= w, 0.5);
+  portale(m, 0, d / 2, clamp(w * 0.28, 1.2, 1.8), clamp(wallH * 0.55, 2, 2.8), PAL.pietra, hi, true);
+  // finestre ad arco sui fianchi
+  if (hi && d > 4) {
+    const rows: [number, number][] = [[1.5, Math.min(wallH - 0.6, 3.4)]];
+    windows(m, -d / 2 + 0.8, d / 2 - 1.2, w / 2, rows, { step: 2.4, w: 0.7, arched: true, frame: PAL.pietra });
+  }
+  // il campaniletto: una torretta quadrata sul colmo, davanti, con la cella aperta e la cipolla
+  const t = clamp(w * 0.22, 1, 1.5);
+  const tz = d / 2 - t * 0.9;
+  const topY = H + t * 1.1;
+  m.box(-t / 2, wallH - 0.2, tz - t / 2, t / 2, topY, tz + t / 2, wall);
+  if (hi) {
+    m.box(-t * 0.22, topY - t * 0.75, tz + t / 2, t * 0.22, topY - t * 0.15, tz + t / 2 + 0.05, PAL.buio);
+    m.box(-t * 0.22, topY - t * 0.75, tz - t / 2 - 0.05, t * 0.22, topY - t * 0.15, tz - t / 2, PAL.buio);
+  }
+  m.dome(0, topY, tz, t * 0.62, t * 0.9, hi ? 10 : 6, hi ? 4 : 2, PAL.piombo);
+  if (hi) m.beam([0, topY + t * 0.9, tz], [0, topY + t * 0.9 + 0.9, tz], 0.06, PAL.ferro);
+  // l'abside: mezza rotonda sul retro, più bassa
+  if (d > 5) m.cyl(0, -d / 2, w * 0.3, w * 0.3, 0, wallH * 0.85, hi ? 10 : 6, wall, true);
+}
+
+/**
+ * Il rifugio dei passi: il piano terra in pietra, sopra il legno coi balconi a tutta facciata e
+ * i gerani, il tetto a due falde poco inclinato con la gronda larga.
+ */
+function rifugio(c: Ctx): void {
+  const { m, M, p, hi, ring } = c;
+  const H = Math.max(6, M.h);
+  const stone = mat(p, 'mat', 'pietra');
+  const stoneH = Math.min(H * 0.38, 3.4);
+  zoccolo(c, tone(stone, 0.85));
+  m.prism(ring, 0, stoneH, stone, tone(stone, 0.9));
+  m.prism(ring, stoneH, H, LEGNO_CHIARO, tone(LEGNO_CHIARO, 0.9));
+  const along = M.w >= M.d;
+  m.gable(0, 0, M.w * 0.98, M.d * 0.98, H, (along ? M.d : M.w) * 0.26, SCANDOLE, LEGNO_CHIARO, !along, 1.2);
+  const piani = Math.max(1, Math.round((H - stoneH) / 2.9));
+  for (const side of [0, 1, 2, 3] as const) {
+    if (!hi && side % 2) continue;
+    onSide(c, side, (sm, fz, x0, x1) => {
+      const rows: [number, number][] = [[1.1, 2.2]];
+      for (let i = 0; i < piani; i++) rows.push([stoneH + i * 2.9 + 1.0, stoneH + i * 2.9 + 2.1]);
+      windows(sm, x0 + 0.9, x1 - 0.9, fz, rows, { step: 2.6, w: 0.9, frame: hi ? PAL.bianco : undefined });
+      if (side === 0) portale(sm, (x0 + x1) / 2, fz + 0.05, 1.6, 2.3, tone(stone, 0.9), hi, false);
+      // i balconi: la soletta e la ringhiera di legno, su ogni piano sopra la pietra
+      if (side === 0 || side === 2 || hi) {
+        for (let i = 0; i < piani; i++) {
+          const y = stoneH + i * 2.9 + 0.05;
+          sm.box(x0 + 0.3, y, fz, x1 - 0.3, y + 0.16, fz + 1.25, PAL.legno);
+          sm.box(x0 + 0.3, y + 0.16, fz + 1.1, x1 - 0.3, y + 1.0, fz + 1.25, tone(PAL.legno, 1.2), { open: 'y-' });
+          if (hi) sm.box(x0 + 0.5, y + 1.0, fz + 1.05, x1 - 0.5, y + 1.22, fz + 1.3, PAL.rosso);
+        }
+      }
+    });
+  }
+}
+
+/** Il sacrario del Pordoi: la rotonda di pietra, la torre al centro, la croce in cima. */
+function ossario(c: Ctx): void {
+  const { m, M, hi, p } = c;
+  const r = Math.max(3, Math.min(M.w, M.d) * 0.48);
+  const H = Math.max(6, M.h);
+  const stone = mat(p, 'mat', 'pietra');
+  zoccolo(c, tone(stone, 0.85), 0.35, 0.6);
+  const seg = hi ? 20 : 12;
+  m.cyl(0, 0, r, r, 0, H * 0.52, seg, stone, true);
+  m.cyl(0, 0, r + 0.3, r + 0.3, H * 0.52 - 0.45, H * 0.52, seg, tone(stone, 1.06), true);
+  m.cyl(0, 0, r * 0.56, r * 0.56, H * 0.52, H, seg, stone, true);
+  portale(m, 0, r, 1.6, 2.8, tone(stone, 0.88), hi, true);
+  if (hi) {
+    // le feritoie della torre, e la croce
+    for (let i = 0; i < 4; i++) {
+      const a = (i * Math.PI) / 2;
+      m.boxAt(Math.sin(a) * r * 0.56, H * 0.8, Math.cos(a) * r * 0.56, 0.3, 1.6, 0.3, PAL.buio, a);
+    }
+    m.beam([0, H, 0], [0, H + 2.4, 0], 0.12, PAL.ferro);
+    m.beam([-0.75, H + 1.7, 0], [0.75, H + 1.7, 0], 0.12, PAL.ferro);
+  }
+}
+
+const BUILD: Record<Monumento['kind'], (c: Ctx) => void> = { porta, torre, chiesa, cappella, tempietto, mausoleo, palazzo, castello, statua, caduti, stazione, casa, chiesetta, rifugio, ossario };
 
 /**
  * Il modello di un monumento nel suo riferimento: origine al centro dell'impronta, alla quota

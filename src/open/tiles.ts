@@ -1,9 +1,10 @@
 import * as THREE from 'three';
-import { ASPHALT_REPEAT_M, groundColor, hash2, smoothNoise } from '@/world/builders';
+import { ASPHALT_REPEAT_M, hash2, smoothNoise } from '@/world/builders';
 import { CLS, FLAG, type Edge, type EdgePose, type WorldGraph } from './graph';
 import type { WorldField } from './field';
 import { BUILDING_KIND, COVER, type Building, type Place, type WorldFeatures } from './world';
 import { addBuilding, BLANK_UV, earcut, ringArea, Tris } from './buildings';
+import { groundLook, lookContext, treeDensity, treeSpecies, type LookCtx } from './look';
 import { ringAt, ringBranch, ringsIn, smoothRingOf, type Pt, type RingGeo } from './rings';
 import { portalClear, tunnelGeometry } from './tunnels';
 import { pavedWeight } from './urban';
@@ -135,15 +136,14 @@ export function runsInside(graph: WorldGraph, e: Edge, x0: number, z0: number, x
 }
 
 const tmpC = new THREE.Color();
+/** I colori dell'uso del suolo che si stendono sopra quello della quota (roccia, ghiacciaio, piste e neve li fa groundLook). */
 const COVER_COLOR: Record<number, THREE.Color> = {
   [COVER.forest]: new THREE.Color('#355f2e'),
   [COVER.residential]: new THREE.Color('#8f8b7e'),
   [COVER.industrial]: new THREE.Color('#8a8984'),
   [COVER.park]: new THREE.Color('#6e9a45'),
-  [COVER.rock]: new THREE.Color('#8b867d'),
   [COVER.water]: new THREE.Color('#6d7f7a'),
   [COVER.farmland]: new THREE.Color('#93a356'),
-  [COVER.glacier]: new THREE.Color('#e9eef3'),
 };
 
 /** Il suolo pavimentato delle città: piazze, piazzali, cortili (urban.ts). */
@@ -152,12 +152,15 @@ const PAVED = ['#a6a197', '#9d988e', '#aca69b'].map((h) => new THREE.Color(h));
 /**
  * Il terreno della mattonella, con un bordo che scende di 25 m per chiudere le fessure col terreno
  * lontano. `urban` (densità delle case intorno, urban.ts) pavimenta il suolo aperto delle città.
+ * Il colore viene da look.ts (quota, pendenza, esposizione, stagione, uso del suolo); l'attributo
+ * `rock` dice allo shader dove disegnare le bande della roccia (rockShader.ts).
  */
-export function* terrainJob(field: WorldField, spec: TileSpec, urban?: (x: number, z: number) => number): Generator<void, THREE.BufferGeometry, void> {
+export function* terrainJob(field: WorldField, spec: TileSpec, urban?: (x: number, z: number) => number, ctx: LookCtx = lookContext(field.terrain?.graph?.id ?? 'bergamo')): Generator<void, THREE.BufferGeometry, void> {
   const n = Math.round(spec.size / spec.spacing);
   const side = n + 1;
   const pos = new Float32Array((side * side + side * 4) * 3);
   const col = new Float32Array((side * side + side * 4) * 3);
+  const rock = new Float32Array(side * side + side * 4);
   const uv = new Float32Array((side * side + side * 4) * 2);
   const dist = new Float32Array(side * side);
   const wet = new Uint8Array(side * side);
@@ -226,12 +229,18 @@ export function* terrainJob(field: WorldField, spec: TileSpec, urban?: (x: numbe
     const y = pos[k * 3 + 1];
     // rumore liscio: con hash2 per celle di 23 m il pendio veniva a quadretti (M6)
     const noise = smoothNoise(x / 23, z / 23);
-    groundColor(c, y, nrm.getY(k), nrm.getZ(k), noise, 99);
     uv[k * 2] = x / DETAIL_M;
     uv[k * 2 + 1] = z / DETAIL_M;
-    const cov = field.terrain.cover(x, z);
-    const cc = cov === COVER.farmland || cov === COVER.open ? parcelColor(x, z, cov) : COVER_COLOR[cov];
-    if (cc && cov !== COVER.water) c.lerp(tmpC.copy(cc).offsetHSL(0, 0, (noise - 0.5) * 0.06), cov === COVER.rock ? 0.5 : cov === COVER.open ? 0.45 : 0.72);
+    let cov = field.terrain.cover(x, z);
+    // sopra la linea del bosco il bosco dei dati non c'è: prato alpino, ghiaia, roccia
+    if (cov === COVER.forest && y > ctx.look.treeLine - 40) cov = COVER.open;
+    const g = groundLook(c, ctx.look, ctx.season, y, nrm.getY(k), nrm.getZ(k), noise, cov);
+    rock[k] = g.rock;
+    // i paesi, i campi a mosaico, i parchi, il bosco: sopra il colore della quota, ma non sopra
+    // la neve né la roccia; il mosaico dei prati finisce dove finisce il bosco pieno
+    const mosaic = cov === COVER.farmland || (cov === COVER.open && y < ctx.look.forestFull);
+    const cc = mosaic ? parcelColor(x, z, cov) : COVER_COLOR[cov];
+    if (cc && cov !== COVER.water) c.lerp(tmpC.copy(cc).offsetHSL(0, 0, (noise - 0.5) * 0.06), (cov === COVER.open ? 0.45 : 0.72) * (1 - g.snow) * (1 - g.rock));
     // in città il suolo aperto è una piazza o un cortile, non un prato (i parchi restano verdi)
     if (urban && (cov === COVER.open || URBAN.has(cov))) {
       const pv = pavedWeight(urban(x, z), dist[k]);
@@ -252,9 +261,11 @@ export function* terrainJob(field: WorldField, spec: TileSpec, urban?: (x: numbe
       col[dst] = col[src] * 0.8;
       col[dst + 1] = col[src + 1] * 0.8;
       col[dst + 2] = col[src + 2] * 0.8;
+      rock[skirtStart[s] + i] = rock[line[i]];
     }
   }
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  geo.setAttribute('rock', new THREE.BufferAttribute(rock, 1));
   geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   geo.computeBoundingSphere();
   return geo;
@@ -823,7 +834,16 @@ export interface BuildingMeshes {
   roofs: THREE.BufferGeometry | null;
 }
 
-export function* buildingsJob(field: WorldField, list: Building[], spec: TileSpec): Generator<void, BuildingMeshes, void> {
+/**
+ * Le case ladine (Selva, Corvara, Arabba): intonaco chiaro, legno scuro, tetto a due falde poco
+ * inclinato (14°, non 21°) con la gronda larga, in scandole o lamiera scura; gli hotel grandi
+ * restano col tetto a falde fino a 4-5 piani. È l'archetipo del mondo (look.case), non globale.
+ */
+const LADIN_WALLS = ['#efe8da', '#f1ece0', '#e9dfcc', '#e4d6bd', '#d8c3a0', '#f3efe6', '#c9a97e', '#e6dccb'];
+const LADIN_ROOFS = ['#5a5048', '#6b5b4b', '#4f4a46', '#7a6a58', '#5f5a55'];
+const LADIN_PITCH = Math.tan((14 * Math.PI) / 180);
+
+export function* buildingsJob(field: WorldField, list: Building[], spec: TileSpec, ctx: LookCtx = lookContext(field.terrain?.graph?.id ?? 'bergamo')): Generator<void, BuildingMeshes, void> {
   const walls = new Tris();
   const roofs = new Tris();
   const wall = new THREE.Color();
@@ -831,6 +851,7 @@ export function* buildingsJob(field: WorldField, list: Building[], spec: TileSpe
   const base = new THREE.Color();
   const x1 = spec.x0 + spec.size;
   const z1 = spec.z0 + spec.size;
+  const ladino = ctx.look.case === 'ladino';
   let count = 0;
   for (const b of list) {
     const r = b.ring;
@@ -852,15 +873,25 @@ export function* buildingsJob(field: WorldField, list: Building[], spec: TileSpe
     const ground = Math.max(plinth, Math.min(high - 1, low + 12));
     const seed = hash2(Math.floor(cx), Math.floor(cz));
     const stone = b.kind === BUILDING_KIND.church || b.kind === BUILDING_KIND.tower || b.kind === BUILDING_KIND.castle;
+    const civil = !stone && b.kind !== BUILDING_KIND.industrial;
     if (b.kind === BUILDING_KIND.industrial) wall.set(WALL_INDUSTRIAL[Math.floor(seed * WALL_INDUSTRIAL.length) % WALL_INDUSTRIAL.length]);
     else if (stone) wall.set(WALL_STONE).offsetHSL(0, 0, (seed - 0.5) * 0.08);
+    else if (ladino) wall.set(LADIN_WALLS[Math.floor(seed * LADIN_WALLS.length) % LADIN_WALLS.length]);
     else wall.set(WALLS[Math.floor(seed * WALLS.length) % WALLS.length]);
-    const roofSet = ROOFS[b.roof] ?? ROOFS[0];
+    const roofSet = ladino && civil ? LADIN_ROOFS : (ROOFS[b.roof] ?? ROOFS[0]);
     roof.set(roofSet[Math.floor(seed * 7) % roofSet.length]).offsetHSL(0, 0, (hash2(cz, cx) - 0.5) * 0.06);
-    base.copy(wall).multiplyScalar(0.84);
+    // il piano terra: più scuro; nelle case ladine è il legno dei balconi e della stalla
+    base.copy(wall).multiplyScalar(ladino && civil ? 0.62 : 0.84);
     // i tetti in coppi sono quasi tutti rossi: il grigio dei dati OSM resta ai tetti piani
-    const pitchedRoof = b.roof === 0 || b.kind === BUILDING_KIND.house ? roof : tmpC.set(ROOFS[0][Math.floor(seed * 4) % 4]);
-    const { top, shape } = addBuilding(walls, roofs, b, ground, { wall, base, roof, tiles: pitchedRoof, blind: stone || b.kind === BUILDING_KIND.industrial, ribbon: b.kind === BUILDING_KIND.industrial ? RIBBON : undefined }, plinth);
+    const pitchedRoof = ladino && civil ? roof : b.roof === 0 || b.kind === BUILDING_KIND.house ? roof : tmpC.set(ROOFS[0][Math.floor(seed * 4) % 4]);
+    const { top, shape } = addBuilding(
+      walls,
+      roofs,
+      b,
+      ground,
+      { wall, base, roof, tiles: pitchedRoof, blind: stone || b.kind === BUILDING_KIND.industrial, ribbon: b.kind === BUILDING_KIND.industrial ? RIBBON : undefined, pitch: ladino && civil ? LADIN_PITCH : undefined, eaves: ladino && civil ? 1.1 : undefined },
+      plinth,
+    );
     if (b.kind === BUILDING_KIND.tower && m <= 8 && shape === 'flat') {
       // cuspide dei campanili
       const apex = top + Math.min(9, Math.sqrt(Math.abs(ringArea(r))) * 0.9);
@@ -922,33 +953,29 @@ function trisGeometry(t: Tris): THREE.BufferGeometry | null {
 
 // ---------- alberi ----------
 
-/** Specie plausibile per la quota (fasce prealpine e alpine). */
-function species(alt: number, r: number): TreeKind | null {
-  if (alt < 650) return r < 0.82 ? 'broadleaf' : r < 0.9 ? 'cypress' : 'spruce';
-  if (alt < 1100) return r < 0.62 ? 'broadleaf' : 'spruce';
-  if (alt < 1600) return r < 0.2 ? 'broadleaf' : r < 0.85 ? 'spruce' : 'larch';
-  if (alt < 2000) return r < 0.55 ? 'spruce' : 'larch';
-  if (alt < 2250) return r < 0.4 ? 'larch' : r < 0.6 ? 'rock' : null;
-  return r < 0.3 ? 'rock' : null;
-}
-
 /**
  * Gli alberi della mattonella, per cella di 25 m secondo l'uso del suolo. `forestOnly` (con un
  * `seed` diverso da 0) fa il bosco fitto delle mattonelle vicine: solo dove il suolo è bosco, in
- * altri punti della cella, e senza ripetere i sassi.
+ * altri punti della cella, e senza ripetere i sassi. Le specie e la linea del bosco le dà
+ * look.ts: il bosco si dirada verso la linea e sopra non c'è un albero; le piste da sci sono
+ * radure.
  */
-export function* treesJob(field: WorldField, spec: TileSpec, seed = 0, forestOnly = false): Generator<void, TileMeshes['trees'], void> {
+export function* treesJob(field: WorldField, spec: TileSpec, seed = 0, forestOnly = false, ctx: LookCtx = lookContext(field.terrain?.graph?.id ?? 'bergamo')): Generator<void, TileMeshes['trees'], void> {
   const out: TileMeshes['trees'] = [];
   const cell = 25;
   const n = Math.round(spec.size / cell);
+  const look = ctx.look;
   for (let j = 0; j < n; j++) {
     for (let i = 0; i < n; i++) {
       const cx = spec.x0 + (i + 0.5) * cell;
       const cz = spec.z0 + (j + 0.5) * cell;
       const cov = field.terrain.cover(cx, cz);
       if (forestOnly && cov !== COVER.forest) continue;
-      const per =
+      let per =
         cov === COVER.forest ? spec.trees : cov === COVER.open || cov === COVER.farmland ? spec.trees * 0.07 : cov === COVER.park ? spec.trees * 0.25 : cov === COVER.residential ? spec.trees * 0.05 : cov === COVER.rock ? 0.15 : 0;
+      if (per <= 0) continue;
+      // verso la linea del bosco le celle si svuotano (i sassi della roccia no)
+      if (cov !== COVER.rock) per *= treeDensity(look, field.terrain.height(cx, cz));
       let k = Math.floor(per);
       if (hash2(cx * 0.37 + seed, cz * 0.91 - seed) < per - k) k++;
       for (let t = 0; t < k; t++) {
@@ -958,7 +985,7 @@ export function* treesJob(field: WorldField, spec: TileSpec, seed = 0, forestOnl
         const z = cz + (rz - 0.5) * cell;
         const y = field.height(x, z, spec.spacing);
         if (field.lastRoadDist() < 4 || field.lastWater() || field.inTube(x, z, y)) continue;
-        const kind = cov === COVER.rock ? 'rock' : species(y, hash2(x * 1.7, z * 2.3));
+        const kind = cov === COVER.rock ? 'rock' : treeSpecies(look, y, hash2(x * 1.7, z * 2.3));
         if (!kind) continue;
         // pendenza dal terreno: sulle pareti non cresce un bosco (sui versanti ripidi sì)
         const sx = field.height(x + 4, z, spec.spacing) - y;
