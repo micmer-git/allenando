@@ -127,12 +127,12 @@ export function ringArea(ring: ArrayLike<number>): number {
 export type RoofShape = 'gable' | 'hip' | 'flat';
 
 /** Che tetto ha: a falde solo dove la pianta è quasi un rettangolo e non troppo grande. */
-export function roofShape(b: Building, obb: Obb, area: number): RoofShape {
+export function roofShape(b: Building, obb: Obb, area: number, wide = false): RoofShape {
   const m = b.ring.length / 2;
   if (b.kind === BUILDING_KIND.industrial || b.kind === BUILDING_KIND.tower || b.kind === BUILDING_KIND.castle) return 'flat';
   if (obb.area <= 0 || obb.hs < 2.2) return 'flat';
   const fill = area / obb.area;
-  const pitched = b.kind === BUILDING_KIND.church ? fill > 0.7 && area < 2500 : fill > 0.8 && area < 950 && m <= 14 && obb.hs < 11;
+  const pitched = b.kind === BUILDING_KIND.church ? fill > 0.7 && area < 2500 : wide ? fill > 0.75 && area < 2200 && m <= 18 && obb.hs < 16 : fill > 0.8 && area < 950 && m <= 14 && obb.hs < 11;
   if (!pitched) return 'flat';
   // tozze (quasi quadrate): padiglione; lunghe: due falde, come le cascine e le chiese
   return b.kind !== BUILDING_KIND.church && obb.hl / obb.hs < 1.55 ? 'hip' : 'gable';
@@ -152,6 +152,12 @@ export interface BuildingColors {
    * zoccolo più scuro, sui muri ciechi abbastanza alti e lunghi
    */
   ribbon?: Rgb;
+  /** pendenza delle falde (tangente); senza, i 21° dei tetti lombardi */
+  pitch?: number;
+  /** sporto della gronda, metri (0,45 di norma; le case ladine 1,1) */
+  eaves?: number;
+  /** tetto a falde anche sugli edifici grandi (gli hotel tirolesi fino a 2200 m²) */
+  wide?: boolean;
 }
 
 /**
@@ -167,14 +173,14 @@ export function addBuilding(walls: Tris, roofs: Tris, b: Building, ground: numbe
   const m = r.length / 2;
   const area = Math.abs(ringArea(r));
   const obb = minRect(r);
-  const shape = roofShape(b, obb, area);
+  const shape = roofShape(b, obb, area, c.wide);
   const bottom = ground + b.minH;
   // dove comincia la facciata: sui portici (minH) resta sospesa, altrimenti scende verso lo zoccolo
   const face = b.minH > 0 || plinth >= bottom - 0.05 ? bottom : Math.max(plinth + 1, bottom - FLOOR);
   const foot = b.minH > 0 ? bottom : Math.min(plinth, bottom);
   const stone = { r: c.base.r * 0.86, g: c.base.g * 0.84, b: c.base.b * 0.8 };
   const height = Math.max(2.6, b.h);
-  const rise = shape === 'flat' ? 0 : Math.min(7, obb.hs * PITCH);
+  const rise = shape === 'flat' ? 0 : Math.min(7, obb.hs * (c.pitch ?? PITCH));
   // l'altezza OSM comprende il tetto: il muro si ferma sotto, ma mai sotto un piano
   const wallTop = Math.max(bottom + 2.6, ground + height - rise * 0.6);
   const ccw = ringArea(r) > 0;
@@ -248,9 +254,10 @@ function flatRoof(t: Tris, r: Float32Array, y: number, col: Rgb): void {
 function pitchedRoof(walls: Tris, roofs: Tris, o: Obb, eaveY: number, ridgeY: number, shape: RoofShape, c: BuildingColors): void {
   const px = -o.az;
   const pz = o.ax;
-  const hl = o.hl + EAVE;
-  const hs = o.hs + EAVE;
-  const drop = EAVE * ((ridgeY - eaveY) / Math.max(0.01, o.hs));
+  const eave = c.eaves ?? EAVE;
+  const hl = o.hl + eave;
+  const hs = o.hs + eave;
+  const drop = eave * ((ridgeY - eaveY) / Math.max(0.01, o.hs));
   const ey = eaveY - drop;
   const P = (a: number, b: number, y: number): V => {
     const x = o.cx + o.ax * a + px * b;
