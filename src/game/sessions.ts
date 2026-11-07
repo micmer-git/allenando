@@ -33,6 +33,8 @@ export const WORLD_RIDE_NAMES: Record<string, string> = {
   foppolo: 'Foppolo',
   'san-marco': 'Passo San Marco',
   'due-valli': 'Il giro delle due valli',
+  'berghem-corto': 'Berghem MolaMia · corto',
+  'berghem-medio': 'Berghem MolaMia · medio',
 };
 
 export const SLOT_MS = 30 * 60 * 1000;
