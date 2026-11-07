@@ -6,6 +6,9 @@ import { parseNumberInput } from '@/domain/format';
 import { DEFAULT_PROFILE, PROFILE_LIMITS as LIMITS } from '@/domain/types';
 import { useI18n } from '@/i18n';
 import { useApp } from '@/store/useApp';
+import { WorldArt } from '@/components/WorldPicker';
+import { lastWorld, rememberWorld, WORLD_CATALOG } from '@/open/worlds';
+import { cn } from '@/lib/cn';
 
 export function OnboardingPage() {
   const { t } = useI18n();
@@ -16,9 +19,11 @@ export function OnboardingPage() {
   const [weight, setWeight] = useState(String(DEFAULT_PROFILE.weightKg));
   const [ftp, setFtp] = useState(String(DEFAULT_PROFILE.ftp));
   const [maxHr, setMaxHr] = useState(String(DEFAULT_PROFILE.maxHr));
+  const [world, setWorld] = useState(lastWorld);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    rememberWorld(world);
     await complete({
         ...DEFAULT_PROFILE,
         name: name.trim() || 'Atleta',
@@ -36,8 +41,29 @@ export function OnboardingPage() {
       <Wordmark />
       <h1 className="mt-8 font-display text-[52px] leading-[0.92] tracking-tight">{t('onboarding.title')}</h1>
       {/* cosa c'è dentro, in tre righe: è tutto quello che serve sapere per entrare */}
-      <ul className="mt-5 divide-y divide-line border-y border-line">
-        <Feature icon={<WorldIcon />} title="Bergamo e le valli" sub="Città Alta, Val Brembana e Val Seriana in 3D, incrocio per incrocio" />
+      {/* da dove si comincia: due mondi, una figura ciascuno; si cambia quando si vuole da Mondo */}
+      <p className="mt-5 text-xs font-semibold uppercase tracking-wider text-muted">Da dove cominci</p>
+      <div className="mt-2 grid grid-cols-2 gap-2" role="radiogroup" aria-label="Mondo" data-testid="onboarding-worlds">
+        {WORLD_CATALOG.map((w) => (
+          <button
+            key={w.id}
+            type="button"
+            role="radio"
+            aria-checked={world === w.id}
+            onClick={() => setWorld(w.id)}
+            className={cn('overflow-hidden rounded-2xl border text-left', world === w.id ? 'border-accent bg-elev2' : 'border-line bg-elev')}
+            data-testid={`onboarding-world-${w.id}`}
+          >
+            <WorldArt id={w.id} className="block aspect-[16/9] w-full" />
+            <span className="block px-3 py-2">
+              <span className="block font-display text-lg leading-tight">{w.name}</span>
+              <span className="block text-xs leading-snug text-muted">{w.blurb}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+      <ul className="mt-4 divide-y divide-line border-y border-line">
+        <Feature icon={<WorldIcon />} title="Due mondi in 3D" sub="Bergamo e le valli, il Sellaronda: incrocio per incrocio, passo per passo" />
         <Feature icon={<MountainIcon />} title="Salite vere" sub="Selvino, Mortirolo, Stelvio: tornanti e pendenze della strada" />
         <Feature icon={<RideIcon />} title="Col rullo o senza" sub="Rullo smart Bluetooth, o il simulatore" />
       </ul>

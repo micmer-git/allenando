@@ -29,6 +29,8 @@ export interface Item {
   level?: number;
   /** si sblocca solo con questo traguardo (e allora è gratis) */
   achievement?: string;
+  /** si sblocca finendo questa serie di missioni (missions.ts) */
+  series?: string;
   /** pezzo raro: bordo d'oro nel negozio */
   rare?: boolean;
 }
@@ -64,6 +66,8 @@ export const ITEMS: Item[] = [
   M('m-pioggia', 'Sotto la pioggia', 'Grigio antracite e arancio: chi pedala col brutto tempo.', { jersey: '#33363b', accent: '#ff7a1a', pattern: 'fascia', shorts: '#1a1b1e', socks: '#ff7a1a' }, 0, { achievement: 'pioggia' }),
   M('m-alba', 'Alba', 'Rosa e arancio, per chi esce prima delle sette.', { jersey: '#ff8a5c', accent: '#ffd36b', pattern: 'sfumato', shorts: '#2a1610', socks: '#ffd36b' }, 0, { achievement: 'alba' }),
   M('m-gruppo', 'Gruppo', 'Per chi è arrivato col gruppo.', { jersey: '#0f6e6a', accent: '#ffc814', pattern: 'chevron', shorts: '#06302e', socks: '#ffc814' }, 0, { achievement: 'sessione-gruppo' }),
+  // la maglia della serie di missioni del Sellaronda (src/game/missions.ts, SERIES): grigio dolomia e ocra delle bande
+  M('m-sella', 'Sella', 'Grigio dolomia a bande ocra: le quattro tappe del Sellaronda.', { jersey: '#c7c2b8', accent: '#c98a2e', pattern: 'righe', shorts: '#2a2622', socks: '#c7c2b8' }, 0, { series: 'sellaronda', rare: true }),
   // ---------- caschi ----------
   C('c-bianco', 'Bianco', 'Casco bianco, lenti fumé.', { helmet: '#f4f1e8', glasses: '#2b2b2b' }, 0),
   C('c-nero', 'Nero opaco', 'Lenti specchiate oro.', { helmet: '#17171a', glasses: '#c99a1a' }, 150),
@@ -91,7 +95,7 @@ export const ITEM_BY_ID = new Map(ITEMS.map((i) => [i.id, i]));
 export const DEFAULT_EQUIPPED: Record<Slot, string> = { maglia: 'm-orobia', casco: 'c-bianco', bici: 'b-notte', ruote: 'r-basso' };
 
 /** I pezzi gratis senza condizioni: li ha chiunque. */
-export const STARTER_ITEMS = ITEMS.filter((i) => i.price === 0 && !i.achievement && !i.level).map((i) => i.id);
+export const STARTER_ITEMS = ITEMS.filter((i) => i.price === 0 && !i.achievement && !i.series && !i.level).map((i) => i.id);
 
 /** L'aspetto che risulta dai pezzi indossati. */
 export function lookOf(equipped: Partial<Record<Slot, string>>): Look {
@@ -108,12 +112,14 @@ export type Availability =
   | { state: 'buy'; price: number }
   | { state: 'poor'; price: number; missing: number }
   | { state: 'level'; level: number }
-  | { state: 'achievement'; achievement: string };
+  | { state: 'achievement'; achievement: string }
+  | { state: 'series'; series: string };
 
-/** Si può avere? Per il negozio: comprato, da comprare, oro che manca, livello, traguardo. */
+/** Si può avere? Per il negozio: comprato, da comprare, oro che manca, livello, traguardo, serie. */
 export function availability(item: Item, owned: ReadonlySet<string>, oro: number, level: number): Availability {
   if (owned.has(item.id) || STARTER_ITEMS.includes(item.id)) return { state: 'owned' };
   if (item.achievement) return { state: 'achievement', achievement: item.achievement };
+  if (item.series) return { state: 'series', series: item.series };
   if (item.level && level < item.level) return { state: 'level', level: item.level };
   if (oro < item.price) return { state: 'poor', price: item.price, missing: item.price - oro };
   return { state: 'buy', price: item.price };

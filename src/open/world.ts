@@ -286,7 +286,8 @@ export function decodeFeatures(f: FeaturesFile): WorldFeatures {
   };
 }
 
-let cached: Promise<WorldData> | null = null;
+// una cache per mondo: Bergamo e il Sellaronda possono stare in memoria insieme (F.1, da saldare con S1.5)
+const cached = new Map<string, Promise<WorldData>>();
 
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
@@ -294,21 +295,22 @@ async function getJson<T>(url: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-export function loadWorld(id = WORLD_ID): Promise<WorldData> {
-  if (!cached) {
-    const base = worldBase(id);
-    cached = Promise.all([getJson<WorldGraphFile>(`${base}graph.json`), getJson<RideDef[]>(`${base}rides.json`), getJson<FeaturesFile>(`${base}features.json`)]).then(
-      ([g, rides, f]) => {
-        const graph = new WorldGraph(g);
-        const proj = projector(graph.origin);
-        return { graph, rides, features: decodeFeatures(f), proj, toGeo: (x: number, z: number) => proj.toGeo(x, z) };
-      },
-    );
-    cached.catch(() => {
-      cached = null;
+export function loadWorld(id: string | null = WORLD_ID): Promise<WorldData> {
+  const key = id || WORLD_ID;
+  let p = cached.get(key);
+  if (!p) {
+    const base = worldBase(key);
+    p = Promise.all([getJson<WorldGraphFile>(`${base}graph.json`), getJson<RideDef[]>(`${base}rides.json`), getJson<FeaturesFile>(`${base}features.json`)]).then(([g, rides, f]) => {
+      const graph = new WorldGraph(g);
+      const proj = projector(graph.origin);
+      return { graph, rides, features: decodeFeatures(f), proj, toGeo: (x: number, z: number) => proj.toGeo(x, z) };
     });
+    p.catch(() => {
+      cached.delete(key);
+    });
+    cached.set(key, p);
   }
-  return cached;
+  return p;
 }
 
 // ---------- terreno a mattonelle ----------

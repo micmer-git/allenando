@@ -15,6 +15,7 @@ import { validPosition } from '@/domain/metrics';
 import { useI18n } from '@/i18n';
 import { downloadBytes, downloadText, safeFileName } from '@/lib/download';
 import { useApp } from '@/store/useApp';
+import { worldOfRide } from '@/open/worlds';
 
 export function RideDetailPage() {
   const { id } = useParams();
@@ -156,7 +157,8 @@ function RideTrackMap({ ride }: { ride: Ride }) {
   useEffect(() => {
     if (pts.length < 2) return;
     let alive = true;
-    void loadWorld()
+    // il mondo del giro (F.10): Bergamo o il Sellaronda, dal giro stesso o da dove cade il GPS
+    void loadWorld(worldOfRide(ride) ?? 'bergamo')
       .then((d) => {
         if (!alive) return;
         setWorld(d);
@@ -166,7 +168,8 @@ function RideTrackMap({ ride }: { ride: Ride }) {
     return () => {
       alive = false;
     };
-  }, [pts.length]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pts.length, ride.id]);
   const local = useMemo(() => {
     if (!world || world === 'fuori') return null;
     const b = world.graph.bounds;

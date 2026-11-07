@@ -98,6 +98,7 @@ export function ProfileChart({
   bin = 200,
   height = 120,
   marks,
+  peaks,
 }: {
   track: Track;
   className?: string;
@@ -107,6 +108,8 @@ export function ProfileChart({
   height?: number;
   /** tratti cronometrati: una fascia colorata in cima, da/a in metri */
   marks?: { from: number; to: number; color: string }[];
+  /** passi e cime lungo il percorso: un segno piccolo sopra il profilo, col nome per chi legge (F.5) */
+  peaks?: { at: number; name: string; kind: 'passo' | 'cima' }[];
 }) {
   const W = 1000;
   const H = height;
@@ -153,6 +156,19 @@ export function ProfileChart({
           const x0 = (Math.max(0, m.from) / track.length) * W;
           const x1 = (Math.min(track.length, m.to) / track.length) * W;
           return x1 > x0 ? <rect key={i} x={x0} y={0} width={Math.max(2, x1 - x0)} height={Math.max(3, H * 0.09)} fill={m.color} data-testid="profile-mark" /> : null;
+        })}
+        {peaks?.map((pk, i) => {
+          const x = (Math.max(0, Math.min(track.length, pk.at)) / track.length) * W;
+          const top = y(track.poseAt(Math.max(0, Math.min(track.length, pk.at))).y);
+          // il passo: un triangolo pieno sopra il profilo; la cima: vuoto. Il segno sta in alto, mai sotto la linea
+          const yy = Math.max(H * 0.12, top - H * 0.2);
+          const s = Math.max(3, H * 0.07);
+          return (
+            <g key={i} data-testid="profile-peak" data-kind={pk.kind} transform={`translate(${x.toFixed(1)} ${yy.toFixed(1)})`}>
+              <title>{pk.name}</title>
+              <path d={`M0 -${s} L${s * 1.1} ${s * 0.9} H-${s * 1.1} Z`} fill={pk.kind === 'passo' ? 'var(--accent)' : 'none'} stroke="var(--ink)" strokeWidth={1.2} vectorEffect="non-scaling-stroke" />
+            </g>
+          );
         })}
         {gx != null ? <line x1={gx} x2={gx} y1={0} y2={H} stroke="#8fd8ff" strokeWidth={2} strokeDasharray="4 4" vectorEffect="non-scaling-stroke" /> : null}
         {px != null ? <line x1={px} x2={px} y1={0} y2={H} stroke="var(--ink)" strokeOpacity={0.4} strokeWidth={1.5} vectorEffect="non-scaling-stroke" /> : null}

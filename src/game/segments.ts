@@ -117,6 +117,31 @@ export function deriveSegments(prefix: string, p: ProfilePoint[], name: (kind: S
   return segs.sort((a, b) => a.from - b.from);
 }
 
+/**
+ * Un GPM per ogni passo (F.8): le salite del profilo che finiscono entro `reach` metri da un passo
+ * (un luogo `passo` o una sella di OSM) e non sono già un GPM. Sul Sellaronda sono quattro, non
+ * i due «con più dislivello» di deriveSegments. Gli id continuano la numerazione (`gpm3`…), così
+ * i tratti e i record di prima non cambiano.
+ */
+export function derivePassGpm(prefix: string, p: ProfilePoint[], passes: readonly { name: string; x: number; z: number }[], taken: Segment[], reach = 400): Segment[] {
+  if (!passes.length || p.length < 3) return [];
+  let k = taken.filter((s) => s.kind === 'gpm').length;
+  const out: Segment[] = [];
+  const climbs = findClimbs(p, 100, 0.03).filter((c) => c.to - c.from >= 800);
+  for (const c of climbs) {
+    if (taken.some((s) => s.kind === 'gpm' && overlaps(s, c, 0)) || out.some((s) => overlaps(s, c, 0))) continue;
+    const top = p[Math.min(p.length - 1, Math.round(c.to / STEP))];
+    const pass = passes.filter((q) => Math.hypot(q.x - top.x, q.z - top.z) < reach).sort((a, b) => Math.hypot(a.x - top.x, a.z - top.z) - Math.hypot(b.x - top.x, b.z - top.z))[0];
+    if (!pass) continue;
+    // niente archi uno sull'altro con una volata o una crono già messe
+    if (taken.some((s) => s.kind !== 'gpm' && [s.from, s.to].some((e) => Math.abs(e - c.from) < 80 || Math.abs(e - c.to) < 80))) continue;
+    k += 1;
+    if (k > 9) break;
+    out.push({ id: `${prefix}:gpm${k}`, kind: 'gpm', name: pass.name, from: c.from, to: c.to });
+  }
+  return out;
+}
+
 /** Raggio del paese, metri dal centro: oltre questa distanza si è in campagna. */
 const TOWN_R: Partial<Record<Place['kind'], number>> = { town: 700, village: 450 };
 
@@ -267,12 +292,14 @@ const cache = new WeakMap<object, { anchors: SegmentAnchor[]; byRide: Map<string
 const LABEL: Record<SegmentKind, string> = { volata: 'Volata', gpm: 'GPM', crono: 'Crono', cassonetto: 'Cassonetto' };
 
 /** Tutti i tratti del mondo, ancorati: si calcolano una volta per mondo caricato. */
-export function worldSegments(data: { graph: WorldGraph; rides: RideDef[]; features: { places: Place[]; peaks?: { name: string; x: number; z: number; pass: boolean }[] } }): { anchors: SegmentAnchor[]; byRide: Map<string, Segment[]> } {
+export function worldSegments(data: { graph: WorldGraph; rides: RideDef[]; features: { places: Place[]; peaks?: { name: string; x: number; z: number; pass: boolean }[]; landmarks?: { name: string; kind: string; x: number; z: number }[] } }): { anchors: SegmentAnchor[]; byRide: Map<string, Segment[]> } {
   const have = cache.get(data);
   if (have) return have;
   const anchors: SegmentAnchor[] = [];
   const byRide = new Map<string, Segment[]>();
   const seen = new Set<string>();
+  // i passi per il GPM di ogni passo: i luoghi «passo» e le selle di OSM
+  const passes = [...(data.features.landmarks ?? []).filter((l) => l.kind === 'passo'), ...(data.features.peaks ?? []).filter((p) => p.pass)].map((q) => ({ name: q.name, x: q.x, z: q.z }));
   for (const ride of data.rides) {
     const legs: Leg[] = ride.legs.map(([edge, dir]) => ({ edge, dir }));
     const prof = rideProfile(data.graph, legs);
@@ -288,7 +315,8 @@ export function worldSegments(data: { graph: WorldGraph; rides: RideDef[]; featu
       return pa && pb && pa !== pb ? `${pa} – ${pb}` : pa ?? pb ?? ride.name;
     };
     const main = deriveSegments(`w:${ride.id}`, prof, name);
-    const segs = [...main, ...deriveCassonetti(`w:${ride.id}`, prof, data.features.places, main)].sort((a, b) => a.from - b.from);
+    const perPass = derivePassGpm(`w:${ride.id}`, prof, passes, main);
+    const segs = [...main, ...perPass, ...deriveCassonetti(`w:${ride.id}`, prof, data.features.places, [...main, ...perPass])].sort((a, b) => a.from - b.from);
     byRide.set(ride.id, segs);
     for (const a of anchorSegments(data.graph, ride.id, legs, segs)) {
       // due percorsi che passano dallo stesso tratto nello stesso verso: uno solo

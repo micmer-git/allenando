@@ -12,6 +12,11 @@ import { cap, formatDateTime, formatDuration, formatKm, formatKmText, formatNumb
 import { localDateKey, trainingLoad } from '@/domain/load';
 import { VERIFIED_ROUTES } from '@/domain/routes';
 import { WORLD_RIDES } from '@/multiplayer/world-rides';
+import { useWorldManifests } from '@/components/WorldPicker';
+import { seriesProgress } from '@/game/career';
+import { SERIES } from '@/game/missions';
+import { loadLastRide, repeatHref } from '@/open/lastRide';
+import { lastWorld, worldInfo } from '@/open/worlds';
 import { useI18n } from '@/i18n';
 import { useApp } from '@/store/useApp';
 import { cn } from '@/lib/cn';
@@ -41,6 +46,12 @@ export function HomePage() {
   const phase = phaseOf(session, now);
   // una sola azione piena per schermata: la sessione quando è aperta, altrimenti il mondo
   const sessionOpen = phase === 'aperta' || phase === 'via';
+  // il mondo usato per ultimo (F.1) e l'ultimo giro (F.11): Oggi propone di ripartire da lì
+  const worldId = lastWorld();
+  const world = worldInfo(worldId);
+  const manifests = useWorldManifests();
+  const ridesCount = manifests[worldId]?.rides ?? (worldId === 'bergamo' ? Object.keys(WORLD_RIDES).length : null);
+  const last = loadLastRide();
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 pb-nav pt-5 md:px-8 md:pt-10">
@@ -67,15 +78,15 @@ export function HomePage() {
       </Suspense>
       <NextSession now={now} />
 
-      <Missions done={career.missions.day === todayKey() ? career.missions.done : []} />
+      <Missions done={career.missions.day === todayKey() ? career.missions.done : []} series={SERIES.filter((s) => s.world === worldId || seriesProgress(career, s.id).done > 0).map((s) => ({ name: s.name, ...seriesProgress(career, s.id) }))} />
 
       {/* il mondo è la cosa da fare: una carta grande col suo ingresso, e tre scorciatoie */}
       <section className="mt-3 overflow-hidden rounded-3xl border border-accent/50 bg-elev">
-        <Link to="/mondo" data-testid="home-world" className="flex items-center gap-3 p-4 transition hover:bg-elev2/50">
+        <Link to={`/mondo?world=${worldId}`} data-testid="home-world" data-world={worldId} className="flex items-center gap-3 p-4 transition hover:bg-elev2/50">
           <span className="min-w-0 flex-1">
             <span className="eyebrow text-accent">Mondo aperto</span>
-            <span className="mt-1 block font-display text-3xl uppercase leading-none">Bergamo e le valli</span>
-            <span className="num mt-1.5 block text-sm text-muted">{`${Object.keys(WORLD_RIDES).length} percorsi · Città Alta, Val Brembana, Val Seriana`}</span>
+            <span className="mt-1 block font-display text-3xl uppercase leading-none">{world.name}</span>
+            <span className="num mt-1.5 block text-sm text-muted">{ridesCount != null ? `${ridesCount} percorsi · ${world.blurb}` : world.blurb}</span>
           </span>
           <span
             aria-hidden="true"
@@ -85,16 +96,23 @@ export function HomePage() {
           </span>
         </Link>
         <nav aria-label="Nel mondo" className="grid grid-cols-3 border-t border-line text-sm font-semibold">
-          <Link to="/mondo?tab=libero" className="flex h-12 items-center justify-center">
+          <Link to={`/mondo?world=${worldId}&tab=libero`} className="flex h-12 items-center justify-center">
             Giro libero
           </Link>
-          <Link to="/mondo?tab=anello" className="flex h-12 items-center justify-center border-x border-line">
+          <Link to={`/mondo?world=${worldId}&tab=anello`} className="flex h-12 items-center justify-center border-x border-line">
             Anello
           </Link>
-          <Link to="/mondo?tab=ab" className="flex h-12 items-center justify-center">
+          <Link to={`/mondo?world=${worldId}&tab=ab`} className="flex h-12 items-center justify-center">
             A → B
           </Link>
         </nav>
+        {last ? (
+          <Link to={repeatHref(last)} data-testid="home-repeat" className="flex min-h-12 items-center gap-3 border-t border-line px-4 py-2 text-sm">
+            <span className="font-semibold">Ripeti l’ultimo giro</span>
+            <span className="min-w-0 flex-1 truncate text-muted">{`${last.title}${last.world && last.world !== worldId ? ` · ${worldInfo(last.world).short}` : ''}`}</span>
+            <span aria-hidden="true" className="text-lg text-muted">→</span>
+          </Link>
+        ) : null}
       </section>
 
       <section className="mt-6">
@@ -228,8 +246,8 @@ function NextSession({ now }: { now: number }) {
   );
 }
 
-/** Le tre missioni di oggi: si fanno pedalando, una spunta per ognuna. */
-function Missions({ done }: { done: string[] }) {
+/** Le tre missioni di oggi: si fanno pedalando, una spunta per ognuna. Sotto, le serie a tappe (F.7). */
+function Missions({ done, series }: { done: string[]; series: { name: string; done: number; total: number; finished: boolean }[] }) {
   const list = missionsFor(todayKey());
   return (
     <section className="mt-3 rounded-3xl border border-line bg-elev p-3" data-testid="home-missions">
@@ -255,6 +273,19 @@ function Missions({ done }: { done: string[] }) {
           );
         })}
       </ul>
+      {series.length ? (
+        <ul className="mt-2 flex flex-col gap-1.5 border-t border-line pt-2" data-testid="home-series">
+          {series.map((s) => (
+            <li key={s.name} className="flex items-center gap-2.5 text-sm">
+              <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border ${s.finished ? 'border-accent bg-accent text-accent-ink' : 'border-line'}`} aria-hidden="true">
+                {s.finished ? '✓' : ''}
+              </span>
+              <span className="min-w-0 flex-1">{`Serie ${s.name}`}</span>
+              <span className="num text-xs text-muted">{s.finished ? 'Finita' : `Tappa ${Math.min(s.total, s.done + 1)} di ${s.total}`}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </section>
   );
 }
