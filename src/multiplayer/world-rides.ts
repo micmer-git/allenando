@@ -3,7 +3,7 @@
 // (un professionista a 6,8 W/kg, con il 15% di margine). Li usa il server della classifica.
 
 export const WORLD_ID = 'bergamo';
-export const WORLD_EDGES = 28603;
+export const WORLD_EDGES = 28610;
 export const WORLD_RIDES: Record<string, { timedM: number; minSec: number }> = {
   "citta-alta": {
     "timedM": 4927,
@@ -19,7 +19,7 @@ export const WORLD_RIDES: Record<string, { timedM: number; minSec: number }> = {
   },
   "val-seriana": {
     "timedM": 31917,
-    "minSec": 2172
+    "minSec": 2173
   },
   "colle-gallo": {
     "timedM": 10962,
@@ -43,7 +43,7 @@ export const WORLD_RIDES: Record<string, { timedM: number; minSec: number }> = {
   },
   "ciclovia-brembana": {
     "timedM": 16037,
-    "minSec": 1103
+    "minSec": 1102
   },
   "foppolo": {
     "timedM": 20243,
@@ -57,8 +57,16 @@ export const WORLD_RIDES: Record<string, { timedM: number; minSec: number }> = {
     "timedM": 38509,
     "minSec": 2776
   },
+  "berghem-corto": {
+    "timedM": 72540,
+    "minSec": 5120
+  },
+  "berghem-medio": {
+    "timedM": 122813,
+    "minSec": 8555
+  },
   "due-valli": {
     "timedM": 87837,
-    "minSec": 5879
+    "minSec": 5880
   }
 };
