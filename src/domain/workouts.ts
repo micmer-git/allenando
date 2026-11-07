@@ -328,7 +328,8 @@ export function emptyWorkout(): Workout {
 /** Dove si pedala un allenamento: una salita verificata, un percorso del mondo, il giro libero da un paese, un anello. */
 export type WorkoutPlace =
   | { kind: 'salita'; route: string }
-  | { kind: 'percorso'; ride: string }
+  /** `world`: il mondo del percorso; senza, Bergamo */
+  | { kind: 'percorso'; ride: string; world?: string }
   /** `query`: i parametri del punto di partenza nel mondo (world=…&edge=…&s=…&dir=… oppure world=…&plan=…) */
   | { kind: 'libero' | 'anello'; query: string };
 
@@ -337,10 +338,31 @@ export function workoutRideLink(id: string, place: WorkoutPlace): string {
   const q = new URLSearchParams({ workout: id });
   if (place.kind === 'salita') q.set('route', place.route);
   else if (place.kind === 'percorso') {
-    q.set('world', 'bergamo');
+    q.set('world', place.world ?? 'bergamo');
     q.set('ride', place.ride);
   } else for (const [k, v] of new URLSearchParams(place.query)) q.set(k, v);
   return `/ride?${q.toString()}`;
+}
+
+/**
+ * «Una salita di 30 minuti» dal mondo attivo (F.15): fra i percorsi in salita quello che, a una
+ * velocità da rullo (18 km/h in piano, meno con la pendenza), dura quanto l'allenamento. Se
+ * nessuno ci si avvicina (entro il 40%) ritorna null e si resta dove si era.
+ */
+export function climbForMinutes(rides: readonly { id: string; kind: string; lengthM: number; climbGrade: number }[], minutes: number): string | null {
+  let best: string | null = null;
+  let bestErr = Infinity;
+  for (const r of rides) {
+    if (r.kind !== 'salita') continue;
+    const kmh = Math.max(7, 18 - r.climbGrade * 100 * 1.6);
+    const min = r.lengthM / 1000 / kmh * 60;
+    const err = Math.abs(min - minutes) / Math.max(1, minutes);
+    if (err < bestErr) {
+      bestErr = err;
+      best = r.id;
+    }
+  }
+  return bestErr <= 0.4 ? best : null;
 }
 
 /** I tipi del filtro, ognuno coi suoi `kind`. */

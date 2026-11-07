@@ -7,7 +7,38 @@ import { Glyph } from '@/components/Glyph';
 import { PageHeader } from '@/components/ui';
 import type { Glyph as GlyphName } from '@/game/achievements';
 import { loadWorld, type RideDef } from '@/open/world';
+import { worldStorage } from '@/open/offline';
+import { fetchManifest, worldInfo } from '@/open/worlds';
 import { cn } from '@/lib/cn';
+
+/**
+ * Si può entrare in una stanza di quel mondo adesso? Sì con la rete; senza rete solo se il mondo
+ * è scaricato. Ritorna il motivo quando no.
+ */
+export function roomEntry(online: boolean, downloaded: boolean | null): { ok: boolean; why: string } {
+  if (online) return { ok: true, why: '' };
+  if (downloaded) return { ok: true, why: '' };
+  return { ok: false, why: downloaded === null ? 'Senza rete: il mondo non è pronto' : 'Senza rete: scarica il mondo da Mondo' };
+}
+
+/** Se i mondi delle sessioni in lista sono scaricati (per l'avviso senza rete). */
+function useDownloaded(worlds: string[]): Record<string, boolean | null> {
+  const key = worlds.join(',');
+  const [state, setState] = useState<Record<string, boolean | null>>({});
+  useEffect(() => {
+    let alive = true;
+    for (const w of key.split(',').filter(Boolean)) {
+      void fetchManifest(w)
+        .then((m) => worldStorage(w, m))
+        .then((s) => alive && setState((prev) => ({ ...prev, [w]: s.downloaded })))
+        .catch(() => alive && setState((prev) => ({ ...prev, [w]: null })));
+    }
+    return () => {
+      alive = false;
+    };
+  }, [key]);
+  return state;
+}
 
 const hhmm = (ms: number) => new Date(ms).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
 
@@ -41,7 +72,7 @@ export function paceLabel(pace: { label: string; wkg: number }): string {
 
 /** Il link per entrare in una sessione. */
 export function sessionHref(s: SessionDef): string {
-  return `/ride?world=bergamo&ride=${encodeURIComponent(s.rideId)}&session=${s.id}`;
+  return `/ride?world=${encodeURIComponent(s.world)}&ride=${encodeURIComponent(s.rideId)}&session=${s.id}`;
 }
 
 export function SessionsPage() {
@@ -61,6 +92,8 @@ export function SessionsPage() {
   const list = upcoming(now, 8);
   const last = sessionAt(slotOf(now) - 1);
   const rideOf = (id: string) => rides?.find((r) => r.id === id);
+  const downloaded = useDownloaded([...new Set(list.map((s) => s.world))]);
+  const online = typeof navigator === 'undefined' || navigator.onLine !== false;
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 pb-nav pt-5 md:px-8 md:pt-10" data-testid="sessions">
@@ -90,14 +123,23 @@ export function SessionsPage() {
                   </span>
                 </div>
                 <div className="min-w-0 flex-1">
-                  <SessionKindToken kind={s.kind} />
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    <SessionKindToken kind={s.kind} />
+                    <span className="inline-flex h-6 items-center rounded-full border border-line px-2 text-[11px] font-bold uppercase tracking-wide text-muted" data-testid={`session-world-${i}`}>
+                      {worldInfo(s.world).short}
+                    </span>
+                  </span>
                   <span className="mt-1 block font-semibold leading-snug">{r?.name ?? WORLD_RIDE_NAMES[s.rideId] ?? s.rideId}</span>
                   <span className="num flex flex-wrap gap-x-1.5 text-sm leading-snug text-muted">
                     {s.pace ? <span className="whitespace-nowrap">{`${paceLabel(s.pace)}${r ? ' ·' : ''}`}</span> : null}
                     {r ? <span className="whitespace-nowrap">{`${formatKmText(r.lengthM)} · ${formatMetersText(r.gainM)}`}</span> : null}
                   </span>
                 </div>
-                {can ? (
+                {can && !roomEntry(online, downloaded[s.world] ?? null).ok ? (
+                  <span className="w-24 shrink-0 text-right text-xs leading-snug text-warn" data-testid={`session-offline-${i}`}>
+                    {roomEntry(online, downloaded[s.world] ?? null).why}
+                  </span>
+                ) : can ? (
                   <div className="flex shrink-0 flex-col items-center gap-1" data-testid={`session-open-${i}`}>
                     <span className="text-[11px] font-semibold uppercase tracking-wide text-accent">{ph === 'via' ? 'In corso' : 'Aperta ora'}</span>
                     <Link to={sessionHref(s)} data-testid={`session-join-${i}`} className="grid h-11 place-items-center rounded-full bg-accent px-4 text-sm font-semibold text-accent-ink">

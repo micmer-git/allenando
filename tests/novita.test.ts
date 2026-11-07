@@ -334,7 +334,7 @@ describe('N3 · la cartolina', () => {
     const input = cardInputFromRide(ride, world, monumenti);
     expect(input.inWorld).toBe(true);
     expect(input.title).toBe('Città Alta e San Vigilio');
-    expect(input.eyebrow).toBe('dalla stazione al castello');
+    expect(input.eyebrow).toBe('dalla stazione al castello · Bergamo e le valli');
     expect(input.monuments.length).toBeGreaterThanOrEqual(3);
     // dalla stazione al castello, nell'ordine in cui si passano
     const names = input.monuments.map((m) => m.name);
