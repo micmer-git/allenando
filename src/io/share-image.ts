@@ -4,9 +4,11 @@ import { projector } from '@/domain/geo';
 import { validPosition } from '@/domain/metrics';
 import type { Ride } from '@/domain/types';
 import { CLS } from '@/open/graph';
-import { worldInfo, type WorldData } from '@/open/world';
+import { type WorldData } from '@/open/world';
 import type { Monumento } from '@/open/monumenti';
 import { downloadBytes, safeFileName } from '@/lib/download';
+import { worldInfo, worldOfRide } from '@/open/worlds';
+import { formatAltText } from '@/domain/format';
 
 /**
  * La cartolina del giro: un PNG 1080×1350 (il 4:5 dei social) con la traccia sulla carta di
@@ -33,6 +35,21 @@ const C = {
   muted: '#9d9686',
 } as const;
 
+/**
+ * Lo sfondo per mondo (F.9): Bergamo è la notte calda del marchio; il Sellaronda una notte
+ * fredda, blu-grigia come la dolomia al buio. `rgb` serve alle sfumature, `relief` al rilievo.
+ */
+export interface CardPalette {
+  night: string;
+  rgb: [number, number, number];
+  relief: [number, number, number];
+}
+
+export function cardPalette(worldId: string | null | undefined): CardPalette {
+  if (worldId === 'sellaronda') return { night: '#0a0e15', rgb: [10, 14, 21], relief: [22, 28, 40] };
+  return { night: C.night, rgb: [12, 11, 9], relief: [27, 25, 20] };
+}
+
 export interface CardInput {
   /** il nome del giro: «Maresana», «Giro libero» */
   title: string;
@@ -50,6 +67,10 @@ export interface CardInput {
   monuments: { name: string; x: number; z: number }[];
   /** la traccia sta nel mondo di Bergamo: sotto vanno rilievo, fiumi, strade e paesi */
   inWorld: boolean;
+  /** il mondo del giro (`bergamo`, `sellaronda`), null se fuori dai mondi */
+  worldId?: string | null;
+  /** il punto più alto toccato: il passo o la cima se la strada ci arriva, sennò solo la quota */
+  top?: { name: string | null; alt: number } | null;
 }
 
 export interface Box {
@@ -150,6 +171,14 @@ export function layoutCard(input: CardInput, measure: Measure): CardLayout {
   if (url.box.x0 > claim.box.x1 + 32) texts.push(url);
   y -= 23 + 40;
 
+  // il punto più alto (F.9): «Passo Pordoi · 2.239 m», una riga sopra i monumenti
+  if (input.top && input.top.alt > 0) {
+    const size = 27;
+    const line = `${input.top.name ? `${input.top.name} · ` : 'Punto più alto · '}${formatAltText(input.top.alt)}`;
+    texts.push(text(measure, 'top', line, M + 30, y, 500, size, SANS, C.ink2));
+    y -= size + 18;
+  }
+
   // i monumenti passati: quanti ne stanno, poi «e altri N»
   let monumentsMark: CardLayout['monumentsMark'] = null;
   if (input.monuments.length) {
@@ -169,7 +198,7 @@ export function layoutCard(input: CardInput, measure: Measure): CardLayout {
     texts.push(text(measure, 'monuments', line, x, y, 500, size, SANS, C.ink2));
     monumentsMark = { x: M + 9, y: y - size * 0.36 };
     y -= size + 44;
-  }
+  } else if (input.top && input.top.alt > 0) y -= 26;
 
   // il profilo
   const hasTrack = input.track.length >= 2;
@@ -312,9 +341,25 @@ export function cardInputFromRide(ride: Ride, world: WorldData | null, monumenti
     for (const { m } of [...firstPass.values()].sort((a, c) => a.i - c.i)) passed.push({ name: typo(m.name), x: m.x, z: m.z });
   }
   const t = cardTitle(ride, world?.rides ?? []);
+  // il mondo nella riga sopra il titolo, e il punto più alto toccato
+  const worldId = worldOfRide(ride) ?? (inWorld && world ? world.graph.id : null);
+  const eyebrow = worldId && !t.eyebrow.includes(worldInfo(worldId).name) ? [t.eyebrow, worldInfo(worldId).name].filter(Boolean).join(' · ') : t.eyebrow;
+  let top: CardInput['top'] = null;
+  const hi = ride.samples.reduce<(typeof ride.samples)[number] | null>((a, s) => (Number.isFinite(s.altitude) && (!a || s.altitude > a.altitude) ? s : a), null);
+  if (hi && hi.altitude > 0) {
+    let name: string | null = null;
+    if (inWorld && world && validPosition(hi.lat, hi.lon)) {
+      const p = proj.toLocal({ lat: hi.lat!, lon: hi.lon! });
+      const near = world.features.landmarks.filter((l) => (l.kind === 'passo' || l.kind === 'cima') && Math.hypot(l.x - p.x, l.z - p.z) < (l.kind === 'passo' ? 450 : 2600)).sort((a, b) => Math.hypot(a.x - p.x, a.z - p.z) - Math.hypot(b.x - p.x, b.z - p.z))[0];
+      if (near) name = typo(near.name);
+    }
+    top = { name, alt: hi.altitude };
+  }
   return {
     title: typo(t.title),
-    eyebrow: typo(t.eyebrow),
+    eyebrow: typo(eyebrow),
+    worldId,
+    top,
     when: new Date(ride.startTime),
     durationSec: ride.durationSec,
     distanceM: ride.distanceM,
@@ -346,27 +391,29 @@ function setSpacing(g: Ctx, px: number): void {
 /** Disegna la cartolina intera su un contesto 1080×1350. */
 export function paintCard(g: Ctx, input: CardInput, layout: CardLayout, world: WorldContext | null): void {
   const W = CARD_W;
+  const pal = cardPalette(input.worldId);
+  const rgb = pal.rgb.join(',');
   g.save();
-  g.fillStyle = C.night;
+  g.fillStyle = pal.night;
   g.fillRect(0, 0, W, CARD_H);
   const hasTrack = input.track.length >= 2;
-  if (hasTrack) paintMap(g, input, layout, input.inWorld ? world : null);
+  if (hasTrack) paintMap(g, input, layout, input.inWorld ? world : null, pal);
   else if (input.profile.length > 1) paintProfile(g, input.profile, { x0: CARD_MARGIN, y0: 220, x1: W - CARD_MARGIN, y1: layout.mapBottom - 160 }, true);
 
   // sfumature: sopra per il marchio, sotto nel fondo dove comincia il testo
   const top = g.createLinearGradient(0, 0, 0, 230);
-  top.addColorStop(0, 'rgba(12,11,9,0.92)');
-  top.addColorStop(1, 'rgba(12,11,9,0)');
+  top.addColorStop(0, `rgba(${rgb},0.92)`);
+  top.addColorStop(1, `rgba(${rgb},0)`);
   g.fillStyle = top;
   g.fillRect(0, 0, W, 230);
   // la sfumatura comincia sotto la traccia: il via e l'arrivo restano accesi
   const fade0 = Math.min(layout.fit.y1 + 12, layout.mapBottom - 120);
   const bottom = g.createLinearGradient(0, fade0, 0, layout.mapBottom);
-  bottom.addColorStop(0, 'rgba(12,11,9,0)');
-  bottom.addColorStop(1, 'rgba(12,11,9,1)');
+  bottom.addColorStop(0, `rgba(${rgb},0)`);
+  bottom.addColorStop(1, `rgba(${rgb},1)`);
   g.fillStyle = bottom;
   g.fillRect(0, fade0, W, layout.mapBottom - fade0);
-  g.fillStyle = C.night;
+  g.fillStyle = pal.night;
   g.fillRect(0, layout.mapBottom, W, CARD_H - layout.mapBottom);
 
   if (layout.profile) paintProfile(g, input.profile, layout.profile, false);
@@ -419,7 +466,7 @@ function diamond(g: Ctx, x: number, y: number, r: number): void {
   g.stroke();
 }
 
-function paintMap(g: Ctx, input: CardInput, layout: CardLayout, world: WorldContext | null): void {
+function paintMap(g: Ctx, input: CardInput, layout: CardLayout, world: WorldContext | null, pal: CardPalette = cardPalette(input.worldId)): void {
   const W = CARD_W;
   const H = layout.mapBottom;
   const v = layout.view;
@@ -435,7 +482,7 @@ function paintMap(g: Ctx, input: CardInput, layout: CardLayout, world: WorldCont
   g.rect(0, 0, W, H);
   g.clip();
   if (world) {
-    if (world.far) paintRelief(g, world, layout, H);
+    if (world.far) paintRelief(g, world, layout, H, pal);
     const f = world.data.features;
     g.fillStyle = '#16252b';
     for (const l of f.lakes) {
@@ -543,7 +590,8 @@ function paintMap(g: Ctx, input: CardInput, layout: CardLayout, world: WorldCont
 }
 
 /** Il rilievo ombreggiato, a un terzo della risoluzione: quote bilineari, luce da nord-ovest. */
-function paintRelief(g: Ctx, world: WorldContext, layout: CardLayout, H: number): void {
+function paintRelief(g: Ctx, world: WorldContext, layout: CardLayout, H: number, pal: CardPalette): void {
+  const [r0, g0, b0] = pal.relief;
   const far = world.far;
   if (!far || typeof document === 'undefined') return;
   const f = world.data.graph.far;
@@ -584,9 +632,9 @@ function paintRelief(g: Ctx, world: WorldContext, layout: CardLayout, H: number)
       const tt = Math.min(1, Math.max(0, (hz - 200) / 1800));
       const s = 0.5 + shade * 1.1;
       const o = (py * w + px) * 4;
-      img.data[o] = Math.min(255, (27 + tt * 26) * s);
-      img.data[o + 1] = Math.min(255, (25 + tt * 22) * s);
-      img.data[o + 2] = Math.min(255, (20 + tt * 15) * s);
+      img.data[o] = Math.min(255, (r0 + tt * 26) * s);
+      img.data[o + 1] = Math.min(255, (g0 + tt * 22) * s);
+      img.data[o + 2] = Math.min(255, (b0 + tt * 15) * s);
       img.data[o + 3] = 255;
     }
   }

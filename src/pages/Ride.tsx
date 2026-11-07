@@ -6,7 +6,7 @@ import { legsBounds, WorldMap, type MapMarker, type MapOverlay } from '@/compone
 import { Button, Segmented, Wordmark } from '@/components/ui';
 import { bluetoothSupport } from '@/bluetooth/support';
 import { BluetoothTrainer } from '@/bluetooth/trainer';
-import { formatDuration, formatGrade, formatKm, formatKmText, formatNumber, formatTss, msToKmh, withUnit } from '@/domain/format';
+import { formatAlt, formatAltText, formatDuration, formatGrade, formatKm, formatKmText, formatNumber, formatTss, msToKmh, withUnit } from '@/domain/format';
 import { STANDARD_AIR, type PhysicsParams } from '@/domain/physics';
 import {
   gapSeconds,
@@ -35,7 +35,7 @@ import { decodeSection } from './ReplaySetup';
 import { RoomPanel, RoomSheet, useRoom } from './RideRoom';
 import { RecoveryCard } from './RideRecovery';
 import { workoutTitle } from './Workouts';
-import { isWorld, loadWorld, Terrain, worldBase, worldInfo, type RideDef, type WorldData } from '@/open/world';
+import { isWorld, loadWorld, Terrain, worldBase, type RideDef, type WorldData } from '@/open/world';
 import { createWorldField } from '@/open/field';
 import { WorldSession } from '@/open/session';
 import { WorldScene, npcCount, type RemoteWorldRider } from '@/open/WorldScene';
@@ -45,6 +45,9 @@ import { applyRide, levelOf, loadProgress, postResult, postXp, type XpLine } fro
 import { AheadProfile, cap, LoopSheet, MapSheet, Nearby, Toasts, TurnPicker, WeatherChip, WorldMini, XpSummary } from './WorldHud';
 import type { Dir } from '@/open/graph';
 import { fetchWeather, type WeatherNow } from '@/open/weather';
+import { nextPass, passesAlongPath, passText, rideMarks, type PassPoint } from '@/game/passes';
+import { rememberRide } from '@/open/lastRide';
+import { rememberWorld, worldInfo } from '@/open/worlds';
 import { sunFor } from '@/open/sky';
 import { applyCareer, ORO_RULES, type CareerOutcome, type OroLine, type RideFacts, type SegmentResult } from '@/game/career';
 import { RideGame, rideFrame } from '@/game/rideGame';
@@ -237,6 +240,24 @@ function useRideSetup(): { setup: RideSetup | null; error: string | null } {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
   return state;
+}
+
+/**
+ * I passi e le cime davanti (F.4, F.5). Sul percorso scelto sono i suoi luoghi, con la distanza
+ * già nota; nel giro libero e sull'anello si cercano lungo la strada viva, nei prossimi 6 km, e si
+ * ricalcolano ogni chilometro o quando la strada cambia.
+ */
+function usePassMarks(session: WorldSession | null, distance: number): PassPoint[] {
+  const km = Math.floor(distance / 1000);
+  const version = session?.path.version ?? 0;
+  const onRoute = !!session?.ride && session.onRoute;
+  return useMemo(() => {
+    if (!session) return [];
+    if (onRoute && session.ride) return rideMarks(session.data.features.landmarks, session.ride);
+    return passesAlongPath(session.path, session.data.features.landmarks, km * 1000 - 500, km * 1000 + 6500);
+    // la strada viva cambia versione quando si allunga o si svolta; il km fa scorrere la finestra
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, onRoute, version, km]);
 }
 
 /**
@@ -592,6 +613,10 @@ function RideScreen({
     readyRef.current = true;
     onReady();
     setReady(true);
+    // l'ultimo giro, per «Ripeti l'ultimo giro» in Oggi (F.11); e il mondo, per Oggi e Mondo (F.1)
+    if (!resume) rememberRide({ search: rideSearch(paramsRef.current), title: setup.label, world: setup.world?.data.graph.id });
+    if (setup.world) rememberWorld(setup.world.data.graph.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onReady]);
   const veil = useFade(!ready, 260);
 
@@ -680,6 +705,7 @@ function RideScreen({
       return;
     }
     let alive = true;
+    // il meteo del mondo in cui si pedala (F.12): l'origine del grafo è il suo centro
     void fetchWeather(world.data.graph.origin.lat, world.data.graph.origin.lon).then((w) => {
       if (!alive) return;
       session.weather = w;
@@ -757,6 +783,7 @@ function RideScreen({
           },
           game: () => ({ results: game.results.slice(), pois: game.poisPassed.slice() }),
           world: setup.world ? () => ({ gainM: setup.world!.session.gainM, passed: [...setup.world!.session.passed] }) : undefined,
+          worldId: setup.world?.data.graph.id,
         },
         (ride) => saveRide(ride),
       ),
@@ -923,8 +950,12 @@ function RideScreen({
   const kmLeft = Math.max(0, track.length - engine.distance);
   const turning = !!session?.junction && session.junction.dist <= 220 && engine.phase !== 'finished';
   const mini = big && wide ? 132 : wide ? 88 : 96;
+  // in montagna (F.4): i passi davanti, dal percorso scelto o dalla strada che si sta facendo
+  const passMarks = usePassMarks(session, engine.distance);
+  const pass = session ? nextPass(passMarks, engine.distance, engine.altitude) : null;
+  const highAlt = !!session && engine.altitude >= worldInfo(session.data.graph.id).highAlt;
   const where = session
-    ? cap([session.placeName(), session.roadLabel(engine.distance), `${formatNumber(engine.altitude, 0)} m`].filter(Boolean).join(' · '))
+    ? cap([session.placeName(), session.roadLabel(engine.distance), formatAltText(engine.altitude)].filter(Boolean).join(' · '))
     : cap([modeLabel, !setup.route.verified ? 'traccia non verificata' : `${formatNumber(engine.altitude, 0)} m`, track.hairpins.length > 0 ? `tornanti ${hairpinsDone}/${track.hairpins.length}` : ''].filter(Boolean).join(' · '));
 
   const settingsPanel = (
@@ -1139,6 +1170,12 @@ function RideScreen({
                 </div>
                 <div className={cn('flex shrink-0 flex-col items-end gap-1.5', session && 'landscape:pt-[calc(var(--mini)+0.5rem)]')} data-testid="ride-hud-right">
                   {session ? <WeatherChip session={session} engine={engine} /> : null}
+                  {pass ? (
+                    <p className="num max-w-[13rem] rounded-xl bg-bg/70 px-2.5 py-1 text-right text-xs font-semibold leading-tight backdrop-blur-md" data-testid="ride-next-pass">
+                      <span className="text-accent">▲ </span>
+                      {passText(pass)}
+                    </p>
+                  ) : null}
                   {gap != null ? (
                     <p className="rounded-xl px-2.5 py-1 text-xs font-semibold backdrop-blur-md" style={gapStyle(gap)} data-testid="ghost-gap">
                       {gapLabel(gap, own?.of)}
@@ -1192,6 +1229,7 @@ function RideScreen({
                   position={engine.distance}
                   ghost={ghostDistance ? ghostDistance() : ghosts.distance()}
                   marks={game.tracker.windows.map((w) => ({ from: w.from, to: w.to, color: SEGMENT_STYLE[w.seg.kind].color }))}
+                  peaks={passMarks}
                 />
               )}
             </div>
@@ -1277,6 +1315,11 @@ function RideScreen({
               <span className="font-semibold">{paused ? '–' : formatNumber(msToKmh(engine.speed), 1)}</span> <span className="text-xs text-muted">{t('units.kmh')}</span>
             </span>
             <span className="font-semibold">{formatGrade(engine.grade)}</span>
+            {highAlt ? (
+              <span data-testid="ride-alt">
+                <span className="font-semibold">{formatAlt(engine.altitude)}</span> <span className="text-xs text-muted">m</span>
+              </span>
+            ) : null}
             <span>
               <span className="font-semibold">{paused ? '–' : formatNumber(engine.cadence, 0)}</span> <span className="text-xs text-muted">{t('units.rpm')}</span>
             </span>

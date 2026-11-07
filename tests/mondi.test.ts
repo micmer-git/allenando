@@ -120,8 +120,9 @@ describe('S1.5 · l’app sa di avere due mondi', () => {
 
   it('la pagina Mondo ha la scelta del mondo e nessun «bergamo» cablato nei link', () => {
     const src = readFileSync(join(__dirname, '..', 'src', 'pages', 'World.tsx'), 'utf8');
-    expect(src).toMatch(/testId="world-pick"/);
-    expect(src).toMatch(/WORLDS\.map/);
+    expect(src).toMatch(/WorldChooser/);
+    expect(src).toMatch(/world-tagline/);
+    expect(readFileSync(join(__dirname, '..', 'src', 'open', 'worlds.ts'), 'utf8')).toMatch(/WORLDS/);
     expect(src).not.toMatch(/world=bergamo/);
     for (const f of ['pages/Ride.tsx', 'multiplayer/world-client.ts', 'multiplayer/world-protocol.ts', 'domain/workouts.ts', 'domain/plans.ts', 'pages/Sessions.tsx', 'open/starts.ts', 'io/share-image.ts']) {
       const t = readFileSync(join(__dirname, '..', 'src', f), 'utf8').replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');

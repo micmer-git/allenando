@@ -21,6 +21,7 @@ let host: HTMLDivElement | null = null;
 
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  localStorage.clear();
   // i dati del mondo non arrivano mai: resta il velo di caricamento, con la scelta del mondo
   vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => undefined)));
   host = document.createElement('div');
@@ -47,11 +48,10 @@ async function render(path: string): Promise<HTMLDivElement> {
 describe('la pagina Mondo con due mondi', () => {
   it('in testa la scelta del mondo: «Bergamo e le valli» e «Sellaronda», Bergamo per primo', async () => {
     const el = await render('/mondo');
-    const pick = el.querySelector('[data-testid=world-pick]');
+    const pick = el.querySelector('[data-testid=world-chooser]');
     expect(pick).not.toBeNull();
-    const labels = [...pick!.querySelectorAll('button, [role=radio], [role=tab], label')].map((b) => b.textContent?.trim()).filter(Boolean);
-    expect(labels).toContain('Bergamo e le valli');
-    expect(labels).toContain('Sellaronda');
+    expect(pick!.textContent).toContain('Bergamo e le valli');
+    expect(pick!.textContent).toContain('Sellaronda');
     expect(el.textContent).toContain('Bergamo e le valli');
     expect(el.textContent).not.toMatch(/Carico le strade: Sellaronda/i);
   });

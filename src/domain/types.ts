@@ -96,6 +96,8 @@ export interface Ride {
   externalId?: string;
   /** Salita o traccia su cui si è pedalato indoor (id di VERIFIED_ROUTES). */
   routeId?: string;
+  /** Il mondo aperto in cui si è pedalato (`bergamo`, `sellaronda`), se nel mondo. */
+  world?: string;
 }
 
 export interface SleepSession {

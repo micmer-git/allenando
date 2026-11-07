@@ -31,6 +31,70 @@ const POOL: Mission[] = [
   { id: 'percorso', title: 'Finisci un percorso del mondo', oro: 80, check: (f) => !!f.worldRideDone },
 ];
 
+/**
+ * Una serie: missioni a tappe, nell'ordine, che restano fatte da un giorno all'altro. Finita la
+ * serie arriva un pezzo del guardaroba (kit.ts, `series`). La prima è il Sellaronda: tre passi
+ * uno per volta, poi il giro intero. I percorsi e i luoghi sono quelli della pista S1
+ * (`sella-canazei`, `pordoi-arabba`…, luoghi `passo-sella`…): si contano sia col percorso finito
+ * sia passando dal passo in un giro qualunque.
+ */
+export interface SeriesStep {
+  id: string;
+  title: string;
+  oro: number;
+  check: (f: RideFacts) => boolean;
+}
+
+export interface MissionSeries {
+  id: string;
+  name: string;
+  /** in una riga: perché farla */
+  blurb: string;
+  /** il mondo in cui si fa */
+  world: string;
+  steps: SeriesStep[];
+  /** oro alla fine della serie, oltre alla maglia */
+  oro: number;
+}
+
+const passOrRide = (pass: string, rides: string[]) => (f: RideFacts) => f.landmarks.includes(pass) || (!!f.worldRideDone && rides.includes(f.worldRideDone));
+
+export const SERIES: MissionSeries[] = [
+  {
+    id: 'sellaronda',
+    name: 'Sellaronda',
+    blurb: 'Tre passi uno alla volta, poi il giro intero: la maglia Sella.',
+    world: 'sellaronda',
+    oro: 300,
+    steps: [
+      { id: 'sella', title: 'Passo Sella', oro: 60, check: passOrRide('passo-sella', ['sella-canazei']) },
+      { id: 'pordoi', title: 'Passo Pordoi', oro: 60, check: passOrRide('passo-pordoi', ['pordoi-arabba', 'pordoi-canazei']) },
+      { id: 'gardena', title: 'Passo Gardena', oro: 60, check: passOrRide('passo-gardena', ['gardena-corvara', 'gardena-selva']) },
+      { id: 'giro', title: 'Il giro intero', oro: 120, check: (f) => f.worldRideDone === 'sellaronda' || f.worldRideDone === 'sellaronda-orario' },
+    ],
+  },
+];
+
+export const SERIES_BY_ID = new Map(SERIES.map((s) => [s.id, s]));
+
+/**
+ * Fa avanzare una serie con un giro: le tappe si prendono nell'ordine, ma un giro che ne vale
+ * più d'una (il Sellaronda intero passa da tutti i passi) le prende tutte. Ritorna le tappe
+ * nuove e se la serie si è chiusa adesso.
+ */
+export function advanceSeries(series: MissionSeries, done: readonly string[], f: RideFacts): { done: string[]; fresh: SeriesStep[]; completed: boolean } {
+  const next = [...done];
+  const fresh: SeriesStep[] = [];
+  for (const step of series.steps) {
+    if (next.includes(step.id)) continue;
+    if (!step.check(f)) break;
+    next.push(step.id);
+    fresh.push(step);
+  }
+  const all = series.steps.every((s) => next.includes(s.id));
+  return { done: next, fresh, completed: all && fresh.length > 0 };
+}
+
 function hash(s: string): number {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) {

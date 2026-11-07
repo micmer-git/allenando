@@ -34,6 +34,8 @@ export interface RideCheckpoint {
   game: { results: SegmentResult[]; pois: string[] };
   /** nel mondo: il dislivello contato e i luoghi passati */
   world?: { gainM: number; passed: string[] };
+  /** il mondo aperto in cui si pedala (`bergamo`, `sellaronda`) */
+  worldId?: string;
 }
 
 function valid(value: unknown): value is RideCheckpoint {
@@ -74,6 +76,7 @@ export function rideFromCheckpoint(cp: RideCheckpoint): Ride {
     distanceM: e.base + e.distance,
   });
   if (cp.routeId) ride.routeId = cp.routeId;
+  if (cp.worldId) ride.world = cp.worldId;
   return ride;
 }
 
@@ -111,6 +114,8 @@ export interface KeeperMeta {
   routeId: () => string | undefined;
   game: () => RideCheckpoint['game'];
   world?: () => RideCheckpoint['world'];
+  /** il mondo aperto, se nel mondo */
+  worldId?: string;
 }
 
 /**
@@ -145,6 +150,7 @@ export class RideKeeper {
       engine,
       game: this.meta.game(),
       world: this.meta.world?.(),
+      worldId: this.meta.worldId,
     };
   }
 
@@ -164,6 +170,7 @@ export class RideKeeper {
     const ride = this.engine.toRide(this.meta.name());
     const routeId = this.meta.routeId();
     if (routeId) ride.routeId = routeId;
+    if (this.meta.worldId) ride.world = this.meta.worldId;
     const saved = this.save(ride).then(() => clearCheckpoint());
     return { ride, saved };
   }

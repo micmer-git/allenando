@@ -1,7 +1,7 @@
 import { loadKv, saveKv } from '@/db/db';
 import { ACHIEVEMENTS, type Achievement } from './achievements';
 import { DEFAULT_EQUIPPED, ITEM_BY_ID, STARTER_ITEMS, type Slot } from './kit';
-import { missionsFor, type Mission } from './missions';
+import { advanceSeries, missionsFor, SERIES, type Mission, type SeriesStep } from './missions';
 import type { SegmentKind } from './arches';
 
 /**
@@ -50,6 +50,8 @@ export interface Career {
   };
   streak: { days: number; best: number; last: string };
   missions: { day: string; done: string[] };
+  /** le serie di missioni (missions.ts): id della serie → tappe fatte */
+  series: Record<string, string[]>;
 }
 
 export const EMPTY_CAREER: Career = {
@@ -63,6 +65,7 @@ export const EMPTY_CAREER: Career = {
   counts: { rides: 0, km: 0, gainM: 0, volata: 0, gpm: 0, crono: 0, cassonetto: 0, sessions: 0, workouts: 0, night: 0, rain: 0, dawn: 0, rooms: 0, pois: 0, climbs: {}, worldRides: {} },
   streak: { days: 0, best: 0, last: '' },
   missions: { day: '', done: [] },
+  series: {},
 };
 
 export async function loadCareer(): Promise<Career> {
@@ -83,6 +86,7 @@ export function normalize(c: Partial<Career> | null | undefined): Career {
     counts: { ...base.counts, ...(c.counts ?? {}), climbs: { ...(c.counts?.climbs ?? {}) }, worldRides: { ...(c.counts?.worldRides ?? {}) } },
     streak: { ...base.streak, ...(c.streak ?? {}) },
     missions: { ...base.missions, ...(c.missions ?? {}) },
+    series: Object.fromEntries(Object.entries(c.series ?? {}).map(([k, v]) => [k, [...(v ?? [])]])),
   };
 }
 
@@ -171,6 +175,8 @@ export interface CareerOutcome {
   pbs: string[];
   /** missioni del giorno completate in questo giro */
   missions: Mission[];
+  /** tappe delle serie prese in questo giro, con la serie */
+  steps: { series: string; step: SeriesStep }[];
   /** pezzi del guardaroba sbloccati dai traguardi */
   items: string[];
 }
@@ -252,9 +258,30 @@ export function applyCareer(prev: Career, f: RideFacts, now = new Date()): Caree
     }
   }
 
+  // le serie: tappe nell'ordine, la maglia alla fine
+  const steps: CareerOutcome['steps'] = [];
+  const items: string[] = [];
+  for (const s of SERIES) {
+    const adv = advanceSeries(s, next.series[s.id] ?? [], f);
+    if (!adv.fresh.length) continue;
+    next.series[s.id] = adv.done;
+    for (const step of adv.fresh) {
+      steps.push({ series: s.id, step });
+      lines.push({ label: `${s.name}: ${step.title}`, oro: step.oro });
+    }
+    if (adv.completed) {
+      lines.push({ label: `Serie ${s.name} finita`, oro: s.oro });
+      for (const [id, item] of ITEM_BY_ID) {
+        if (item.series === s.id && !next.owned.includes(id)) {
+          next.owned.push(id);
+          items.push(id);
+        }
+      }
+    }
+  }
+
   // traguardi
   const unlocked: Achievement[] = [];
-  const items: string[] = [];
   for (const a of ACHIEVEMENTS) {
     if (next.achievements[a.id]) continue;
     if (a.check(next, f)) {
@@ -281,7 +308,15 @@ export function applyCareer(prev: Career, f: RideFacts, now = new Date()): Caree
   const total = lines.reduce((s, l) => s + l.oro, 0);
   next.oro += total;
   next.oroTotal += total;
-  return { next, lines, total, unlocked, pbs, missions, items };
+  return { next, lines, total, unlocked, pbs, missions, steps, items };
+}
+
+/** A che punto è una serie: tappe fatte su tappe totali. */
+export function seriesProgress(c: Career, seriesId: string): { done: number; total: number; finished: boolean } {
+  const s = SERIES.find((x) => x.id === seriesId);
+  const done = (c.series[seriesId] ?? []).length;
+  const total = s?.steps.length ?? 0;
+  return { done, total, finished: total > 0 && done >= total };
 }
 
 /** Compra un pezzo: ritorna la carriera nuova, o un motivo. */
@@ -290,6 +325,7 @@ export function buy(c: Career, id: string, level: number): { ok: true; next: Car
   if (!item) return { ok: false, why: 'Pezzo sconosciuto.' };
   if (c.owned.includes(id) || STARTER_ITEMS.includes(id)) return { ok: false, why: 'Ce l’hai già.' };
   if (item.achievement) return { ok: false, why: 'Si sblocca con un traguardo.' };
+  if (item.series) return { ok: false, why: 'Si sblocca finendo una serie di missioni.' };
   if (item.level && level < item.level) return { ok: false, why: `Serve il livello ${item.level}.` };
   if (c.oro < item.price) return { ok: false, why: `Mancano ${item.price - c.oro} d’oro.` };
   const next = normalize(c);

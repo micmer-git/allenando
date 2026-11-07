@@ -10,8 +10,8 @@ import { worldSegments } from '@/game/segments';
 import { useGame } from '@/game/useGame';
 import { CLIMB_BOARD, type XpRow } from '@/multiplayer/world-protocol';
 import { fetchLeaders, fetchXpBoard, levelOf, type Leader } from '@/open/progress';
-import { isWorld, loadWorld, WORLD_KV, type WorldData } from '@/open/world';
-import { loadKv } from '@/db/db';
+import { isWorld, loadWorld, type WorldData } from '@/open/world';
+import { lastWorld } from '@/open/worlds';
 import { cn } from '@/lib/cn';
 
 type Tab = 'salite' | 'percorsi' | 'tratti' | 'punti';
@@ -24,18 +24,18 @@ export function LeaderboardsPage() {
   const [world, setWorld] = useState<WorldData | null>(null);
   const [leaders, setLeaders] = useState<Record<string, Leader> | null | 'loading'>('loading');
   const [open, setOpen] = useState<string | null>(null);
+  const worldParam = params.get('world');
   useEffect(() => {
     void hydrate();
     let alive = true;
-    // il mondo delle classifiche: ?world=, altrimenti l'ultimo scelto in Mondo
-    const fromUrl = params.get('world');
-    void (async () => loadWorld(isWorld(fromUrl) ? fromUrl : await loadKv<string>(WORLD_KV)))()
+    // il mondo delle classifiche: ?world= se è un mondo, altrimenti l'ultimo scelto
+    void loadWorld(isWorld(worldParam) ? worldParam : lastWorld())
       .then((d) => alive && setWorld(d))
       .catch(() => undefined);
     return () => {
       alive = false;
     };
-  }, [hydrate]);
+  }, [hydrate, worldParam]);
   const segs = useMemo(() => (world ? worldSegments(world) : null), [world]);
   const ids = useMemo(() => {
     if (tab === 'salite') return VERIFIED_ROUTES.map((r) => `salita:${r.id}`);

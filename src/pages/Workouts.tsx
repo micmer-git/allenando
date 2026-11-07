@@ -7,6 +7,7 @@ import { VERIFIED_ROUTES } from '@/domain/routes';
 import type { Workout } from '@/domain/types';
 import {
   ALL_BUILTIN,
+  climbForMinutes,
   DURATION_BANDS,
   duplicateWorkout,
   filterWorkouts,
@@ -19,9 +20,9 @@ import {
 } from '@/domain/workouts';
 import type { Translate } from '@/i18n';
 import { useI18n } from '@/i18n';
-import { freeStartQuery, loopStartQuery } from '@/open/starts';
-import { loadWorld, WORLD_KV, worldInfo, type WorldData } from '@/open/world';
-import { loadKv } from '@/db/db';
+import { freeStartQuery, loopStartQuery, START_TOWNS, startTowns } from '@/open/starts';
+import { loadWorld, type WorldData } from '@/open/world';
+import { lastWorld, WORLD_CATALOG, worldInfo } from '@/open/worlds';
 import { useApp } from '@/store/useApp';
 import { cn } from '@/lib/cn';
 import { downloadZwo, importZwoFiles } from '@/io/zwo';
@@ -39,20 +40,27 @@ type Where = 'salita' | 'percorso' | 'libero' | 'anello';
 interface Choice {
   where: Where;
   route: string;
+  /** un percorso del mondo, o `auto`: la salita lunga quanto l'allenamento (F.15) */
   ride: string;
   town: string;
+  /** il mondo dei percorsi, del giro libero e dell'anello */
+  world: string;
 }
 
+export const AUTO_RIDE = 'auto';
+
 const CHOICE_KEY = 'allenando.workouts.where';
-const DEFAULT_CHOICE: Choice = { where: 'salita', route: 'selvino-nembro', ride: 'selvino', town: 'Bergamo' };
+const DEFAULT_CHOICE: Choice = { where: 'salita', route: 'selvino-nembro', ride: AUTO_RIDE, town: 'Bergamo', world: 'bergamo' };
 
 /** La scelta di dove pedalare resta per la prossima volta (solo su questo dispositivo). */
 function readChoice(): Choice {
   try {
     const raw = localStorage.getItem(CHOICE_KEY);
-    return raw ? { ...DEFAULT_CHOICE, ...(JSON.parse(raw) as Partial<Choice>) } : DEFAULT_CHOICE;
+    const saved = raw ? (JSON.parse(raw) as Partial<Choice>) : {};
+    // il mondo: quello salvato qui, altrimenti l'ultimo usato nell'app
+    return { ...DEFAULT_CHOICE, world: lastWorld(), ...saved };
   } catch {
-    return DEFAULT_CHOICE;
+    return { ...DEFAULT_CHOICE, world: lastWorld() };
   }
 }
 
@@ -91,16 +99,16 @@ export function WorkoutsPage() {
   const needWorld = choice.where !== 'salita';
 
   useEffect(() => {
-    if (!needWorld || world) return;
+    if (!needWorld) return;
     let alive = true;
-    // il mondo dell'allenamento: l'ultimo scelto nella pagina Mondo
-    void (async () => loadWorld(await loadKv<string>(WORLD_KV)))()
+    setWorld(null);
+    void loadWorld(choice.world)
       .then((d) => alive && setWorld(d))
       .catch(() => alive && setNote('Mondo non disponibile: scegli una salita.'));
     return () => {
       alive = false;
     };
-  }, [needWorld, world]);
+  }, [needWorld, choice.world]);
 
   function setChoice(next: Partial<Choice>) {
     const c = { ...choice, ...next };
@@ -109,15 +117,17 @@ export function WorkoutsPage() {
   }
 
   const list = useMemo(() => filterWorkouts(ALL_BUILTIN, type, band), [type, band]);
-  // i paesi di partenza del mondo caricato; un paese di un altro mondo diventa il primo di questo
-  const towns = useMemo(() => (world ? worldInfo(world.graph.id).starts : worldInfo(null).starts), [world]);
-  const town = towns.includes(choice.town) ? choice.town : towns[0];
-  const freeQuery = useMemo(() => (world && choice.where === 'libero' ? freeStartQuery(world, town) : null), [world, choice.where, town]);
+  const freeQuery = useMemo(() => (world && choice.where === 'libero' ? freeStartQuery(world, choice.town) : null), [world, choice.where, choice.town]);
 
   /** Dove porta «Inizia»: null se il posto non è ancora pronto (il mondo si sta caricando). */
-  function placeFor(): WorkoutPlace | null {
+  function placeFor(w?: Workout): WorkoutPlace | null {
     if (choice.where === 'salita') return { kind: 'salita', route: choice.route };
-    if (choice.where === 'percorso') return world ? { kind: 'percorso', ride: choice.ride } : null;
+    if (choice.where === 'percorso') {
+      if (!world) return null;
+      // «la salita giusta per la durata»: il percorso in salita del mondo attivo lungo quanto l'allenamento
+      const ride = choice.ride === AUTO_RIDE ? (w ? climbForMinutes(world.rides, workoutDuration(w) / 60) : null) ?? world.rides.find((r) => r.kind === 'salita')?.id ?? world.rides[0]?.id : choice.ride;
+      return ride ? { kind: 'percorso', ride, world: world.graph.id } : null;
+    }
     if (choice.where === 'libero') return freeQuery ? { kind: 'libero', query: freeQuery } : null;
     return null;
   }
@@ -129,10 +139,10 @@ export function WorkoutsPage() {
     setNote(null);
     setTimeout(() => {
       const km = Math.min(90, Math.max(10, Math.round((workoutDuration(workout) / 3600) * 27)));
-      const q = loopStartQuery(world, town, km);
+      const q = loopStartQuery(world, choice.town, km);
       setBusy(null);
       if (!q) {
-        setNote(`Nessun anello da ${town}: prova un altro paese.`);
+        setNote(`Nessun anello da ${choice.town}: prova un altro paese.`);
         return;
       }
       navigate(workoutRideLink(workout.id, { kind: 'anello', query: q }));
@@ -145,17 +155,22 @@ export function WorkoutsPage() {
     navigate(`/workouts/edit/${next.id}`);
   }
 
-  const place = placeFor();
-  const start = (w: Workout) => ({ href: place ? workoutRideLink(w.id, place) : null, loop: choice.where === 'anello' ? () => startLoop(w) : null, busy: busy === w.id, ready: choice.where === 'anello' ? !!world : !!place });
+  const start = (w: Workout) => {
+    const p = placeFor(w);
+    return { href: p ? workoutRideLink(w.id, p) : null, loop: choice.where === 'anello' ? () => startLoop(w) : null, busy: busy === w.id, ready: choice.where === 'anello' ? !!world : !!p };
+  };
 
   const placeLabel =
     choice.where === 'salita'
       ? VERIFIED_ROUTES.find((r) => r.id === choice.route)?.name ?? 'Salita'
       : choice.where === 'percorso'
-        ? world?.rides.find((r) => r.id === choice.ride)?.name ?? 'Percorso'
+        ? choice.ride === AUTO_RIDE
+          ? `Salita per la durata · ${worldInfo(choice.world).short}`
+          : world?.rides.find((r) => r.id === choice.ride)?.name ?? 'Percorso'
         : choice.where === 'libero'
-          ? `Libero da ${town}`
-          : `Anello da ${town}`;
+          ? `Libero da ${choice.town}`
+          : `Anello da ${choice.town}`;
+  const towns = world ? startTowns(world) : START_TOWNS;
   const bandLabel = band === 'tutte' ? 'Durata' : DURATION_BANDS.find((b) => b.id === band)?.label ?? 'Durata';
 
   return (
@@ -276,10 +291,22 @@ export function WorkoutsPage() {
               </select>
             </label>
           ) : null}
+          {choice.where !== 'salita' ? (
+            <div className="mt-3">
+              <Segmented<string>
+                label="Mondo"
+                value={choice.world}
+                onChange={(v) => setChoice({ world: v, ride: AUTO_RIDE, town: worldInfo(v).towns[0] ?? choice.town })}
+                options={WORLD_CATALOG.map((w) => ({ value: w.id, label: w.short }))}
+                testId="workout-where-world"
+              />
+            </div>
+          ) : null}
           {choice.where === 'percorso' ? (
             <label className="mt-3 block text-sm font-semibold">
               Percorso del mondo
               <select className={selectCls} value={choice.ride} disabled={!world} onChange={(e) => setChoice({ ride: e.target.value })} data-testid="workout-where-ride">
+                <option value={AUTO_RIDE}>La salita giusta per la durata</option>
                 {world ? (
                   world.rides.map((r) => (
                     <option key={r.id} value={r.id}>
@@ -287,7 +314,7 @@ export function WorkoutsPage() {
                     </option>
                   ))
                 ) : (
-                  <option>Carico i percorsi…</option>
+                  <option disabled>Carico i percorsi…</option>
                 )}
               </select>
             </label>
@@ -295,7 +322,7 @@ export function WorkoutsPage() {
           {choice.where === 'libero' || choice.where === 'anello' ? (
             <label className="mt-3 block text-sm font-semibold">
               Parti da
-              <select className={selectCls} value={town} onChange={(e) => setChoice({ town: e.target.value })} data-testid="workout-where-town">
+              <select className={selectCls} value={choice.town} onChange={(e) => setChoice({ town: e.target.value })} data-testid="workout-where-town">
                 {towns.map((n) => (
                   <option key={n} value={n}>
                     {n}

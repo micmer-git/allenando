@@ -1,3 +1,5 @@
+import { WORLD_ID, worldOfRide } from '@/multiplayer/world-rides';
+
 /**
  * Le sessioni: ogni mezz'ora, a :00 e :30, parte qualcosa nel mondo di Bergamo. Il calendario
  * dipende solo dall'orologio, quindi è lo stesso su tutti i telefoni senza un server: chi
@@ -57,6 +59,13 @@ const PACES: { label: string; wkg: number }[] = [
   { label: 'A', wkg: 2.9 },
 ];
 
+/** Il mondo di un percorso di sessione, se va forzato. Vuoto: lo decide il percorso (`worldOfRide`). */
+export const SESSION_WORLD: Record<string, string> = {};
+
+export function sessionWorld(rideId: string): string {
+  return SESSION_WORLD[rideId] ?? worldOfRide(rideId) ?? WORLD_ID;
+}
+
 export interface SessionDef {
   id: string;
   slot: number;
@@ -64,6 +73,8 @@ export interface SessionDef {
   start: number;
   kind: SessionKind;
   rideId: string;
+  /** il mondo del percorso, sempre esplicito (F.16) */
+  world: string;
   /** solo per il gruppo */
   pace?: { label: string; wkg: number };
   title: string;
@@ -75,7 +86,7 @@ export function sessionAt(slot: number): SessionDef {
   const rideId = list[Math.floor(slot / ROTATION.length) % list.length];
   const pace = kind === 'gruppo' ? PACES[Math.floor(slot / 3) % PACES.length] : undefined;
   const title = kind === 'gruppo' ? `${SESSION_STYLE.gruppo.name} ${pace!.label} · ${pace!.wkg.toFixed(1).replace('.', ',')} W/kg` : SESSION_STYLE[kind].name;
-  return { id: `ev-${slot}`, slot, start: slot * SLOT_MS, kind, rideId, pace, title };
+  return { id: `ev-${slot}`, slot, start: slot * SLOT_MS, kind, rideId, world: sessionWorld(rideId), pace, title };
 }
 
 export function slotOf(ms: number): number {
