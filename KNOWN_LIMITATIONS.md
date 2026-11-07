@@ -17,6 +17,17 @@
 
 Passa i test (geometria, terreno sotto la strada, replay, Intervals con API simulata, parser) e la build di produzione. Il mondo 3D è stato visto in Chrome headless (WebGL software) su viewport 390×844. **Non è certificato su un rullo fisico.**
 
+## Il mondo Sellaronda (7 novembre 2026)
+
+- **S1.1** Due mondi, una scelta: la pagina Mondo ricorda l’ultimo mondo scelto (kv `mondo`); le altre pagine (Allenamenti, Classifiche, Diario, cartolina) usano quello, o il prefisso del giro salvato (`sellaronda:pordoi-arabba`). Un giro salvato prima del 7 novembre non ha il prefisso: la cartolina lo mette sulla carta del mondo scelto per ultimo.
+- **S1.2** I dati vengono da Overpass, non dall’estratto Geofabrik: il download dipende dalle istanze pubbliche (il 7 novembre overpass-api.de era «at capacity» per ore, lo script ruota su quattro istanze e riprova). L’ossario del Pordoi (il sacrario militare germanico) non è in OSM con un nome né come `historic`: non c’è fra i monumenti. Il «Lupo Bianco» è il nodo `place=locality` «Pian Schiavaneis», a 165 m dalla strada.
+- **S1.3** La roccia per pendenza viene dal DEM a 25 m (Terrain Tiles z13, ~19 m a questa latitudine): le pareti verticali risultano meno ripide di quanto sono, e le cenge larghe meno di 25 m non si vedono. Il bosco sotto i 2100 m è quello di OSM, che in alta Val Badia è incompleto. La neve non è nei dati: la decide S2 per quota e stagione.
+- **S1.4** Partenza e arrivo dei percorsi sono i nodi OSM del paese (il centro) e del passo: le salite sono più corte di 300–700 m delle schede che partono dal cartello del paese (Sella da Canazei 11,1 km contro 11,8; Pordoi da Arabba 9,0 contro 9,4). Il giro intero fa 61,5 km contro i 63,7 di BRouter: i due chilometri stanno fra Corvara e il Campolongo, dove BRouter allunga per la frazione e il mondo prende la statale. Le pendenze massime su 200 m (fino al 12%) possono contenere rumore del DEM nei tornanti del Pordoi.
+- **S1.5** La scelta del mondo è una fila di due schede; non c’è ancora «scarica per usarlo senza rete» né il peso per mondo (pista F). Il service worker tiene in cache i file di tutti i mondi sotto `allenando-world-v1`.
+- **S1.6** Il Worker accetta `bergamo|sellaronda` dal codice condiviso, ma **non è ripubblicato da questa PR**: fino al `wrangler deploy` del coordinatore il mondo condiviso e la classifica del Sellaronda rispondono «world» (rifiuto) sul server in onda.
+- **S1.7** La prova «terreno sotto la strada» confronta il dato (strada livellata contro DEM a 25 m: entro 15 m nel 92% dei punti, mai oltre 40 fuori da ponti e gallerie), non il raccordo del browser.
+- **S1.8** Il mondo pesa MB_SELLA MB: 1043 cime nell’orizzonte (ogni cima oltre i 900 m) e 1345 piloni stanno in `features.json`; se S2 non li usa tutti si possono sfoltire.
+
 ## Geometria e quota
 
 - La strada è ricostruita da dati aperti: precisione di qualche metro, non di centimetri. La quota è livellata entro ±8–11 m dal DEM a 25 m; le pendenze di picco su 100 m (fino a ~24%) possono contenere ancora rumore del DEM nei tornanti.

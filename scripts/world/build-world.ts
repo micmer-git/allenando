@@ -939,6 +939,13 @@ const places = placesRaw
     return { name: p.tags.name, kind: p.tags.place, x, z, y: demAt(x, z), id: p.id, pop: Number(p.tags.population ?? 0) };
   })
   .filter((p) => p.x > BOUNDS.x0 - 20000 && p.x < BOUNDS.x1 + 20000 && p.z > BOUNDS.z0 - 20000 && p.z < BOUNDS.z1 + 20000);
+// le località senza abitato (un pianoro, un bivio con un nome): solo per le tappe dei percorsi, non nel file
+const localities = placesRaw
+  .filter((p) => p.tags.place === 'locality' && p.tags.name)
+  .map((p) => {
+    const [x, z] = toLocal(p.lat, p.lon);
+    return { name: p.tags.name, x, z };
+  });
 
 
 const named: { name: string; x: number; z: number }[] = [];
@@ -965,7 +972,7 @@ for (const w of rawWays) {
 // Un passo o una piazza possono stare a metà di un tratto lungo chilometri: lì si spezza la
 // strada, così il percorso comincia e finisce proprio in quel punto.
 {
-  const lite = { world: WORLD.id, toLocal, toGeo, demAt, peaks, places, pois: poisRaw, named, rivers: [], log };
+  const lite = { world: WORLD.id, toLocal, toGeo, demAt, peaks, places, localities, pois: poisRaw, named, rivers: [], log };
   const wps = resolveWaypoints(lite as never);
   let splits = 0;
   for (const wp of wps) {
@@ -1503,7 +1510,7 @@ const lakes = read<OsmArea | OsmWay>('water')
 
 // ---------- percorsi e luoghi ----------
 
-const ctx = { world: WORLD.id, graph, toLocal, toGeo, demAt, peaks, places, pois: poisRaw, rivers: riverOut.map(({ r, ys }) => ({ ...r, ys })), named, log };
+const ctx = { world: WORLD.id, graph, toLocal, toGeo, demAt, peaks, places, localities, monumenti: monumenti.file.monumenti, pois: poisRaw, rivers: riverOut.map(({ r, ys }) => ({ ...r, ys })), named, log };
 const { rides, landmarks, limits } = buildRides(ctx);
 log(`monumenti: ${monumenti.alza(landmarks)} cartelli dei luoghi alzati sopra il tetto`);
 

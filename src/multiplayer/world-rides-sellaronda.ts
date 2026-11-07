@@ -4,5 +4,42 @@
 // attraverso world-rides.ts che mette insieme i mondi.
 
 export const WORLD_ID = 'sellaronda';
-export const WORLD_EDGES = 0;
-export const WORLD_RIDES: Record<string, { timedM: number; minSec: number }> = {};
+export const WORLD_EDGES = 1684;
+export const WORLD_RIDES: Record<string, { timedM: number; minSec: number }> = {
+  "sellaronda": {
+    "timedM": 61545,
+    "minSec": 4846
+  },
+  "sellaronda-orario": {
+    "timedM": 61583,
+    "minSec": 4850
+  },
+  "sella-canazei": {
+    "timedM": 11140,
+    "minSec": 1320
+  },
+  "pordoi-arabba": {
+    "timedM": 9032,
+    "minSec": 1071
+  },
+  "pordoi-canazei": {
+    "timedM": 12007,
+    "minSec": 1351
+  },
+  "gardena-corvara": {
+    "timedM": 9389,
+    "minSec": 1050
+  },
+  "gardena-selva": {
+    "timedM": 10774,
+    "minSec": 1105
+  },
+  "campolongo-corvara": {
+    "timedM": 5698,
+    "minSec": 617
+  },
+  "fedaia-canazei": {
+    "timedM": 11375,
+    "minSec": 1189
+  }
+};
