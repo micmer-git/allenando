@@ -207,6 +207,33 @@ function triGeometry(t: Tri): THREE.BufferGeometry | null {
   return g;
 }
 
+/** Un punto del muretto a monte: dove sta, il verso del monte (lx, lz) e l'altezza. */
+interface WallPt {
+  x: number;
+  y: number;
+  z: number;
+  lx: number;
+  lz: number;
+  h: number;
+}
+
+const WALL_STONE = new THREE.Color('#9d978c');
+const WALL_DARK = new THREE.Color('#857f78');
+const wallTmp = new THREE.Color();
+
+/** Il muretto: la faccia verso la strada da 35 cm sotto il ciglio alla cima, e la testa di 40 cm. */
+function wallAlong(m: Mesh, pts: WallPt[]): void {
+  let prev = -1;
+  for (const p of pts) {
+    const c = wallTmp.copy(WALL_STONE).lerp(WALL_DARK, hash2(p.z, p.x));
+    const b = m.vertex(p.x, p.y - 0.35, p.z, 0, 0, c);
+    m.vertex(p.x, p.y + p.h, p.z, 0, 1, c);
+    m.vertex(p.x + p.lx * 0.4, p.y + p.h + 0.04, p.z + p.lz * 0.4, 1, 1, c);
+    if (prev >= 0) m.idx.push(prev, b, prev + 1, prev + 1, b, b + 1, prev + 1, b + 1, prev + 2, prev + 2, b + 1, b + 2);
+    prev = b;
+  }
+}
+
 export function* streetJob(graph: WorldGraph, field: WorldField, features: WorldFeatures, spec: TileSpec): Generator<void, StreetDetail, void> {
   const ix = streetIndex(graph, features);
   const x0 = spec.x0;
@@ -290,7 +317,8 @@ export function* streetJob(graph: WorldGraph, field: WorldField, features: World
           const px = p.x + lx * (e.hw + 6);
           const pz = p.z + lz * (e.hw + 6);
           const other = field.roadAt(px, pz, 6);
-          want.set(k, p.y - field.terrain.height(px, pz) > 3.2 && !(other && other.edgeDist < 1));
+          // a mezza costa: il terreno a valle più basso di 3 m entro 6 m dal bordo
+          want.set(k, p.y - field.terrain.height(px, pz) > 3 && !(other && other.edgeDist < 1));
           ks.push(k);
           at.set(k, p);
         }
@@ -360,6 +388,36 @@ export function* streetJob(graph: WorldGraph, field: WorldField, features: World
           if (!own(x, z) || !offRoad(x, z, p.y, id)) continue;
           items.delineator.push({ x, y: p.y + lift - 0.12, z, ry: sideYaw(p.heading, side) });
         }
+      }
+    }
+
+    // --- il muro di sostegno a monte: dove la strada taglia il pendio di più di 2 m ---
+    // (la scarpata sopra resta quella del raccordo del campo: il muro regge il primo tratto,
+    // da 0,75 a 2,4 m, come quelli in pietra ai piedi dei tornanti)
+    if (road && !bridge && !tun && !ring && e.cls <= CLS.unclassified) {
+      for (const side of [1, -1] as const) {
+        let run: WallPt[] = [];
+        const flush = () => {
+          if (run.length >= 3) wallAlong(island, run);
+          run = [];
+        };
+        for (let s = 2; s <= L - 2; s += 4) {
+          const p = graph.pose(id, s, 1);
+          const lx = Math.cos(p.heading) * side;
+          const lz = -Math.sin(p.heading) * side;
+          const cut = field.terrain.height(p.x + lx * (e.hw + 5), p.z + lz * (e.hw + 5)) - p.y;
+          const k = Math.round((s - 2) / RAIL_POST_STEP);
+          const ok = s > endA + 4 && s < L - endB - 4 && cut > 2 && own(p.x, p.z) && !wantBy[side].get(k) && !URBAN.has(field.terrain.cover(p.x, p.z)) && offRoad(p.x + lx * (e.hw + 1), p.z + lz * (e.hw + 1), p.y, id);
+          if (!ok) {
+            flush();
+            continue;
+          }
+          const o = e.hw + 1.0;
+          // alto quanto il terreno raccordato dietro (più 25 cm), fra 0,75 e 2,4 m: così regge il pendio
+          const behind = field.height(p.x + lx * (o + 0.6), p.z + lz * (o + 0.6), 4) - p.y;
+          run.push({ x: p.x + lx * o, y: p.y + lift, z: p.z + lz * o, lx, lz, h: Math.min(2.4, Math.max(0.75, behind + 0.25)) + hash2(p.x, p.z) * 0.15 });
+        }
+        flush();
       }
     }
 
