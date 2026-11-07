@@ -1790,7 +1790,9 @@ function WorldCam({ engine, path, field, playerPose }: WorldSceneProps) {
       const [b0, up, side = 0, yawDeg = 0] = dbg;
       const yaw = pose.heading - (yawDeg * Math.PI) / 180;
       camera.position.set(pose.x - Math.sin(h) * b0 + Math.cos(h) * side, pose.y + up, pose.z - Math.cos(h) * b0 - Math.sin(h) * side);
-      look.current.set(pose.x + Math.sin(yaw) * 7, pose.y + 1.2 + (yawDeg ? 2 : 0), pose.z + Math.cos(yaw) * 7);
+      // con lo sguardo girato si guarda lontano, un filo verso l'alto: le pareti e le cime, non il ciglio
+      const reach = yawDeg ? 300 : 7;
+      look.current.set(pose.x + Math.sin(yaw) * reach, yawDeg ? pose.y + up + 20 : pose.y + 1.2, pose.z + Math.cos(yaw) * reach);
       camera.lookAt(look.current);
       return;
     }

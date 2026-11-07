@@ -105,23 +105,27 @@ export function Passi({ data, field, playerPose }: { data: WorldData; field: Wor
       const pk = passes[i];
       if (live.current.has(i) || Math.hypot(pk.x - p.x, pk.z - p.z) > PASS_R) continue;
       const road = roadPoseNear(data, pk.x, pk.z);
-      // a sinistra di chi sale nel verso dell'arco, fuori dalla banchina; senza strada, sul valico
-      const off = road ? road.hw + 1.6 : 0;
-      const x = road ? road.x + Math.cos(road.heading) * off : pk.x;
-      const z = road ? road.z - Math.sin(road.heading) * off : pk.z;
-      const y = road ? road.y - 0.1 : field.height(x, z, 4);
-      const g = new THREE.Group();
-      g.position.set(x, y, z);
-      g.rotation.y = road ? road.heading + Math.PI / 2 : 0;
       const mat = new THREE.MeshLambertMaterial({ map: passSignTexture(pk.name, pk.ele) });
-      const front = new THREE.Mesh(shared.plate, mat);
-      const back = new THREE.Mesh(shared.plate, mat);
-      back.rotation.y = Math.PI;
-      g.add(front, back);
-      for (const dx of [-0.8, 0.8]) {
-        const pole = new THREE.Mesh(shared.pole, shared.poleMat);
-        pole.position.x = dx;
-        g.add(pole);
+      const g = new THREE.Group();
+      // un cartello per verso d'arrivo, ognuno a destra di chi arriva e rivolto verso di lui
+      // (come ai passi veri); senza strada, uno solo sul valico
+      const sides = road ? [1, -1] : [0];
+      for (const side of sides) {
+        const off = road ? side * (road.hw + 1.6) : 0;
+        const x = road ? road.x + Math.cos(road.heading) * off : pk.x;
+        const z = road ? road.z - Math.sin(road.heading) * off : pk.z;
+        const y = road ? road.y - 0.1 : field.height(x, z, 4);
+        const sign = new THREE.Group();
+        sign.position.set(x, y, z);
+        // la faccia (+z del piano) guarda chi arriva: a +off arriva chi va contro il verso dell'arco
+        sign.rotation.y = road ? road.heading + (side > 0 ? 0 : Math.PI) : 0;
+        sign.add(new THREE.Mesh(shared.plate, mat));
+        for (const dx of [-0.8, 0.8]) {
+          const pole = new THREE.Mesh(shared.pole, shared.poleMat);
+          pole.position.x = dx;
+          sign.add(pole);
+        }
+        g.add(sign);
       }
       live.current.set(i, g);
       root.add(g);
