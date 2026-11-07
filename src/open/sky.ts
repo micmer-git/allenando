@@ -103,15 +103,25 @@ const smooth = (a: number, b: number, x: number) => {
   return t * t * (3 - 2 * t);
 };
 
-/** Colori e luci del cielo per l'altezza del sole e il meteo. */
-export function atmosphere(sun: SunPos, w: WeatherLook): Atmosphere {
+/** Il cielo d'alta quota: lo zenit blu scuro e saturo, l'aria più tersa (meno foschia). */
+const HIGH = { zenith: '#1f4f94', mid: '#7fa9d6' };
+
+/**
+ * Colori e luci del cielo per l'altezza del sole, il meteo e la quota di chi guarda (`alt`,
+ * metri): a 2000 m il blu è più scuro e saturo e la foschia comincia più lontano.
+ */
+export function atmosphere(sun: SunPos, w: WeatherLook, alt = 300): Atmosphere {
   const el = sun.elevation / RAD;
   const kDay = smooth(4, 22, el);
   const kGold = smooth(-4, 3, el);
+  const kAlt = smooth(700, 2300, alt);
   const mix = (key: 'zenith' | 'mid' | 'horizon' | 'glow' | 'sun') => new THREE.Color(BLUE[key]).lerp(new THREE.Color(GOLD[key]), kGold).lerp(new THREE.Color(DAY[key]), kDay);
   const zenith = mix('zenith');
   const mid = mix('mid');
   const horizon = mix('horizon');
+  // in quota, di giorno: lo zenit si scurisce e si satura, il cielo medio resta azzurro
+  zenith.lerp(new THREE.Color(HIGH.zenith), kAlt * kDay * 0.75);
+  mid.lerp(new THREE.Color(HIGH.mid), kAlt * kDay * 0.5);
   const glow = mix('glow');
   const sunColor = mix('sun');
   const cloud = Math.min(1, Math.max(0, w.cloud));
@@ -130,8 +140,9 @@ export function atmosphere(sun: SunPos, w: WeatherLook): Atmosphere {
   const hemiIntensity = (0.42 + 0.3 * smooth(-4, 20, el)) * (1 + 0.85 * cloud);
   const hemiSky = new THREE.Color('#e6f0fb').lerp(zenith, 0.35);
   const hemiGround = new THREE.Color('#4f5a3c').multiplyScalar(0.6 + 0.4 * light);
-  const fogFar = Math.max(0.18, Math.min(1, (1 - 0.45 * cloud - 0.3 * wet) * Math.min(1, w.visibility / 30000)));
-  const fogNear = 350 * fogFar;
+  // l'aria d'alta quota è più tersa: la foschia si tiene nelle valli lontane
+  const fogFar = Math.max(0.18, Math.min(1, (1 - 0.45 * cloud - 0.3 * wet) * Math.min(1, w.visibility / 30000) * (1 + 0.3 * kAlt)));
+  const fogNear = 350 * fogFar * (1 + 1.2 * kAlt);
   const exposure = 1.05 + 0.25 * (1 - kDay) + 0.12 * cloud;
   return { zenith, mid, horizon, glow, sunColor, sunIntensity, hemiSky, hemiGround, hemiIntensity, fogNear, fogFar, exposure };
 }
