@@ -131,9 +131,9 @@ export const SPECS_SELLARONDA: MonumentoSpec[] = [
   // Passo Sella
   { ref: 'w68827782', osm: 'Rifugio Carlo Valentini', kind: 'rifugio', h: 11, p: { stile: 'rifugio', mat: 'legno', tetto: 'scandole', piani: 3, balconi: true } },
   { ref: 'w233233503', osm: '', name: 'Cappella del Passo Sella', kind: 'chiesetta', h: 7, p: { stile: 'alpina', mat: 'bianco', tetto: 'scandole', campaniletto: true } },
-  { ref: 'w427207651', osm: 'Passo Sella Mountain Resort', name: 'Albergo del Passo Sella', kind: 'palazzo', h: 14, p: { stile: 'hotel-alpino', mat: 'bianco', trim: 'legno', piani: 4, balconi: true, tetto: 'falde' } },
+  { ref: 'w427207651', osm: 'Passo Sella Mountain Resort', name: 'Albergo del Passo Sella', kind: 'rifugio', h: 14, p: { stile: 'hotel-alpino', mat: 'bianco', trim: 'legno', piani: 4, balconi: true, tetto: 'falde' } },
   // Passo Pordoi
-  { ref: 'w199516793', osm: 'Hotel Savoia', name: 'Hotel Savoia, Passo Pordoi', kind: 'palazzo', h: 14, p: { stile: 'hotel-alpino', mat: 'bianco', trim: 'legno', piani: 4, balconi: true, tetto: 'falde' } },
+  { ref: 'w199516793', osm: 'Hotel Savoia', name: 'Hotel Savoia, Passo Pordoi', kind: 'rifugio', h: 14, p: { stile: 'hotel-alpino', mat: 'bianco', trim: 'legno', piani: 4, balconi: true, tetto: 'falde' } },
   { ref: 'w199516854', osm: '', name: 'Cappella del Passo Pordoi', kind: 'chiesetta', h: 7, p: { stile: 'alpina', mat: 'bianco', tetto: 'scandole', campaniletto: true } },
   { ref: 'n796380013', osm: 'Fausto Coppi', name: 'Monumento a Fausto Coppi', kind: 'statua', h: 3.2, p: { posa: 'busto', mat: 'bronzo', piedistallo: 1.8, piedistalloL: 1.2, figura: 1 } },
   { ref: 'n29916899', osm: 'Sass Pordoi', name: 'Funivia del Sass Pordoi, Passo Pordoi', kind: 'stazione', h: 10, edificio: true, lato: [22, 14], p: { tipo: 'funivia', mat: 'cemento' } },
@@ -142,7 +142,7 @@ export const SPECS_SELLARONDA: MonumentoSpec[] = [
   // Passo Gardena
   { ref: 'w237016903', osm: 'San Mauriz', name: 'Cappella di San Maurizio', kind: 'chiesetta', h: 7, p: { stile: 'alpina', mat: 'bianco', tetto: 'scandole', campaniletto: true } },
   { ref: 'n2749674147', osm: 'Rifugio Frara', kind: 'rifugio', h: 12, edificio: true, lato: [24, 12], p: { stile: 'rifugio', mat: 'legno', tetto: 'scandole', piani: 3, balconi: true } },
-  { ref: 'w42107052', osm: 'Hotel Cir', name: 'Hotel Cir, Passo Gardena', kind: 'palazzo', h: 12, p: { stile: 'hotel-alpino', mat: 'bianco', trim: 'legno', piani: 3, balconi: true, tetto: 'falde' } },
+  { ref: 'w42107052', osm: 'Hotel Cir', name: 'Hotel Cir, Passo Gardena', kind: 'rifugio', h: 12, p: { stile: 'hotel-alpino', mat: 'bianco', trim: 'legno', piani: 3, balconi: true, tetto: 'falde' } },
   // Passo Campolongo
   { ref: 'w199514203', osm: 'Rifugio Bec de Roces', kind: 'rifugio', h: 11, p: { stile: 'rifugio', mat: 'legno', tetto: 'scandole', piani: 3, balconi: true } },
   // Selva
