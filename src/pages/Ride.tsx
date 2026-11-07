@@ -35,7 +35,7 @@ import { decodeSection } from './ReplaySetup';
 import { RoomPanel, RoomSheet, useRoom } from './RideRoom';
 import { RecoveryCard } from './RideRecovery';
 import { workoutTitle } from './Workouts';
-import { Terrain, loadWorld, worldBase, type RideDef, type WorldData } from '@/open/world';
+import { isWorld, loadWorld, Terrain, worldBase, worldInfo, type RideDef, type WorldData } from '@/open/world';
 import { createWorldField } from '@/open/field';
 import { WorldSession } from '@/open/session';
 import { WorldScene, npcCount, type RemoteWorldRider } from '@/open/WorldScene';
@@ -149,7 +149,7 @@ function useRideSetup(): { setup: RideSetup | null; error: string | null } {
       if (alive) setState({ setup, error });
     };
     if (params.get('world')) {
-      loadWorld()
+      loadWorld(params.get('world'))
         .then((data) => {
           const n = npcCount(quality);
           const rideId = params.get('ride');
@@ -177,7 +177,7 @@ function useRideSetup(): { setup: RideSetup | null; error: string | null } {
             const s0 = Math.min(e.length, Math.max(0, Number(params.get('s')) || 0));
             session = new WorldSession(data, { edge, dir: data.graph.allowed(edge, dir) ? dir : ((-dir) as Dir), s: s0 }, n);
             title = 'Giro libero';
-            subtitle = e.name || e.ref || 'Bergamo e le valli';
+            subtitle = e.name || e.ref || worldInfo(data.graph.id).name;
           }
           const route: LoadedRoute = { id: 'world', title, subtitle, track: session.path, dem: null, origin: data.graph.origin, attribution: data.graph.attribution, verified: true };
           done({ route, label: subtitle && rideId ? `${title} ${subtitle}` : title, world: { data, session } });
@@ -250,7 +250,7 @@ function useQuickTitle(params: URLSearchParams): { title?: string; subtitle?: st
   useEffect(() => {
     if (!rideId) return;
     let alive = true;
-    void fetch(`${worldBase()}rides.json`)
+    void fetch(`${worldBase(isWorld(params.get('world')) ? params.get('world')! : undefined)}rides.json`)
       .then((r) => (r.ok ? (r.json() as Promise<RideDef[]>) : []))
       .then((list) => {
         const r = list.find((x) => x.id === rideId);
@@ -690,8 +690,8 @@ function RideScreen({
     };
   }, [world, session, weatherMode]);
   useEffect(() => {
-    if (!session || !share) return;
-    const client = new WorldClient({ world: 'bergamo', nick: profile.name || 'Ciclista' });
+    if (!session || !share || !world) return;
+    const client = new WorldClient({ world: world.data.graph.id, nick: profile.name || 'Ciclista' });
     session.client = client;
     let key = '';
     const off = client.subscribe(() => {
@@ -710,7 +710,7 @@ function RideScreen({
       session.client = null;
       setPeers([]);
     };
-  }, [session, share, profile.name]);
+  }, [session, share, world, profile.name]);
   const worldRemote = useMemo<RemoteWorldRider[]>(() => {
     if (!session) return [];
     const real = peers.map((p) => ({ id: p.id, nick: p.nick, color: RIDER_COLORS[p.color % RIDER_COLORS.length], pose: () => session.remoteNow.get(p.id) ?? null }));
@@ -751,7 +751,7 @@ function RideScreen({
           workoutId: workout?.id,
           routeId: () => {
             const s = setup.world?.session;
-            if (s?.ride && s.rankable && engine.arrived) return `bergamo:${s.ride.id}`;
+            if (s?.ride && s.rankable && engine.arrived) return `${setup.world!.data.graph.id}:${s.ride.id}`;
             if (setup.routeId && !workout && !setup.replayMode) return setup.routeId;
             return undefined;
           },

@@ -6,7 +6,7 @@ import { suggestLoops } from '../src/open/loops';
 import { planAB } from '../src/open/ab';
 import { WorldSession } from '../src/open/session';
 import { decodeFeatures, type RideDef, type WorldData } from '../src/open/world';
-import { WORLD_EDGES, WORLD_ID, WORLD_RIDES } from '../src/multiplayer/world-rides';
+import { WORLD_LIMITS } from '../src/multiplayer/world-rides';
 import { ringsOf } from '../src/open/rings';
 import { portalClear, tunnelDepth } from '../src/open/tunnels';
 
@@ -21,9 +21,10 @@ const legsOf = (r: RideDef): Leg[] => r.legs.map(([edge, dir]) => ({ edge, dir }
 
 describe('mondo di Bergamo', () => {
   it('il server della classifica conosce lo stesso mondo della pagina', () => {
-    expect(graph.id).toBe(WORLD_ID);
-    expect(file.edges.length).toBe(WORLD_EDGES);
-    expect(Object.keys(WORLD_RIDES).sort()).toEqual(rides.map((r) => r.id).sort());
+    const limits = WORLD_LIMITS.find((w) => w.id === 'bergamo')!;
+    expect(graph.id).toBe(limits.id);
+    expect(file.edges.length).toBe(limits.edges);
+    expect(Object.keys(limits.rides).sort()).toEqual(rides.map((r) => r.id).sort());
   });
 
   it('ci sono le due valli e la città', () => {

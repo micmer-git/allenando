@@ -19,8 +19,9 @@ import {
 } from '@/domain/workouts';
 import type { Translate } from '@/i18n';
 import { useI18n } from '@/i18n';
-import { freeStartQuery, loopStartQuery, START_TOWNS } from '@/open/starts';
-import { loadWorld, type WorldData } from '@/open/world';
+import { freeStartQuery, loopStartQuery } from '@/open/starts';
+import { loadWorld, WORLD_KV, worldInfo, type WorldData } from '@/open/world';
+import { loadKv } from '@/db/db';
 import { useApp } from '@/store/useApp';
 import { cn } from '@/lib/cn';
 import { downloadZwo, importZwoFiles } from '@/io/zwo';
@@ -92,7 +93,8 @@ export function WorkoutsPage() {
   useEffect(() => {
     if (!needWorld || world) return;
     let alive = true;
-    void loadWorld()
+    // il mondo dell'allenamento: l'ultimo scelto nella pagina Mondo
+    void (async () => loadWorld(await loadKv<string>(WORLD_KV)))()
       .then((d) => alive && setWorld(d))
       .catch(() => alive && setNote('Mondo non disponibile: scegli una salita.'));
     return () => {
@@ -107,7 +109,10 @@ export function WorkoutsPage() {
   }
 
   const list = useMemo(() => filterWorkouts(ALL_BUILTIN, type, band), [type, band]);
-  const freeQuery = useMemo(() => (world && choice.where === 'libero' ? freeStartQuery(world, choice.town) : null), [world, choice.where, choice.town]);
+  // i paesi di partenza del mondo caricato; un paese di un altro mondo diventa il primo di questo
+  const towns = useMemo(() => (world ? worldInfo(world.graph.id).starts : worldInfo(null).starts), [world]);
+  const town = towns.includes(choice.town) ? choice.town : towns[0];
+  const freeQuery = useMemo(() => (world && choice.where === 'libero' ? freeStartQuery(world, town) : null), [world, choice.where, town]);
 
   /** Dove porta «Inizia»: null se il posto non è ancora pronto (il mondo si sta caricando). */
   function placeFor(): WorkoutPlace | null {
@@ -124,10 +129,10 @@ export function WorkoutsPage() {
     setNote(null);
     setTimeout(() => {
       const km = Math.min(90, Math.max(10, Math.round((workoutDuration(workout) / 3600) * 27)));
-      const q = loopStartQuery(world, choice.town, km);
+      const q = loopStartQuery(world, town, km);
       setBusy(null);
       if (!q) {
-        setNote(`Nessun anello da ${choice.town}: prova un altro paese.`);
+        setNote(`Nessun anello da ${town}: prova un altro paese.`);
         return;
       }
       navigate(workoutRideLink(workout.id, { kind: 'anello', query: q }));
@@ -149,8 +154,8 @@ export function WorkoutsPage() {
       : choice.where === 'percorso'
         ? world?.rides.find((r) => r.id === choice.ride)?.name ?? 'Percorso'
         : choice.where === 'libero'
-          ? `Libero da ${choice.town}`
-          : `Anello da ${choice.town}`;
+          ? `Libero da ${town}`
+          : `Anello da ${town}`;
   const bandLabel = band === 'tutte' ? 'Durata' : DURATION_BANDS.find((b) => b.id === band)?.label ?? 'Durata';
 
   return (
@@ -290,8 +295,8 @@ export function WorkoutsPage() {
           {choice.where === 'libero' || choice.where === 'anello' ? (
             <label className="mt-3 block text-sm font-semibold">
               Parti da
-              <select className={selectCls} value={choice.town} onChange={(e) => setChoice({ town: e.target.value })} data-testid="workout-where-town">
-                {START_TOWNS.map((n) => (
+              <select className={selectCls} value={town} onChange={(e) => setChoice({ town: e.target.value })} data-testid="workout-where-town">
+                {towns.map((n) => (
                   <option key={n} value={n}>
                     {n}
                   </option>

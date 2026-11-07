@@ -1207,7 +1207,8 @@ function casa(c: Ctx): void {
   }
 }
 
-const BUILD: Record<Monumento['kind'], (c: Ctx) => void> = { porta, torre, chiesa, cappella, tempietto, mausoleo, palazzo, castello, statua, caduti, stazione, casa };
+// chiesetta, rifugio e ossario (i passi del Sellaronda) li disegna la pista S2: qui il ripiego sugli archetipi di Bergamo
+const BUILD: Record<Monumento['kind'], (c: Ctx) => void> = { porta, torre, chiesa, cappella, tempietto, mausoleo, palazzo, castello, statua, caduti, stazione, casa, chiesetta: cappella, rifugio: casa, ossario: mausoleo };
 
 /**
  * Il modello di un monumento nel suo riferimento: origine al centro dell'impronta, alla quota

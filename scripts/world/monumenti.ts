@@ -1,4 +1,5 @@
-// I quaranta monumenti del mondo di Bergamo: quali sono, dove stanno, che forma hanno.
+// I monumenti dei mondi: i quaranta di Bergamo, i venti del Sellaronda. Quali sono, dove
+// stanno, che forma hanno.
 //
 // Ogni voce è un elemento OSM vero (id e nome atteso: se il nome non torna la costruzione si
 // ferma e lo dice) e un archetipo coi suoi parametri, la «foto mentale» del luogo vero: il
@@ -14,6 +15,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { FLAG, type WorldGraph } from '../../src/open/graph';
 import type { Archetipo, MonumentiFile, MonumentoFile, Params } from '../../src/open/monumenti';
+import { italianize } from './nomi';
 
 type Tags = Record<string, string>;
 type Front = 'n' | 's' | 'e' | 'w' | 'strada';
@@ -21,7 +23,7 @@ type Front = 'n' | 's' | 'e' | 'w' | 'strada';
 export interface MonumentoSpec {
   /** «w», «r» o «n» + id OSM */
   ref: string;
-  /** il nome in OSM (name, o artwork_subject per le statue senza nome) */
+  /** il nome in OSM (name, o artwork_subject per le statue senza nome); '' per un edificio senza nome */
   osm: string;
   /** il nome da mostrare, se quello OSM da solo non basta */
   name?: string;
@@ -32,10 +34,12 @@ export interface MonumentoSpec {
   front?: Front;
   /** un nodo dentro un edificio senza nome: l'impronta è quella dell'edificio */
   edificio?: boolean;
+  /** un nodo senza edificio attorno (una stazione a monte disegnata come punto): larghezza e profondità, metri */
+  lato?: [number, number];
   p?: Params;
 }
 
-export const SPECS: MonumentoSpec[] = [
+export const SPECS_BERGAMO: MonumentoSpec[] = [
   // ---------- Città Alta ----------
   { ref: 'w30964918', osm: "Porta Sant'Agostino", kind: 'porta', h: 15, p: { stile: 'pietra', leone: true } },
   { ref: 'w32708443', osm: "Porta Sant'Alessandro", kind: 'porta', h: 14, p: { stile: 'pietra', leone: true } },
@@ -119,9 +123,60 @@ export const SPECS: MonumentoSpec[] = [
   { ref: 'n10934027508', osm: 'Monumento a Palma il Vecchio', kind: 'statua', h: 6, p: { posa: 'in-piedi', braccio: 'petto', mantello: true, piedistallo: 2.6, figura: 2.6 } },
 ];
 
+// ---------- Sellaronda ----------
+// I nomi sono quelli italiani (scripts/world/nomi.ts); gli archetipi sono quelli di Bergamo con
+// parametri alpini: S2 (il paesaggio delle Dolomiti) li legge e disegna il rifugio di legno e
+// pietra, la cappella bianca col tetto a scandole, la stazione di cemento della funivia.
+export const SPECS_SELLARONDA: MonumentoSpec[] = [
+  // Passo Sella
+  { ref: 'w68827782', osm: 'Rifugio Carlo Valentini', kind: 'rifugio', h: 11, p: { stile: 'rifugio', mat: 'legno', tetto: 'scandole', piani: 3, balconi: true } },
+  { ref: 'w233233503', osm: '', name: 'Cappella del Passo Sella', kind: 'chiesetta', h: 7, p: { stile: 'alpina', mat: 'bianco', tetto: 'scandole', campaniletto: true } },
+  { ref: 'w427207651', osm: 'Passo Sella Mountain Resort', name: 'Albergo del Passo Sella', kind: 'rifugio', h: 14, p: { stile: 'hotel-alpino', mat: 'bianco', trim: 'legno', piani: 4, balconi: true, tetto: 'falde' } },
+  // Passo Pordoi
+  { ref: 'w199516793', osm: 'Hotel Savoia', name: 'Hotel Savoia, Passo Pordoi', kind: 'rifugio', h: 14, p: { stile: 'hotel-alpino', mat: 'bianco', trim: 'legno', piani: 4, balconi: true, tetto: 'falde' } },
+  { ref: 'w199516854', osm: '', name: 'Cappella del Passo Pordoi', kind: 'chiesetta', h: 7, p: { stile: 'alpina', mat: 'bianco', tetto: 'scandole', campaniletto: true } },
+  { ref: 'n796380013', osm: 'Fausto Coppi', name: 'Monumento a Fausto Coppi', kind: 'statua', h: 3.2, p: { posa: 'busto', mat: 'bronzo', piedistallo: 1.8, piedistalloL: 1.2, figura: 1 } },
+  { ref: 'n29916899', osm: 'Sass Pordoi', name: 'Funivia del Sass Pordoi, Passo Pordoi', kind: 'stazione', h: 10, edificio: true, lato: [22, 14], p: { tipo: 'funivia', mat: 'cemento' } },
+  { ref: 'n29916900', osm: 'Sass Pordoi', name: 'Funivia del Sass Pordoi, Sass Pordoi', kind: 'stazione', h: 12, edificio: true, lato: [20, 14], p: { tipo: 'funivia', mat: 'cemento', terrazza: true } },
+  { ref: 'w42257301', osm: 'Rifugio Maria', name: 'Rifugio Maria, Sass Pordoi', kind: 'rifugio', h: 10, p: { stile: 'rifugio', mat: 'pietra', tetto: 'scandole', piani: 3 } },
+  // Passo Gardena
+  { ref: 'w237016903', osm: 'San Mauriz', name: 'Cappella di San Maurizio', kind: 'chiesetta', h: 7, p: { stile: 'alpina', mat: 'bianco', tetto: 'scandole', campaniletto: true } },
+  { ref: 'n2749674147', osm: 'Rifugio Frara', kind: 'rifugio', h: 12, edificio: true, lato: [24, 12], p: { stile: 'rifugio', mat: 'legno', tetto: 'scandole', piani: 3, balconi: true } },
+  { ref: 'w42107052', osm: 'Hotel Cir', name: 'Hotel Cir, Passo Gardena', kind: 'rifugio', h: 12, p: { stile: 'hotel-alpino', mat: 'bianco', trim: 'legno', piani: 3, balconi: true, tetto: 'falde' } },
+  // Passo Campolongo
+  { ref: 'w199514203', osm: 'Rifugio Bec de Roces', kind: 'rifugio', h: 11, p: { stile: 'rifugio', mat: 'legno', tetto: 'scandole', piani: 3, balconi: true } },
+  // Selva
+  { ref: 'w255592975', osm: 'Maria Hilf', name: 'Chiesa di Selva', kind: 'chiesa', h: 16, p: { mat: 'bianco', trim: 'pietra', facciata: 'alpina', tetto: 'scandole' } },
+  { ref: 'w1197350465', osm: '', name: 'Campanile di Selva', kind: 'torre', h: 42, p: { mat: 'bianco', cella: 1, orologio: 1, tetto: 'cuspide' } },
+  // Corvara
+  { ref: 'w42210743', osm: 'Chiesa Sacro Cuore di Gesù', name: 'Chiesa del Sacro Cuore, Corvara', kind: 'chiesa', h: 18, p: { mat: 'bianco', trim: 'pietra', facciata: 'alpina', campanile: 40, campanileX: 1, campanileTetto: 'cipolla' } },
+  { ref: 'w235162263', osm: "Chiesa di Santa Caterina d'Alessandria", name: 'Chiesa di Santa Caterina, Corvara', kind: 'chiesa', h: 11, p: { mat: 'bianco', trim: 'pietra', facciata: 'alpina', campanile: 28, campanileX: -1, campanileTetto: 'cuspide' } },
+  // Arabba
+  { ref: 'n1642475077', osm: 'Arabba', name: 'Funivia di Porta Vescovo, Arabba', kind: 'stazione', h: 12, edificio: true, lato: [26, 16], p: { tipo: 'funivia', mat: 'cemento' } },
+  { ref: 'w199519403', osm: '', name: 'Chiesa di Arabba', kind: 'chiesa', h: 14, p: { mat: 'bianco', trim: 'pietra', facciata: 'alpina', campanile: 32, campanileX: 1, campanileTetto: 'cipolla' } },
+  // Canazei e Fedaia
+  { ref: 'w59275646', osm: 'chiesa di San Floriano', name: 'Chiesa di San Floriano, Canazei', kind: 'chiesa', h: 15, p: { mat: 'bianco', trim: 'pietra', facciata: 'alpina', campanile: 36, campanileX: 1, campanileTetto: 'cipolla' } },
+  { ref: 'w107176085', osm: 'Rifugio Marmolada Castiglioni', name: 'Rifugio Castiglioni, Passo Fedaia', kind: 'rifugio', h: 11, p: { stile: 'rifugio', mat: 'pietra', tetto: 'scandole', piani: 3 } },
+];
+
+export const SPECS_BY_WORLD: Record<string, MonumentoSpec[]> = { bergamo: SPECS_BERGAMO, sellaronda: SPECS_SELLARONDA };
+
+const SOURCE: Record<string, string> = { bergamo: 'OpenStreetMap (Geofabrik nord-ovest) · EU-DEM', sellaronda: 'OpenStreetMap (Overpass) · EU-DEM' };
+
+/** Il nome della scheda torna con uno dei nomi OSM (name, name:it, l'originale trilingue o un suo pezzo). */
+function nameFits(tags: Tags, want: string): boolean {
+  if (!want) return true;
+  const all = [tags.name, tags['name:it'], tags['name:osm'], tags.artwork_subject].filter(Boolean) as string[];
+  return all.some((n) => n === want || n.split(' - ').some((part) => part.trim() === want));
+}
+
 // ---------- costruzione ----------
 
 interface Ctx {
+  /** il mondo: sceglie la lista dei monumenti */
+  world: string;
+  /** 'it': i nomi in italiano, come li legge build-world */
+  lang?: string;
   toLocal: (lat: number, lon: number) => [number, number];
   demAt: (x: number, z: number) => number;
   graph: WorldGraph;
@@ -246,7 +301,13 @@ export interface MonumentiBuild {
 
 export function buildMonumenti(ctx: Ctx): MonumentiBuild {
   const { toLocal, demAt, graph, osmDir, log } = ctx;
-  const read = <T>(n: string): T[] => (existsSync(join(osmDir, `${n}.json`)) ? (JSON.parse(readFileSync(join(osmDir, `${n}.json`), 'utf8')) as { elements: T[] }).elements : []);
+  const read = <T>(n: string): T[] => {
+    if (!existsSync(join(osmDir, `${n}.json`))) return [];
+    const els = (JSON.parse(readFileSync(join(osmDir, `${n}.json`), 'utf8')) as { elements: T[] }).elements;
+    return ctx.lang === 'it' ? italianize(els) : els;
+  };
+  const SPECS = SPECS_BY_WORLD[ctx.world];
+  if (!SPECS) throw new Error(`monumenti: nessuna lista per il mondo «${ctx.world}»`);
   const buildings = read<OsmArea>('buildings');
   const extra = read<Extra>('monumenti-nodi');
   const pois = read<{ type: string; id: number; center: { lat: number; lon: number }; tags: Tags }>('pois');
@@ -333,15 +394,27 @@ export function buildMonumenti(ctx: Ctx): MonumentiBuild {
             best = b;
           }
         }
-        if (!best) throw new Error(`monumenti: ${spec.ref} «${spec.osm}» non sta dentro nessun edificio`);
-        rings = best.outer.map(ringLocal);
-        skipKeys.add(bKey(best));
+        if (!best && !spec.lato) throw new Error(`monumenti: ${spec.ref} «${spec.osm}» non sta dentro nessun edificio`);
+        if (best) {
+          rings = best.outer.map(ringLocal);
+          skipKeys.add(bKey(best));
+        }
       }
     }
     if (!tags) throw new Error(`monumenti: ${spec.ref} «${spec.osm}» non c'è nei dati OSM (manca monumenti-nodi.json?)`);
     const osmName = tags.name ?? tags.artwork_subject ?? '';
-    if (osmName !== spec.osm) throw new Error(`monumenti: ${spec.ref} in OSM si chiama «${osmName}», non «${spec.osm}»`);
+    if (!nameFits(tags, spec.osm)) throw new Error(`monumenti: ${spec.ref} in OSM si chiama «${osmName}», non «${spec.osm}»`);
     rings = rings.map((r) => simplify(r, 0.35)).filter((r) => r.length >= 3 && area(r) > 1);
+    if (!rings.length && node && spec.lato) {
+      // un punto senza edificio attorno: un rettangolo delle misure della scheda, girato verso la strada
+      const [w, d] = spec.lato;
+      const near = graph.nearest(node[0], node[1], 300);
+      const ang = near ? graph.pose(near.edge, near.s).heading : 0;
+      const u: P2 = [Math.cos(ang), Math.sin(ang)];
+      const v: P2 = [-u[1], u[0]];
+      const corner = (a: number, b: number): P2 => [node![0] + (u[0] * a * w) / 2 + (v[0] * b * d) / 2, node![1] + (u[1] * a * w) / 2 + (v[1] * b * d) / 2];
+      rings = [[corner(1, 1), corner(1, -1), corner(-1, -1), corner(-1, 1)]];
+    }
     if (!rings.length && !node) throw new Error(`monumenti: ${spec.ref} «${spec.osm}» senza impronta`);
     raw.push({ spec, rings, tags, node });
   }
@@ -537,7 +610,7 @@ export function buildMonumenti(ctx: Ctx): MonumentiBuild {
 
   const norm = (n: string) => n.toLowerCase().replace(/[’`]/g, "'").trim();
   const names = new Map(shapes.flatMap((s) => [[norm(s.osm), s] as const, [norm(s.name), s] as const]));
-  const file: MonumentiFile = { v: 1, source: 'OpenStreetMap (Geofabrik nord-ovest) · EU-DEM', monumenti: out };
+  const file: MonumentiFile = { v: 1, source: SOURCE[ctx.world] ?? 'OpenStreetMap · EU-DEM', monumenti: out };
   writeFileSync(join(ctx.outDir, 'monumenti.json'), JSON.stringify(file));
   log(`monumenti: ${out.length} (${[...new Set(out.map((m) => m.kind))].map((k) => `${k} ${out.filter((m) => m.kind === k).length}`).join(', ')}), ${skipKeys.size} edifici generici tolti`);
   return {

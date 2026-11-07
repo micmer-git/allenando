@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import { WorldGraph, type WorldGraphFile } from '../../src/open/graph';
 import type { RideDef } from '../../src/open/world';
 import { ORIGIN } from './config.mjs';
-import { SPECS } from './monumenti';
+import { SPECS_BERGAMO as SPECS } from './monumenti';
 
 type Tags = Record<string, string>;
 const ROOT = join(__dirname, '..', '..');
