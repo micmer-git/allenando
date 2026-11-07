@@ -28,6 +28,6 @@ const demAt = (x: number, z: number): number => {
 };
 const graph = new WorldGraph(JSON.parse(readFileSync(join(OUT, 'graph.json'), 'utf8')) as WorldGraphFile);
 const t0 = Date.now();
-const { file } = buildMonumenti({ toLocal, demAt, graph, osmDir: join(__dirname, 'cache', 'osm'), outDir: OUT, log: console.log });
+const { file } = buildMonumenti({ world: 'bergamo', toLocal, demAt, graph, osmDir: join(__dirname, 'cache', 'osm'), outDir: OUT, log: console.log });
 for (const m of file.monumenti) console.log(`${m.id.padEnd(13)} ${m.kind.padEnd(9)} ${m.name.slice(0, 40).padEnd(40)} ${m.w}×${m.d}×${m.h} y ${m.y} (min ${m.yMin}) yaw ${Math.round((m.yaw * 180) / Math.PI)}° ${m.rings.length} anelli ${JSON.stringify(m.p).slice(0, 60)}`);
 console.log(`fatto in ${Date.now() - t0} ms`);

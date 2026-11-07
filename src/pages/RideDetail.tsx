@@ -4,7 +4,8 @@ import { LineChart, ZoneBar } from '@/components/Charts';
 import { Button, PageHeader } from '@/components/ui';
 import { CartolinaButton } from '@/components/ShareCard';
 import { WorldMap, type MapMarker, type MapOverlay } from '@/components/WorldMap';
-import { loadWorld, Terrain, type WorldData } from '@/open/world';
+import { loadWorld, Terrain, WORLD_KV, worldOfRouteId, type WorldData } from '@/open/world';
+import { loadKv } from '@/db/db';
 import type { Ride } from '@/domain/types';
 import { cap, formatDateTime, formatDuration, formatKmText, formatNumber, formatTss, msToKmh } from '@/domain/format';
 import { HR_ZONES, POWER_ZONES } from '@/domain/zones';
@@ -156,7 +157,7 @@ function RideTrackMap({ ride }: { ride: Ride }) {
   useEffect(() => {
     if (pts.length < 2) return;
     let alive = true;
-    void loadWorld()
+    void (async () => loadWorld(worldOfRouteId(ride.routeId) ?? (await loadKv<string>(WORLD_KV))))()
       .then((d) => {
         if (!alive) return;
         setWorld(d);

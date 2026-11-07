@@ -21,6 +21,9 @@ const KIND: Record<string, string> = {
   luogo: 'Luogo',
   funivia: 'Funivia',
   stazione: 'Stazione',
+  rifugio: 'Rifugio',
+  cappella: 'Cappella',
+  ghiacciaio: 'Ghiacciaio',
 };
 
 /** Il tipo di un luogo da riconoscere, con la maiuscola («Chiesa», «Porta delle Mura»). */

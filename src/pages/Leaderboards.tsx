@@ -10,7 +10,8 @@ import { worldSegments } from '@/game/segments';
 import { useGame } from '@/game/useGame';
 import { CLIMB_BOARD, type XpRow } from '@/multiplayer/world-protocol';
 import { fetchLeaders, fetchXpBoard, levelOf, type Leader } from '@/open/progress';
-import { loadWorld, type WorldData } from '@/open/world';
+import { isWorld, loadWorld, WORLD_KV, type WorldData } from '@/open/world';
+import { loadKv } from '@/db/db';
 import { cn } from '@/lib/cn';
 
 type Tab = 'salite' | 'percorsi' | 'tratti' | 'punti';
@@ -26,7 +27,11 @@ export function LeaderboardsPage() {
   useEffect(() => {
     void hydrate();
     let alive = true;
-    void loadWorld().then((d) => alive && setWorld(d)).catch(() => undefined);
+    // il mondo delle classifiche: ?world=, altrimenti l'ultimo scelto in Mondo
+    const fromUrl = params.get('world');
+    void (async () => loadWorld(isWorld(fromUrl) ? fromUrl : await loadKv<string>(WORLD_KV)))()
+      .then((d) => alive && setWorld(d))
+      .catch(() => undefined);
     return () => {
       alive = false;
     };

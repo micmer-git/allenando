@@ -1,5 +1,5 @@
 import type { PoiKind } from './world';
-import { worldBase } from './world';
+import { WORLD_ID, worldBase } from './world';
 
 /**
  * I monumenti del mondo: quaranta edifici e statue riconoscibili, ognuno col suo modello
@@ -91,24 +91,37 @@ export function monumentoPoiKind(m: Pick<Monumento, 'kind'>): PoiKind {
   }
 }
 
-let cache: Promise<Monumento[]> | null = null;
+/** Una cache per mondo; `ready` è l'ultimo mondo caricato, quello in cui si pedala. */
+const cache = new Map<string, Promise<Monumento[]>>();
 let ready: Monumento[] = [];
+let readyWorld = '';
 
-/** Carica i monumenti una volta; un mondo senza il file (costruito prima) ne ha zero. */
+/** Carica i monumenti di un mondo una volta; un mondo senza il file (costruito prima) ne ha zero. */
 export function loadMonumenti(id?: string): Promise<Monumento[]> {
-  if (!cache) {
-    cache = fetch(`${worldBase(id)}monumenti.json`)
+  const wid = id ?? WORLD_ID;
+  let p = cache.get(wid);
+  if (!p) {
+    p = fetch(`${worldBase(wid)}monumenti.json`)
       .then((r) => (r.ok ? (r.json() as Promise<MonumentiFile>) : null))
       .then((f) => {
-        ready = f ? decodeMonumenti(f) : [];
-        return ready;
+        const list = f ? decodeMonumenti(f) : [];
+        ready = list;
+        readyWorld = wid;
+        return list;
       })
       .catch(() => {
-        cache = null;
+        cache.delete(wid);
         return [];
       });
+    cache.set(wid, p);
+  } else if (readyWorld !== wid) {
+    // già scaricato: torna a essere «pronto» questo mondo
+    void p.then((list) => {
+      ready = list;
+      readyWorld = wid;
+    });
   }
-  return cache;
+  return p;
 }
 
 /** Quelli già arrivati (vuoto finché il file non c'è): lo legge il gioco, che non aspetta. */

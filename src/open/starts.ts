@@ -30,7 +30,7 @@ export function freeQueryAt(data: WorldData, x: number, z: number, town = false)
   if (!hit) return null;
   const e = data.graph.edges[hit.edge];
   const dir = data.graph.allowed(hit.edge, 1) ? 1 : -1;
-  return `world=bergamo&edge=${hit.edge}&s=${Math.round(Math.min(e.length - 1, hit.s))}&dir=${dir}`;
+  return `world=${data.graph.id}&edge=${hit.edge}&s=${Math.round(Math.min(e.length - 1, hit.s))}&dir=${dir}`;
 }
 
 /** I parametri del giro libero da un paese. */
@@ -51,5 +51,5 @@ export function loopStartQuery(data: WorldData, name: string, km: number): strin
   const best = suggestLoops(data.graph, node, { targetM: km * 1000, taste: 'misto', places: data.features.places })[0];
   if (!best) return null;
   const key = savePlan({ legs: best.legs, name: `Anello da ${name}` });
-  return `world=bergamo&plan=${key}`;
+  return `world=${data.graph.id}&plan=${key}`;
 }

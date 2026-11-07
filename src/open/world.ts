@@ -16,7 +16,66 @@ import { WorldGraph, type WorldGraphFile } from './graph';
  * Tutto si scarica una volta: il service worker lo tiene per l'uso senza rete.
  */
 
+/** Il mondo di partenza, quando nessuno ne ha scelto uno. */
 export const WORLD_ID = 'bergamo';
+
+export interface WorldInfo {
+  id: string;
+  /** il nome in testa alla pagina Mondo e nelle schede */
+  name: string;
+  /** una riga sotto il nome */
+  tagline: string;
+  /** le zone dei percorsi, nell'ordine della pagina */
+  areas: { id: RideArea; label: string }[];
+  /** i paesi da cui si parte nel giro libero (nomi dei dati) */
+  starts: string[];
+  /** il paese di riferimento: il primo nelle liste, la partenza di A → B */
+  home: string;
+  /** l'arrivo proposto in A → B */
+  away: string;
+  /** quanto pesa scaricarlo, MB (a mano, dal build) */
+  mb: number;
+}
+
+/** I mondi dell'app, nell'ordine delle schede. I dati stanno in public/world/<id>/. */
+export const WORLDS: readonly WorldInfo[] = [
+  {
+    id: 'bergamo',
+    name: 'Bergamo e le valli',
+    tagline: 'Città Alta, Val Seriana e Val Brembana fino ai passi',
+    areas: [
+      { id: 'citta', label: 'Bergamo città' },
+      { id: 'seriana', label: 'Val Seriana' },
+      { id: 'brembana', label: 'Val Brembana' },
+      { id: 'valli', label: 'Fra le due valli' },
+    ],
+    starts: ['Bergamo', 'Città Alta', 'Ponteranica', 'Alzano Lombardo', 'Nembro', 'Albino', 'Gazzaniga', 'Ponte Nossa', 'Clusone', 'Castione della Presolana', 'Villa d’Almè', 'Zogno', 'San Pellegrino Terme', 'San Giovanni Bianco', 'Piazza Brembana', 'Branzi', 'Serina', 'Selvino'],
+    home: 'Bergamo',
+    away: 'Selvino',
+    mb: 22,
+  },
+  {
+    id: 'sellaronda',
+    name: 'Sellaronda',
+    tagline: 'I quattro passi del Sella, Canazei e la Marmolada',
+    areas: [
+      { id: 'sella', label: 'I quattro passi' },
+      { id: 'marmolada', label: 'La Marmolada' },
+    ],
+    starts: ['Selva di Val Gardena', 'Corvara', 'Colfosco', 'Arabba', 'Canazei', 'Campitello di Fassa', 'Plan de Gralba'],
+    home: 'Selva di Val Gardena',
+    away: 'Corvara',
+    mb: 12,
+  },
+];
+
+export function worldInfo(id: string | null | undefined): WorldInfo {
+  return WORLDS.find((w) => w.id === id) ?? WORLDS[0];
+}
+
+export function isWorld(id: string | null | undefined): id is string {
+  return WORLDS.some((w) => w.id === id);
+}
 
 export function worldBase(id = WORLD_ID): string {
   const base = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env.BASE_URL : '/';
@@ -36,7 +95,10 @@ export const COVER = {
   glacier: 8,
 } as const;
 
-export type LandmarkKind = 'citta' | 'paese' | 'chiesa' | 'torre' | 'porta' | 'mura' | 'ponte' | 'fiume' | 'cima' | 'passo' | 'lago' | 'castello' | 'luogo' | 'funivia' | 'stazione' | 'santuario';
+export type LandmarkKind = 'citta' | 'paese' | 'chiesa' | 'torre' | 'porta' | 'mura' | 'ponte' | 'fiume' | 'cima' | 'passo' | 'lago' | 'castello' | 'luogo' | 'funivia' | 'stazione' | 'santuario' | 'rifugio' | 'cappella' | 'ghiacciaio';
+
+/** Le zone dei percorsi: quelle di Bergamo e quelle del Sellaronda (le etichette in WORLDS). */
+export type RideArea = 'citta' | 'brembana' | 'seriana' | 'valli' | 'sella' | 'marmolada';
 
 export interface Landmark {
   id: string;
@@ -64,7 +126,7 @@ export interface RideDef {
   name: string;
   /** da dove a dove, una riga */
   side: string;
-  area: 'citta' | 'brembana' | 'seriana' | 'valli';
+  area: RideArea;
   kind: RideKind;
   blurb: string;
   legs: [number, -1 | 1][];
@@ -206,6 +268,25 @@ export interface RoadMarks {
   mini: number[];
 }
 
+/** Un pilone o una stazione di un impianto di risalita (dai nodi `aerialway` di OSM). */
+export interface LiftPoint {
+  kind: 'pylon' | 'station';
+  name: string;
+  x: number;
+  z: number;
+  /** quota del terreno */
+  y: number;
+}
+
+/** Una pista da sci: una fascia senza alberi, da disegnare chiara nel bosco. */
+export interface Piste {
+  name: string;
+  /** semilarghezza, metri */
+  hw: number;
+  /** x, z, y piatto */
+  pts: Float32Array;
+}
+
 export interface WorldFeatures {
   rivers: RiverLine[];
   lakes: Lake[];
@@ -220,6 +301,10 @@ export interface WorldFeatures {
   /** semafori, uno per incrocio o per attraversamento */
   signals: TrafficSignal[];
   marks: RoadMarks;
+  /** piloni e stazioni degli impianti (solo nei mondi di montagna, dal 07/11/2026) */
+  lifts: LiftPoint[];
+  /** piste da sci come radure (idem) */
+  pistes: Piste[];
 }
 
 export interface WorldData {
@@ -245,6 +330,9 @@ export interface FeaturesFile {
   signals?: [number, number, number, number, number, number][];
   /** strisce: [arco, s dm] in fila; precedenze: [arco, s dm, verso, stop] in fila; mini rotatorie: nodi */
   marks?: { c: number[]; y: number[]; m: number[] };
+  /** [tipo, nome, x, z, y] */
+  lifts?: [string, string, number, number, number][];
+  pistes?: { n: string; hw: number; p: number[] }[];
 }
 
 /** decimetri delta → metri */
@@ -283,10 +371,13 @@ export function decodeFeatures(f: FeaturesFile): WorldFeatures {
     rails: f.rails.map((w) => ({ kind: w.k, name: w.n, pts: undelta(w.p, 3) })),
     cables: f.cables.map((w) => ({ kind: w.k, name: w.n, pts: undelta(w.p, 3) })),
     landmarks: f.landmarks,
+    lifts: (f.lifts ?? []).filter((l) => l[0] === 'pylon' || l[0] === 'station').map(([kind, name, x, z, y]) => ({ kind: kind as LiftPoint['kind'], name, x, z, y })),
+    pistes: (f.pistes ?? []).map((p) => ({ name: p.n, hw: p.hw, pts: undelta(p.p, 3) })),
   };
 }
 
-let cached: Promise<WorldData> | null = null;
+/** Una cache per mondo: si scarica una volta, e il mondo cambia senza perdere l'altro. */
+const cached = new Map<string, Promise<WorldData>>();
 
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
@@ -294,21 +385,33 @@ async function getJson<T>(url: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-export function loadWorld(id = WORLD_ID): Promise<WorldData> {
-  if (!cached) {
-    const base = worldBase(id);
-    cached = Promise.all([getJson<WorldGraphFile>(`${base}graph.json`), getJson<RideDef[]>(`${base}rides.json`), getJson<FeaturesFile>(`${base}features.json`)]).then(
-      ([g, rides, f]) => {
-        const graph = new WorldGraph(g);
-        const proj = projector(graph.origin);
-        return { graph, rides, features: decodeFeatures(f), proj, toGeo: (x: number, z: number) => proj.toGeo(x, z) };
-      },
-    );
-    cached.catch(() => {
-      cached = null;
+export function loadWorld(id: string | null | undefined = WORLD_ID): Promise<WorldData> {
+  const wid = isWorld(id) ? id : WORLD_ID;
+  let p = cached.get(wid);
+  if (!p) {
+    const base = worldBase(wid);
+    p = Promise.all([getJson<WorldGraphFile>(`${base}graph.json`), getJson<RideDef[]>(`${base}rides.json`), getJson<FeaturesFile>(`${base}features.json`)]).then(([g, rides, f]) => {
+      const graph = new WorldGraph(g);
+      const proj = projector(graph.origin);
+      return { graph, rides, features: decodeFeatures(f), proj, toGeo: (x: number, z: number) => proj.toGeo(x, z) };
+    });
+    cached.set(wid, p);
+    p.catch(() => {
+      cached.delete(wid);
     });
   }
-  return cached;
+  return p;
+}
+
+/** L'ultimo mondo scelto nella pagina Mondo (chiave `mondo` del kv), o quello di partenza. */
+export const WORLD_KV = 'mondo';
+
+/** Il mondo di un giro salvato: il prefisso del suo routeId («sellaronda:pordoi-arabba»), se è un mondo. */
+export function worldOfRouteId(routeId: string | undefined): string | null {
+  const i = routeId?.indexOf(':') ?? -1;
+  if (!routeId || i <= 0) return null;
+  const w = routeId.slice(0, i);
+  return isWorld(w) ? w : null;
 }
 
 // ---------- terreno a mattonelle ----------

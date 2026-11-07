@@ -8,6 +8,7 @@ import { PageHeader } from '@/components/ui';
 import type { Glyph as GlyphName } from '@/game/achievements';
 import { loadWorld, type RideDef } from '@/open/world';
 import { cn } from '@/lib/cn';
+import { WORLD_ID, WORLD_IDS, worldOfRide } from '@/multiplayer/world-rides';
 
 const hhmm = (ms: number) => new Date(ms).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
 
@@ -41,7 +42,7 @@ export function paceLabel(pace: { label: string; wkg: number }): string {
 
 /** Il link per entrare in una sessione. */
 export function sessionHref(s: SessionDef): string {
-  return `/ride?world=bergamo&ride=${encodeURIComponent(s.rideId)}&session=${s.id}`;
+  return `/ride?world=${worldOfRide(s.rideId) ?? WORLD_ID}&ride=${encodeURIComponent(s.rideId)}&session=${s.id}`;
 }
 
 export function SessionsPage() {
@@ -50,8 +51,9 @@ export function SessionsPage() {
   useEffect(() => {
     const t = window.setInterval(() => setNow(Date.now()), 1000);
     let alive = true;
-    void loadWorld()
-      .then((d) => alive && setRides(d.rides))
+    // le sessioni stanno su percorsi di tutti i mondi: si leggono i percorsi di ognuno
+    void Promise.all(WORLD_IDS.map((id) => loadWorld(id).then((d) => d.rides).catch(() => [] as RideDef[])))
+      .then((lists) => alive && setRides(lists.flat()))
       .catch(() => undefined);
     return () => {
       alive = false;

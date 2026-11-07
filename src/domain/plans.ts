@@ -2,6 +2,7 @@ import { loadKv, saveKv } from '@/db/db';
 import { localDateKey } from './load';
 import type { Ride } from './types';
 import { builtinById, workoutDuration, workoutEstimate, workoutRideLink } from './workouts';
+import { WORLD_ID, worldOfRide } from '@/multiplayer/world-rides';
 
 /**
  * I programmi a settimane: tre, fatti coi 33 allenamenti che ci sono, ognuno col posto dove
@@ -98,7 +99,7 @@ export function planById(id: string): TrainingPlan | undefined {
 /** Il link della pedalata: allenamento e posto insieme; la prova è il percorso senza schema. */
 export function sessionLink(s: PlanSession): string {
   if (s.workout) return workoutRideLink(s.workout, s.place.kind === 'percorso' ? { kind: 'percorso', ride: s.place.ride } : { kind: 'salita', route: s.place.route });
-  return s.place.kind === 'percorso' ? `/ride?world=bergamo&ride=${s.place.ride}` : `/ride?route=${s.place.route}`;
+  return s.place.kind === 'percorso' ? `/ride?world=${worldOfRide(s.place.ride) ?? WORLD_ID}&ride=${s.place.ride}` : `/ride?route=${s.place.route}`;
 }
 
 export function placeName(place: PlanPlace): string {
@@ -208,7 +209,7 @@ export function todayOf(plan: TrainingPlan, state: PlanState, today: string): To
 /** Il giro fa quella seduta? Lo stesso allenamento; per la prova, il percorso finito. */
 function rideMatches(ride: Ride, s: PlanSession): boolean {
   if (s.workout) return ride.workoutId === s.workout;
-  return s.place.kind === 'percorso' ? ride.routeId === `bergamo:${s.place.ride}` : ride.routeId === s.place.route;
+  return s.place.kind === 'percorso' ? ride.routeId === `${worldOfRide(s.place.ride) ?? WORLD_ID}:${s.place.ride}` : ride.routeId === s.place.route;
 }
 
 /**

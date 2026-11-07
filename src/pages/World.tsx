@@ -12,19 +12,13 @@ import { EMPTY_PROGRESS, fetchLeaders, fetchRideBoard, fetchXpBoard, levelOf, lo
 import { worldSegments } from '@/game/segments';
 import { SEGMENT_STYLE } from '@/game/arches';
 import { useGame } from '@/game/useGame';
-import { Terrain, loadWorld, type RideDef, type WorldData } from '@/open/world';
+import { isWorld, loadWorld, Terrain, WORLD_ID, WORLD_KV, WORLDS, worldInfo, type RideDef, type WorldData, type WorldInfo } from '@/open/world';
+import { loadKv, saveKv } from '@/db/db';
 import { kindLabel } from '@/open/labels';
 import { savePlan } from '@/open/plan';
 import { planAB, type AbRoute } from '@/open/ab';
 import { pickRoute } from '@/open/pick';
-import { freeQueryAt, START_TOWNS, townPoint } from '@/open/starts';
-
-const AREAS: { id: RideDef['area']; label: string }[] = [
-  { id: 'citta', label: 'Bergamo città' },
-  { id: 'seriana', label: 'Val Seriana' },
-  { id: 'brembana', label: 'Val Brembana' },
-  { id: 'valli', label: 'Fra le due valli' },
-];
+import { freeQueryAt, townPoint } from '@/open/starts';
 
 type Tab = 'percorsi' | 'libero' | 'anello' | 'ab' | 'classifiche';
 const TABS: { value: Tab; label: string }[] = [
@@ -37,10 +31,47 @@ const TABS: { value: Tab; label: string }[] = [
 
 const ROUTE_COLORS = ['#ffc814', '#ff6b4a', '#4ab8ff', '#c8f031', '#c77dff', '#3ce0b0', '#ff5fa2'];
 
-/** I punti di partenza del giro libero: i paesi grandi del mondo, presi dai dati. */
-const STARTS = START_TOWNS;
+const WORLD_OPTIONS = WORLDS.map((w) => ({ value: w.id, label: w.name }));
+
+/**
+ * Quale mondo si apre: `?world=` se c'è, altrimenti l'ultimo scelto (kv `mondo`), altrimenti
+ * Bergamo. La scelta si ricorda, e finisce nell'indirizzo per i link della pagina.
+ */
+export function useWorldChoice(): [string, (id: string) => void, boolean] {
+  const [params, setParams] = useSearchParams();
+  const fromUrl = params.get('world');
+  const [id, setId] = useState<string>(() => (isWorld(fromUrl) ? fromUrl : WORLD_ID));
+  const [settled, setSettled] = useState(isWorld(fromUrl));
+  useEffect(() => {
+    if (isWorld(fromUrl)) {
+      setId(fromUrl);
+      setSettled(true);
+      return;
+    }
+    let alive = true;
+    void loadKv<string>(WORLD_KV)
+      .then((v) => {
+        if (alive && isWorld(v)) setId(v);
+      })
+      .finally(() => alive && setSettled(true));
+    return () => {
+      alive = false;
+    };
+  }, [fromUrl]);
+  const choose = (next: string) => {
+    if (!isWorld(next) || next === id) return;
+    setId(next);
+    void saveKv(WORLD_KV, next);
+    const q = new URLSearchParams(params);
+    q.set('world', next);
+    setParams(q, { replace: true });
+  };
+  return [id, choose, settled];
+}
 
 export function WorldPage() {
+  const [worldId, chooseWorld, settled] = useWorldChoice();
+  const info = worldInfo(worldId);
   const [data, setData] = useState<WorldData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [far, setFar] = useState<Float32Array | null>(null);
@@ -51,8 +82,13 @@ export function WorldPage() {
   const [picked, setPicked] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!settled) return;
     let alive = true;
-    loadWorld()
+    setData(null);
+    setFar(null);
+    setError(null);
+    setPicked(null);
+    loadWorld(worldId)
       .then((d) => {
         if (!alive) return;
         setData(d);
@@ -61,27 +97,44 @@ export function WorldPage() {
       })
       .catch((e: unknown) => alive && setError(e instanceof Error ? e.message : 'mondo non disponibile'));
     void loadProgress().then((p) => alive && setProgress(p));
-    void worldCount().then((n) => alive && setOnline(n));
+    void worldCount(worldId).then((n) => alive && setOnline(n));
     return () => {
       alive = false;
     };
-  }, []);
+  }, [worldId, settled]);
 
-  if (error) return <main className="mx-auto max-w-3xl px-4 py-8 text-danger">{error}</main>;
-  if (!data) {
+  const picker = (
+    <div className="mt-4">
+      <Segmented<string> label="Mondo" value={worldId} onChange={chooseWorld} options={WORLD_OPTIONS} testId="world-pick" />
+      <p className="mt-2 text-sm text-muted" data-testid="world-tagline">
+        {info.tagline}
+      </p>
+    </div>
+  );
+  if (error) {
     return (
-      <main className="mx-auto w-full max-w-3xl px-4 pb-nav pt-6">
-        <PageHeader eyebrow="Mondo aperto" title="Bergamo e le valli" size="md" />
-        <p className="mt-3 text-muted">Carico le strade di Bergamo e delle valli…</p>
+      <main className="mx-auto w-full max-w-3xl px-4 pb-nav pt-6" data-testid="world-page">
+        <PageHeader eyebrow="Mondo aperto" title={info.name} size="md" />
+        {picker}
+        <p className="mt-3 text-danger">{error}</p>
       </main>
     );
   }
-  const discovered = Object.keys(progress.visited).length;
+  if (!data) {
+    return (
+      <main className="mx-auto w-full max-w-3xl px-4 pb-nav pt-6" data-testid="world-page">
+        <PageHeader eyebrow="Mondo aperto" title={info.name} size="md" />
+        {picker}
+        <p className="mt-3 text-muted">{`Carico le strade: ${info.tagline.toLowerCase()}…`}</p>
+      </main>
+    );
+  }
+  const discovered = data.features.landmarks.filter((l) => progress.visited[l.id]).length;
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 pb-nav pt-5 md:px-8 md:pt-10" data-testid="world-page">
+    <main className="mx-auto w-full max-w-3xl px-4 pb-nav pt-5 md:px-8 md:pt-10" data-testid="world-page" data-world={data.graph.id}>
       <PageHeader
         eyebrow="Mondo aperto"
-        title="Bergamo e le valli"
+        title={info.name}
         size="md"
         aside={
           <p className="num text-right text-sm leading-snug text-muted">
@@ -92,13 +145,14 @@ export function WorldPage() {
           </p>
         }
       />
+      {picker}
       <div className="mt-4">
         <Segmented<Tab> label="Sezione" value={tab} onChange={setTab} options={TABS} testId="world-tabs" />
       </div>
-      {tab === 'percorsi' ? <RidesTab data={data} far={far} progress={progress} picked={picked} setPicked={setPicked} /> : null}
-      {tab === 'libero' ? <FreeTab data={data} far={far} /> : null}
-      {tab === 'anello' ? <LoopTab data={data} far={far} /> : null}
-      {tab === 'ab' ? <AbTab data={data} far={far} /> : null}
+      {tab === 'percorsi' ? <RidesTab data={data} info={info} far={far} progress={progress} picked={picked} setPicked={setPicked} /> : null}
+      {tab === 'libero' ? <FreeTab data={data} info={info} far={far} /> : null}
+      {tab === 'anello' ? <LoopTab data={data} info={info} far={far} /> : null}
+      {tab === 'ab' ? <AbTab data={data} info={info} far={far} /> : null}
       {tab === 'classifiche' ? <BoardsTab /> : null}
       <p className="mt-8 text-xs leading-relaxed text-muted">{`© OpenStreetMap contributors (ODbL), dati del ${data.graph.builtAt} · Quote EU-DEM © Copernicus.`}</p>
     </main>
@@ -114,7 +168,7 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function RidesTab({ data, far, progress, picked, setPicked }: { data: WorldData; far: Float32Array | null; progress: WorldProgress; picked: string | null; setPicked: (id: string | null) => void }) {
+function RidesTab({ data, info, far, progress, picked, setPicked }: { data: WorldData; info: WorldInfo; far: Float32Array | null; progress: WorldProgress; picked: string | null; setPicked: (id: string | null) => void }) {
   const navigate = useNavigate();
   const sel = data.rides.find((r) => r.id === picked) ?? null;
   const cardStart = useRef<HTMLDivElement>(null);
@@ -169,8 +223,8 @@ function RidesTab({ data, far, progress, picked, setPicked }: { data: WorldData;
           setFromMap((n) => n + 1);
         }}
       />
-      {sel ? <RideCard data={data} ride={sel} progress={progress} startRef={cardStart} onClose={() => setPicked(null)} onRide={() => navigate(`/ride?world=bergamo&ride=${sel.id}`)} /> : null}
-      {AREAS.map((a) => {
+      {sel ? <RideCard data={data} ride={sel} progress={progress} startRef={cardStart} onClose={() => setPicked(null)} onRide={() => navigate(`/ride?world=${data.graph.id}&ride=${sel.id}`)} /> : null}
+      {info.areas.map((a) => {
         const list = data.rides.filter((r) => r.area === a.id);
         if (list.length === 0) return null;
         return (
@@ -359,10 +413,10 @@ function BoardList({ board }:{ board: { total: number; rows: BoardRow[]; mine: {
 
 const startPoint = townPoint;
 
-function FreeTab({ data, far }: { data: WorldData; far: Float32Array | null }) {
+function FreeTab({ data, info, far }: { data: WorldData; info: WorldInfo; far: Float32Array | null }) {
   const navigate = useNavigate();
   const [point, setPoint] = useState<{ x: number; z: number; label: string } | null>(null);
-  const starts = useMemo(() => STARTS.map((n) => ({ name: n, p: startPoint(data, n) })).filter((s) => s.p), [data]);
+  const starts = useMemo(() => info.starts.map((n) => ({ name: n, p: startPoint(data, n) })).filter((s) => s.p), [data, info]);
   function go(x: number, z: number, town = false) {
     // una strada vera, non l'anellino di una pista attorno a un'aiuola (a Nembro girava a vuoto)
     const q = freeQueryAt(data, x, z, town);
@@ -403,15 +457,15 @@ function FreeTab({ data, far }: { data: WorldData; far: Float32Array | null }) {
   );
 }
 
-function LoopTab({ data, far }: { data: WorldData; far: Float32Array | null }) {
+function LoopTab({ data, info, far }: { data: WorldData; info: WorldInfo; far: Float32Array | null }) {
   const navigate = useNavigate();
-  const [start, setStart] = useState('Bergamo');
+  const [start, setStart] = useState(info.home);
   const [km, setKm] = useState(40);
   const [taste, setTaste] = useState<LoopTaste>('misto');
   const [busy, setBusy] = useState(false);
   const [list, setList] = useState<LoopSuggestion[] | null>(null);
   const [chosen, setChosen] = useState(0);
-  const starts = useMemo(() => STARTS.map((n) => ({ name: n, p: startPoint(data, n) })).filter((s) => s.p), [data]);
+  const starts = useMemo(() => info.starts.map((n) => ({ name: n, p: startPoint(data, n) })).filter((s) => s.p), [data, info]);
   function compute() {
     const p = startPoint(data, start);
     if (!p) return;
@@ -431,7 +485,7 @@ function LoopTab({ data, far }: { data: WorldData; far: Float32Array | null }) {
   const focus = useMemo(() => (list && list[chosen] ? legsBounds(data, list[chosen].legs) : null), [data, list, chosen]);
   function ride(legs: Leg[], name: string) {
     const key = savePlan({ legs, name });
-    navigate(`/ride?world=bergamo&plan=${key}`);
+    navigate(`/ride?world=${data.graph.id}&plan=${key}`);
   }
   return (
     <section className="mt-4">
@@ -500,15 +554,15 @@ function LoopTab({ data, far }: { data: WorldData; far: Float32Array | null }) {
 
 type AbPoint = { x: number; z: number; label: string };
 
-function AbTab({ data, far }: { data: WorldData; far: Float32Array | null }) {
+function AbTab({ data, info, far }: { data: WorldData; info: WorldInfo; far: Float32Array | null }) {
   const navigate = useNavigate();
-  const starts = useMemo(() => STARTS.map((n) => ({ name: n, p: startPoint(data, n) })).filter((s) => s.p), [data]);
+  const starts = useMemo(() => info.starts.map((n) => ({ name: n, p: startPoint(data, n) })).filter((s) => s.p), [data, info]);
   const fromName = (n: string): AbPoint | null => {
     const p = startPoint(data, n);
     return p ? { x: p.x, z: p.z, label: n } : null;
   };
-  const [a, setA] = useState<AbPoint | null>(() => fromName('Bergamo'));
-  const [b, setB] = useState<AbPoint | null>(() => fromName('Selvino'));
+  const [a, setA] = useState<AbPoint | null>(() => fromName(info.home));
+  const [b, setB] = useState<AbPoint | null>(() => fromName(info.away));
   const [picking, setPicking] = useState<'a' | 'b'>('b');
   const [back, setBack] = useState(true);
   const [cycle, setCycle] = useState(false);
@@ -600,7 +654,7 @@ function AbTab({ data, far }: { data: WorldData; far: Float32Array | null }) {
         <div className="mt-2 rounded-2xl bg-elev px-3.5 py-3" data-testid="world-ab-route">
           <p className="font-semibold">{real.via.slice(0, 5).join(' · ') || `${a?.label} → ${b?.label}`}</p>
           <p className="num mt-0.5 text-sm text-muted">{`${formatKmText(real.lengthM)} · D+ ${formatMetersText(real.gainM)}${back ? ` · ${Math.round(real.overlap * 100)}% di ritorno sulla stessa strada` : ''}`}</p>
-          <Button className="mt-3 w-full" onClick={() => navigate(`/ride?world=bergamo&plan=${savePlan({ legs: real.legs, name: `${a?.label} → ${b?.label}${back ? ' e ritorno' : ''}` })}`)} data-testid="world-ab-ride">
+          <Button className="mt-3 w-full" onClick={() => navigate(`/ride?world=${data.graph.id}&plan=${savePlan({ legs: real.legs, name: `${a?.label} → ${b?.label}${back ? ' e ritorno' : ''}` })}`)} data-testid="world-ab-ride">
             Pedala da A a B
           </Button>
         </div>
