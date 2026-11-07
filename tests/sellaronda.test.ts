@@ -104,6 +104,8 @@ describe('S1.3 · il mondo Sellaronda', () => {
       }
     }
     expect(count.get(COVER.rock) ?? 0).toBeGreaterThan(5000);
+    // le piste da sci hanno il loro valore (COVER.piste, contratto S2): radure, non bosco
+    expect(count.get(COVER.piste) ?? 0).toBeGreaterThan(500);
     expect(count.get(COVER.glacier) ?? 0).toBeGreaterThan(100);
     expect(forestCells).toBeGreaterThan(5000);
     expect(forestHigh).toBe(0);

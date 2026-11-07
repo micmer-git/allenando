@@ -1250,7 +1250,7 @@ if (ALPINO) {
         cover[c] = 0;
         opened++;
       }
-      if (cover[c] === 6 || cover[c] === 8) continue;
+      if (cover[c] === 6 || cover[c] === 8 || cover[c] === 9) continue;
       const gx = (demAt(x + DEM_STEP, z) - demAt(x - DEM_STEP, z)) / (2 * DEM_STEP);
       const gz = (demAt(x, z + DEM_STEP) - demAt(x, z - DEM_STEP)) / (2 * DEM_STEP);
       if (Number.isFinite(gx) && Number.isFinite(gz) && Math.hypot(gx, gz) > tanRock && coverPri[c] < 6) {
@@ -1270,11 +1270,11 @@ if (ALPINO) {
       if (polyLen(xz) < 80) continue;
       const w = parseFloat(((p as OsmWay).tags.width ?? '').replace(',', '.'));
       const hw = Number.isFinite(w) && w > 4 ? Math.min(60, w / 2) : (p as OsmWay).tags['piste:type'] === 'sled' ? 4 : (p as OsmWay).tags['piste:difficulty'] === 'easy' ? 22 : 18;
-      if ((p as OsmWay).tags.area === 'yes' && xz.length > 3) rasterize([xz], 0, 3, cover, coverPri);
-      else brush(xz, hw, 0, (cur) => cur === 1);
+      if ((p as OsmWay).tags.area === 'yes' && xz.length > 3) rasterize([xz], 9, 3, cover, coverPri);
+      else brush(xz, hw, 9, (cur) => cur === 1 || cur === 0);
       pistes.push({ name: (p as OsmWay).tags.name ?? '', hw, xz: densify(simplify(xz, 3), 30) });
     } else if (p.type === 'area') {
-      rasterize([...(p as OsmArea).outer, ...((p as OsmArea).inner ?? [])].map(ringLocal), 0, 3, cover, coverPri);
+      rasterize([...(p as OsmArea).outer, ...((p as OsmArea).inner ?? [])].map(ringLocal), 9, 3, cover, coverPri);
     }
   }
   log(`montagna: ${rock} celle di roccia per pendenza > ${ALPINO.rockSlope}°, ${opened} di bosco sopra i ${treeLine} m, ${cliffs.length} pareti, ${pistes.length} piste`);

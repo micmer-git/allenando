@@ -129,22 +129,22 @@ export const SPECS_BERGAMO: MonumentoSpec[] = [
 // pietra, la cappella bianca col tetto a scandole, la stazione di cemento della funivia.
 export const SPECS_SELLARONDA: MonumentoSpec[] = [
   // Passo Sella
-  { ref: 'w68827782', osm: 'Rifugio Carlo Valentini', kind: 'casa', h: 11, p: { stile: 'rifugio', mat: 'legno', tetto: 'scandole', piani: 3, balconi: true } },
-  { ref: 'w233233503', osm: '', name: 'Cappella del Passo Sella', kind: 'cappella', h: 7, p: { stile: 'alpina', mat: 'bianco', tetto: 'scandole', campaniletto: true } },
+  { ref: 'w68827782', osm: 'Rifugio Carlo Valentini', kind: 'rifugio', h: 11, p: { stile: 'rifugio', mat: 'legno', tetto: 'scandole', piani: 3, balconi: true } },
+  { ref: 'w233233503', osm: '', name: 'Cappella del Passo Sella', kind: 'chiesetta', h: 7, p: { stile: 'alpina', mat: 'bianco', tetto: 'scandole', campaniletto: true } },
   { ref: 'w427207651', osm: 'Passo Sella Mountain Resort', name: 'Albergo del Passo Sella', kind: 'palazzo', h: 14, p: { stile: 'hotel-alpino', mat: 'bianco', trim: 'legno', piani: 4, balconi: true, tetto: 'falde' } },
   // Passo Pordoi
   { ref: 'w199516793', osm: 'Hotel Savoia', name: 'Hotel Savoia, Passo Pordoi', kind: 'palazzo', h: 14, p: { stile: 'hotel-alpino', mat: 'bianco', trim: 'legno', piani: 4, balconi: true, tetto: 'falde' } },
-  { ref: 'w199516854', osm: '', name: 'Cappella del Passo Pordoi', kind: 'cappella', h: 7, p: { stile: 'alpina', mat: 'bianco', tetto: 'scandole', campaniletto: true } },
+  { ref: 'w199516854', osm: '', name: 'Cappella del Passo Pordoi', kind: 'chiesetta', h: 7, p: { stile: 'alpina', mat: 'bianco', tetto: 'scandole', campaniletto: true } },
   { ref: 'n796380013', osm: 'Fausto Coppi', name: 'Monumento a Fausto Coppi', kind: 'statua', h: 3.2, p: { posa: 'busto', mat: 'bronzo', piedistallo: 1.8, piedistalloL: 1.2, figura: 1 } },
   { ref: 'n29916899', osm: 'Sass Pordoi', name: 'Funivia del Sass Pordoi, Passo Pordoi', kind: 'stazione', h: 10, edificio: true, lato: [22, 14], p: { tipo: 'funivia', mat: 'cemento' } },
   { ref: 'n29916900', osm: 'Sass Pordoi', name: 'Funivia del Sass Pordoi, Sass Pordoi', kind: 'stazione', h: 12, edificio: true, lato: [20, 14], p: { tipo: 'funivia', mat: 'cemento', terrazza: true } },
-  { ref: 'w42257301', osm: 'Rifugio Maria', name: 'Rifugio Maria, Sass Pordoi', kind: 'casa', h: 10, p: { stile: 'rifugio', mat: 'pietra', tetto: 'scandole', piani: 3 } },
+  { ref: 'w42257301', osm: 'Rifugio Maria', name: 'Rifugio Maria, Sass Pordoi', kind: 'rifugio', h: 10, p: { stile: 'rifugio', mat: 'pietra', tetto: 'scandole', piani: 3 } },
   // Passo Gardena
-  { ref: 'w237016903', osm: 'San Mauriz', name: 'Cappella di San Maurizio', kind: 'cappella', h: 7, p: { stile: 'alpina', mat: 'bianco', tetto: 'scandole', campaniletto: true } },
-  { ref: 'n2749674147', osm: 'Rifugio Frara', kind: 'casa', h: 12, edificio: true, lato: [24, 12], p: { stile: 'rifugio', mat: 'legno', tetto: 'scandole', piani: 3, balconi: true } },
+  { ref: 'w237016903', osm: 'San Mauriz', name: 'Cappella di San Maurizio', kind: 'chiesetta', h: 7, p: { stile: 'alpina', mat: 'bianco', tetto: 'scandole', campaniletto: true } },
+  { ref: 'n2749674147', osm: 'Rifugio Frara', kind: 'rifugio', h: 12, edificio: true, lato: [24, 12], p: { stile: 'rifugio', mat: 'legno', tetto: 'scandole', piani: 3, balconi: true } },
   { ref: 'w42107052', osm: 'Hotel Cir', name: 'Hotel Cir, Passo Gardena', kind: 'palazzo', h: 12, p: { stile: 'hotel-alpino', mat: 'bianco', trim: 'legno', piani: 3, balconi: true, tetto: 'falde' } },
   // Passo Campolongo
-  { ref: 'w199514203', osm: 'Rifugio Bec de Roces', kind: 'casa', h: 11, p: { stile: 'rifugio', mat: 'legno', tetto: 'scandole', piani: 3, balconi: true } },
+  { ref: 'w199514203', osm: 'Rifugio Bec de Roces', kind: 'rifugio', h: 11, p: { stile: 'rifugio', mat: 'legno', tetto: 'scandole', piani: 3, balconi: true } },
   // Selva
   { ref: 'w255592975', osm: 'Maria Hilf', name: 'Chiesa di Selva', kind: 'chiesa', h: 16, p: { mat: 'bianco', trim: 'pietra', facciata: 'alpina', tetto: 'scandole' } },
   { ref: 'w1197350465', osm: '', name: 'Campanile di Selva', kind: 'torre', h: 42, p: { mat: 'bianco', cella: 1, orologio: 1, tetto: 'cuspide' } },
@@ -156,7 +156,7 @@ export const SPECS_SELLARONDA: MonumentoSpec[] = [
   { ref: 'w199519403', osm: '', name: 'Chiesa di Arabba', kind: 'chiesa', h: 14, p: { mat: 'bianco', trim: 'pietra', facciata: 'alpina', campanile: 32, campanileX: 1, campanileTetto: 'cipolla' } },
   // Canazei e Fedaia
   { ref: 'w59275646', osm: 'chiesa di San Floriano', name: 'Chiesa di San Floriano, Canazei', kind: 'chiesa', h: 15, p: { mat: 'bianco', trim: 'pietra', facciata: 'alpina', campanile: 36, campanileX: 1, campanileTetto: 'cipolla' } },
-  { ref: 'w107176085', osm: 'Rifugio Marmolada Castiglioni', name: 'Rifugio Castiglioni, Passo Fedaia', kind: 'casa', h: 11, p: { stile: 'rifugio', mat: 'pietra', tetto: 'scandole', piani: 3 } },
+  { ref: 'w107176085', osm: 'Rifugio Marmolada Castiglioni', name: 'Rifugio Castiglioni, Passo Fedaia', kind: 'rifugio', h: 11, p: { stile: 'rifugio', mat: 'pietra', tetto: 'scandole', piani: 3 } },
 ];
 
 export const SPECS_BY_WORLD: Record<string, MonumentoSpec[]> = { bergamo: SPECS_BERGAMO, sellaronda: SPECS_SELLARONDA };

@@ -8,7 +8,7 @@ import { WORLD_ID, worldBase } from './world';
  * public/world/<id>/monumenti.json; qui si leggono.
  */
 
-export type Archetipo = 'porta' | 'torre' | 'chiesa' | 'cappella' | 'tempietto' | 'mausoleo' | 'palazzo' | 'castello' | 'statua' | 'caduti' | 'stazione' | 'casa';
+export type Archetipo = 'porta' | 'torre' | 'chiesa' | 'cappella' | 'tempietto' | 'mausoleo' | 'palazzo' | 'castello' | 'statua' | 'caduti' | 'stazione' | 'casa' | 'chiesetta' | 'rifugio' | 'ossario';
 
 /** Parametri dell'archetipo: numeri, parole, sì/no. */
 export type Params = Record<string, number | string | boolean>;
@@ -74,6 +74,9 @@ export const ARCHETIPO_LABEL: Record<Archetipo, string> = {
   caduti: 'Monumento ai caduti',
   stazione: 'Stazione',
   casa: 'Casa storica',
+  chiesetta: 'Cappella alpina',
+  rifugio: 'Rifugio',
+  ossario: 'Sacrario',
 };
 
 /** L'icona del punto caldo (src/pages/RideGameHud.tsx sceglie fra goccia, mappa e campana). */
@@ -82,7 +85,12 @@ export function monumentoPoiKind(m: Pick<Monumento, 'kind'>): PoiKind {
     case 'chiesa':
     case 'cappella':
     case 'tempietto':
+    case 'chiesetta':
       return 'chiesa';
+    case 'rifugio':
+      return 'rifugio';
+    case 'ossario':
+      return 'croce';
     case 'castello':
     case 'porta':
       return 'castello';

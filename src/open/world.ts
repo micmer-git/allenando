@@ -93,6 +93,8 @@ export const COVER = {
   water: 6,
   farmland: 7,
   glacier: 8,
+  /** pista da sci (dal 07/11/2026, Sellaronda): nel 3D una radura senza alberi; la scrive il build da `piste:type` */
+  piste: 9,
 } as const;
 
 export type LandmarkKind = 'citta' | 'paese' | 'chiesa' | 'torre' | 'porta' | 'mura' | 'ponte' | 'fiume' | 'cima' | 'passo' | 'lago' | 'castello' | 'luogo' | 'funivia' | 'stazione' | 'santuario' | 'rifugio' | 'cappella' | 'ghiacciaio';
