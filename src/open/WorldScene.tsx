@@ -5,7 +5,11 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import type { TrackPose } from '@/domain/track';
 import type { Quality } from '@/domain/types';
 import type { RideEngine } from '@/sim/engine';
-import { asphaltTexture, groundColor, smoothNoise } from '@/world/builders';
+import { asphaltTexture, smoothNoise } from '@/world/builders';
+import { groundLook, LARCH_PALETTE, lookContext, lookFor, type LookCtx, type WorldLook } from './look';
+import { patchRockShader } from './rockShader';
+import { Lifts } from './Lifts';
+import { Passi } from './Passi';
 import { Gate, Rider, bannerTexture, canvasTex } from '@/world/Scene';
 import { FLAG, type Dir } from './graph';
 import type { WorldField } from './field';
@@ -63,6 +67,16 @@ const QUALITY = {
 
 export function npcCount(quality: Quality): number {
   return QUALITY[quality].npcs;
+}
+
+/**
+ * La qualità per questo mondo: nei mondi di montagna (look.ringExtra) un anello di mattonelle in
+ * più, perché le pareti si vedono da 5 km e devono entrare prima; e il terreno lontano non si
+ * dimezza (look.farFine), perché l'orizzonte è il punto.
+ */
+export function qualityFor(quality: Quality, look: WorldLook): (typeof QUALITY)[Quality] {
+  const q = QUALITY[quality];
+  return { ...q, ring: q.ring + look.ringExtra, farStride: look.farFine ? 1 : q.farStride };
 }
 
 const HAZE = '#cfdbe5';
@@ -124,7 +138,7 @@ export interface ExtraWorldRider {
 }
 
 export function WorldScene(props: WorldSceneProps) {
-  const q = QUALITY[props.quality];
+  const q = qualityFor(props.quality, lookFor(props.data.graph.id));
   // le mattonelle contate da NearTiles: le leggono il «pronto», l'avanzamento e le misure (?stats=1)
   const counts = useMemo<TileCounts>(() => ({ ready: 0, pending: 0, detail: 0, near: 0, nearReady: 0, nearPartial: 0, late: 0, lateMin: -1 }), []);
   const status = useMemo<LoadStatus>(() => ({ ready: false }), []);
@@ -209,13 +223,15 @@ function ReadyWhenTiles({
 
 function WorldContent(props: WorldSceneProps & { counts: TileCounts; status: LoadStatus }) {
   const { data, field, terrain, quality } = props;
-  const q = QUALITY[quality];
+  // l'aspetto del mondo e la stagione di oggi (look.ts): roccia, neve, bosco, case
+  const ctx = useMemo(() => lookContext(data.graph.id), [data]);
+  const q = qualityFor(quality, ctx.look);
   // le mattonelle vicine possono essere fino a ring + 1 dal centro: tante per lato nella maschera
   const farMask = useMemo(() => createFarMask(2 * q.ring + 3), [q.ring]);
   useEffect(() => () => farMask.uReady.value.dispose(), [farMask]);
   // il terreno che entra nelle gallerie vicine non si disegna (tunnels.ts)
   const cut = useMemo(() => createTunnelCut(), []);
-  const mats = useMaterials(farMask, cut);
+  const mats = useMaterials(farMask, cut, ctx.look);
   const names = useMemo(() => new Set<THREE.Sprite>(), []);
   const { counts } = props;
   // le case e i monumenti intorno al ciclista: coprono i nomi (WorldLabels)
@@ -226,10 +242,12 @@ function WorldContent(props: WorldSceneProps & { counts: TileCounts; status: Loa
       {stats ? <StatsProbe tiles={() => ({ ...counts, treesNear: treeCount.near, treesFar: treeCount.far })} /> : null}
       <Atmosphere weather={props.weather} daytime={props.daytime} data={data} far={q.far} mats={mats} />
       {props.weather && props.weather.rain >= 0.1 ? <Rain mmh={props.weather.rain} weather={props.weather} /> : null}
-      <FarTerrain terrain={terrain} stride={q.farStride} material={mats.far} />
-      <NearTiles {...props} mats={mats} mask={farMask} cut={cut} occluders={occluders} />
+      <FarTerrain terrain={terrain} stride={q.farStride} material={mats.far} ctx={ctx} />
+      <NearTiles {...props} mats={mats} mask={farMask} cut={cut} occluders={occluders} ctx={ctx} />
       <Lakes data={data} />
       <Walls data={data} field={field} />
+      <Lifts data={data} terrain={terrain} playerPose={props.playerPose} />
+      <Passi data={data} field={field} playerPose={props.playerPose} />
       <Monumenti playerPose={props.playerPose} />
       <Labels data={data} playerPose={props.playerPose} names={names} />
       <Landmarks data={data} playerPose={props.playerPose} names={names} />
@@ -254,18 +272,22 @@ function WorldContent(props: WorldSceneProps & { counts: TileCounts; status: Loa
 
 // ---------- materiali condivisi ----------
 
-function useMaterials(mask: FarMask, cut: TunnelCut) {
+function useMaterials(mask: FarMask, cut: TunnelCut, look: WorldLook) {
   const mats = useMemo(() => {
     const asphaltTex = asphaltTexture();
     const stoneTex = settTexture();
-    const facadeTex = facadeTexture();
+    // le facciate: persiane verdi e balconcini in Lombardia, legno e balconi a tutta facciata nei paesi ladini
+    const facadeTex = facadeTexture(look.case);
     const tilesTex = roofTilesTexture();
     const groundTex = groundDetailTexture();
     const far = new THREE.MeshLambertMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: 3, polygonOffsetUnits: 6 });
-    far.onBeforeCompile = (shader) => patchFarShader(shader, mask);
+    far.onBeforeCompile = (shader) => {
+      patchFarShader(shader, mask);
+      patchRockShader(shader, look.rock.bands);
+    };
     return {
       far,
-      terrain: terrainMaterial(groundTex, cut),
+      terrain: terrainMaterial(groundTex, cut, look.rock.bands),
       asphalt: new THREE.MeshLambertMaterial({ map: asphaltTex, color: '#c9cbd0', polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
       stone: new THREE.MeshLambertMaterial({ map: stoneTex, color: '#d8cfc2', polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
       cycle: new THREE.MeshLambertMaterial({ map: asphaltTex, color: '#c98f7d', polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
@@ -299,7 +321,7 @@ function useMaterials(mask: FarMask, cut: TunnelCut) {
       /** cartelli d'inizio paese, uno per nome */
       signs: new Map<string, THREE.MeshLambertMaterial>(),
     };
-  }, [mask, cut]);
+  }, [mask, cut, look]);
   useEffect(
     () => () => {
       for (const [k, v] of Object.entries(mats)) {
@@ -320,10 +342,13 @@ function useMaterials(mask: FarMask, cut: TunnelCut) {
   return mats;
 }
 
-/** Il terreno vicino: colori di vertice, la grana, e il taglio dentro le gallerie. */
-function terrainMaterial(map: THREE.Texture, cut: TunnelCut): THREE.MeshLambertMaterial {
+/** Il terreno vicino: colori di vertice, la grana, il taglio dentro le gallerie, le bande della roccia. */
+function terrainMaterial(map: THREE.Texture, cut: TunnelCut, bands: number): THREE.MeshLambertMaterial {
   const m = new THREE.MeshLambertMaterial({ vertexColors: true, map });
-  m.onBeforeCompile = (shader) => patchTerrainShader(shader, cut);
+  m.onBeforeCompile = (shader) => {
+    patchTerrainShader(shader, cut);
+    patchRockShader(shader, bands);
+  };
   return m;
 }
 
@@ -434,10 +459,13 @@ function Atmosphere({ weather, daytime, data, far, mats }: { weather: WeatherNow
     },
     [geo, cloudGeo, cloudTex, cloudMat],
   );
+  const appliedAlt = useRef(0);
   const apply = () => {
     const s = sunFor(daytime, new Date(), data.graph.origin.lat, data.graph.origin.lon);
     const look = weather ?? CLEAR;
-    const a = atmosphere(s, look);
+    // il cielo di chi guarda da quassù: a 2000 m più scuro e saturo, l'aria più tersa
+    appliedAlt.current = camera.position.y;
+    const a = atmosphere(s, look, camera.position.y);
     const dir = sunVector(s);
     const pos = geo.attributes.position as THREE.BufferAttribute;
     const col = geo.attributes.color as THREE.BufferAttribute;
@@ -494,7 +522,8 @@ function Atmosphere({ weather, daytime, data, far, mats }: { weather: WeatherNow
       clouds.current.rotation.y += dt * w * 0.0006;
     }
     clock.current += dt;
-    if (clock.current > 30) {
+    // ogni 30 s, o quando si è saliti (o scesi) di 250 m: il cielo cambia con la quota
+    if (clock.current > 30 || (clock.current > 2 && Math.abs(camera.position.y - appliedAlt.current) > 250)) {
       clock.current = 0;
       apply();
     }
@@ -598,7 +627,13 @@ function Rain({ mmh, weather }: { mmh: number; weather: WeatherNow }) {
 
 // ---------- terreno lontano ----------
 
-function FarTerrain({ terrain, stride, material }: { terrain: Terrain; stride: number; material: THREE.Material }) {
+/**
+ * Il terreno lontano (far.bin): la stessa regola roccia/prato/neve delle mattonelle (look.ts), le
+ * normali vere così il sole lo ombreggia (le pareti a nord scure, quelle al sole chiare) e
+ * l'attributo `rock` per le bande. Il passo lo decide il build del mondo (120 m per le Dolomiti,
+ * 250 per Bergamo): qui si legge `graph.far.step`.
+ */
+function FarTerrain({ terrain, stride, material, ctx }: { terrain: Terrain; stride: number; material: THREE.Material; ctx: LookCtx }) {
   const mesh = useRef<THREE.Mesh>(null);
   useEffect(() => {
     let alive = true;
@@ -615,12 +650,16 @@ function FarTerrain({ terrain, stride, material }: { terrain: Terrain; stride: n
       geo.computeVertexNormals();
       const nrm = geo.attributes.normal as THREE.BufferAttribute;
       const col = new Float32Array(pos.count * 3);
+      const rock = new Float32Array(pos.count);
       const c = new THREE.Color();
+      const noiseStep = Math.max(90, f.step * stride * 0.8);
       for (let k = 0; k < pos.count; k++) {
-        groundColor(c, pos.getY(k), nrm.getY(k), nrm.getZ(k), smoothNoise(pos.getX(k) / 300, pos.getZ(k) / 300), 99);
+        const g = groundLook(c, ctx.look, ctx.season, pos.getY(k), nrm.getY(k), nrm.getZ(k), smoothNoise(pos.getX(k) / noiseStep, pos.getZ(k) / noiseStep), 0);
+        rock[k] = g.rock;
         c.toArray(col, k * 3);
       }
       geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      geo.setAttribute('rock', new THREE.BufferAttribute(rock, 1));
       const old = mesh.current.geometry;
       mesh.current.geometry = geo;
       old.dispose();
@@ -629,7 +668,7 @@ function FarTerrain({ terrain, stride, material }: { terrain: Terrain; stride: n
       alive = false;
       mesh.current?.geometry.dispose();
     };
-  }, [terrain, stride]);
+  }, [terrain, stride, ctx]);
   return <mesh ref={mesh} material={material} frustumCulled={false} />;
 }
 
@@ -659,11 +698,11 @@ interface TileEntry {
   xjob: Generator<void, TileMeshes['trees'], void> | null;
 }
 
-function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: TunnelCut; counts: TileCounts; status: LoadStatus; occluders: Occluders }) {
-  const { data, field, terrain, quality, mats, mask, cut, playerPose, counts, status, occluders } = props;
+function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: TunnelCut; counts: TileCounts; status: LoadStatus; occluders: Occluders; ctx: LookCtx }) {
+  const { data, field, terrain, quality, mats, mask, cut, playerPose, counts, status, occluders, ctx } = props;
   /** dove e con quante liste di case si sono raccolti gli ultimi volumi che coprono i nomi */
   const occAt = useRef({ x: Infinity, z: Infinity, lists: -1, mon: -1 });
-  const q = QUALITY[quality];
+  const q = qualityFor(quality, ctx.look);
   const root = useRef<THREE.Group>(null);
   const tiles = useRef(new Map<string, TileEntry>());
   const buildings = useRef(new Map<string, Building[] | Promise<Building[]>>());
@@ -745,18 +784,18 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
     let near: Building[][] | null = null;
     while (!(near = buildingsAround(spec.x0 - URBAN_R, spec.z0 - URBAN_R, spec.x0 + T + URBAN_R, spec.z0 + T + URBAN_R))) yield;
     const urban = urbanDensity(near, spec.x0, spec.z0, spec.x0 + T, spec.z0 + T, URBAN_R);
-    const terrainGeo = yield* terrainJob(field, spec, urban);
+    const terrainGeo = yield* terrainJob(field, spec, urban, ctx);
     const roads = yield* roadsJob(data.graph, field, spec);
     let bGeo: BuildingMeshes = { walls: null, roofs: null };
     for (;;) {
       const list = buildingsFor(spec);
       if (list) {
-        bGeo = yield* buildingsJob(field, list, spec);
+        bGeo = yield* buildingsJob(field, list, spec, ctx);
         break;
       }
       yield;
     }
-    const trees = yield* treesJob(field, spec);
+    const trees = yield* treesJob(field, spec, 0, false, ctx);
     const water = waterGeometry(data.features, spec);
     const rails = railsGeometry(field, data.features, spec);
     const g = new THREE.Group();
@@ -964,7 +1003,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
       if (!job) break;
       if (kind === 'dense') {
         if (job.dense === 'none') {
-          job.xjob = treesJob(field, { ...specOf(job.ix, job.iz, 0), trees: q.trees * DENSE_EXTRA }, 7.3, true);
+          job.xjob = treesJob(field, { ...specOf(job.ix, job.iz, 0), trees: q.trees * DENSE_EXTRA }, 7.3, true, ctx);
           job.dense = 'build';
         }
         const r = job.xjob!.next();
@@ -1059,7 +1098,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
   return (
     <group>
       <group ref={root} />
-      <Forest handle={forest} mats={mats} />
+      <Forest handle={forest} mats={mats} larch={LARCH_PALETTE[ctx.season.larch]} />
       <Roadside handle={roadside} mats={mats} />
     </group>
   );
@@ -1242,7 +1281,8 @@ interface ForestPatch {
   near: boolean;
 }
 
-function Forest({ handle, mats }: { handle: React.MutableRefObject<ForestHandle | null>; mats: Mats }) {
+/** `larch`: i colori del larice nella stagione di oggi (look.ts: d'oro in ottobre e novembre). */
+function Forest({ handle, mats, larch }: { handle: React.MutableRefObject<ForestHandle | null>; mats: Mats; larch: string[] }) {
   const group = useRef<THREE.Group>(null);
   const geos = useMemo(() => {
     const larch = new THREE.ConeGeometry(2.4, 8, 6, 1, true);
@@ -1316,7 +1356,7 @@ function Forest({ handle, mats }: { handle: React.MutableRefObject<ForestHandle 
             d.updateMatrix();
             m.setMatrixAt(i, d.matrix);
             if (colored) {
-              const colors = TREE_COLORS[it.kind];
+              const colors = it.kind === 'larch' ? larch : TREE_COLORS[it.kind];
               c.set(colors[Math.floor(it.tint * colors.length) % colors.length]);
               c.offsetHSL(0, (((it.tint * 13.7) % 1) - 0.5) * 0.08, (((it.tint * 29.3) % 1) - 0.5) * 0.07);
               m.setColorAt(i, c);
@@ -1342,7 +1382,7 @@ function Forest({ handle, mats }: { handle: React.MutableRefObject<ForestHandle 
       Object.values(geos.far).forEach((x) => x.dispose());
       geos.trunk.dispose();
     };
-  }, [handle, geos, mats]);
+  }, [handle, geos, mats, larch]);
   return <group ref={group} />;
 }
 
@@ -1743,12 +1783,14 @@ function WorldCam({ engine, path, field, playerPose }: WorldSceneProps) {
     const e = path.graph.edges[at.edge];
     const covered = (e.flags & FLAG.tunnel) !== 0;
     const raised = (e.flags & FLAG.bridge) !== 0;
-    // collaudo: scripts/world-shot.mjs con CAM="indietro,su[,lato]" guarda la strada da un altro punto
+    // collaudo: scripts/world-shot.mjs con CAM="indietro,su[,lato[,gradi]]" guarda la strada da un
+    // altro punto; i gradi girano lo sguardo (negativi a sinistra), per guardare una parete di lato
     const dbg = (globalThis as { __orobiaCam?: number[] }).__orobiaCam;
     if (dbg) {
-      const [b0, up, side = 0] = dbg;
+      const [b0, up, side = 0, yawDeg = 0] = dbg;
+      const yaw = pose.heading - (yawDeg * Math.PI) / 180;
       camera.position.set(pose.x - Math.sin(h) * b0 + Math.cos(h) * side, pose.y + up, pose.z - Math.cos(h) * b0 - Math.sin(h) * side);
-      look.current.set(pose.x + Math.sin(pose.heading) * 7, pose.y + 1.2, pose.z + Math.cos(pose.heading) * 7);
+      look.current.set(pose.x + Math.sin(yaw) * 7, pose.y + 1.2 + (yawDeg ? 2 : 0), pose.z + Math.cos(yaw) * 7);
       camera.lookAt(look.current);
       return;
     }
