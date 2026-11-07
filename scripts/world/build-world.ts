@@ -14,7 +14,9 @@ import { fileURLToPath } from 'node:url';
 import { deflateSync } from 'node:zlib';
 import { CITY, DEM_STEP, FAR_STEP, HORIZON, ORIGIN, REGION, TILE } from './config.mjs';
 import { loadDem } from './dem.mjs';
-import { CLS, FLAG, WorldGraph, type WorldGraphFile } from '../../src/open/graph';
+import { CLS, FLAG, MinHeap, WorldGraph, type WorldGraphFile } from '../../src/open/graph';
+import { crossingClearance, planCrossings } from '../../src/open/crossings';
+import { fitRingToRoads, type FitAction, type RoadProbe } from '../../src/open/footprints';
 import { buildRides, resolveWaypoints } from './rides';
 import { buildMonumenti } from './monumenti';
 import { isPaintedCrossing, poiKind, POI_BUILT, POI_REACH, snapSignals, snapToRoad } from '../../src/open/snap';
@@ -744,6 +746,100 @@ const nodeEle: number[] = nodeXZ.map(([x, z]) => demAt(x, z));
       return u < 1 ? wi * (1 - u * u) ** 2 : wi * 0.002;
     });
   }
+  // ---- ponti e sottopassi (piano OROBIA 07/11, M.1) ----
+  // Dove due strade si incrociano in pianta senza un nodo in comune, quella sopra deve passare
+  // con luce: 4,5 m più l'impalcato sotto un ponte, la volta più il guscio sopra una galleria.
+  // Il DEM a 25 m non vede un cavalcavia di 40 m né la trincea di un sottopasso, e i capi di un
+  // ponte corto pescano la quota del terrapieno spianato: a Gazzaniga la SS671 attraversava
+  // Piazzale Costituzione alla stessa quota e il sottopasso ciclabile passava dentro la statale.
+  // Si alza il ponte (o si abbassa la galleria) con una gobba a coseno che si stende sulla rete
+  // per i metri che servono a stare sotto il 6% (8% su piste e vie minori), anche attraverso gli
+  // incroci: le strade laterali salgono sulla rampa, come nel vero.
+  {
+    const lines = prepared.map((p) => ({ xs: p.xz.map((q) => q[0]), zs: p.xz.map((q) => q[1]), a: p.a, b: p.b }));
+    const crossings = planCrossings(lines);
+    const cumOf = (ei: number) => edgeVars[ei].d;
+    const yAt = (ei: number, s: number) => {
+      const ev = edgeVars[ei];
+      let q = 0;
+      while (q < ev.d.length - 2 && ev.d[q + 1] < s) q++;
+      const u = Math.min(1, Math.max(0, (s - ev.d[q]) / (ev.d[q + 1] - ev.d[q] || 1)));
+      return y[ev.ids[q]] + (y[ev.ids[q + 1]] - y[ev.ids[q]]) * u;
+    };
+    // la rete dei campioni: ogni campione coi suoi vicini lungo la strada (i nodi sono condivisi)
+    const nbr: number[][] = Array.from({ length: V }, () => []);
+    for (const ev of edgeVars) {
+      for (let q = 1; q < ev.ids.length; q++) {
+        const w = ev.d[q] - ev.d[q - 1];
+        nbr[ev.ids[q - 1]].push(ev.ids[q], w);
+        nbr[ev.ids[q]].push(ev.ids[q - 1], w);
+      }
+    }
+    const deficit = (c: (typeof crossings)[number]) => {
+      const cl = crossingClearance(prepared[c.i].e, prepared[c.j].e);
+      if (!cl) return null;
+      const up = cl.upper === 0 ? c.i : c.j;
+      const low = cl.upper === 0 ? c.j : c.i;
+      const sUp = cl.upper === 0 ? c.si : c.sj;
+      const sLow = cl.upper === 0 ? c.sj : c.si;
+      return { ...cl, up, low, sUp, sLow, missing: cl.need - (yAt(up, sUp) - yAt(low, sLow)) };
+    };
+    /** una gobba di `amount` metri centrata sul punto s della strada ei, stesa sulla rete; la strada `skip` non si tocca */
+    const bump = (ei: number, s: number, amount: number, skip: number) => {
+      const e = prepared[ei].e;
+      const g = e.cls <= CLS.tertiary ? 0.06 : 0.08;
+      const L = Math.min(400, Math.max(15, (Math.abs(amount) * Math.PI) / (2 * g)));
+      const forbidden = new Set(edgeVars[skip].ids);
+      const dist = new Map<number, number>();
+      const heap = new MinHeap();
+      const ev = edgeVars[ei];
+      const d = cumOf(ei);
+      let q = 0;
+      while (q < d.length - 2 && d[q + 1] < s) q++;
+      for (const k of [q, q + 1]) {
+        if (k >= ev.ids.length) continue;
+        const d0 = Math.abs(d[k] - s);
+        dist.set(ev.ids[k], d0);
+        heap.push(ev.ids[k], d0);
+      }
+      const done = new Set<number>();
+      while (heap.size) {
+        const v = heap.pop();
+        if (done.has(v)) continue;
+        done.add(v);
+        const dv = dist.get(v)!;
+        if (dv >= L) continue;
+        y[v] += amount * 0.5 * (1 + Math.cos((Math.PI * dv) / L));
+        const l = nbr[v];
+        for (let i = 0; i < l.length; i += 2) {
+          const w = l[i];
+          if (forbidden.has(w) || done.has(w)) continue;
+          const nd = dv + l[i + 1];
+          if (nd < (dist.get(w) ?? Infinity)) {
+            dist.set(w, nd);
+            heap.push(w, nd);
+          }
+        }
+      }
+    };
+    const tight = () => crossings.filter((c) => (deficit(c)?.missing ?? 0) > 0.3).length;
+    const before = tight();
+    const order = crossings
+      .map((c) => ({ c, d: deficit(c) }))
+      .filter((x) => x.d && x.d.missing > 0.05)
+      .sort((p, q) => q.d!.missing - p.d!.missing);
+    let fixed = 0;
+    for (let pass = 0; pass < 2; pass++) {
+      for (const { c } of order) {
+        const d = deficit(c)!;
+        if (d.missing <= 0.05) continue;
+        if (d.moveUpper > 0) bump(d.up, d.sUp, d.missing * d.moveUpper, d.low);
+        if (d.moveUpper < 1) bump(d.low, d.sLow, -d.missing * (1 - d.moveUpper), d.up);
+        if (pass === 0) fixed++;
+      }
+    }
+    log(`ponti e sottopassi: ${crossings.length} incroci in pianta, ${before} senza luce → ${tight()} dopo ${fixed} gobbe`);
+  }
   for (let i = 0; i < N; i++) nodeEle[i] = y[i];
   // la quota sui vertici della pianta, dai campioni
   edgeVars.forEach((ev, ei) => {
@@ -1306,30 +1402,44 @@ function buildingInfo(t: Tags, inCity: boolean, area: number): { kind: number; h
   return { kind, h: Math.min(120, Math.max(2.5, h)), minH: Math.min(minH, h - 1), roof };
 }
 
+// La strada più vicina a un punto, per tenere le case fuori dalla carreggiata (footprints.ts).
+// Le gallerie non contano (la casa sta sopra), e un viadotto più alto di 4 m del terreno nemmeno.
+const roadProbe: RoadProbe = (x, z) => {
+  let hit = graph.nearest(x, z, 12, (e) => !(e.flags & FLAG.tunnel));
+  if (hit && graph.edges[hit.edge].flags & FLAG.bridge && graph.pose(hit.edge, hit.s).y - demAt(x, z) > 4) hit = graph.nearest(x, z, 12, (e) => !(e.flags & (FLAG.tunnel | FLAG.bridge)));
+  if (!hit) return null;
+  const p = graph.pose(hit.edge, hit.s);
+  return { hw: graph.edges[hit.edge].hw, d: hit.d, px: p.x, pz: p.z, heading: p.heading, edge: hit.edge };
+};
+
 {
   const perTile = new Map<string, number[][]>();
   let count = 0;
   let dropped = 0;
+  const fitCount: Record<FitAction, number> = { ferma: 0, spostata: 0, ritagliata: 0, passaggio: 0, tolta: 0 };
+  let bitten = 0;
   for (const a of read<OsmArea>('buildings')) {
     if (a.tags.building === 'no' || a.tags.building === 'construction' || a.tags.building === 'ruins' && !a.tags.name) continue;
     if (a.tags.location === 'underground' || Number(a.tags.layer ?? 0) < 0) continue;
     if (monumenti.skip(a)) continue;
     for (const outer of a.outer) {
-      const ring = simplifyRing(ringLocal(outer), 0.6);
+      let ring = simplifyRing(ringLocal(outer), 0.6);
       if (ring.length < 3) continue;
-      let area2 = 0;
-      for (let i = 0; i < ring.length; i++) {
-        const [ax, az] = ring[i];
-        const [bx, bz] = ring[(i + 1) % ring.length];
-        area2 += ax * bz - bx * az;
-      }
-      const area = Math.abs(area2) / 2;
+      const areaOf = (r: [number, number][]) => {
+        let s = 0;
+        for (let i = 0; i < r.length; i++) {
+          const [ax, az] = r[i];
+          const [bx, bz] = r[(i + 1) % r.length];
+          s += ax * bz - bx * az;
+        }
+        return s;
+      };
+      let area2 = areaOf(ring);
+      let area = Math.abs(area2) / 2;
       if (area < 12) {
         dropped++;
         continue;
       }
-      // verso fisso (area con segno negativa in x-z): così le pareti guardano fuori senza calcoli nel browser
-      if (area2 > 0) ring.reverse();
       let cx = 0;
       let cz = 0;
       for (const p of ring) {
@@ -1338,12 +1448,33 @@ function buildingInfo(t: Tags, inCity: boolean, area: number): { kind: number; h
       }
       cx /= ring.length;
       cz /= ring.length;
+      const g0 = toGeo(cx, cz);
+      const inCity = g0.lat >= CITY.s && g0.lat <= CITY.n && g0.lon >= CITY.w && g0.lon <= CITY.e;
+      const info = buildingInfo(a.tags, inCity, area);
+      // nessuna casa dentro la carreggiata (M.2): si sposta, si ritaglia, o diventa un passaggio
+      const fit = fitRingToRoads(ring, info.h, info.minH, roadProbe);
+      fitCount[fit.action]++;
+      if (fit.before > 0.02) bitten++;
+      if (fit.action === 'tolta') continue;
+      if (fit.action !== 'ferma') {
+        ring = fit.ring;
+        info.minH = Math.min(fit.minH, info.h - 1);
+        area2 = areaOf(ring);
+        area = Math.abs(area2) / 2;
+        cx = 0;
+        cz = 0;
+        for (const p of ring) {
+          cx += p[0];
+          cz += p[1];
+        }
+        cx /= ring.length;
+        cz /= ring.length;
+      }
+      // verso fisso (area con segno negativa in x-z): così le pareti guardano fuori senza calcoli nel browser
+      if (area2 > 0) ring.reverse();
       const tx = Math.floor((cx - BOUNDS.x0) / TILE);
       const tz = Math.floor((cz - BOUNDS.z0) / TILE);
       if (tx < 0 || tz < 0 || tx >= TX || tz >= TZ) continue;
-      const g = toGeo(cx, cz);
-      const inCity = g.lat >= CITY.s && g.lat <= CITY.n && g.lon >= CITY.w && g.lon <= CITY.e;
-      const info = buildingInfo(a.tags, inCity, area);
       const ox = BOUNDS.x0 + tx * TILE;
       const oz = BOUNDS.z0 + tz * TILE;
       const rec = [info.kind, dm(info.h), dm(info.minH), info.roof];
@@ -1375,6 +1506,7 @@ function buildingInfo(t: Tags, inCity: boolean, area: number): { kind: number; h
     writeFileSync(join(OUT, 'b', `${key}.json`), s);
   }
   log(`edifici: ${count} in ${perTile.size} mattonelle, ${(bytes / 1e6).toFixed(1)} MB (scartati ${dropped} sotto i 12 m²)`);
+  log(`edifici nella carreggiata: ${bitten} mordevano la fascia → ${fitCount.spostata} spostati, ${fitCount.ritagliata} ritagliati, ${fitCount.passaggio} passaggi voltati, ${fitCount.tolta} tolti`);
 }
 
 // ---------- mura, ferrovie, funivie ----------
