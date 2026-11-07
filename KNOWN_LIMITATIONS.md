@@ -26,7 +26,7 @@ Passa i test (geometria, terreno sotto la strada, replay, Intervals con API simu
 - **S1.5** La scelta del mondo è una fila di due schede; non c’è ancora «scarica per usarlo senza rete» né il peso per mondo (pista F). Il service worker tiene in cache i file di tutti i mondi sotto `allenando-world-v1`.
 - **S1.6** Il Worker accetta `bergamo|sellaronda` dal codice condiviso, ma **non è ripubblicato da questa PR**: fino al `wrangler deploy` del coordinatore il mondo condiviso e la classifica del Sellaronda rispondono «world» (rifiuto) sul server in onda.
 - **S1.7** La prova «terreno sotto la strada» confronta il dato (strada livellata contro DEM a 25 m: entro 15 m nel 92% dei punti, mai oltre 40 fuori da ponti e gallerie), non il raccordo del browser.
-- **S1.8** Il mondo pesa MB_SELLA MB: 1043 cime nell’orizzonte (ogni cima oltre i 900 m) e 1345 piloni stanno in `features.json`; se S2 non li usa tutti si possono sfoltire.
+- **S1.8** Il mondo pesa 2,5 MB (contro i 22 di Bergamo: un ottavo dell’area, 279 km di strade): 1043 cime nell’orizzonte (ogni cima oltre i 900 m) e 1345 piloni stanno in `features.json`; se S2 non li usa tutti si possono sfoltire.
 
 ## Geometria e quota
 

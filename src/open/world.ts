@@ -62,9 +62,9 @@ export const WORLDS: readonly WorldInfo[] = [
       { id: 'sella', label: 'I quattro passi' },
       { id: 'marmolada', label: 'La Marmolada' },
     ],
-    starts: ['Selva di Val Gardena', 'Corvara', 'Colfosco', 'Arabba', 'Canazei', 'Campitello di Fassa', 'Plan de Gralba'],
+    starts: ['Selva di Val Gardena', 'Corvara in Badia', 'Colfosco', 'Arabba', 'Canazei', 'Campitello di Fassa', 'Plan de Gralba'],
     home: 'Selva di Val Gardena',
-    away: 'Corvara',
+    away: 'Corvara in Badia',
     mb: 12,
   },
 ];
