@@ -15,6 +15,19 @@
 - Il fantasma del record si registra solo con un giro intero dal via, restando sul percorso, senza allenamento né replay. Se ci sono quello del percorso e quello di un tratto, vince il percorso.
 - I `.zwo` di Zwift: FreeRide e MaxEffort, che lì si pedalano a sensazione, in ERG diventano 55% e 150% dell’FTP; le scritte a tempo si scartano.
 
+## Due mondi (pista F del 07/11/2026)
+
+- Il mondo **Sellaronda** compare nella scelta (Mondo, Oggi, onboarding) ma i suoi dati (`public/world/sellaronda/`) li costruisce la pista S1: finché non ci sono, la riga dice «Non ancora disponibile» e Mondo «non è ancora costruito». Le prove delle funzioni del Sellaronda (passi, salite, GPM per passo, HUD) girano sui passi di Bergamo (Ganda, Zambla, San Marco, Presolana).
+- I traguardi e la serie del Sellaronda contano sugli **id** che S1 e M useranno: percorsi `sellaronda`, `sellaronda-orario`, `sella-canazei`, `pordoi-arabba`, `pordoi-canazei`, `gardena-corvara`, `gardena-selva`, `fedaia-canazei`, `berghem-molamia` (o `berghem-molamia-corto`); luoghi `passo-sella`, `passo-pordoi`, `passo-gardena`, `passo-campolongo` (`src/game/passes.ts`). Un id diverso li lascia muti, senza errori.
+- Il catalogo dei mondi (`src/open/worlds.ts`) e `loadWorld(id)` con una cache per mondo sono l'adattatore della pista F: al merge con S1 (`WORLDS` in `src/open/world.ts`) i campi comuni si leggono da lì. L'ultimo mondo si ricorda in localStorage con una copia in kv (`mondo`).
+- Le sessioni ogni mezz'ora restano tutte a Bergamo (`SESSION_WORLD` in `src/game/sessions.ts` è vuoto): i percorsi del Sellaronda entrano nella rotazione quando ci sono i dati. Il Worker accetta solo il mondo `bergamo` (S1.6): nel Sellaronda «chi c'è intorno» e le classifiche restano vuote finché non si ripubblica.
+- «Senza rete» scrive nella cache del service worker senza passare da Workbox: l'espirazione di Workbox (60 giorni, 1500 voci) non conta quei file, e un mondo scaricato resta finché non si preme «Togli» o il browser non libera spazio. Su un browser senza Cache API il riquadro lo dice e non offre lo scarico. Un mondo scaricato a metà (rete caduta) riparte da dove era.
+- Il manifesto (`manifest.json`) è un file in più da rigenerare dopo ogni `world:build` (`node scripts/world-manifest.mjs`): se manca, la riga del mondo non dice i km né il peso e lo scarico non si offre.
+- Il «mondo» di un giro salvato prima del 07/11/2026 si deduce dal GPS (riquadri in `WORLD_CATALOG`): un giro importato da fuori che cade dentro il riquadro di Bergamo finisce nel filtro «Bergamo».
+- La linea della neve dal meteo (`snowLine` in `src/open/weather.ts`) è pronta ma il 3D non la usa ancora: la collega la pista S2.
+- La figura dei mondi nell'onboarding è una sagoma disegnata (`WorldArt`), non una schermata del 3D: quella del Sellaronda arriva con S2.
+- Il nome del percorso nel FIT sta nel messaggio `WORKOUT` (`wkt_name`): Garmin Connect lo mostra, Strava lo ignora e prende il titolo dall'orario.
+
 Passa i test (geometria, terreno sotto la strada, replay, Intervals con API simulata, parser) e la build di produzione. Il mondo 3D è stato visto in Chrome headless (WebGL software) su viewport 390×844. **Non è certificato su un rullo fisico.**
 
 ## Geometria e quota

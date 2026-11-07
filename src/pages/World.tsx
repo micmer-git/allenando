@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type Ref } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button, PageHeader, Segmented } from '@/components/ui';
 import { WorldMap, legsBounds, type MapMarker, type MapOverlay } from '@/components/WorldMap';
-import { cap, formatAltText, formatDuration, formatGainText, formatKm, formatKmText, formatNumber } from '@/domain/format';
+import { cap, formatAlt, formatAltText, formatDuration, formatGainText, formatKm, formatKmText, formatNumber } from '@/domain/format';
 import { OfflineCard, useWorldManifests, WorldChooser } from '@/components/WorldPicker';
 import { rideClimbs, rideSense, SENSE_LABEL, siblingRide } from '@/game/passes';
 import { rememberWorld, worldFromParams, worldInfo } from '@/open/worlds';
@@ -303,7 +303,7 @@ function RideCard({ data, ride, progress, onClose, onRide, onPick, startRef }: {
       <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-4">
         <Stat label="Km" value={formatKm(ride.lengthM)} />
         <Stat label="D+" value={formatAltText(ride.gainM)} />
-        <Stat label="Quote" value={`${formatAltText(ride.startAlt)} → ${formatAltText(ride.maxAlt)}`} />
+        <Stat label="Quote" value={`${formatAlt(ride.startAlt)} → ${formatAltText(ride.maxAlt)}`} />
         <Stat label="Max 200 m" value={pctStr(ride.maxGrade)} />
       </dl>
       <div ref={startRef} className="mt-3 scroll-mb-4">

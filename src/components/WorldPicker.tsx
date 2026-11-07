@@ -11,6 +11,12 @@ import { fetchManifest, WORLD_CATALOG, worldFacts, type WorldInfo, type WorldMan
 
 type Manifests = Record<string, WorldManifest | null | undefined>;
 
+/** Quando lo scarico finisce o si toglie un mondo, le righe della scelta si rileggono. */
+const CHANGED = 'orobia-mondo-offline';
+const announce = () => {
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(CHANGED));
+};
+
 /** I manifesti dei mondi, uno per uno: `undefined` finché non è arrivato, `null` se il mondo non è costruito. */
 export function useWorldManifests(): Manifests {
   const [m, setM] = useState<Manifests>({});
@@ -57,7 +63,10 @@ export function useWorldOffline(id: string, manifest: WorldManifest | null | und
     setError(null);
     setProgress({ done: 0, total: manifest.files.length, bytes: 0 });
     downloadWorld(id, manifest, (p) => setProgress({ ...p }), c.signal)
-      .then((s) => setState(s))
+      .then((s) => {
+        setState(s);
+        announce();
+      })
       .catch((e: unknown) => {
         setError(e instanceof Error ? e.message : 'Scarico interrotto.');
         refresh();
@@ -69,7 +78,11 @@ export function useWorldOffline(id: string, manifest: WorldManifest | null | und
   }, [id, manifest, refresh]);
   const stop = useCallback(() => ctrl.current?.abort(), []);
   const remove = useCallback(() => {
-    void removeWorld(id).then(refresh);
+    setState(null);
+    void removeWorld(id).then(() => {
+      refresh();
+      announce();
+    });
   }, [id, refresh]);
   return { state, busy: !!progress, progress, error, download, stop, remove };
 }
@@ -102,9 +115,14 @@ function WorldRow({ world, manifest, selected, onPick }: { world: WorldInfo; man
   const [state, setState] = useState<WorldStorage | null>(null);
   useEffect(() => {
     let alive = true;
-    if (manifest) void worldStorage(world.id, manifest).then((s) => alive && setState(s));
+    const read = () => {
+      if (manifest) void worldStorage(world.id, manifest).then((s) => alive && setState(s));
+    };
+    read();
+    window.addEventListener(CHANGED, read);
     return () => {
       alive = false;
+      window.removeEventListener(CHANGED, read);
     };
   }, [world.id, manifest]);
   const missing = manifest === null;

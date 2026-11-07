@@ -164,7 +164,7 @@ export async function giroPagine(p, check, { shot = null } = {}) {
   check(await p.evaluate(`!!document.querySelector('[data-testid=world-ride-sense]')`), 'percorso: il verso del giro');
   check(await p.evaluate(`/Strade OSM · Quote EU-DEM/.test(document.querySelector('[data-testid=world-ride-sources]')?.textContent ?? '')`), 'percorso: la riga delle fonti');
   const quote = await p.evaluate(`[...document.querySelectorAll('[data-testid=world-ride-card] dd')].map((d) => d.textContent.trim())`);
-  check(quote.some((q) => /^\d{1,3}(\.\d{3})? m → \d{1,3}(\.\d{3})? m$/.test(q)), 'percorso: le quote con l’unità e la freccia', JSON.stringify(quote));
+  check(quote.some((q) => /^\d{1,3}(\.\d{3})? → \d{1,3}(\.\d{3})? m$/.test(q)), 'percorso: le quote con la freccia e l’unità una volta', JSON.stringify(quote));
   await base('mondo, percorso');
   if (shot) await p.shot('p1-mondo-percorso');
   await p.evaluate(`[...document.querySelectorAll('[data-testid=world-ride-card] button')].find((b) => b.textContent.trim() === 'Chiudi')?.click()`);
