@@ -133,6 +133,8 @@ export interface WorldField {
   roadAt(x: number, z: number, reach?: number): FieldHit | null;
   /** (x, z) a quota y cade dentro la sagoma di una galleria (o poco sopra): niente alberi */
   inTube(x: number, z: number, y: number): boolean;
+  /** (x, z) sta sotto o accanto a un ponte (entro `margin` dal bordo dell'impalcato): niente alberi che lo bucano */
+  nearBridge(x: number, z: number, margin?: number): boolean;
   terrain: Terrain;
 }
 
@@ -182,16 +184,21 @@ export function createWorldField(graph: WorldGraph, terrain: Terrain, features: 
     portal.add(e.b);
   }
   const segs: number[] = [];
+  // i ponti a parte: il terreno non li raccorda, ma gli alberi non devono bucare l'impalcato
+  const bsegs: number[] = [];
   for (const e of graph.edges) {
-    if (e.flags & (FLAG.bridge | FLAG.tunnel)) continue;
+    if (e.flags & FLAG.tunnel) continue;
+    const bridge = (e.flags & FLAG.bridge) !== 0;
     const last = e.xs.length - 2;
     for (let k = 0; k <= last; k++) {
       const run = e.cum[k + 1] - e.cum[k] || 1;
       const ends = (k === 0 && portal.has(e.a) ? 1 : 0) + (k === last && portal.has(e.b) ? 2 : 0);
-      segs.push(e.xs[k], e.zs[k], e.xs[k + 1], e.zs[k + 1], e.ys[k], e.ys[k + 1], e.hw, Math.abs(e.ys[k + 1] - e.ys[k]) / run, ends, e.id);
+      (bridge ? bsegs : segs).push(e.xs[k], e.zs[k], e.xs[k + 1], e.zs[k + 1], e.ys[k], e.ys[k + 1], e.hw, Math.abs(e.ys[k + 1] - e.ys[k]) / run, bridge ? 0 : ends, e.id);
     }
   }
   const roads = buildIndex(segs);
+  const bridges = buildIndex(bsegs);
+  const bHit: FieldHit = { edge: -1, edgeDist: 0, dist: 0, y: 0, hw: 3, grade: 0 };
   const wsegs: number[] = [];
   for (const r of features.rivers) {
     const p = r.pts;
@@ -212,6 +219,7 @@ export function createWorldField(graph: WorldGraph, terrain: Terrain, features: 
       return { ...hit };
     },
     inTube: (x, z, y) => inTube(graph, x, z, y),
+    nearBridge: (x, z, margin = 2.5) => nearest(bridges, x, z, margin + 8, bHit) && bHit.edgeDist < margin,
     height(x, z, spacing) {
       let h = terrain.height(x, z);
       inWater = false;
