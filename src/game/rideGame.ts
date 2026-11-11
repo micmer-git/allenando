@@ -162,8 +162,8 @@ export class RideGame {
       return;
     }
     const e = this.engine;
-    // il percorso finisce prima dell'allenamento: non ci si ferma, si prosegue libero
-    if (this.world && e.workout && !e.workoutDone && this.world.session.planned && this.world.session.path.length - e.distance < 400) this.world.session.continueFree(e.distance);
+    // il percorso finisce prima dell'allenamento: un passaggio in più (giro o tratta), oltre i 20 libero
+    if (this.world && e.workout && !e.workoutDone && this.world.session.planned) this.world.session.allenamentoContinua(e.distance);
     // il percorso del mondo cambia a ogni svolta: i tratti si rimettono sul percorso nuovo
     if (this.world && this.anchors && this.world.session.path.version !== this.pathVersion) {
       this.pathVersion = this.world.session.path.version;

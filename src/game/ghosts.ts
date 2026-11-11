@@ -258,7 +258,7 @@ export class RideGhosts {
     const s = this.opts.session;
     // il percorso intero: solo partendo dal via e restando sul percorso
     const route = this.routeKey ? this.traces[this.routeKey] : undefined;
-    if (route && s && s.onRoute && this.startD < 1) {
+    if (route && s && s.onRoute && s.giro === 1 && this.startD < 1) {
       return { kind: 'percorso', of: '', distance: ghostMetersAt(route, e.elapsed), gap: ghostGap(route, e.distance, e.elapsed) };
     }
     // il tratto partito per primo (la salita intera prima degli ultimi 3 km)
@@ -311,9 +311,13 @@ export class RideGhosts {
       if (!w) continue;
       this.offer(traceFromSamples(r.id, e.samples, w.from, w.to, w.t0, w.t0 + r.sec, { sim: this.opts.sim() }));
     }
-    if (this.routeKey && session && !this.routeSaved && this.startD < 1 && e.arrived && session.rankable) {
+    // il percorso intero: il primo passaggio (con più giri), o tutto all'arrivo
+    const lap1 = session && session.giri > 1 ? session.giriFatti.find((g) => g.giro === 1) : undefined;
+    if (this.routeKey && session && !this.routeSaved && this.startD < 1 && (e.arrived || lap1) && session.rankable) {
       this.routeSaved = true;
-      this.offer(traceFromSamples(this.routeKey, e.samples, 0, e.distance, 0, e.elapsed, { sim: this.opts.sim() }));
+      const to = lap1 ? session.traguardi()[0] : e.distance;
+      const t1 = lap1 ? lap1.sec : e.elapsed;
+      this.offer(traceFromSamples(this.routeKey, e.samples, 0, to, 0, t1, { sim: this.opts.sim() }));
     }
   };
 

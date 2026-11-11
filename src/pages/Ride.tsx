@@ -296,6 +296,8 @@ function RideSession({ setup, resume, kept }: { setup: RideSetup; resume: RideCh
       // i tratti, i punti caldi, il dislivello e i luoghi di prima valgono ancora; si riparte in pausa
       game.restore(resume.game);
       const ws = setup.world?.session;
+      // i passaggi aggiunti prima del crash (giro in più) tornano: il percorso è lungo come allora
+      if (ws && resume.engine.giri) ws.ensureGiri(resume.engine.giri);
       if (ws && resume.world) {
         ws.gainM = resume.world.gainM;
         for (const id of resume.world.passed) ws.passed.add(id);

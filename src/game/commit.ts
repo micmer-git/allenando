@@ -102,8 +102,12 @@ export async function commitProgress(input: CommitInput, deps: Partial<CommitDep
   const c = input.committed;
   const climbId = !session && input.routeId && engine.arrived && !input.replay && !workout ? input.routeId : undefined;
   // un allenamento più lungo del percorso prosegue libero: il percorso è fatto quando si passa la sua fine
-  const routeFinished = !!session && (engine.arrived || (session.routeEnd != null && engine.distance >= session.routeEnd));
-  const completed = session ? routeFinished && session.rankable : !!climbId;
+  const routeFinished = !!session && (engine.arrived || session.giriFatti.length > 0 || (session.routeEnd != null && engine.distance >= session.routeEnd));
+  // con più passaggi il tempo del percorso è quello del passaggio migliore (sull'aperto, l'andata);
+  // se nessun passaggio ha un tempo (una ripresa a metà), il giro non va in classifica
+  const routeSec = session && session.giri > 1 ? session.tempoPercorso() : engine.elapsed;
+  const completed = session ? routeFinished && session.rankable && routeSec != null : !!climbId;
+  const sec = routeSec ?? engine.elapsed;
   // dislivello: il mondo lo conta da sé; sulle salite e nei replay dai campioni
   const fresh = engine.samples.slice(c.sample);
   let climbGain = 0;
@@ -115,7 +119,7 @@ export async function commitProgress(input: CommitInput, deps: Partial<CommitDep
     rideId: session ? session.ride?.id : climbId ? `salita:${climbId}` : undefined,
     completed,
     // con un allenamento il tempo non è quello del percorso: niente record
-    sec: completed && !workout ? engine.elapsed : undefined,
+    sec: completed && !workout ? sec : undefined,
     sim,
     distanceM: engine.odometer - c.distance,
     gainM,
@@ -129,7 +133,7 @@ export async function commitProgress(input: CommitInput, deps: Partial<CommitDep
   if (session?.ride && workout) rankNote = 'Con un allenamento il tempo non va in classifica.';
   else if (session && completed && session.ride && profile.name) {
     const avg = engine.samples.length ? engine.samples.reduce((a, x) => a + x.power, 0) / engine.samples.length : engine.power3s;
-    const res = await d.postResult({ nick: profile.name, ride: session.ride.id, sec: engine.elapsed, wkg: profile.weightKg > 0 ? avg / profile.weightKg : 0, sim });
+    const res = await d.postResult({ nick: profile.name, ride: session.ride.id, sec, wkg: profile.weightKg > 0 ? avg / profile.weightKg : 0, sim });
     if (res.ok && res.rank) rank = `${res.rank}° in classifica${sim ? ' (simulatore)' : ''}${res.best ? ', il tuo tempo migliore' : ''}`;
     else if (res.error === 'implausible') rankNote = 'Tempo troppo veloce per essere vero: non va in classifica.';
     else if (res.error === 'rete') rankNote = 'Senza rete: il tempo resta qui, non in classifica.';
@@ -170,7 +174,7 @@ export async function commitProgress(input: CommitInput, deps: Partial<CommitDep
   if (facts.worldRideDone && !workout) {
     const key = `w:${facts.worldRideDone}`;
     const old = outcome.next.pbs[key];
-    if (!old || engine.elapsed < old.sec) outcome.next.pbs[key] = { sec: Math.round(engine.elapsed), at: d.now().toISOString(), sim, count: (old?.count ?? 0) + 1 };
+    if (!old || sec < old.sec) outcome.next.pbs[key] = { sec: Math.round(sec), at: d.now().toISOString(), sim, count: (old?.count ?? 0) + 1 };
   }
   await d.setCareer(outcome.next);
   input.committed.distance = engine.odometer;
