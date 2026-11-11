@@ -238,13 +238,16 @@ export async function collaudoCorsa({ b, base, check, out = '' }) {
       check(false, `incrocio at=${at}: compare la scelta`);
       continue;
     }
-    const turns = await q.evaluate(`[...document.querySelectorAll('[data-testid=turn-picker] button')].map((b) => b.innerText.replace(/\\s+/g, ' ').trim())`);
+    // sul percorso scelto la scelta è una riga di frecce (data-compact): il nome sta nell'etichetta
+    const turns = await q.evaluate(`[...document.querySelectorAll('[data-testid=turn-picker] button')].map((b) => (b.getAttribute('aria-label') || b.innerText).replace(/\\s+/g, ' ').trim())`);
+    const compact = await q.evaluate(`(() => { const t = document.querySelector('[data-testid=turn-picker]'); return t && t.dataset.compact !== undefined ? Math.round(t.getBoundingClientRect().height) : null; })()`);
+    check(compact != null && compact <= 56, `incrocio at=${at}: sul percorso scelto una riga sola`, String(compact));
     const cutT = await q.evaluate(ellipsis('[data-testid=turn-picker]'));
     check(turns.length >= 2 && turns.length <= 3, `incrocio at=${at}: al massimo 3 frecce`, turns.join(' | '));
     check(new Set(turns).size === turns.length, `incrocio at=${at}: nomi diversi`, turns.join(' | '));
     check(cutT.length === 0, `incrocio at=${at}: nessun nome troncato`, cutT.join(' | '));
     check((await q.evaluate(lowercase('[data-testid=turn-picker]'))).length === 0, `incrocio at=${at}: maiuscole`);
-    const route = await q.evaluate(`document.querySelector('[data-testid=turn-picker] [data-route=yes]')?.innerText.trim() ?? ''`);
+    const route = await q.evaluate(`(() => { const b = document.querySelector('[data-testid=turn-picker] [data-route=yes]'); return b ? (b.getAttribute('aria-label') || b.innerText).trim() : ''; })()`);
     check(!route || /Percorso/.test(route), `incrocio at=${at}: la freccia del percorso dice «Percorso»`, route);
   }
   // un giro rimasto a metà non deve restare nel browser di chi chiama

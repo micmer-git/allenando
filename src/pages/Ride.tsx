@@ -745,7 +745,9 @@ function RideScreen({
   // più passaggi: i km al traguardo di questo passaggio, non all'ultimo
   const traguardo = session && session.giri > 1 ? session.traguardoFra(engine.distance) : null;
   const turning = !!session?.junction && session.junction.dist <= 220 && engine.phase !== 'finished';
-  const mini = big && wide ? 132 : wide ? 88 : 96;
+  // la cartina: sul percorso scelto basta un segno per aprire la carta (la strada la dice
+  // l'altimetria); nel giro libero e fuori percorso serve per orientarsi
+  const mini = big && wide ? 132 : session?.onRoute ? 64 : wide ? 88 : 96;
   // in montagna (F.4): i passi davanti, dal percorso scelto o dalla strada che si sta facendo
   const passMarks = usePassMarks(session, engine.distance);
   const pass = session ? nextPass(passMarks, engine.distance, engine.altitude) : null;
