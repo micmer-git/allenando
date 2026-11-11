@@ -3,6 +3,8 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui';
 import { formatDuration, formatKm } from '@/domain/format';
 import { clearCheckpoint, loadCheckpoint, resumePath, rideFromCheckpoint, type RideCheckpoint } from '@/sim/recovery';
+import { puoPedalare, rullo, rulloAdesso, useRullo } from '@/sim/rullo';
+import type { Rullo } from '@/ride/contract';
 import { useApp } from '@/store/useApp';
 
 /**
@@ -16,6 +18,7 @@ export function RideRecovery() {
   const location = useLocation();
   const navigate = useNavigate();
   const [cp, setCp] = useState<RideCheckpoint | null>(null);
+  const r = useRullo();
   const away = location.pathname.startsWith('/ride') || location.pathname === '/start';
   useEffect(() => {
     // tornando dalla corsa la risposta vecchia non vale: si richiede, e intanto non si mostra niente
@@ -30,12 +33,23 @@ export function RideRecovery() {
     };
   }, [hydrated, away, location.pathname]);
   if (!cp || !onboarded || away) return null;
+  // senza un sensore di potenza (né la prova) la corsa torna a Pedala, e la domanda tornava uguale:
+  // «Riprendi» collega prima il rullo; dove il Bluetooth non c'è, si salva o si scarta
+  const resumeLabel = riprendiCome(r);
+  const onResume = async () => {
+    if (!puoPedalare(rulloAdesso())) {
+      await (r.ricordato ? rullo.ricollega() : rullo.collega());
+      if (!puoPedalare(rulloAdesso())) return;
+    }
+    navigate(resumePath(cp));
+  };
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/55 p-3 md:items-center" data-testid="ride-recovery">
       <section role="dialog" aria-modal="true" aria-labelledby="recovery-title" className="rise-in w-full max-w-md rounded-3xl bg-elev p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
         <RecoveryCard
           cp={cp}
-          onResume={() => navigate(resumePath(cp))}
+          onResume={() => void onResume()}
+          resumeLabel={resumeLabel}
           onDone={() => setCp(null)}
         />
       </section>
@@ -43,8 +57,18 @@ export function RideRecovery() {
   );
 }
 
+/**
+ * Il tasto per riprendere un giro a metà: «Riprendi» se si può pedalare; se no prima il rullo
+ * («Collega», o «Ricollega» quello di prima); senza Web Bluetooth né prova nessun tasto (A4).
+ */
+export function riprendiCome(r: Rullo): string | null {
+  if (puoPedalare(r)) return 'Riprendi';
+  if (r.supporto !== 'si') return null;
+  return r.ricordato ? 'Ricollega e riprendi' : 'Collega e riprendi';
+}
+
 /** La domanda, coi numeri del giro a metà: riprendi, salvalo com'è, o scartalo (con conferma). */
-export function RecoveryCard({ cp, onResume, onDone, saveLabel = 'Salva com’è' }: { cp: RideCheckpoint; onResume: () => void; onDone: () => void; saveLabel?: string }) {
+export function RecoveryCard({ cp, onResume, onDone, saveLabel = 'Salva com’è', resumeLabel = 'Riprendi' }: { cp: RideCheckpoint; onResume: () => void; onDone: () => void; saveLabel?: string; resumeLabel?: string | null }) {
   const saveRide = useApp((s) => s.saveRide);
   const [busy, setBusy] = useState(false);
   const [ask, setAsk] = useState(false);
@@ -78,11 +102,14 @@ export function RecoveryCard({ cp, onResume, onDone, saveLabel = 'Salva com’è
         </div>
       ) : (
         <div className="mt-4 flex flex-col gap-2">
-          <Button data-testid="recovery-resume" className="h-14 text-lg" onClick={onResume}>
-            Riprendi
-          </Button>
+          {resumeLabel ? (
+            <Button data-testid="recovery-resume" className="h-14 text-lg" onClick={onResume}>
+              {resumeLabel}
+            </Button>
+          ) : null}
           <Button
-            variant="ghost"
+            variant={resumeLabel ? 'ghost' : 'primary'}
+            className={resumeLabel ? undefined : 'h-14 text-lg'}
             data-testid="recovery-save"
             disabled={busy}
             onClick={() => {

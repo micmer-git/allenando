@@ -135,3 +135,17 @@ describe('la scelta: watt, giri, link', () => {
     expect(intentoDi({ ...base, giri: 1 }, ['libera'])?.giri).toBeUndefined();
   });
 });
+
+describe('Il giro a metà dopo un riavvio (collaudo U d’integrazione)', () => {
+  it('«Riprendi» solo se si può pedalare; se no prima il rullo; senza Bluetooth né prova nessun tasto', async () => {
+    const { riprendiCome } = await import('../src/pages/RideRecovery');
+    expect(riprendiCome(STATI.rullo)).toBe('Riprendi');
+    expect(riprendiCome({ ...base, prova: true })).toBe('Riprendi');
+    expect(riprendiCome(STATI.mai)).toBe('Collega e riprendi');
+    expect(riprendiCome(STATI.ricordato)).toBe('Ricollega e riprendi');
+    expect(riprendiCome(STATI.cardio)).toBe('Collega e riprendi');
+    expect(riprendiCome(STATI.ios)).toBeNull();
+    expect(riprendiCome({ ...base, supporto: 'manca' })).toBeNull();
+    expect(riprendiCome({ ...base, supporto: 'ios', prova: true })).toBe('Riprendi');
+  });
+});
