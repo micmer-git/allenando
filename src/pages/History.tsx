@@ -27,7 +27,6 @@ export function HistoryPage() {
   return (
     <main className="mx-auto w-full max-w-3xl px-4 pb-nav pt-6 md:px-8 md:pt-10">
       <PageHeader
-        back={{ to: '/tu', label: 'Tu' }}
         title={t('history.title')}
         aside={
           <Link to="/import" className="inline-flex h-11 items-center rounded-full border border-line bg-elev px-4 font-semibold">
