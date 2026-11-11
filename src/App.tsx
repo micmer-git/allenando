@@ -11,7 +11,7 @@ import { RideDetailPage } from '@/pages/RideDetail';
 import { LoadPage } from '@/pages/Load';
 import { ImportPage } from '@/pages/Import';
 import { ClimbDetailPage } from '@/pages/ClimbDetail';
-import { ProfilePage } from '@/pages/Profile';
+import { ImpostazioniPage } from '@/pages/Impostazioni';
 import { GaragePage } from '@/pages/Garage';
 import { AchievementsPage } from '@/pages/Achievements';
 import { LeaderboardsPage } from '@/pages/Leaderboards';
@@ -47,7 +47,7 @@ export function App() {
           <Route path="/load" element={<LoadPage />} />
           <Route path="/import" element={<ImportPage />} />
           <Route path="/salite/:id" element={<ClimbDetailPage />} />
-          <Route path="/impostazioni" element={<ProfilePage />} />
+          <Route path="/impostazioni" element={<ImpostazioniPage />} />
           {/* le rotte di prima del riordino (piano U, § 2.6): ognuna porta dove la cosa sta adesso */}
           {['/mondo', '/salite', '/giri', '/giri/:id', '/profile'].map((path) => (
             <Route key={path} path={path} element={<Redirect />} />

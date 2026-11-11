@@ -71,7 +71,6 @@ export const it = {
     namePlaceholder: 'Il tuo nome',
     weight: 'Peso, kg',
     ftp: 'FTP, W',
-    ftpHint: 'Non sai l’FTP? Lascia 220 e fai il test a rampa, in Allenamenti.',
     maxHr: 'FC max',
     enter: 'Entra',
   },
