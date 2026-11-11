@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { BoardPanel } from '@/components/Board';
-import { formatKmText, formatMetersText, NBSP, withUnit } from '@/domain/format';
+import { formatGainText, formatKmText, NBSP, withUnit } from '@/domain/format';
 import { phaseOf, sessionAt, sessionBoardId, SESSION_STYLE, slotOf, upcoming, WORLD_RIDE_NAMES, type SessionDef, type SessionKind } from '@/game/sessions';
 import { Glyph } from '@/components/Glyph';
 import { PageHeader } from '@/components/ui';
@@ -134,7 +134,7 @@ export function SessionsPage() {
                   <span className="mt-1 block font-semibold leading-snug">{r?.name ?? WORLD_RIDE_NAMES[s.rideId] ?? s.rideId}</span>
                   <span className="num flex flex-wrap gap-x-1.5 text-sm leading-snug text-muted">
                     {s.pace ? <span className="whitespace-nowrap">{`${paceLabel(s.pace)}${r ? ' ·' : ''}`}</span> : null}
-                    {r ? <span className="whitespace-nowrap">{`${formatKmText(r.lengthM)} · ${formatMetersText(r.gainM)}`}</span> : null}
+                    {r ? <span className="whitespace-nowrap">{`${formatKmText(r.lengthM)} · ${formatGainText(r.gainM)}`}</span> : null}
                   </span>
                 </div>
                 {can && !roomEntry(online, downloaded[s.world] ?? null).ok ? (
