@@ -37,6 +37,7 @@ export function GaragePage() {
   return (
     <main className="mx-auto w-full max-w-3xl px-4 pb-nav pt-5 md:px-8 md:pt-10" data-testid="garage">
       <PageHeader
+        back={{ to: '/tu', label: 'Tu' }}
         eyebrow={`${ownedCount} di ${ITEMS.length} pezzi`}
         title="Garage"
         aside={

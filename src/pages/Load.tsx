@@ -14,7 +14,7 @@ export function LoadPage() {
   const has = rides.some((ride) => (ride.tss ?? 0) > 0);
   return (
     <main className="mx-auto w-full max-w-3xl px-4 pb-nav pt-6 md:px-8 md:pt-10">
-      <PageHeader back={{ to: '/tu', label: 'Tu' }} title={t('load.title')} />
+      <PageHeader back={{ to: '/history', label: t('history.title') }} title={t('load.title')} />
       <p className="mt-3 max-w-xl text-lg leading-relaxed text-muted">{t('load.lead')}</p>
       <div className="mt-5 grid grid-cols-3 gap-3">
         <Tile label={t('load.ctl')} value={today ? formatNumber(today.ctl, 0) : '–'} color="#7eb6ff" />

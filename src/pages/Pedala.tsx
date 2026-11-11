@@ -8,7 +8,9 @@ import { lastWorld, isWorldId } from '@/open/worlds';
 import type { Rete, Tipo } from '@/ride/contract';
 import { useApp } from '@/store/useApp';
 import { cn } from '@/lib/cn';
-import { HomePage } from './Home';
+import { MissioniRiga, ProgrammaRiga, SessioneRiga, useNow, useProgrammaOggi, useSessioneAperta } from './Home';
+import { worldOfRide } from '@/multiplayer/world-rides';
+import type { PlanSession } from '@/domain/plans';
 import { DoveContenuto, DoveFoglio, idScelto, useMondo, type Filtro, type Scelto, type Strumento } from './pedala/Dove';
 import { RulloChip, RulloFoglio, RulloPannello } from './pedala/Rullo';
 import { useRullo } from '@/sim/rullo';
@@ -157,7 +159,24 @@ export function PedalaPage() {
   const durataAll = workout ? workoutDuration(workout) : null;
   const aperto = !!vistaD && !vistaD.anello && scelta?.dove?.kind !== 'libero' && scelta?.dove?.kind !== 'giro' && scelta?.dove?.kind !== 'salita';
   const giriSi = !!vistaD?.anello || (aperto && tipo === 'allenamento' && !!workout);
-  const vv = vistaPedala(r, rete, { dove: scelta?.dove ?? null, tipo, record: !!vistaD?.record, giri: giriSi, allora: !!vistaD?.potenza });
+  const now = useNow();
+  const sessione = useSessioneAperta(now);
+  const programma = useProgrammaOggi();
+  const vv = vistaPedala(r, rete, { dove: scelta?.dove ?? null, tipo, record: !!vistaD?.record, giri: giriSi, allora: !!vistaD?.potenza, sessione: !!sessione, programma: !!programma });
+  /** «Usa» del programma: Dove e Come dal giorno del programma (I3). */
+  const usaProgramma = (ps: PlanSession) => {
+    proposta.current = '';
+    setScelta({ tipo: ps.workout ? 'allenamento' : 'libera', workout: ps.workout ?? scelta?.workout ?? null, fantasma: !ps.workout });
+    if (ps.place.kind === 'percorso') {
+      const w = worldOfRide(ps.place.ride) ?? lastWorld();
+      setWorldId(w);
+      setAttesa({ world: w, ride: ps.place.ride });
+    }
+    else {
+      const meta = routeMeta(ps.place.route);
+      if (meta) void loadRouteFile(meta.id).then((f) => setScelta({ dove: { kind: 'salita', route: meta.id }, vista: vistaSalita(trackFromRouteFile(f, meta.halfWidth), meta), piano: null }));
+    }
+  };
   // con un allenamento i giri si propongono da soli: durata / stima del giro (A12), il va e torna sul percorso aperto (A13)
   const proposta = useRef<string>('');
   useEffect(() => {
@@ -200,6 +219,12 @@ export function PedalaPage() {
 
   const pannelloScelta = scelta ? (
     <div className="flex flex-col" data-testid="pedala-scelta">
+      {vv.blocchi.includes('sessione') || (programma && vv.blocchi.includes('programma')) ? (
+        <div className="mb-1 flex flex-col gap-2">
+          {vv.blocchi.includes('sessione') ? <SessioneRiga now={now} /> : null}
+          {programma && vv.blocchi.includes('programma') ? <ProgrammaRiga s={programma} onUsa={() => usaProgramma(programma)} /> : null}
+        </div>
+      ) : null}
       {!largo ? <Occhiello>Dove</Occhiello> : null}
       {!largo ? <DoveCard vista={vistaD} onClick={apriDove} /> : <DoveTesta vista={vistaD} />}
       {(vv.blocchi.includes('giri') && vistaD?.anello) || scheda ? (
@@ -238,6 +263,7 @@ export function PedalaPage() {
           Via
         </button>
       )}
+      <MissioniRiga />
     </div>
   ) : null;
 
@@ -267,10 +293,7 @@ export function PedalaPage() {
           </aside>
         </div>
       ) : (
-        <>
-          {pannelloScelta}
-          <HomePage />
-        </>
+        <>{pannelloScelta}</>
       )}
       {!largo ? <DoveFoglio {...doveProps} open={dove.open} onClose={() => setDove((d) => ({ ...d, open: false, strumento: 'lista', solo: false }))} /> : null}
       {largo && dove.open && dove.strumento !== 'lista' ? <DoveFoglio {...doveProps} open onClose={() => setDove((d) => ({ ...d, open: false, strumento: 'lista', solo: false }))} /> : null}

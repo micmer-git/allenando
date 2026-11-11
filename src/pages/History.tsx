@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { cap, formatDateTime, formatDuration, formatKmText, formatNumber, formatTss } from '@/domain/format';
+import { cap, formatDuration, formatHours, formatKmText, formatNumber, formatTss } from '@/domain/format';
+import { localDateKey, trainingLoad } from '@/domain/load';
+import type { Ride } from '@/domain/types';
 import { PageHeader, Segmented } from '@/components/ui';
 import { WORLD_CATALOG, worldInfo, worldOfRide } from '@/open/worlds';
 
@@ -24,19 +26,34 @@ export function HistoryPage() {
   const filters = useMemo(() => worldFilters(worlds), [worlds]);
   const [filter, setFilter] = useState<WorldFilter>('tutti');
   const shown = filter === 'tutti' || !filters.length ? rides : rides.filter((_, i) => (filter === 'altro' ? worlds[i] === null : worlds[i] === filter));
+  // la settimana nei gettoni (A3): km, ore, TSS degli ultimi 7 giorni, e la forma (TSB) che porta al Carico
+  const weekAgo = Date.now() - 7 * 86400_000;
+  const week = rides.filter((r) => new Date(r.startTime).getTime() >= weekAgo);
+  const km = week.reduce((s, r) => s + r.distanceM, 0);
+  const sec = week.reduce((s, r) => s + r.durationSec, 0);
+  const tss = week.reduce((s, r) => s + (r.tss ?? 0), 0);
+  const load = trainingLoad(rides.map((ride) => ({ date: localDateKey(new Date(ride.startTime)), tss: ride.tss ?? 0 })));
+  const form = load[load.length - 1];
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 pb-nav pt-6 md:px-8 md:pt-10">
+    <main className="mx-auto w-full max-w-3xl px-4 pb-nav pt-6 md:px-8 md:pt-10" data-testid="diario">
       <PageHeader
         title={t('history.title')}
         aside={
-          <Link to="/import" className="inline-flex h-11 items-center rounded-full border border-line bg-elev px-4 font-semibold">
+          <Link to="/import" className="inline-flex h-11 items-center rounded-full border border-line bg-elev px-4 font-semibold" data-testid="diario-importa">
             {t('history.import')}
           </Link>
         }
       />
-      <Link to="/load" className="-ml-2 mt-1 inline-flex h-11 min-w-11 items-center px-2 text-sm font-semibold text-accent">
-        {t('history.load')}
-      </Link>
+      {rides.length > 0 ? (
+        <p className="mt-3 flex flex-wrap items-center gap-1.5" data-testid="diario-settimana">
+          <Gettone>{`7 gg · ${formatKmText(km)}`}</Gettone>
+          <Gettone>{formatHours(sec)}</Gettone>
+          <Gettone>{`TSS ${formatTss(tss)}`}</Gettone>
+          <Link to="/load" className="inline-flex h-11 items-center rounded-full border border-line px-3 text-xs font-semibold" data-testid="diario-forma">
+            {`Forma ${form ? `${form.tsb > 0 ? '+' : ''}${formatNumber(form.tsb, 0)}` : '–'} ›`}
+          </Link>
+        </p>
+      ) : null}
       {filters.length ? (
         <div className="mt-3">
           <Segmented<WorldFilter> label="Mondo" value={filter} onChange={setFilter} options={filters} testId="history-worlds" />
@@ -45,31 +62,48 @@ export function HistoryPage() {
       {rides.length === 0 ? (
         <p className="mt-8 rounded-3xl border border-dashed border-line p-5 text-muted">{t('history.empty')}</p>
       ) : (
-        <ul className={`${filters.length ? 'mt-3' : 'mt-6'} flex flex-col gap-2`} data-testid="history-list" data-filter={filter}>
-          {shown.map((ride, i) => (
-            <li key={ride.id}>
-              <Link to={`/history/${ride.id}`} className="block rounded-3xl border border-line bg-elev px-4 py-3">
-                <span className="flex items-start justify-between gap-3">
-                  <span>
-                    <span className="block font-semibold">{ride.name}</span>
-                    <span className="text-sm text-muted">{cap(formatDateTime(ride.startTime))}</span>
+        <ul className="mt-2" data-testid="history-list" data-filter={filter}>
+          {shown.map((ride, i) => {
+            const w = worlds[rides.indexOf(ride)];
+            const dove = ride.source === 'import' ? `${(ride.fileType ?? 'file').toUpperCase()} importato` : w ? worldInfo(w).short : ride.workoutName ?? '';
+            return (
+              <li key={ride.id}>
+                <Link to={`/history/${ride.id}`} className="flex min-h-14 items-center justify-between gap-3 border-b border-line py-2" data-testid={`diario-giro-${i}`}>
+                  <span className="min-w-0">
+                    <span className="flex flex-wrap items-center gap-1.5 font-semibold leading-snug">
+                      {ride.name}
+                      {(ride as Ride & { prova?: boolean }).prova ? <span className="rounded-full border border-line px-2 py-px text-xs font-semibold" data-testid="diario-prova">Prova</span> : null}
+                    </span>
+                    <span className="block text-sm leading-snug text-muted">
+                      {cap(quando(ride.startTime))}
+                      {dove ? <span data-testid={w ? `history-world-${i}` : undefined}>{` · ${dove}`}</span> : null}
+                    </span>
                   </span>
-                  <span className="text-right text-sm">
-                    <span className="num block font-semibold">{`${formatKmText(ride.distanceM)}`}</span>
-                    <span className="text-muted">{formatDuration(ride.durationSec)}</span>
+                  <span className="num shrink-0 text-right leading-snug">
+                    <b className="block">{formatKmText(ride.distanceM)}</b>
+                    <span className="text-sm text-muted">{formatDuration(ride.durationSec)}</span>
                   </span>
-                </span>
-                <span className="mt-2 flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-wide text-muted">
-                  <span>{ride.source === 'indoor' ? t('history.sourceIndoor') : t('history.sourceImport')}</span>
-                  {worlds[rides.indexOf(ride)] ? <span data-testid={`history-world-${i}`}>{worldInfo(worlds[rides.indexOf(ride)]).short}</span> : null}
-                  {ride.tss != null ? <span>{`${formatTss(ride.tss)} TSS`}</span> : null}
-                  {ride.np != null ? <span>{`NP ${formatNumber(ride.np, 0)}`}</span> : null}
-                </span>
-              </Link>
-            </li>
-          ))}
+                </Link>
+              </li>
+            );
+          })}
         </ul>
       )}
     </main>
   );
+}
+
+function Gettone({ children }: { children: string }) {
+  return <span className="inline-flex h-8 items-center rounded-full border border-line px-3 text-xs font-semibold">{children}</span>;
+}
+
+/** «Oggi, 18:40», «Ieri», «9 novembre». */
+function quando(iso: string): string {
+  const d = new Date(iso);
+  const oggi = new Date();
+  const ieri = new Date(oggi.getTime() - 86400_000);
+  const stesso = (a: Date, b: Date) => a.toDateString() === b.toDateString();
+  if (stesso(d, oggi)) return `Oggi, ${d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`;
+  if (stesso(d, ieri)) return 'Ieri';
+  return d.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', ...(d.getFullYear() !== oggi.getFullYear() ? { year: 'numeric' } : {}) });
 }

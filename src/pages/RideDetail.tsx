@@ -37,9 +37,18 @@ export function RideDetailPage() {
   const hrs = ride.samples.map((sample) => sample.hr);
   const alts = ride.samples.map((sample) => sample.altitude);
   const gps = ride.samples.some((s) => validPosition(s.lat, s.lon));
+  // un giro di prova non si esporta: Strava avrebbe un giro finto (A11)
+  const prova = (ride as typeof ride & { prova?: boolean }).prova === true;
+  const rifai = ride.samples.length > 10 && ride.distanceM > 200;
   return (
     <main className="mx-auto w-full max-w-3xl px-4 pb-nav pt-5 md:px-8 md:pt-10" data-testid="ride-detail">
-      <PageHeader back={{ to: '/history', label: t('history.title') }} eyebrow={cap(formatDateTime(ride.startTime))} title={ride.name} size="md" />
+      <PageHeader
+        back={{ to: '/history', label: t('history.title') }}
+        eyebrow={cap(formatDateTime(ride.startTime))}
+        title={ride.name}
+        size="md"
+        aside={prova ? <span className="rounded-full border border-line px-2.5 py-1 text-xs font-semibold" data-testid="ride-detail-prova">Prova</span> : undefined}
+      />
       <p className="mt-2 text-sm text-muted">
         {`${ride.source === 'indoor' ? t('history.sourceIndoor') : t('history.sourceImport')}${
           ride.tssSource === 'power' ? ` · ${t('history.tssPower')}` : ride.tssSource === 'hr' ? ` · ${t('history.tssHr')}` : ride.tssSource === 'file' ? ` · ${t('history.tssFile')}` : ''
@@ -55,6 +64,11 @@ export function RideDetailPage() {
         <Metric label={t('metrics.hr')} value={ride.avgHr != null ? `${ride.avgHr} ${t('units.bpm')}` : '–'} />
         <Metric label={t('metrics.speed')} value={`${formatNumber(msToKmh(ride.avgSpeed ?? 0), 1)} ${t('units.kmh')}`} />
       </dl>
+      {rifai ? (
+        <Link to={`/?dove=giro&replay=${encodeURIComponent(ride.id)}`} className="mt-5 flex h-14 items-center justify-center rounded-full bg-accent text-[17px] font-semibold text-accent-ink" data-testid="ride-detail-rifai">
+          Rifai
+        </Link>
+      ) : null}
       {gps ? <RideTrackMap ride={ride} /> : null}
       <section className="mt-6" data-testid="chart-zones">
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted">{t('history.zones')}</h2>
@@ -99,8 +113,9 @@ export function RideDetailPage() {
           <ZoneBar seconds={ride.hrZoneSec} zones={HR_ZONES} />
         </section>
       ) : null}
-      <div className="mt-8 flex flex-wrap gap-2">
+      <div className={prova ? 'hidden' : 'mt-8 flex flex-wrap gap-2'} data-testid="ride-detail-export">
         <Button
+          variant="ghost"
           onClick={() => downloadBytes(safeFileName(ride.name, 'fit'), encodeActivityFit(ride), 'application/octet-stream')}
         >
           {t('history.exportFit')}
@@ -121,7 +136,7 @@ export function RideDetailPage() {
         ) : null}
         <CartolinaButton ride={ride} />
       </div>
-      {ride.source === 'indoor' ? <p className="mt-2 text-xs text-muted">{gps ? t('history.gpsYes') : t('history.gpsNo')}</p> : null}
+      {ride.source === 'indoor' && !prova ? <p className="mt-2 text-xs text-muted">{gps ? t('history.gpsYes') : t('history.gpsNo')}</p> : null}
       <div className="mt-6 flex flex-wrap gap-2">
         <Button
           variant={armed ? 'danger' : 'ghost'}
