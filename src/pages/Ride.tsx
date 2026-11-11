@@ -290,6 +290,8 @@ function RideSession({ setup, resume, kept }: { setup: RideSetup; resume: RideCh
       prova: setup.prova,
       // il fantasma: l'interruttore di Pedala, mai con un allenamento (A9)
       fantasma: intento.fantasma !== false && engine.tipo !== 'allenamento',
+      // i tratti cronometrati solo dove il ritmo è tuo: con un allenamento o coi watt di allora no
+      tratti: engine.tipo === 'libera' || engine.tipo === 'fissa',
     });
     if (resume) {
       // i tratti, i punti caldi, il dislivello e i luoghi di prima valgono ancora; si riparte in pausa

@@ -205,6 +205,46 @@ describe('archi dei km alla Zwift', () => {
     expect(km[4].kind).toBe('ultimo');
   });
 
+  it('si parte sotto il via di un tratto: quel cartello non si mette, il tempo parte lo stesso (collaudo U, H3)', () => {
+    const pts = [];
+    for (let d = 0; d <= 6000; d += 10) pts.push({ x: 0, z: -d, ele: 400 + d * 0.07 });
+    const track = createRouteTrack(pts, { halfWidth: 3 });
+    const engine = engineOn(track, null);
+    const game = gameOn(engine, { climb: { routeId: 'selvino-nembro', name: 'Prova' } });
+    expect(game.arches.filter((a) => a.role === 'start' && Math.abs(a.d ?? -99) < 15)).toEqual([]);
+    expect(game.arches.some((a) => a.role === 'finish')).toBe(true);
+    for (let i = 0; i < 40; i++) {
+      engine.tick(0.05);
+      game.tick(0.05);
+    }
+    expect(game.live.length).toBeGreaterThan(0);
+    // ripreso a metà di una salita lunga: il via degli ultimi 3 km, 200 m più avanti, c'è
+    const lpts = [];
+    for (let d = 0; d <= 8000; d += 10) lpts.push({ x: 0, z: -d, ele: 400 + d * 0.07 });
+    const long = createRouteTrack(lpts, { halfWidth: 3 });
+    const later = engineOn(long, null);
+    later.distance = long.length - 3200;
+    const g2 = gameOn(later, { climb: { routeId: 'selvino-nembro', name: 'Prova' } });
+    expect(g2.arches.some((a) => a.role === 'start' && Math.abs((a.d ?? 0) - (long.length - 3000)) < 1)).toBe(true);
+  });
+
+  it('con un allenamento niente tratti: né archi né tempi; restano i km e l’arco dell’ERG', () => {
+    const pts = [];
+    for (let d = 0; d <= 6000; d += 10) pts.push({ x: 0, z: -d, ele: 400 + d * 0.07 });
+    const track = createRouteTrack(pts, { halfWidth: 3 });
+    const w: Workout = { id: 'w', builtin: false, kind: 'custom', steps: [{ id: 'a', name: 'a', durationSec: 60, powerPct: 50 }, { id: 'b', name: 'b', durationSec: 60, powerPct: 110 }] };
+    const engine = engineOn(track, w);
+    const game = gameOn(engine, { climb: { routeId: 'selvino-nembro', name: 'Prova' }, tratti: false });
+    expect(game.tracker.windows).toEqual([]);
+    for (let i = 0; i < 20 * 20; i++) {
+      engine.tick(0.05);
+      game.tick(0.05);
+    }
+    expect(game.live).toEqual([]);
+    expect(game.arches.some((a) => a.role === 'km')).toBe(true);
+    expect(game.arches.every((a) => a.kind === 'km' || a.kind === 'ultimo' || a.kind === 'erg')).toBe(true);
+  });
+
   it('su un percorso del mondo in salita (Selvino) ci sono i km alla vetta e l’ultimo km', () => {
     const r = rides.find((x) => x.id === 'selvino')!;
     const path = pathOf(legsOf(r));
