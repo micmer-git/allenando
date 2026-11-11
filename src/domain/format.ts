@@ -50,6 +50,32 @@ export function formatMetersText(meters: number): string {
   return withUnit(formatNumber(meters, 0), 'm');
 }
 
+/**
+ * Una quota: sempre col separatore delle migliaia («2.240 m», «945 m»). Il formato italiano di
+ * Intl lo mette solo da cinque cifre in su, e un passo a 2240 m si legge male senza punto.
+ */
+export function formatAlt(meters: number): string {
+  if (!Number.isFinite(meters)) return '–';
+  return new Intl.NumberFormat(numberLocale, { useGrouping: 'always', maximumFractionDigits: 0 } as Intl.NumberFormatOptions).format(Math.round(meters));
+}
+
+/** «2.240 m», con lo spazio che non va a capo. */
+export function formatAltText(meters: number): string {
+  return withUnit(formatAlt(meters), 'm');
+}
+
+/** «D+ 2.140 m»: il dislivello positivo, scritto uguale ovunque. */
+export function formatGainText(meters: number): string {
+  return `D+${NBSP}${formatAltText(Math.max(0, meters))}`;
+}
+
+/** «−3 °C», «12 °C»: la temperatura col segno meno tipografico. */
+export function formatTempText(celsius: number): string {
+  if (!Number.isFinite(celsius)) return '–';
+  const v = Math.round(celsius);
+  return withUnit(`${v < 0 ? '−' : ''}${Math.abs(v)}`, '°C');
+}
+
 export function formatHours(seconds: number): string {
   const h = Math.floor(seconds / 3600);
   const m = Math.round((seconds % 3600) / 60);

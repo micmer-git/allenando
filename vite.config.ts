@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { fileURLToPath, URL } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
@@ -6,6 +7,10 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   base: '/allenando/',
+  define: {
+    // il link «Confronto climbfinder» sotto un percorso va in onda solo se la tabella della pista M c'è (F.14)
+    __PENDENZE_PRONTE__: JSON.stringify(existsSync(fileURLToPath(new URL('./docs/pendenze-2026-11.md', import.meta.url)))),
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
@@ -21,7 +26,7 @@ export default defineConfig({
       manifest: {
         name: 'OROBIA',
         short_name: 'OROBIA',
-        description: 'Le strade vere di Bergamo sul rullo: mondo aperto in 3D, volate, GPM e crono, classifiche, kit da sbloccare, Stelvio e Mortirolo.',
+        description: 'Le strade vere di Bergamo e del Sellaronda sul rullo: mondo aperto in 3D, volate, GPM e crono, classifiche, kit da sbloccare, Stelvio e Mortirolo.',
         lang: 'it',
         dir: 'ltr',
         start_url: '/allenando/',
@@ -38,7 +43,7 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,woff,woff2,fit,gpx,tcx,zip,json,webmanifest}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,jpg,ico,woff,woff2,fit,gpx,tcx,zip,json,webmanifest}'],
         // il mondo di Bergamo pesa decine di MB in mattonelle: non si scarica tutto all'installazione,
         // si tiene in cache quello che si è già pedalato (e il grafo, che serve sempre)
         // le pagine prima/dopo sono rapporti con le loro foto: non entrano nell'app installata

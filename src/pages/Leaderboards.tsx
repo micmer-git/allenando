@@ -3,14 +3,15 @@ import { useSearchParams } from 'react-router-dom';
 import { BoardPanel, Medal } from '@/components/Board';
 import { PageHeader, Segmented } from '@/components/ui';
 import { Glyph } from '@/components/Glyph';
-import { cap, formatDuration, formatKmText, formatMetersText, formatNumber } from '@/domain/format';
+import { cap, formatDuration, formatGainText, formatKmText, formatNumber } from '@/domain/format';
 import { VERIFIED_ROUTES } from '@/domain/routes';
 import { SEGMENT_STYLE, type Segment, type SegmentKind } from '@/game/arches';
 import { worldSegments } from '@/game/segments';
 import { useGame } from '@/game/useGame';
 import { CLIMB_BOARD, type XpRow } from '@/multiplayer/world-protocol';
 import { fetchLeaders, fetchXpBoard, levelOf, type Leader } from '@/open/progress';
-import { loadWorld, type WorldData } from '@/open/world';
+import { isWorld, loadWorld, type WorldData } from '@/open/world';
+import { lastWorld } from '@/open/worlds';
 import { cn } from '@/lib/cn';
 
 type Tab = 'salite' | 'percorsi' | 'tratti' | 'punti';
@@ -23,14 +24,18 @@ export function LeaderboardsPage() {
   const [world, setWorld] = useState<WorldData | null>(null);
   const [leaders, setLeaders] = useState<Record<string, Leader> | null | 'loading'>('loading');
   const [open, setOpen] = useState<string | null>(null);
+  const worldParam = params.get('world');
   useEffect(() => {
     void hydrate();
     let alive = true;
-    void loadWorld().then((d) => alive && setWorld(d)).catch(() => undefined);
+    // il mondo delle classifiche: ?world= se è un mondo, altrimenti l'ultimo scelto
+    void loadWorld(isWorld(worldParam) ? worldParam : lastWorld())
+      .then((d) => alive && setWorld(d))
+      .catch(() => undefined);
     return () => {
       alive = false;
     };
-  }, [hydrate]);
+  }, [hydrate, worldParam]);
   const segs = useMemo(() => (world ? worldSegments(world) : null), [world]);
   const ids = useMemo(() => {
     if (tab === 'salite') return VERIFIED_ROUTES.map((r) => `salita:${r.id}`);
@@ -82,7 +87,7 @@ export function LeaderboardsPage() {
                 onToggle={() => setOpen(open === id ? null : id)}
                 kind="gpm"
                 title={r.name}
-                sub={c ? `${cap(r.side)} · ${formatKmText(c.lengthM)} · ${formatMetersText(c.gainM)}` : `${cap(r.side)} · ${r.region}`}
+                sub={c ? `${cap(r.side)} · ${formatKmText(c.lengthM)} · ${formatGainText(c.gainM)}` : `${cap(r.side)} · ${r.region}`}
                 leader={leaders === 'loading' || !leaders ? undefined : leaders[id]}
                 pb={pbs[id]?.sec}
               />
@@ -102,7 +107,7 @@ export function LeaderboardsPage() {
                 onToggle={() => setOpen(open === r.id ? null : r.id)}
                 kind="crono"
                 title={r.name}
-                sub={`${formatKmText(r.lengthM)} · ${formatMetersText(r.gainM)}`}
+                sub={`${formatKmText(r.lengthM)} · ${formatGainText(r.gainM)}`}
                 leader={leaders === 'loading' || !leaders ? undefined : leaders[r.id]}
                 pb={pbs[`w:${r.id}`]?.sec}
               />

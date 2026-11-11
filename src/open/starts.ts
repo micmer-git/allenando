@@ -1,7 +1,8 @@
 import { CLS } from './graph';
 import { suggestLoops } from './loops';
 import { savePlan } from './plan';
-import type { WorldData } from './world';
+import { WORLD_ID, type WorldData } from './world';
+import { worldInfo } from './worlds';
 
 /**
  * Da dove si parte nel mondo: i paesi del giro libero e il punto preciso. Li usano la scheda
@@ -9,9 +10,21 @@ import type { WorldData } from './world';
  */
 
 /** I paesi da cui si parte, presi dai dati del mondo. */
-export const START_TOWNS = ['Bergamo', 'Città Alta', 'Ponteranica', 'Alzano Lombardo', 'Nembro', 'Albino', 'Gazzaniga', 'Ponte Nossa', 'Clusone', 'Castione della Presolana', 'Villa d’Almè', 'Zogno', 'San Pellegrino Terme', 'San Giovanni Bianco', 'Piazza Brembana', 'Branzi', 'Serina', 'Selvino'];
+export const START_TOWNS = worldInfo(WORLD_ID).towns;
 
 const norm = (s: string) => s.replace(/[’']/g, "'");
+
+/** I paesi da cui si parte in questo mondo: quelli del catalogo se ci sono nei dati, altrimenti i paesi dei dati. */
+export function startTowns(data: WorldData): string[] {
+  const wanted = worldInfo(data.graph.id).towns.filter((n) => townPoint(data, n));
+  if (wanted.length >= 2) return wanted;
+  return data.features.places
+    .filter((p) => p.kind === 'town' || p.kind === 'village' || p.kind === 'city')
+    .map((p) => p.name)
+    .filter((n, i, a) => a.indexOf(n) === i)
+    .sort((a, b) => a.localeCompare(b, 'it'))
+    .slice(0, 18);
+}
 
 export function townPoint(data: WorldData, name: string): { x: number; z: number } | null {
   if (name === 'Città Alta') {
@@ -30,7 +43,7 @@ export function freeQueryAt(data: WorldData, x: number, z: number, town = false)
   if (!hit) return null;
   const e = data.graph.edges[hit.edge];
   const dir = data.graph.allowed(hit.edge, 1) ? 1 : -1;
-  return `world=bergamo&edge=${hit.edge}&s=${Math.round(Math.min(e.length - 1, hit.s))}&dir=${dir}`;
+  return `world=${encodeURIComponent(data.graph.id)}&edge=${hit.edge}&s=${Math.round(Math.min(e.length - 1, hit.s))}&dir=${dir}`;
 }
 
 /** I parametri del giro libero da un paese. */
@@ -51,5 +64,5 @@ export function loopStartQuery(data: WorldData, name: string, km: number): strin
   const best = suggestLoops(data.graph, node, { targetM: km * 1000, taste: 'misto', places: data.features.places })[0];
   if (!best) return null;
   const key = savePlan({ legs: best.legs, name: `Anello da ${name}` });
-  return `world=bergamo&plan=${key}`;
+  return `world=${encodeURIComponent(data.graph.id)}&plan=${key}`;
 }

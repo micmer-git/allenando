@@ -1,7 +1,11 @@
 // I controlli delle pagine fuori dalla corsa, condivisi da ui-shot.mjs e game-shot.mjs.
 // Minuscole a inizio testo, bersagli sotto 44 px, ellissi nel primo schermo, la parola «XP»,
 // e i «fatto» del piano di rilascio (pista 1) pagina per pagina.
+import { existsSync } from 'node:fs';
 import { sleep } from './cdp.mjs';
+
+/** La tabella delle pendenze della pista M (F.14): senza, il link «Confronto climbfinder» non va in onda. */
+const PENDENZE = existsSync(new URL('../docs/pendenze-2026-11.md', import.meta.url));
 
 /** I testi che cominciano in minuscolo (lo stesso controllo di pagine.mjs dell'audit). Le unità no. */
 export const MINUSCOLE = `(() => {
@@ -31,8 +35,12 @@ export const ELLISSI = `(() => {
   return out;
 })()`;
 
-/** Un'unità (m, km, %, W…) che comincia una riga, separata dal suo numero sulla riga sopra. */
-export const UNITA_A_CAPO = `(() => {
+/**
+ * Un'unità (m, km, %, W…) che comincia una riga, separata dal suo numero sulla riga sopra; con
+ * `punto` anche un «·» appeso a fine riga col resto della frase sotto (la pillola del passo, F.4).
+ */
+const aCapo = (punto) => `(() => {
+  const punto = ${punto ? 'true' : 'false'};
   const words = [];
   const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   let n; while ((n = w.nextNode())) {
@@ -51,8 +59,25 @@ export const UNITA_A_CAPO = `(() => {
     // a capo vuol dire: la parola dopo ricomincia più in basso e più a sinistra, nello stesso testo o in un suo span
     const stesso = a.el === b.el || b.el.parentElement === a.el;
     if (stesso && /\\d$/.test(a.t) && b.top > a.top && b.left < a.left &&/^(km|m|%|W|W\\/kg|bpm|rpm|min|h)([·,.;:)]|$)/.test(b.t)) out.push(a.t + ' ⏎ ' + b.t);
+    // un «·» appeso a fine riga, con il resto della frase sotto
+    if (punto && stesso && /·$/.test(a.t) && b.top > a.top && b.left < a.left) out.push(a.t + ' ⏎ ' + b.t);
   }
   return out.slice(0, 20);
+})()`;
+export const UNITA_A_CAPO = aCapo(false);
+export const PUNTO_A_CAPO = aCapo(true);
+
+/** Quote scritte senza il separatore delle migliaia («1288 m»): si scrive «1.288 m» (F.13). */
+export const QUOTE_NUDE = `(() => {
+  const out = new Set();
+  const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  let n; while ((n = w.nextNode())) {
+    const el = n.parentElement; if (!el || !el.getClientRects().length) continue;
+    const t = n.textContent + ' ' + (n.nextSibling?.textContent ?? '');
+    const re = /(^|[^\\d.,])(\\d{4,})[\\s\\u00a0]?m\\b/g; let m;
+    while ((m = re.exec(t))) out.add(m[2] + ' m');
+  }
+  return [...out].slice(0, 20);
 })()`;
 
 /** Parole visibili nel primo schermo (barra in basso esclusa). */
@@ -116,6 +141,8 @@ export async function giroPagine(p, check, { shot = null } = {}) {
     check(capo.length === 0, `${name}: nessuna unità a capo da sola`, capo.join(' | '));
     const v = await p.evaluate(`document.body.innerText.includes('\\u2304')`);
     check(!v, `${name}: nessuna «⌄» di testo come freccia`);
+    const nude = await p.evaluate(QUOTE_NUDE);
+    check(nude.length === 0, `${name}: le quote col separatore delle migliaia`, nude.join(' | '));
   };
   const go = async (name, path, wait = null, ms = 900) => {
     await p.go(path);
@@ -148,8 +175,41 @@ export async function giroPagine(p, check, { shot = null } = {}) {
   // Mondo e le sue cinque schede
   await go('mondo', '/mondo', `!!document.querySelector('[data-testid=world-ride-citta-alta]')`, 1500);
   await base('mondo');
+  // pista F: la scelta del mondo in testa (una riga per mondo, ≥ 44 px) e «Senza rete» con lo stato
+  const mondi = await p.evaluate(`[...document.querySelectorAll('[data-testid^=world-pick-]:not([data-testid$=-facts])')].map((b) => ({ id: b.dataset.testid, h: Math.round(b.getBoundingClientRect().height), stato: b.dataset.state, testo: b.textContent.trim().slice(0, 80) }))`);
+  check(mondi.length === 2 && mondi.every((m) => m.h >= 44), 'mondo: due righe per la scelta del mondo, alte almeno 44 px', JSON.stringify(mondi));
+  check(mondi.some((m) => m.id === 'world-pick-bergamo' && /km di strade · 14 percorsi/.test(m.testo)), 'mondo: la riga di Bergamo dice km di strade e percorsi', JSON.stringify(mondi[0]));
+  const senzaRete = await p.evaluate(`document.querySelector('[data-testid=world-offline-label]')?.textContent ?? ''`);
+  check(/^(Scaricato|Da scaricare|A metà) · \d/.test(senzaRete), 'mondo: «Senza rete» dice se è scaricato e quanto pesa', senzaRete);
+  // R1 (la carta entro 260 px, la scelta del mondo in una riga) è rimandato al riordino dell'interfaccia
   const carta = await p.evaluate(top('[data-testid=world-page] canvas'));
-  check(!!carta && carta.top <= 220, 'mondo: la carta comincia entro 220 px', JSON.stringify(carta));
+  check(!!carta && carta.top <= 420, 'mondo: la carta comincia entro 420 px (sotto la scelta del mondo)', JSON.stringify(carta));
+  // la scheda di un giro: le salite col passo in cima, il verso, le fonti
+  await p.evaluate(`document.querySelector('[data-testid=world-ride-ganda]')?.click()`);
+  await sleep(1500);
+  const salite = await p.evaluate(`[...document.querySelectorAll('[data-testid=world-ride-climbs] li')].map((li) => ({ pass: li.dataset.pass, testo: li.textContent.trim().slice(0, 60) }))`);
+  check(salite.some((s) => s.pass === 'passo-di-ganda' && /Passo di Ganda/.test(s.testo)), 'percorso: la salita al Passo di Ganda nella scheda della Ganda', JSON.stringify(salite));
+  check(await p.evaluate(`!!document.querySelector('[data-testid=world-ride-sense]')`), 'percorso: il verso del giro');
+  // il confronto climbfinder solo se la tabella della pista M è nel repo (la build guarda lo stesso file)
+  const fonti = await p.evaluate(`(() => { const e = document.querySelector('[data-testid=world-ride-sources]'); return e ? { testo: e.textContent.trim(), confronto: e.dataset.confronto, link: e.querySelector('a')?.getAttribute('href') ?? '' } : null; })()`);
+  check(
+    !!fonti && (PENDENZE ? fonti.testo === 'Strade OSM · Quote EU-DEM · Confronto climbfinder' && /pendenze-2026-11\.md$/.test(fonti.link) : fonti.testo === 'Strade OSM · Quote EU-DEM' && fonti.confronto === 'no' && !fonti.link),
+    PENDENZE ? 'percorso: la riga delle fonti, col link «Confronto climbfinder» sulla Ganda' : 'percorso: la riga delle fonti senza confronto, finché docs/pendenze-2026-11.md non c’è',
+    JSON.stringify(fonti),
+  );
+  check(!(await p.evaluate(`/\\bKm\\b/.test(document.querySelector('[data-testid=world-ride-card]')?.textContent ?? '')`)), 'percorso: l’unità è «km», mai «Km»');
+  const quote = await p.evaluate(`[...document.querySelectorAll('[data-testid=world-ride-card] dd')].map((d) => d.textContent.trim())`);
+  check(quote.some((q) => /^\d{1,3}(\.\d{3})? → \d{1,3}(\.\d{3})? m$/.test(q)), 'percorso: le quote con la freccia e l’unità una volta', JSON.stringify(quote));
+  await base('mondo, percorso');
+  if (shot) await p.shot('p1-mondo-percorso');
+  await p.evaluate(`[...document.querySelectorAll('[data-testid=world-ride-card] button')].find((b) => b.textContent.trim() === 'Chiudi')?.click()`);
+  await sleep(300);
+  // Città Alta non è nella tabella delle pendenze: niente «Confronto climbfinder»
+  await p.evaluate(`document.querySelector('[data-testid=world-ride-citta-alta]')?.click()`);
+  await sleep(1200);
+  check(await p.evaluate(`document.querySelector('[data-testid=world-ride-sources]')?.dataset.confronto === 'no' && !/climbfinder/.test(document.querySelector('[data-testid=world-ride-sources]')?.textContent ?? '')`), 'percorso: su Città Alta la riga delle fonti è senza confronto');
+  await p.evaluate(`[...document.querySelectorAll('[data-testid=world-ride-card] button')].find((b) => b.textContent.trim() === 'Chiudi')?.click()`);
+  await sleep(300);
   check(!(await p.evaluate(`/in rete/i.test(document.body.innerText)`)), 'mondo: niente «in rete: –»');
   const righe = await p.evaluate(`[...document.querySelectorAll('[data-testid^=world-ride-]')].filter((b) => b.querySelector('[data-testid=world-ride-side]')).filter((b) => { const n = b.querySelector('[data-testid=world-ride-name]').getBoundingClientRect(); const s = b.querySelector('[data-testid=world-ride-side]').getBoundingClientRect(); return s.top < n.bottom - 2; }).map((b) => b.textContent.trim().slice(0, 40))`);
   check(righe.length === 0, 'mondo: il sottotitolo del percorso su una riga sua', righe.join(' | '));
@@ -194,10 +254,12 @@ export async function giroPagine(p, check, { shot = null } = {}) {
   await base('tu');
   await ellissi('tu');
 
-  // Traguardi: niente barra di scorrimento, «Quasi tuoi» in cima
+  // Traguardi: niente barra di scorrimento, «Quasi tuoi» in cima; pista F: i traguardi del Sellaronda e la serie
   await go('traguardi', '/traguardi', `document.querySelectorAll('[data-testid^=ach-]').length > 30`);
   await base('traguardi');
   await backTo('traguardi', '/tu');
+  check(await p.evaluate(`['quattro-passi', 'mondo-sellaronda', 'mondo-marmolada', 'mondo-berghem'].every((id) => !!document.querySelector('[data-testid=ach-' + id + ']'))`), 'traguardi: I quattro passi, Sellaronda, Marmolada, Berghem MolaMia');
+  check(await p.evaluate(`document.querySelectorAll('[data-testid=series-sellaronda] ol li').length === 4`), 'traguardi: la serie Sellaronda in quattro tappe');
   const gruppi = await p.evaluate(`(() => { const g = document.querySelector('[data-testid=ach-groups]'); return g ? g.scrollWidth - g.clientWidth : -1; })()`);
   check(gruppi === 0, 'traguardi: i filtri stanno tutti nello schermo, senza barra', String(gruppi));
   const quasi = await p.evaluate(`(() => { const n = document.querySelector('[data-testid=ach-near]'); const a = [...document.querySelectorAll('li[data-testid^=ach-]')][0]; return !!n && n.querySelectorAll('li').length === 3 && (!a || n.getBoundingClientRect().top < a.getBoundingClientRect().top); })()`);
@@ -256,6 +318,10 @@ export async function giroPagine(p, check, { shot = null } = {}) {
   await base('importa, risultato');
   await go('diario-pieno', '/history');
   await base('diario con i giri');
+  // pista F: gli esempi sono giri importati (fuori dai mondi) → niente filtro per mondo; il filtro compare solo con due mondi
+  const filtro = await p.evaluate(`!!document.querySelector('[data-testid=history-worlds]')`);
+  const mondiDiario = await p.evaluate(`new Set([...document.querySelectorAll('[data-testid^=history-world-]')].map((e) => e.textContent.trim())).size`);
+  check(filtro === mondiDiario >= 1, 'diario: il filtro per mondo compare solo se ci sono giri di un mondo e altri fuori', `filtro ${filtro}, mondi ${mondiDiario}`);
   const det = await p.evaluate(`document.querySelector('a[href*="/history/"]')?.getAttribute('href') ?? ''`);
   if (det) {
     const path = det.replace(/^.*?(\/history\/)/, '/history/');
@@ -273,6 +339,61 @@ export async function giroPagine(p, check, { shot = null } = {}) {
   }
   await go('oggi-con-giri', '/', `!!document.querySelector('[data-testid=home-week]')`);
   await base('oggi con i giri');
+  // Oggi con un ultimo giro (lo stesso che scrive la corsa al «pronto»): «Ripeti l'ultimo giro» su due righe, senza ellissi
+  await p.evaluate(`localStorage.setItem('orobia.ultimo-giro', JSON.stringify({ search: 'world=bergamo&ride=ganda', title: 'Il giro della Ganda', world: 'bergamo', at: new Date().toISOString() }))`);
+  await go('oggi-ripeti', '/', `!!document.querySelector('[data-testid=home-repeat]')`);
+  await base('oggi con l’ultimo giro');
+  await ellissi('oggi con l’ultimo giro');
+  const ripeti = await p.evaluate(`(() => { const a = document.querySelector('[data-testid=home-repeat]'); return a ? { href: a.getAttribute('href'), h: Math.round(a.getBoundingClientRect().height), testo: a.textContent.trim() } : null; })()`);
+  check(!!ripeti && /ride=ganda/.test(ripeti.href) && ripeti.h >= 44 && /Il giro della Ganda/.test(ripeti.testo), 'oggi: «Ripeti l’ultimo giro» porta al giro, col nome intero', JSON.stringify(ripeti));
+  await p.evaluate(`localStorage.removeItem('orobia.ultimo-giro')`);
+  // pista F: la carta del mondo dice quale mondo (l'ultimo usato) e ha i suoi percorsi
+  const mondoOggi = await p.evaluate(`(() => { const a = document.querySelector('[data-testid=home-world]'); return a ? { world: a.dataset.world, href: a.getAttribute('href'), testo: a.textContent.trim().slice(0, 80) } : null; })()`);
+  check(!!mondoOggi && /world=/.test(mondoOggi.href) && /\d+ percorsi/.test(mondoOggi.testo), 'oggi: la carta del mondo porta il mondo e i percorsi', JSON.stringify(mondoOggi));
+  // R6: un mondo che non si carica non si ricorda. Finché il Sellaronda non è costruito, dopo
+  // /mondo?world=sellaronda Oggi resta sul mondo di prima (Bergamo), non su una pagina d'errore.
+  await go('mondo-mancante', '/mondo?world=sellaronda', `!!document.querySelector('[data-testid=world-error]') || !!document.querySelector('[data-testid=world-page] canvas')`, 600);
+  if (await p.evaluate(`!!document.querySelector('[data-testid=world-error]')`)) {
+    await go('oggi-dopo-mancante', '/', `!!document.querySelector('[data-testid=home-world]')`);
+    const w = await p.evaluate(`document.querySelector('[data-testid=home-world]')?.dataset.world ?? ''`);
+    check(w === 'bergamo', 'oggi: un mondo che non si carica non si ricorda (resta Bergamo)', w);
+  }
+}
+
+/** La pillola del prossimo passo nella corsa (F.4, R2): il nome sulla prima riga, «fra 3,2 km · +259 m» sulla seconda, mai spezzate. */
+export async function pillolaPasso(p, check, { shot = null } = {}) {
+  await p.go('/ride?world=bergamo&ride=ganda&at=16100');
+  check(await p.waitFor(`document.querySelector('[data-testid=world-ready]')?.dataset.ready === 'yes'`, 120000), 'passo: il mondo 3D pronto sulla Ganda, a 3 km dal passo');
+  check(await p.waitFor(`!!document.querySelector('[data-testid=ride-next-pass]')`, 20000), 'passo: la pillola del Passo di Ganda');
+  await sleep(800);
+  const pill = await p.evaluate(`(() => {
+    const e = document.querySelector('[data-testid=ride-next-pass]'); if (!e) return null;
+    const linee = (el) => { const r = document.createRange(); r.selectNodeContents(el); return new Set([...r.getClientRects()].filter((x) => x.width > 0).map((x) => Math.round(x.bottom / 4))).size; };
+    const box = e.getBoundingClientRect();
+    return { linee: linee(e), h: Math.round(box.height), righe: [...e.children].map((c) => ({ testo: c.textContent.trim(), linee: linee(c), fuori: c.scrollWidth > c.clientWidth + 1 || c.getBoundingClientRect().right > box.right + 1 })) };
+  })()`);
+  check(!!pill && pill.righe.length === 2 && pill.linee === 2, 'passo: la pillola su due righe per disegno', JSON.stringify(pill));
+  check(!!pill && /^▲ Passo di Ganda$/.test(pill.righe[0]?.testo ?? '') && /^fra\s\d+(,\d)?\s(km|m)(\s·\s\+\d+\sm)?$/.test(pill.righe[1]?.testo ?? ''), 'passo: il nome sopra, «fra … · +… m» sotto', JSON.stringify(pill?.righe));
+  check(!!pill && pill.righe.every((r) => r.linee === 1 && !r.fuori), 'passo: nessuna riga spezzata o fuori dalla pillola', JSON.stringify(pill?.righe));
+  const capo = await p.evaluate(PUNTO_A_CAPO);
+  check(capo.length === 0, 'passo: nessuna unità o «·» a capo', capo.join(' | '));
+  if (shot) await p.shot('p1-corsa-passo');
+}
+
+/** L'onboarding della pista F: la scelta del mondo con due carte, una riga sola per il tasto pieno. */
+export async function onboardingMondi(p, check) {
+  await p.go('/start');
+  await p.waitFor(`!!document.querySelector('[data-testid=onboarding]')`, 15000);
+  await p.waitFor(`[...document.querySelectorAll('[data-testid^=onboarding-world-] img')].every((i) => i.complete)`, 8000);
+  await sleep(500);
+  const carte = await p.evaluate(`[...document.querySelectorAll('[data-testid^=onboarding-world-]')].map((b) => ({ id: b.dataset.testid, h: Math.round(b.getBoundingClientRect().height), checked: b.getAttribute('aria-checked'), stato: b.dataset.state, img: b.querySelector('img')?.naturalWidth ?? 0 }))`);
+  check(carte.length === 2 && carte.every((c) => c.h >= 44) && carte.filter((c) => c.checked === 'true').length === 1, 'onboarding: due carte dei mondi, una scelta', JSON.stringify(carte));
+  check(carte.some((c) => c.id === 'onboarding-world-bergamo' && c.img > 0), 'onboarding: la carta di Bergamo ha la schermata vera del 3D', JSON.stringify(carte));
+  check(carte.every((c) => c.stato !== 'presto' || c.checked !== 'true'), 'onboarding: un mondo non ancora costruito («Presto») non è la scelta', JSON.stringify(carte));
+  const pieni = await p.evaluate(PIENI);
+  check(pieni.length <= 1, 'onboarding: un solo tasto pieno', pieni.join(' | '));
+  const min = await p.evaluate(MINUSCOLE);
+  check(min.length === 0, 'onboarding: niente testi in minuscolo', min.join(' | '));
 }
 
 /** Il telefono in orizzontale (844×390) e il computer (1280×800): la navigazione al posto giusto. */

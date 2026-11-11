@@ -3,6 +3,7 @@ import type { Ride, RideLap, RideSample } from '@/domain/types';
 import { buildRide, validPosition, type SeriesPoint } from '@/domain/metrics';
 import { resampleTo1Hz } from '@/domain/metrics';
 import { fillLapDistances } from '@/domain/replay';
+import { rideDescription } from './gpx-export';
 
 /** Il FIT scrive le coordinate in semicerchi: 2^31 semicerchi = 180°. */
 const SEMICIRCLES_PER_DEGREE = 2 ** 31 / 180;
@@ -36,6 +37,18 @@ export function encodeActivityFit(ride: Ride): Uint8Array {
     timeCreated: start,
     productName: 'OROBIA',
   } as FileIdMesg);
+
+  // il percorso e il mondo nel file (F.17): il messaggio WORKOUT porta il nome, che Garmin e
+  // Strava leggono come titolo dell'allenamento
+  const desc = rideDescription(ride);
+  if (desc) {
+    encoder.onMesg(MesgNum.WORKOUT, {
+      sport: ride.sport === 'running' ? 'running' : 'cycling',
+      subSport: 'virtualActivity',
+      wktName: desc.slice(0, 64),
+      numValidSteps: 1,
+    } as unknown as Record<string, unknown>);
+  }
 
   encoder.onMesg(MesgNum.EVENT, {
     timestamp: start,

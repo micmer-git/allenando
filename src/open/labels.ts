@@ -21,6 +21,9 @@ const KIND: Record<string, string> = {
   luogo: 'Luogo',
   funivia: 'Funivia',
   stazione: 'Stazione',
+  rifugio: 'Rifugio',
+  cappella: 'Cappella',
+  ghiacciaio: 'Ghiacciaio',
 };
 
 /** Il tipo di un luogo da riconoscere, con la maiuscola («Chiesa», «Porta delle Mura»). */
@@ -44,11 +47,20 @@ export const LABEL_GONE = 2500;
 /** Nomi accesi insieme, al massimo. */
 export const LABEL_MAX = 3;
 
-/** Opacità di un nome per la sua distanza dalla camera. */
-export function labelFade(d: number): number {
-  if (d <= LABEL_FULL) return 1;
-  if (d >= LABEL_GONE) return 0;
-  return 1 - (d - LABEL_FULL) / (LABEL_GONE - LABEL_FULL);
+/**
+ * Opacità di un nome per la sua distanza dalla camera. `gone` è la portata del nome: le cime si
+ * leggono fino a 8 km (look.peakRange), gli altri nomi fino a LABEL_GONE; piene fino al 60%.
+ */
+export function labelFade(d: number, gone = LABEL_GONE): number {
+  const full = gone === LABEL_GONE ? LABEL_FULL : gone * 0.6;
+  if (d <= full) return 1;
+  if (d >= gone) return 0;
+  return 1 - (d - full) / (gone - full);
+}
+
+/** Quanti campioni di quota lungo la linea di vista: uno ogni 60 m, da 24 a 160. */
+export function occlusionSamples(len: number): number {
+  return Math.min(160, Math.max(24, Math.ceil(len / 60)));
 }
 
 /**
@@ -64,10 +76,11 @@ export function occluded(
   bx: number,
   by: number,
   bz: number,
-  samples = 24,
+  samples?: number,
 ): boolean {
   const len = Math.hypot(bx - ax, bz - az);
   if (len < 80) return false;
+  if (!samples) samples = occlusionSamples(len);
   const t0 = 30 / len;
   const t1 = 1 - 60 / len;
   for (let i = 0; i <= samples; i++) {

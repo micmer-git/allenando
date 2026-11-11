@@ -4,6 +4,7 @@ import { PageHeader, Segmented } from '@/components/ui';
 import { BikeArt, HelmetArt, ItemArt, JerseyArt } from '@/components/KitArt';
 import { Coin } from '@/components/Glyph';
 import { ACHIEVEMENT_BY_ID } from '@/game/achievements';
+import { SERIES_BY_ID } from '@/game/missions';
 import { availability, ITEMS, lookOf, SLOTS, type Item, type Slot } from '@/game/kit';
 import { owns } from '@/game/career';
 import { useGame } from '@/game/useGame';
@@ -119,6 +120,10 @@ export function GaragePage() {
                     <span className="flex h-11 items-center justify-center gap-1.5 rounded-full border border-line text-sm text-muted">
                       <Lock /> Livello {av.level}
                     </span>
+                  ) : av.state === 'series' ? (
+                    <Link to="/traguardi" className="flex min-h-11 items-center justify-center gap-1.5 rounded-full border border-line px-2 text-center text-xs leading-tight text-muted">
+                      <Lock /> {`Serie ${SERIES_BY_ID.get(av.series)?.name ?? ''}`.trim()}
+                    </Link>
                   ) : (
                     <Link to="/traguardi" className="flex min-h-11 items-center justify-center gap-1.5 rounded-full border border-line px-2 text-center text-xs leading-tight text-muted">
                       <Lock /> {ACHIEVEMENT_BY_ID.get(av.achievement)?.name ?? 'Traguardo'}

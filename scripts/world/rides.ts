@@ -1,4 +1,4 @@
-// I percorsi del mondo di Bergamo e i luoghi da riconoscere lungo la strada.
+// I percorsi dei mondi (Bergamo e le sue valli, Sellaronda) e i luoghi da riconoscere lungo la strada.
 //
 // Qui non c'è nessuna coordinata scritta a mano: ogni tappa e ogni luogo è un NOME che si
 // cerca nei dati OSM (paesi, cime, passi, chiese, porte, ponti, fiumi). Il navigatore del
@@ -14,12 +14,18 @@ import type { Landmark, LandmarkKind, RideDef } from '../../src/open/world';
 type Tags = Record<string, string>;
 
 interface Ctx {
+  /** il mondo: sceglie la lista dei percorsi e il paese di riferimento per gli omonimi */
+  world: string;
   graph: WorldGraph;
   toLocal: (lat: number, lon: number) => [number, number];
   toGeo: (x: number, z: number) => { lat: number; lon: number };
   demAt: (x: number, z: number) => number;
   peaks: { name: string; x: number; z: number; ele: number; pass: boolean; id: number }[];
   places: { name: string; kind: string; x: number; z: number; y: number; id: number }[];
+  /** le località senza abitato (place=locality): un pianoro, un bivio con un nome */
+  localities?: { name: string; x: number; z: number }[];
+  /** i monumenti già costruiti (monumenti.ts), per i luoghi che sono un edificio senza nome in OSM */
+  monumenti?: { id: string; name: string; x: number; z: number }[];
   pois: { type: string; id: number; center: { lat: number; lon: number }; tags: Tags }[];
   rivers: { name: string; kind: string; hw: number; xz: [number, number][]; ys: number[] }[];
   /** tutto quello che ha un nome: edifici, vie, piazze (per i luoghi che OSM non segna come «notevoli») */
@@ -29,11 +35,12 @@ interface Ctx {
 
 /** Come si cerca un punto: per nome, nel tipo di dato giusto. `near` scioglie gli omonimi. */
 type Q =
-  | { place: string; near?: string }
-  | { peak: string; near?: string }
-  | { pass: string; near?: string }
+  | { place: string | RegExp; near?: string }
+  | { peak: string | RegExp; near?: string }
+  | { pass: string | RegExp; near?: string }
   | { poi: string | RegExp; near?: string; tag?: [string, string] }
   | { name: string | RegExp; near?: string }
+  | { monumento: string }
   | { river: string | RegExp };
 
 interface LandmarkSpec {
@@ -62,7 +69,10 @@ const BERGAMO = 'Bergamo';
 const BREMBO = /^(Fiume )?Brembo$/;
 const SERIO = /^(Fiume |Torrente )?Serio$/;
 
-export const SPECS: RideSpec[] = [
+/** Il paese di riferimento di ogni mondo: gli omonimi si sciolgono vicino a lui. */
+const ANCHOR: Record<string, string | RegExp> = { bergamo: BERGAMO, sellaronda: /^Selva/ };
+
+export const SPECS_BERGAMO: RideSpec[] = [
   {
     id: 'citta-alta',
     name: 'Città Alta e San Vigilio',
@@ -401,6 +411,161 @@ export const SPECS: RideSpec[] = [
   },
 ];
 
+// ---------- Sellaronda ----------
+// I nomi sono quelli di OSM in italiano (scripts/world/nomi.ts): «Passo Sella», non «Jouf de Sela».
+
+const SELVA = /^Selva( di Val Gardena)?$/;
+const CORVARA = /^Corvara( in Badia)?$/;
+const CANAZEI = /^Canazei$/;
+const ARABBA = /^Arabba$/;
+const SASSOLUNGO = /^Sassolungo$/;
+const SASSOPIATTO = /^Sasso ?[Pp]iatto$/;
+const MARMOLADA = /^Punta Penia$/;
+const SASS_PORDOI = /^Sass[o]? (de )?Pordoi$/;
+const AVISIO = /Avisio/;
+const CORDEVOLE = /Cordevole/;
+const RIO_GARDENA = /Rio Gardena|Gardena/;
+
+const LM = {
+  selva: { q: { place: SELVA }, kind: 'paese' as const, name: 'Selva di Val Gardena', note: 'Il paese ladino a 1563 metri, sotto il Sassolungo: la partenza classica del giro.' },
+  corvara: { q: { place: CORVARA }, kind: 'paese' as const, name: 'Corvara', note: 'Il capoluogo dell’Alta Badia, ai piedi del Sassongher.' },
+  colfosco: { q: { place: /^Colfosco$/ }, kind: 'paese' as const, note: 'Il paese più alto della Val Badia, 1645 metri, con la chiesa e il campanile a cipolla.' },
+  arabba: { q: { place: ARABBA }, kind: 'paese' as const, note: 'Il paese fodom a 1602 metri sul Cordevole, sotto il Padon.' },
+  canazei: { q: { place: CANAZEI }, kind: 'paese' as const, note: 'Il capoluogo dell’alta Val di Fassa, a 1465 metri sull’Avisio.' },
+  gralba: { q: { place: /^Plan de Gralba$/ }, kind: 'paese' as const, note: 'Il bivio a 1800 metri dove la strada del Sella lascia quella del Gardena.' },
+  schiavaneis: { q: { place: /Pian Schiavaneis/ }, kind: 'luogo' as const, name: 'Lupo Bianco', note: 'Il pianoro a 1850 metri sotto le pareti del Sella: qui il Pordoi finisce e il Sella comincia.', within: 900 },
+  gardena: { q: { pass: /^Passo Gardena$/ }, kind: 'passo' as const, note: 'Il passo a 2121 metri fra la Val Gardena e la Val Badia, sotto le Torri del Cir.', within: 400 },
+  campolongo: { q: { pass: /^Passo Campolongo$/ }, kind: 'passo' as const, note: 'Il più basso dei quattro passi, 1875 metri, fra Corvara e Arabba.', within: 400 },
+  pordoi: { q: { pass: /^Passo Pordoi$/ }, kind: 'passo' as const, note: 'Il passo a 2239 metri, 33 tornanti da Arabba: la cima Coppi del Giro, la funivia del Sass Pordoi.', within: 400 },
+  sella: { q: { pass: /^Passo Sella$/ }, kind: 'passo' as const, note: 'Il passo a 2240 metri fra il Sassolungo e il Sella: la vista più famosa delle Dolomiti.', within: 400 },
+  fedaia: { q: { pass: /^Passo Fedaia$/ }, kind: 'passo' as const, note: 'Il passo a 2057 metri con il lago e la Marmolada davanti.', within: 500 },
+  sassolungo: { q: { peak: SASSOLUNGO }, kind: 'cima' as const, note: 'La torre di dolomia a 3181 metri che chiude la Val Gardena.', within: 6000 },
+  sassopiatto: { q: { peak: SASSOPIATTO }, kind: 'cima' as const, name: 'Sassopiatto', note: 'La lama inclinata accanto al Sassolungo, 2958 metri.', within: 7000 },
+  ciavazes: { q: { peak: /^Piz Ciavazes$/ }, kind: 'cima' as const, note: 'La parete del Sella sopra il Passo Sella, 2828 metri: le Torri del Sella stanno alla sua destra.', within: 4000 },
+  sasspordoi: { q: { peak: SASS_PORDOI }, kind: 'cima' as const, name: 'Sass Pordoi', note: 'La parete a 2950 metri con la funivia in cima: la «terrazza delle Dolomiti».', within: 4000 },
+  boe: { q: { peak: /^Piz Boè$/ }, kind: 'cima' as const, note: 'La cima del Sella, 3152 metri, piatta come un tavolo.', within: 7000 },
+  marmolada: { q: { peak: MARMOLADA }, kind: 'cima' as const, name: 'Marmolada', note: 'La regina delle Dolomiti, 3343 metri, con il ghiacciaio rivolto a nord.', within: 9000 },
+  grancir: { q: { peak: /^Gran(de)? Cir$/ }, kind: 'cima' as const, name: 'Gran Cir', note: 'La cresta frastagliata sopra il Passo Gardena, 2592 metri.', within: 4000 },
+  rodella: { q: { peak: /^Col Rodella$/, near: 'Canazei' }, kind: 'cima' as const, note: 'Il balcone a 2484 metri sopra Canazei, davanti al Sassolungo.', within: 6000 },
+  sassongher: { q: { peak: /^Sassongher$/ }, kind: 'cima' as const, note: 'La cima a 2665 metri che sta sopra Corvara.', within: 5000 },
+  pisciadu: { q: { peak: /Pisciad/ }, kind: 'cima' as const, name: 'Piz Pisciadù', note: 'La cima del Sella sopra il Passo Gardena, 2985 metri.', within: 5000 },
+  rifSella: { q: { poi: /^Rifugio Carlo Valentini$/ }, kind: 'rifugio' as const, note: 'Il rifugio del 1934 sotto il Passo Sella, verso Selva.', within: 900 },
+  rifBec: { q: { poi: /^Rifugio Bec de Roces$/ }, kind: 'rifugio' as const, note: 'Il rifugio sul Passo Campolongo, sotto il Bec de Roces.', within: 700 },
+  rifMaria: { q: { poi: /^Rifugio Maria$/ }, kind: 'rifugio' as const, note: 'In cima al Sass Pordoi, a 2950 metri: ci si arriva con la funivia dal passo.', within: 2500 },
+  rifCastiglioni: { q: { poi: /Castiglioni/ }, kind: 'rifugio' as const, name: 'Rifugio Castiglioni', note: 'Il rifugio sulla diga del Fedaia, davanti alla Marmolada.', within: 700 },
+  cappSella: { q: { monumento: 'w233233503' }, kind: 'cappella' as const, name: 'Cappella del Passo Sella', note: 'La cappella bianca col tetto a scandole, accanto al rifugio.', within: 900 },
+  cappPordoi: { q: { monumento: 'w199516854' }, kind: 'cappella' as const, name: 'Cappella del Passo Pordoi', note: 'La cappella del passo, fra gli alberghi e il piazzale della funivia.', within: 500 },
+  cappGardena: { q: { poi: /^San Mauriz$/ }, kind: 'cappella' as const, name: 'Cappella di San Maurizio', note: 'La cappella del Passo Gardena, dedicata a San Maurizio.', within: 500 },
+  coppi: { q: { monumento: 'n796380013' }, kind: 'luogo' as const, name: 'Monumento a Fausto Coppi', note: 'Il busto del Campionissimo sul passo: la cima Coppi del Giro d’Italia porta il suo nome.', within: 500 },
+  funiviaPordoi: { q: { monumento: 'n29916899' }, kind: 'funivia' as const, name: 'Funivia del Sass Pordoi', note: 'In quattro minuti dal passo ai 2950 metri della terrazza delle Dolomiti.', within: 500 },
+  chiesaCorvara: { q: { monumento: 'w42210743' }, kind: 'chiesa' as const, name: 'Chiesa del Sacro Cuore', note: 'La parrocchiale di Corvara, sulla strada del paese.', within: 500 },
+  chiesaSelva: { q: { monumento: 'w255592975' }, kind: 'chiesa' as const, name: 'Chiesa di Selva', note: 'La chiesa di Maria Ausiliatrice, col campanile a punta nel centro del paese.', within: 500 },
+  chiesaCanazei: { q: { monumento: 'w59275646' }, kind: 'chiesa' as const, name: 'Chiesa di San Floriano', note: 'La chiesa di Canazei, col campanile a cipolla.', within: 500 },
+  avisio: { q: { river: AVISIO }, kind: 'fiume' as const, note: 'Il torrente della Val di Fassa, che nasce dalla Marmolada.', within: 1500 },
+  cordevole: { q: { river: CORDEVOLE }, kind: 'fiume' as const, note: 'Il torrente di Arabba, che scende dal Pordoi verso Agordo.', within: 1500 },
+  rioGardena: { q: { river: RIO_GARDENA }, kind: 'fiume' as const, name: 'Rio Gardena', note: 'Il torrente della valle, che nasce sotto il Passo Gardena.', within: 1500 },
+};
+
+export const SPECS_SELLARONDA: RideSpec[] = [
+  {
+    id: 'sellaronda',
+    name: 'Sellaronda',
+    side: 'antiorario da Selva: Gardena, Campolongo, Pordoi, Sella',
+    area: 'sella',
+    kind: 'giro',
+    blurb: 'Il giro del Sella in senso antiorario: da Selva su al Passo Gardena, giù a Corvara, il Campolongo, Arabba, i 33 tornanti del Pordoi, la discesa al Lupo Bianco, il Passo Sella sotto il Sassolungo e il ritorno a Selva.',
+    via: [{ place: SELVA }, { pass: /^Passo Gardena$/ }, { place: CORVARA }, { pass: /^Passo Campolongo$/ }, { place: ARABBA }, { pass: /^Passo Pordoi$/ }, { pass: /^Passo Sella$/ }, { place: /^Plan de Gralba$/ }, { place: SELVA }],
+    landmarks: [LM.selva, LM.chiesaSelva, LM.sassolungo, LM.grancir, LM.gardena, LM.cappGardena, LM.pisciadu, LM.colfosco, LM.corvara, LM.chiesaCorvara, LM.sassongher, LM.campolongo, LM.rifBec, LM.arabba, LM.cordevole, LM.pordoi, LM.coppi, LM.funiviaPordoi, LM.sasspordoi, LM.boe, LM.marmolada, LM.schiavaneis, LM.ciavazes, LM.sella, LM.rifSella, LM.cappSella, LM.sassopiatto, LM.gralba],
+  },
+  {
+    id: 'sellaronda-orario',
+    name: 'Sellaronda',
+    side: 'orario da Corvara: Gardena, Sella, Pordoi, Campolongo',
+    area: 'sella',
+    kind: 'giro',
+    blurb: 'Il giro del Sella in senso orario: da Corvara al Passo Gardena, giù a Selva, il Passo Sella, il Pordoi dal Lupo Bianco, la discesa ad Arabba, il Campolongo e il ritorno a Corvara.',
+    via: [{ place: CORVARA }, { pass: /^Passo Gardena$/ }, { place: SELVA }, { place: /^Plan de Gralba$/ }, { pass: /^Passo Sella$/ }, { pass: /^Passo Pordoi$/ }, { place: ARABBA }, { pass: /^Passo Campolongo$/ }, { place: CORVARA }],
+    landmarks: [LM.corvara, LM.chiesaCorvara, LM.sassongher, LM.colfosco, LM.gardena, LM.cappGardena, LM.grancir, LM.selva, LM.chiesaSelva, LM.sassolungo, LM.gralba, LM.sella, LM.rifSella, LM.cappSella, LM.ciavazes, LM.schiavaneis, LM.pordoi, LM.coppi, LM.sasspordoi, LM.marmolada, LM.arabba, LM.cordevole, LM.campolongo, LM.rifBec],
+  },
+  {
+    id: 'sella-canazei',
+    name: 'Passo Sella',
+    side: 'da Canazei',
+    area: 'sella',
+    kind: 'salita',
+    blurb: 'Da Canazei su per la Val di Fassa alta fino al Lupo Bianco, poi i tornanti sotto le pareti del Sella fino al passo, col Sassolungo davanti.',
+    via: [{ place: CANAZEI }, { pass: /^Passo Sella$/ }],
+    landmarks: [LM.canazei, LM.chiesaCanazei, LM.avisio, LM.rodella, LM.schiavaneis, LM.ciavazes, LM.sassolungo, LM.sella, LM.rifSella, LM.cappSella],
+  },
+  {
+    id: 'pordoi-arabba',
+    name: 'Passo Pordoi',
+    side: 'da Arabba',
+    area: 'sella',
+    kind: 'salita',
+    blurb: 'La salita dei 33 tornanti: da Arabba al passo, sotto il Sass Pordoi, con la Marmolada alle spalle.',
+    via: [{ place: ARABBA }, { pass: /^Passo Pordoi$/ }],
+    landmarks: [LM.arabba, LM.cordevole, LM.marmolada, LM.sasspordoi, LM.boe, LM.pordoi, LM.coppi, LM.funiviaPordoi, LM.cappPordoi],
+  },
+  {
+    id: 'pordoi-canazei',
+    name: 'Passo Pordoi',
+    side: 'da Canazei',
+    area: 'sella',
+    kind: 'salita',
+    blurb: 'Il versante fassano: da Canazei al Lupo Bianco e poi i tornanti fino al passo, con il Col Rodella e la Marmolada all’orizzonte.',
+    via: [{ place: CANAZEI }, { pass: /^Passo Pordoi$/ }],
+    landmarks: [LM.canazei, LM.chiesaCanazei, LM.avisio, LM.rodella, LM.schiavaneis, LM.sasspordoi, LM.pordoi, LM.coppi, LM.funiviaPordoi],
+  },
+  {
+    id: 'gardena-corvara',
+    name: 'Passo Gardena',
+    side: 'da Corvara',
+    area: 'sella',
+    kind: 'salita',
+    blurb: 'Da Corvara per Colfosco e i tornanti sotto le Torri del Cir, fino al passo che guarda la Val Gardena.',
+    via: [{ place: CORVARA }, { pass: /^Passo Gardena$/ }],
+    landmarks: [LM.corvara, LM.chiesaCorvara, LM.sassongher, LM.colfosco, LM.pisciadu, LM.grancir, LM.gardena, LM.cappGardena],
+  },
+  {
+    id: 'gardena-selva',
+    name: 'Passo Gardena',
+    side: 'da Selva',
+    area: 'sella',
+    kind: 'salita',
+    blurb: 'Il versante gardenese: da Selva lungo il Rio Gardena fino al passo, con il Sassolungo alle spalle e il Cir davanti.',
+    via: [{ place: SELVA }, { pass: /^Passo Gardena$/ }],
+    landmarks: [LM.selva, LM.chiesaSelva, LM.sassolungo, LM.rioGardena, LM.grancir, LM.gardena, LM.cappGardena],
+  },
+  {
+    id: 'campolongo-corvara',
+    name: 'Passo Campolongo',
+    side: 'da Corvara',
+    area: 'sella',
+    kind: 'salita',
+    blurb: 'La salita breve dell’Alta Badia: da Corvara al passo, fra i prati sotto il Sella.',
+    via: [{ place: CORVARA }, { pass: /^Passo Campolongo$/ }],
+    landmarks: [LM.corvara, LM.chiesaCorvara, LM.sassongher, LM.boe, LM.campolongo, LM.rifBec],
+  },
+  {
+    id: 'fedaia-canazei',
+    name: 'Passo Fedaia',
+    side: 'da Canazei',
+    area: 'marmolada',
+    kind: 'salita',
+    blurb: 'Da Canazei per Penia e la gola dell’Avisio fino al lago e alla diga del Fedaia, con il ghiacciaio della Marmolada davanti.',
+    via: [{ place: CANAZEI }, { place: /^Penia$/ }, { pass: /^Passo Fedaia$/ }],
+    landmarks: [LM.canazei, LM.chiesaCanazei, LM.avisio, { q: { place: /^Penia$/ }, kind: 'paese', note: 'L’ultimo paese della Val di Fassa, a 1555 metri.' }, LM.marmolada, LM.fedaia, LM.rifCastiglioni],
+  },
+];
+
+export const SPECS_BY_WORLD: Record<string, RideSpec[]> = { bergamo: SPECS_BERGAMO, sellaronda: SPECS_SELLARONDA };
+export const specsFor = (world: string): RideSpec[] => {
+  const s = SPECS_BY_WORLD[world];
+  if (!s) throw new Error(`rides: nessun percorso per il mondo «${world}»`);
+  return s;
+};
+
 // ---------- macchinario ----------
 
 const norm = (s: string) => s.toLowerCase().replace(/[’`]/g, "'").replace(/\s+/g, ' ').trim();
@@ -422,17 +587,19 @@ function makeResolver(ctx: Omit<Ctx, 'graph'>) {
     const [x, z] = ctx.toLocal(p.center.lat, p.center.lon);
     return { name: p.tags.name, x, z, tags: p.tags };
   });
-  const placeByName = (n: string) => ctx.places.find((p) => norm(p.name) === norm(n) && (p.kind === 'city' || p.kind === 'town' || p.kind === 'village'));
+  const placeByName = (n: string | RegExp) => ctx.places.find((p) => matches(p.name, n) && (p.kind === 'city' || p.kind === 'town' || p.kind === 'village'));
 
-  function anchor(near?: string): Pt | null {
+  function anchor(near?: string | RegExp): Pt | null {
     if (!near) return null;
     const p = placeByName(near);
     return p ? { name: p.name, x: p.x, z: p.z } : null;
   }
+  const home = () => anchor(ANCHOR[ctx.world] ?? BERGAMO);
 
   /** Tutti i candidati di una ricerca; il chiamante sceglie il più vicino a qualcosa. */
   function candidates(q: Q): Pt[] {
-    if ('place' in q) return ctx.places.filter((p) => matches(p.name, q.place)).map((p) => ({ name: p.name, x: p.x, z: p.z }));
+    if ('place' in q) return [...ctx.places, ...(ctx.localities ?? [])].filter((p) => matches(p.name, q.place)).map((p) => ({ name: p.name, x: p.x, z: p.z }));
+    if ('monumento' in q) return (ctx.monumenti ?? []).filter((m) => m.id === q.monumento).map((m) => ({ name: m.name, x: m.x, z: m.z }));
     if ('peak' in q) return ctx.peaks.filter((p) => !p.pass && matches(p.name, q.peak)).map((p) => ({ name: p.name, x: p.x, z: p.z }));
     if ('pass' in q) return ctx.peaks.filter((p) => matches(p.name, q.pass)).map((p) => ({ name: p.name, x: p.x, z: p.z }));
     if ('poi' in q) {
@@ -460,16 +627,16 @@ function makeResolver(ctx: Omit<Ctx, 'graph'>) {
     return list.reduce((a, b) => (Math.hypot(a.x - near.x, a.z - near.z) <= Math.hypot(b.x - near.x, b.z - near.z) ? a : b));
   }
 
-  return { candidates, resolve, anchor };
+  return { candidates, resolve, anchor, home };
 }
 
 /** Le tappe di tutti i percorsi, risolte: il costruttore ci spezza le strade. */
 export function resolveWaypoints(ctx: Omit<Ctx, 'graph'>): Pt[] {
-  const { resolve, anchor } = makeResolver(ctx);
+  const { resolve, home } = makeResolver(ctx);
   const out: Pt[] = [];
-  for (const spec of SPECS) {
+  for (const spec of specsFor(ctx.world)) {
     const pts: Pt[] = [];
-    for (const q of spec.via) pts.push(resolve(q, pts[pts.length - 1] ?? anchor(BERGAMO)));
+    for (const q of spec.via) pts.push(resolve(q, pts[pts.length - 1] ?? home()));
     out.push(...pts);
   }
   return out;
@@ -477,15 +644,15 @@ export function resolveWaypoints(ctx: Omit<Ctx, 'graph'>): Pt[] {
 
 export function buildRides(ctx: Ctx): { rides: RideDef[]; landmarks: Landmark[]; limits: Record<string, { timedM: number; minSec: number }> } {
   const { graph } = ctx;
-  const { candidates, resolve, anchor } = makeResolver(ctx);
+  const { candidates, resolve, home } = makeResolver(ctx);
   const landmarks = new Map<string, Landmark>();
   const rides: RideDef[] = [];
   const limits: Record<string, { timedM: number; minSec: number }> = {};
 
-  for (const spec of SPECS) {
+  for (const spec of specsFor(ctx.world)) {
     // tappe: ognuna si scioglie vicino alla precedente (i paesi omonimi esistono)
     const pts: Pt[] = [];
-    for (const q of spec.via) pts.push(resolve(q, pts[pts.length - 1] ?? anchor(BERGAMO)));
+    for (const q of spec.via) pts.push(resolve(q, pts[pts.length - 1] ?? home()));
     // le piste solo per chi le vuole: a Nembro il punto del paese cade su un anellino di pista in
     // porfido, e Selvino e la Ganda partivano lì con un incrocio dopo 8 m
     const road = (e: { cls: number }) => e.cls !== CLS.trunk && e.cls !== CLS.pedestrian && (spec.prefs?.preferCycleways || e.cls !== CLS.cycleway);

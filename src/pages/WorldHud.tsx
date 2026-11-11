@@ -3,7 +3,7 @@ import { Button, Segmented } from '@/components/ui';
 import { MiniMap, WorldMap, type MapMarker, type MapOverlay } from '@/components/WorldMap';
 import { gradeColor, PositionDot, ProfileChart } from '@/components/RouteViz';
 import type { Track } from '@/domain/track';
-import { formatKm, formatNumber } from '@/domain/format';
+import { formatAltText, formatGainText, formatKm, formatKmText, formatNumber } from '@/domain/format';
 import { RIDER_COLORS } from '@/multiplayer/protocol';
 import type { RideEngine } from '@/sim/engine';
 import { suggestLoops, type LoopSuggestion, type LoopTaste } from '@/open/loops';
@@ -228,7 +228,7 @@ export function MapSheet({ session, engine, far, track, onClose }: { session: Wo
   for (const n of session.crowd.npcs) if (n.active) markers.push({ x: n.x, z: n.z, color: '#9aa0a8', small: true });
   for (const r of session.remoteNow.values()) markers.push({ x: r.x, z: r.z, color: RIDER_COLORS[r.color % RIDER_COLORS.length], label: r.nick });
   markers.push({ x: p.x, z: p.z, color: '#ffc814', heading: p.heading, label: 'Tu' });
-  const where = cap([session.placeName(), session.roadLabel(engine.distance), `${formatNumber(engine.altitude, 0)} m`].filter(Boolean).join(' · '));
+  const where = cap([session.placeName(), session.roadLabel(engine.distance), formatAltText(engine.altitude)].filter(Boolean).join(' · '));
   const left = session.onRoute && track ? Math.max(0, track.length - engine.distance) : null;
   return (
     <div className="fixed inset-0 z-30 flex flex-col bg-bg" role="dialog" aria-modal="true" aria-label="Carta: dove sei" data-testid="map-sheet">
@@ -257,7 +257,7 @@ export function MapSheet({ session, engine, far, track, onClose }: { session: Wo
       <div className="mt-auto px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3">
         <dl className="mb-2 grid grid-cols-3 gap-2 text-center">
           <SheetStat label="Fatti" value={`${formatKm(engine.odometer)} km`} />
-          <SheetStat label={left != null ? 'All’arrivo' : 'Quota'} value={left != null ? `${formatKm(left)} km` : `${formatNumber(engine.altitude, 0)} m`} />
+          <SheetStat label={left != null ? 'All’arrivo' : 'Quota'} value={left != null ? `${formatKm(left)} km` : formatAltText(engine.altitude)} />
           <SheetStat label="Pendenza" value={`${engine.grade >= 0 ? '+' : '−'}${formatNumber(Math.abs(engine.grade * 100), 1)}%`} />
         </dl>
         <div className="rounded-xl bg-elev p-1.5">
@@ -351,7 +351,7 @@ export function LoopSheet({ session, engine, onClose }: { session: WorldSession;
                 >
                   <p className="font-semibold">{l.via.slice(0, 4).join(' · ') || `Anello ${i + 1}`}</p>
                   <p className="num text-sm text-muted">
-                    {formatKm(l.lengthM)} km · D+ {formatNumber(l.gainM, 0)} m
+                    {`${formatKmText(l.lengthM)} · ${formatGainText(l.gainM)}`}
                   </p>
                 </button>
               </li>
