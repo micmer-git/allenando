@@ -52,6 +52,13 @@ async function serverUp() {
 
 const readyExpr = `document.querySelector('[data-testid=world-ready]')?.dataset.ready === 'yes'`;
 const LIGHT = ['manifest.json', 'graph.json', 'rides.json', 'features.json', 'far.bin', 'monumenti.json'];
+/** dove si fotografa: la partenza, e un punto in salita (metri sul percorso) dove si vede il pendio */
+const SHOTS = [
+  ['ganda', 'ganda', 0],
+  ['ganda', 'ganda-salita', 17500],
+  ['citta-alta', 'citta-alta', 0],
+  ['citta-alta', 'citta-alta-salita', 3300],
+];
 
 startServer();
 let browser = null;
@@ -100,8 +107,8 @@ try {
   note(`scaricati per il leggero (Resource Timing): ${mb(sizes.wire)} MB; dem/ in cache ${mb(sizes.dem)} MB, b/ ${mb(sizes.b)} MB`);
 
   // ---------- online: il mondo intero, per il confronto ----------
-  for (const [id, name] of [['ganda', 'ganda'], ['citta-alta', 'citta-alta']]) {
-    await p.go(`/ride?world=bergamo&ride=${id}&prova=1&stats=1`);
+  for (const [id, name, at] of SHOTS) {
+    await p.go(`/ride?world=bergamo&ride=${id}&prova=1&stats=1${at ? `&at=${at}` : ''}`);
     const t = Date.now();
     const ok = await p.waitFor(readyExpr, 150000);
     const why = await p.evaluate('window.__orobiaReady ?? null');
@@ -128,8 +135,8 @@ try {
   await p.shot('offline-apertura');
 
   // la corsa nel mondo leggero
-  for (const [id, name] of [['ganda', 'ganda'], ['citta-alta', 'citta-alta']]) {
-    await p.s('Page.navigate', { url: `${base}/ride?world=bergamo&ride=${id}&prova=1&stats=1` });
+  for (const [id, name, at] of SHOTS) {
+    await p.s('Page.navigate', { url: `${base}/ride?world=bergamo&ride=${id}&prova=1&stats=1${at ? `&at=${at}` : ''}` });
     const t = Date.now();
     const ok = await p.waitFor(readyExpr, 30000);
     const ms = Date.now() - t;

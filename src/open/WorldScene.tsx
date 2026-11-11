@@ -51,7 +51,7 @@ import { StatsProbe, statsWanted, type TileCounts } from './StatsProbe';
 import { Declutter, Labels, Landmarks, type Occluders } from './WorldLabels';
 import { boxVolume, volumeOf, type Volume } from './labels';
 import { monumentiPronti } from './monumenti';
-import { loadProgress, READY_RADIUS, readyReason, tileDist, tileStage } from './pronto';
+import { loadProgress, READY_RADIUS, readyReason, tileDist, tileStage, type ReadyReason } from './pronto';
 import { URBAN_R, urbanDensity } from './urban';
 
 /**
@@ -103,7 +103,8 @@ export interface WorldSceneProps {
   nextTurn: () => { x: number; y: number; z: number; heading: number } | null;
   /** posa del giocatore con lo scostamento di corsia: la usano anche HUD e scia */
   playerPose: () => TrackPose;
-  onReady: () => void;
+  /** il mondo è pronto, e perché: `tutto`, `leggero` (senza rete), `errore`, `tetto` (per `data-reason`) */
+  onReady: (reason?: ReadyReason) => void;
   /**
    * Avanzamento del caricamento del mondo intorno al ciclista, da 0 a 1 (il velo della corsa):
    * il terreno lontano e le mattonelle entro READY_RADIUS. Arriva a 1 insieme a onReady.
@@ -188,7 +189,7 @@ function ReadyWhenTiles({
   playerPose,
   leggero,
 }: {
-  onReady: () => void;
+  onReady: (reason?: ReadyReason) => void;
   onProgress?: (p: number) => void;
   counts: TileCounts;
   status: LoadStatus;
@@ -219,7 +220,7 @@ function ReadyWhenTiles({
       // per il collaudo (?stats=1): com'era il mondo intorno nell'istante del «pronto»
       if (statsWanted()) window.__orobiaReady = { reason, ms: Math.round(now - t0.current), near: counts.near, nearReady: counts.nearReady };
       onProgress?.(1);
-      onReady();
+      onReady(reason);
     }
   });
   return null;
