@@ -124,7 +124,7 @@ export function RulloChip({ r, onClick, className }: { r: RulloStato; onClick: (
 }
 
 /** Cosa sa fare quello che è collegato, in gettoni; da qui la fascia, un altro rullo, scollega (C6). */
-export function RulloFoglio({ r, open, onClose, onSpegniProva }: { r: RulloStato; open: boolean; onClose: () => void; onSpegniProva: () => void }) {
+export function RulloFoglio({ r, open, onClose, onSpegniProva, inCorsa = false }: { r: RulloStato; open: boolean; onClose: () => void; onSpegniProva?: () => void; inCorsa?: boolean }) {
   const prova = r.prova && !r.sa.potenza;
   const riga = 'flex min-h-14 w-full items-center justify-between gap-3 border-b border-line text-left font-semibold';
   return (
@@ -141,9 +141,11 @@ export function RulloFoglio({ r, open, onClose, onSpegniProva }: { r: RulloStato
           >
             Collega il rullo <span aria-hidden="true">›</span>
           </button>
-          <button type="button" className={cn(riga, 'border-0')} onClick={onSpegniProva} data-testid="rullo-spegni-prova">
-            Spegni la prova
-          </button>
+          {onSpegniProva && !inCorsa ? (
+            <button type="button" className={cn(riga, 'border-0')} onClick={onSpegniProva} data-testid="rullo-spegni-prova">
+              Spegni la prova
+            </button>
+          ) : null}
         </div>
       ) : (
         <>
@@ -169,22 +171,26 @@ export function RulloFoglio({ r, open, onClose, onSpegniProva }: { r: RulloStato
           >
             Un altro rullo <span aria-hidden="true">›</span>
           </button>
-          <button
-            type="button"
-            className={cn(riga, 'border-0 text-muted')}
-            onClick={() => {
-              rullo.scollega();
-              onClose();
-            }}
-            data-testid="rullo-scollega"
-          >
-            Scollega
-          </button>
+          {!inCorsa ? (
+            <button
+              type="button"
+              className={cn(riga, 'border-0 text-muted')}
+              onClick={() => {
+                rullo.scollega();
+                onClose();
+              }}
+              data-testid="rullo-scollega"
+            >
+              Scollega
+            </button>
+          ) : null}
         </>
       )}
-      <Link to="/impostazioni" onClick={onClose} className="mt-1 flex h-11 items-center text-sm font-semibold text-muted">
-        Impostazioni
-      </Link>
+      {!inCorsa ? (
+        <Link to="/impostazioni" onClick={onClose} className="mt-1 flex h-11 items-center text-sm font-semibold text-muted">
+          Impostazioni
+        </Link>
+      ) : null}
     </Foglio>
   );
 }

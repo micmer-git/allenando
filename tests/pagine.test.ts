@@ -85,6 +85,30 @@ describe('la maiuscola iniziale', () => {
   });
 });
 
+describe('piano U: niente «Simulatore» a schermo', () => {
+  it('il dizionario non dice «simulatore»: la prova si chiama Prova (A3)', () => {
+    const fuori: string[] = [];
+    const visit = (o: unknown, path: string) => {
+      if (typeof o === 'string') {
+        if (/simulator[ei]/i.test(o)) fuori.push(`${path}: ${o}`);
+      } else if (o && typeof o === 'object') for (const [k, v] of Object.entries(o)) visit(v, path ? `${path}.${k}` : k);
+    };
+    visit(dizionario, '');
+    expect(fuori).toEqual([]);
+  });
+  it('nessuna pagina e nessun componente scrive «Simulatore» in un testo', () => {
+    const dirs = [PAGINE, join(PAGINE, 'pedala'), join(__dirname, '..', 'src', 'components'), join(__dirname, '..', 'src', 'components', 'ride')];
+    const fuori: string[] = [];
+    for (const d of dirs)
+      for (const f of readdirSync(d).filter((x) => x.endsWith('.tsx'))) {
+        // i testi a schermo: fra > e <, o nelle stringhe JSX; i commenti no
+        const src = readFileSync(join(d, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+        if (/>[^<{]*\bSimulator[ei]\b|['"`]Simulator[ei]\b/.test(src)) fuori.push(f);
+      }
+    expect(fuori).toEqual([]);
+  });
+});
+
 describe('le pagine della pista 1', () => {
   it('niente barretta colorata sul lato delle carte', () => {
     const fuori = MIE.filter((f) => /absolute inset-y-0 left-0 w-1/.test(readFileSync(join(PAGINE, f), 'utf8')));

@@ -4,7 +4,6 @@ import { WorkoutChart } from '@/components/WorkoutChart';
 import { gradeColor, ProfileChart, RouteMap } from '@/components/RouteViz';
 import { legsBounds, WorldMap, type MapMarker, type MapOverlay } from '@/components/WorldMap';
 import { Button, Segmented, Wordmark } from '@/components/ui';
-import { bluetoothSupport } from '@/bluetooth/support';
 import { BluetoothTrainer } from '@/bluetooth/trainer';
 import { formatAlt, formatAltText, formatDuration, formatGrade, formatKm, formatKmText, formatNumber, formatTss, msToKmh, withUnit } from '@/domain/format';
 import { STANDARD_AIR, type PhysicsParams } from '@/domain/physics';
@@ -406,6 +405,13 @@ function useFade(open: boolean, ms = 220): { mounted: boolean; shown: boolean } 
   return { mounted, shown };
 }
 
+// HUD per tipo (piano U, F8): il rullo, il bersaglio, i giri, la prova
+import { RulloChip } from '@/components/ride/RulloChip';
+import { Bersaglio } from '@/components/ride/Bersaglio';
+import { ProvaBar } from '@/components/ride/ProvaBar';
+import { GiroBadge, UltimoGiro } from '@/components/ride/GiroBadge';
+import { esportabile } from '@/domain/types';
+
 function RideScreen({
   engine,
   trainer,
@@ -444,7 +450,6 @@ function RideScreen({
   // l'avanzamento del mondo, da 0 a 1, da WorldScene (onProgress): finché non arriva, la barra è indeterminata
   const [worldProgress, setWorldProgress] = useState<number | undefined>(undefined);
   const [webgl, setWebgl] = useState(true);
-  const [sensorsOpen, setSensorsOpen] = useState(false);
   const [effort, setEffort] = useState(() => Math.round(engine.effort * 100));
   const [summary, setSummary] = useState<Ride | null>(null);
   const [saveState, setSaveState] = useState<'saving' | 'saved' | 'failed'>('saving');
@@ -495,7 +500,6 @@ function RideScreen({
   const step = progress && engine.workout ? engine.workout.steps[progress.stepIndex] : undefined;
   const snap = trainer.snapshot();
   const sim = snap.mode === 'simulator';
-  const support = bluetoothSupport();
   const modeLabel = setup.replayMode === 'power' ? 'Watt di allora' : setup.replayMode === 'grade' ? 'Pendenza di allora' : setup.replayMode === 'ghost' ? 'Fantasma' : null;
   const rideName = resume?.name ?? (workout ? `${workoutTitle(workout, t)} · ${setup.label}` : modeLabel ? `${modeLabel} · ${setup.label}` : setup.label);
   const track = setup.route.track;
@@ -736,6 +740,8 @@ function RideScreen({
   useStageVars(stageRef, dockRef, simRef, simOn);
   const onRoute = !session || session.onRoute;
   const kmLeft = Math.max(0, track.length - engine.distance);
+  // più passaggi: i km al traguardo di questo passaggio, non all'ultimo
+  const traguardo = session && session.giri > 1 ? session.traguardoFra(engine.distance) : null;
   const turning = !!session?.junction && session.junction.dist <= 220 && engine.phase !== 'finished';
   const mini = big && wide ? 132 : wide ? 88 : 96;
   // in montagna (F.4): i passi davanti, dal percorso scelto o dalla strada che si sta facendo
@@ -903,7 +909,20 @@ function RideScreen({
                   <BackIcon />
                 </button>
                 <div className="min-w-0 flex-1 rounded-[1.375rem] bg-bg/70 px-3.5 py-1.5 backdrop-blur-md landscape:max-w-[40rem]" data-testid="ride-route">
-                  <p className="break-words font-display text-lg uppercase leading-tight lg:text-2xl">{setup.route.title}</p>
+                  <p className="break-words font-display text-lg uppercase leading-tight lg:text-2xl">
+                    {setup.prova ? (
+                      <span className="mr-1.5 inline-flex translate-y-[-2px] items-center rounded-full border border-accent/60 px-2 py-px align-middle font-sans text-xs font-semibold normal-case text-accent" data-testid="ride-prova">
+                        Prova
+                      </span>
+                    ) : null}
+                    {setup.route.title}
+                    <GiroBadge session={session} />
+                    {setup.pacco === 'leggero' ? (
+                      <span className="ml-1.5 inline-flex translate-y-[-2px] items-center rounded-full border border-line px-2 py-px align-middle font-sans text-xs font-semibold normal-case" data-testid="ride-leggero">
+                        Leggero
+                      </span>
+                    ) : null}
+                  </p>
                   <p className="break-words text-[13px] leading-tight text-muted lg:text-[15px]" data-testid="ride-where">
                     {where}
                     {session && engine.aero < 0.93 ? <span className="font-semibold text-good"> · In scia −{Math.round((1 - engine.aero) * 100)}% aria</span> : null}
@@ -924,15 +943,7 @@ function RideScreen({
                     ) : null}
                   </button>
                 ) : null}
-                <button
-                  type="button"
-                  aria-label={snap.mode === 'bluetooth' ? snap.deviceName || t('ride.connected') : t('ride.simulator')}
-                  className={`pointer-events-auto grid h-11 w-11 shrink-0 place-items-center rounded-full backdrop-blur-md ${room.available ? '' : 'landscape:ml-auto'} ${snap.mode === 'bluetooth' && snap.status === 'connected' ? 'bg-good/30 text-good' : 'bg-bg/70'}`}
-                  onClick={() => setSensorsOpen(true)}
-                  data-testid="ride-sensors"
-                >
-                  {snap.mode === 'bluetooth' ? <BleIcon /> : <SimIcon />}
-                </button>
+                <RulloChip className={room.available ? undefined : 'landscape:ml-auto'} />
               </div>
               <div className="mt-2 flex items-start justify-between gap-2">
                 <div
@@ -944,14 +955,19 @@ function RideScreen({
                   <ErgAheadHud game={game} />
                   {game.poiToast ? <PoiToast game={game} /> : session ? <Toasts session={session} /> : null}
                   {setup.note ? <p className="rounded-2xl bg-bg/75 px-3 py-1.5 text-xs font-semibold text-warn backdrop-blur-md">{setup.note}</p> : null}
-                  {engine.workoutDone ? <p className="rounded-2xl bg-bg/75 px-3 py-1.5 text-xs font-semibold text-good backdrop-blur-md">Allenamento finito: pedala libero</p> : null}
+                  {engine.workoutDone ? (
+                    <p className="num rounded-2xl bg-bg/75 px-3 py-1.5 text-xs font-semibold text-good backdrop-blur-md" data-testid="ride-allenamento-finito">
+                      {traguardo != null && session && session.giri > 1 ? `Allenamento finito · Traguardo fra ${formatKmText(traguardo)}` : 'Allenamento finito: pedala libero'}
+                    </p>
+                  ) : null}
+                  <UltimoGiro session={session} format={formatDuration} />
                   {snap.mode === 'bluetooth' && snap.status === 'connected' && engine.power <= 0 && engine.phase === 'riding' ? (
                     <p className="rounded-2xl bg-bg/75 px-3 py-1.5 text-xs font-semibold text-warn backdrop-blur-md">{t('ride.waiting')}</p>
                   ) : null}
                   {snap.mode === 'bluetooth' && snap.status === 'disconnected' ? (
                     <p className="pointer-events-auto flex items-center gap-2 rounded-2xl bg-bg/80 pl-3 pr-1 text-xs font-semibold text-warn backdrop-blur-md" role="status">
                       Sensore perso
-                      <button type="button" className="h-11 rounded-full px-3 font-semibold text-ink underline" onClick={() => setSensorsOpen(true)}>
+                      <button type="button" className="h-11 rounded-full px-3 font-semibold text-ink underline" onClick={() => void rullo.ricollega()} data-testid="ride-ricollega">
                         {t('ride.reconnect')}
                       </button>
                     </p>
@@ -1057,7 +1073,7 @@ function RideScreen({
             <div className="flex items-end justify-between gap-3 landscape:shrink-0">
               <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-wide text-accent" data-testid="erg-target">
-                  {t('ride.erg')} {formatNumber(engine.targetPower, 0)} {t('units.watt')}
+                  {engine.aBersaglio ? 'Bersaglio' : t('ride.erg')} {formatNumber(engine.targetPower, 0)} {t('units.watt')}
                 </p>
                 <p className="font-display text-xl leading-none">
                   {step ? stepLabel(step, t) : ''}
@@ -1074,6 +1090,7 @@ function RideScreen({
           </div>
         ) : null}
         <div className="landscape:flex landscape:items-center landscape:gap-5">
+          <Bersaglio engine={engine} onChange={() => bump((n) => n + 1)} className="mb-2 landscape:mb-0 landscape:shrink-0" />
           <dl className={cn('grid grid-cols-3 gap-2 transition-opacity duration-200 landscape:flex landscape:shrink-0 landscape:gap-6', paused && 'opacity-45')} data-testid="ride-numbers">
             <div className="min-w-0">
               <dt className="sr-only">{t('units.watt')} 3 s</dt>
@@ -1097,9 +1114,9 @@ function RideScreen({
             <div className="min-w-0" data-testid="ride-km">
               <dt className="sr-only">{t('metrics.distance')}</dt>
               <dd className="num font-display text-[38px] leading-none lg:text-[48px]" data-big="">
-                {formatKm(onRoute ? kmLeft : engine.odometer)}
+                {formatKm(traguardo != null ? traguardo : onRoute ? kmLeft : engine.odometer)}
               </dd>
-              <dd className="mt-0.5 text-xs leading-tight text-muted">{onRoute ? 'km all’arrivo' : 'km fatti'}</dd>
+              <dd className="mt-0.5 text-xs leading-tight text-muted">{traguardo != null ? 'km al traguardo' : onRoute ? 'km all’arrivo' : 'km fatti'}</dd>
             </div>
           </dl>
           <p className={cn('num mt-1.5 flex flex-wrap gap-x-3.5 gap-y-0.5 text-[15px] leading-tight landscape:mt-0 landscape:grid landscape:min-w-0 landscape:flex-1 landscape:grid-cols-[auto_auto] landscape:justify-start landscape:gap-x-3 landscape:gap-y-0.5 lg:landscape:flex lg:landscape:gap-x-4', paused && 'opacity-45')} data-testid="ride-secondary">
@@ -1133,50 +1150,16 @@ function RideScreen({
               {t('actions.finish')}
             </HoldButton>
             {simOn ? (
-              <div
+              <ProvaBar
                 ref={simRef}
-                className={cn(
-                  'flex items-center gap-2 landscape:absolute landscape:bottom-[calc(100%+0.5rem)] landscape:right-0 landscape:h-12 landscape:rounded-xl landscape:bg-bg/72 landscape:px-2 landscape:backdrop-blur-md',
-                  engine.mode === 'free' ? 'basis-full landscape:w-[19rem]' : 'shrink-0',
-                )}
-                data-testid="sim-controls"
-              >
-                {engine.mode === 'free' ? (
-                  <label className="flex min-w-0 flex-1 items-center gap-2">
-                    <span className="text-xs text-muted">{t('ride.effort')}</span>
-                    <input
-                      aria-label={t('a11y.effort')}
-                      className="h-11 min-w-0 flex-1 accent-[var(--accent)]"
-                      type="range"
-                      min={0}
-                      max={160}
-                      value={effort}
-                      onChange={(event) => {
-                        const value = Number(event.target.value);
-                        setEffort(value);
-                        engine.effort = value / 100;
-                      }}
-                    />
-                    <span className="num w-9 text-right text-xs">{effort}%</span>
-                  </label>
-                ) : null}
-                <div className="grid shrink-0 grid-cols-3 gap-0.5 rounded-full bg-elev2 p-0.5" role="group" aria-label="Velocità del simulatore">
-                  {[1, 4, 10].map((scale) => (
-                    <button
-                      key={scale}
-                      type="button"
-                      aria-pressed={engine.timeScale === scale}
-                      className={`h-11 w-11 rounded-full text-sm font-semibold ${engine.timeScale === scale ? 'bg-accent text-accent-ink' : 'text-muted'}`}
-                      onClick={() => {
-                        engine.timeScale = scale;
-                        bump((n) => n + 1);
-                      }}
-                    >
-                      {scale}×
-                    </button>
-                  ))}
-                </div>
-              </div>
+                engine={engine}
+                effort={effort}
+                onEffort={(value) => {
+                  setEffort(value);
+                  engine.effort = value / 100;
+                }}
+                onScale={() => bump((n) => n + 1)}
+              />
             ) : null}
           </div>
         </div>
@@ -1202,7 +1185,6 @@ function RideScreen({
         </LoadingVeil>
       ) : null}
 
-      {sensorsOpen ? <SensorSheet trainer={trainer} supportReason={support.available ? undefined : support.reason} onClose={() => setSensorsOpen(false)} t={t} /> : null}
       {loopOpen && session ? <LoopSheet session={session} engine={engine} onClose={() => setLoopOpen(false)} /> : null}
       {mapOpen && session ? <MapSheet session={session} engine={engine} far={far} track={track} onClose={closeMap} /> : null}
       {room.sheet && room.available ? <RoomSheet handle={room} routeTitle={`${setup.route.title} ${setup.route.subtitle}`} onClose={() => room.setSheet(false)} /> : null}
@@ -1529,6 +1511,12 @@ function RideSummary({
             {saveState === 'saved' ? <CheckIcon /> : null}
             {saveState === 'saved' ? 'Giro salvato' : saveState === 'saving' ? 'Salvo il giro…' : 'Non salvato: riprova dal diario'}
           </p>
+          {ride.prova ? (
+            <p className="mt-1.5 flex flex-wrap gap-1.5" data-testid="summary-prova">
+              <span className="rounded-full border border-accent/60 px-2 py-px text-xs font-semibold text-accent">Prova</span>
+              <span className="rounded-full border border-line px-2 py-px text-xs font-semibold">Niente classifica né oro</span>
+            </p>
+          ) : null}
           <h2 className="mt-1.5 break-words font-display text-4xl leading-[0.95]">{ride.name}</h2>
           {engine.arrived && !session ? (
             <p className="mt-2 font-semibold text-accent">
@@ -1546,6 +1534,13 @@ function RideSummary({
           <Sum label="Dislivello" value={withUnit(formatNumber(ride.elevationGainM, 0), 'm')} />
           <Sum label={t('metrics.avgPower')} value={ride.avgPower != null ? `${formatNumber(ride.avgPower, 0)} W` : '–'} />
         </dl>
+        {session && session.giriFatti.length > 1 ? (
+          <p className="num -mt-1.5 flex flex-wrap gap-x-4 gap-y-1 px-1 text-sm" data-testid="summary-giri">
+            {session.giriFatti.map((g) => (
+              <span key={g.giro}>{`${session.chiuso ? 'Giro' : 'Tratta'} ${g.giro} · ${formatDuration(g.sec)}`}</span>
+            ))}
+          </p>
+        ) : null}
         <p className="num -mt-1.5 px-1 text-sm text-muted">
           {/* lo stesso formattatore del dettaglio del giro: riepilogo e diario dicono lo stesso numero */}
           NP {ride.np != null ? withUnit(formatNumber(ride.np, 0), 'W') : '–'} · IF {ride.intensityFactor != null ? formatNumber(ride.intensityFactor, 2) : '–'} · TSS {ride.tss != null ? formatTss(ride.tss) : '–'}
@@ -1582,17 +1577,19 @@ function RideSummary({
           </Button>
           {/* azioni secondarie del giro salvato: qui entra anche «Cartolina» (pista 4) */}
           <div className="grid auto-cols-fr grid-flow-col gap-2" data-testid="ride-summary-extra">
-            <Button
-              variant="ghost"
-              data-testid="ride-fit"
-              onClick={() => void import('@/io/fit').then(({ encodeActivityFit }) => downloadBytes(safeFileName(ride.name, 'fit'), encodeActivityFit(ride), 'application/octet-stream'))}
-            >
-              File FIT
-            </Button>
+            {esportabile(ride) ? (
+              <Button
+                variant="ghost"
+                data-testid="ride-fit"
+                onClick={() => void import('@/io/fit').then(({ encodeActivityFit }) => downloadBytes(safeFileName(ride.name, 'fit'), encodeActivityFit(ride), 'application/octet-stream'))}
+              >
+                File FIT
+              </Button>
+            ) : null}
             <Button variant="ghost" data-testid="ride-open-history" onClick={onHistory}>
               Nel diario
             </Button>
-            <CartolinaButton ride={ride} />
+            {esportabile(ride) ? <CartolinaButton ride={ride} /> : null}
           </div>
           <Button variant="soft" data-testid="ride-continue" onClick={onContinue}>
             {t('ride.keepRiding')}
@@ -1690,85 +1687,6 @@ function SampleProfile({ samples }: { samples: RideSample[] }) {
   );
 }
 
-function SensorSheet({
-  trainer,
-  supportReason,
-  onClose,
-  t,
-}: {
-  trainer: BluetoothTrainer;
-  supportReason?: 'ios' | 'missing';
-  onClose: () => void;
-  t: Translate;
-}) {
-  const snap = trainer.snapshot();
-  const [note, setNote] = useState<string | null>(supportReason ?? null);
-  async function connect(all: boolean) {
-    setNote(null);
-    try {
-      await trainer.connectBluetooth(all);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : '';
-      if (message === 'ios' || message === 'missing') setNote(message);
-      else if (trainer.snapshot().status === 'cancelled') setNote('cancelled');
-      else setNote('failed');
-    }
-  }
-  return (
-    <div className="fixed inset-0 z-30 flex items-end justify-center bg-black/50 p-3 md:items-center">
-      <section className="max-h-[85vh] w-full max-w-lg overflow-auto rounded-3xl bg-elev p-5">
-        <div className="flex items-center justify-between">
-          <h2 className="font-display text-3xl">{t('sensors.title')}</h2>
-          <button type="button" className="h-10 rounded-full px-3 text-sm font-semibold" onClick={onClose}>
-            {t('actions.close')}
-          </button>
-        </div>
-        {supportReason === 'ios' || note === 'ios' ? (
-          <p className="mt-3 rounded-2xl bg-warn/15 p-3 text-sm leading-relaxed">
-            {t('sensors.ios')}{' '}
-            <a className="font-semibold underline" href="https://apps.apple.com/app/bluefy-web-ble-browser/id1492822055">
-              {t('sensors.iosLink')}
-            </a>
-          </p>
-        ) : null}
-        {supportReason === 'missing' || note === 'missing' ? <p className="mt-3 text-sm leading-relaxed">{t('sensors.missing')}</p> : null}
-        {note === 'cancelled' ? <p className="mt-3 text-sm">{t('sensors.cancelled')}</p> : null}
-        {note === 'failed' ? <p className="mt-3 text-sm text-danger">{t('sensors.failed')}</p> : null}
-        {snap.status === 'disconnected' ? <p className="mt-3 text-sm text-warn">{t('sensors.disconnected')}</p> : null}
-        <p className="mt-3 text-sm leading-relaxed text-muted">{snap.mode === 'simulator' ? t('sensors.simLead') : t('sensors.bleLead')}</p>
-        {snap.deviceName ? <p className="mt-2 font-semibold">{snap.deviceName}</p> : null}
-        <ul className="mt-3 flex flex-wrap gap-2 text-sm">
-          <Service on={snap.services.ftms} label={t('sensors.ftms')} />
-          <Service on={snap.services.power} label={t('sensors.power')} />
-          <Service on={snap.services.hr} label={t('sensors.hr')} />
-          <Service on={snap.services.csc} label={t('sensors.csc')} />
-        </ul>
-        {snap.control === 'granted' ? <p className="mt-3 text-sm text-good">{t('sensors.controlOn')}</p> : null}
-        {snap.control === 'denied' ? <p className="mt-3 text-sm text-warn">{t('sensors.controlOff')}</p> : null}
-        {snap.control === 'unsupported' ? <p className="mt-3 text-sm text-warn">{t('sensors.controlMissing')}</p> : null}
-        {snap.simulation === 'active' ? <p className="mt-1 text-sm text-good">{t('sensors.simOn')}</p> : null}
-        {snap.simulation === 'unsupported' ? <p className="mt-1 text-sm text-muted">{t('sensors.simOff')}</p> : null}
-        <p className="mt-3 text-xs leading-relaxed text-muted">{t('sensors.weightNote')}</p>
-        <div className="mt-4 flex flex-col gap-2">
-          <Button disabled={!supportReason ? snap.busy : true} onClick={() => void connect(false)}>
-            {t('sensors.search')}
-          </Button>
-          <Button variant="ghost" disabled={Boolean(supportReason) || snap.busy} onClick={() => void connect(true)}>
-            {t('sensors.searchAll')}
-          </Button>
-          <Button variant="soft" onClick={() => void trainer.useSimulator().then(onClose)}>
-            {t('sensors.useSim')}
-          </Button>
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function Service({ on, label }: { on: boolean; label: string }) {
-  return <li className={`rounded-full px-3 py-1 ${on ? 'bg-good/20 text-good' : 'bg-elev2 text-muted'}`}>{label}</li>;
-}
-
 function BackIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
@@ -1796,23 +1714,7 @@ function PeopleIcon() {
   );
 }
 
-function SimIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="6" cy="16.5" r="3.2" stroke="currentColor" strokeWidth="1.8" />
-      <circle cx="18" cy="16.5" r="3.2" stroke="currentColor" strokeWidth="1.8" />
-      <path d="M6 16.5 9.5 9h4.5l4 7.5M9.5 9l2.5 7.5" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
-    </svg>
-  );
-}
 
-function BleIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M7 7l10 10-5 4V3l5 4L7 17" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
 
 function Sum({ label, value }: { label: string; value: string }) {
   return (
