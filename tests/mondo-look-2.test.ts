@@ -135,6 +135,7 @@ function fakeField(dem: (x: number, z: number) => number, drawn: (x: number, z: 
     lastWater: () => false,
     roadAt: () => null,
     inTube: () => false,
+    nearBridge: () => false,
     terrain: { height: dem, cover: () => cover, graph: { id: 'sellaronda' } } as unknown as WorldField['terrain'],
   };
 }
