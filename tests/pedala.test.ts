@@ -130,5 +130,8 @@ describe('la scelta: watt, giri, link', () => {
     expect(intentoDi({ ...base, tipo: 'fissa', watt: 165 }, ['libera', 'allenamento'])?.tipo).toBe('libera');
     expect(intentoDi({ ...base, giri: 3, fantasma: false }, ['libera'])).toMatchObject({ giri: 3, fantasma: false });
     expect(intentoDi(SCELTA_VUOTA, ['libera'])).toBeNull();
+    // su un anello i giri vanno nel link anche quando è uno: il giro in più lo vuole (A12)
+    expect(intentoDi({ ...base, giri: 1 }, ['libera'], true)?.giri).toBe(1);
+    expect(intentoDi({ ...base, giri: 1 }, ['libera'])?.giri).toBeUndefined();
   });
 });

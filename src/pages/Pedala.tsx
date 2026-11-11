@@ -193,7 +193,7 @@ export function PedalaPage() {
     setScelta({ tipo: t, watt: t === 'fissa' ? watt : scelta?.watt ?? null });
     if (t === 'allenamento' && !workout) setAllenamenti(true);
   };
-  const intento = scelta && scelta.dove ? intentoDi({ ...scelta, tipo, watt: tipo === 'fissa' ? watt : scelta.watt, giri: giriSi ? scelta.giri : 1 }, vv.tipi) : null;
+  const intento = scelta && scelta.dove ? intentoDi({ ...scelta, tipo, watt: tipo === 'fissa' ? watt : scelta.watt, giri: giriSi ? scelta.giri : 1 }, vv.tipi, giriSi) : null;
   let via = intento ? `/ride?${intentoInSearch(intento)}` : null;
   // la salita col fantasma: il giro piu' veloce del diario (?route=R&ghost=ID, par. 2.2)
   if (via && intento?.dove.kind === 'salita' && intento.fantasma !== false && vistaD?.record?.ghost && tipo !== 'allenamento') via += `&ghost=${encodeURIComponent(vistaD.record.ghost)}`;
@@ -218,6 +218,12 @@ export function PedalaPage() {
   const apriDove = () => setDove({ open: true, strumento: 'lista', filtro: dove.filtro });
   const scheda = scelta?.dove?.kind === 'percorso' ? () => setDove({ open: true, strumento: 'scheda', filtro: dove.filtro, solo: true, ride: (scelta.dove as { ride: string }).ride }) : scelta?.dove?.kind === 'libero' ? () => setDove({ open: true, strumento: 'libero', filtro: dove.filtro, solo: true }) : scelta?.dove?.kind === 'salita' ? () => navigate(`/salite/${(scelta.dove as { route: string }).route}`) : null;
 
+  const rigaGiri = vv.blocchi.includes('giri') && !!vistaD?.anello;
+  const schedaTasto = scheda ? (
+    <button type="button" className="-mr-2 h-11 rounded-full px-3 font-semibold" onClick={scheda} data-testid="pedala-scheda">
+      Scheda
+    </button>
+  ) : null;
   const pannelloScelta = scelta ? (
     <div className="flex flex-col" data-testid="pedala-scelta">
       {vv.blocchi.includes('sessione') || (programma && vv.blocchi.includes('programma')) ? (
@@ -226,16 +232,17 @@ export function PedalaPage() {
           {programma && vv.blocchi.includes('programma') ? <ProgrammaRiga s={programma} onUsa={() => usaProgramma(programma)} /> : null}
         </div>
       ) : null}
-      {!largo ? <Occhiello>Dove</Occhiello> : null}
+      {!largo ? (
+        <div className="flex min-h-11 items-end justify-between gap-2">
+          <Occhiello>Dove</Occhiello>
+          {scheda && !rigaGiri ? schedaTasto : null}
+        </div>
+      ) : null}
       {!largo ? <DoveCard vista={vistaD} onClick={apriDove} /> : <DoveTesta vista={vistaD} />}
-      {(vv.blocchi.includes('giri') && vistaD?.anello) || scheda ? (
+      {rigaGiri || (largo && scheda) ? (
         <div className="mt-1.5 flex min-h-11 items-center justify-between gap-2">
-          {vv.blocchi.includes('giri') && vistaD?.anello ? <Giri n={scelta.giri} durataSec={tipo === 'allenamento' && giroSec ? giroSec * scelta.giri : null} onChange={(n) => setScelta({ giri: n })} /> : <span />}
-          {scheda ? (
-            <button type="button" className="h-11 rounded-full px-3 font-semibold" onClick={scheda} data-testid="pedala-scheda">
-              Scheda
-            </button>
-          ) : null}
+          {rigaGiri ? <Giri n={scelta.giri} durataSec={tipo === 'allenamento' && giroSec ? giroSec * scelta.giri : null} onChange={(n) => setScelta({ giri: n })} /> : <span />}
+          {scheda ? schedaTasto : null}
         </div>
       ) : null}
       {vv.blocchi.includes('giri') && aperto ? <VaETorna n={Math.min(2, scelta.giri)} andataSec={giroSec} onChange={(n) => setScelta({ giri: n })} /> : null}
@@ -314,7 +321,7 @@ export function PedalaPage() {
 }
 
 function Occhiello({ children }: { children: ReactNode }) {
-  return <p className="eyebrow mb-1.5 mt-1">{children}</p>;
+  return <p className="eyebrow mb-1.5 mt-2">{children}</p>;
 }
 
 /** La pianta in miniatura del Dove scelto. */

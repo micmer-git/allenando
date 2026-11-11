@@ -1,4 +1,5 @@
-// Collaudo della corsa (pista 2): velo di caricamento, numeri grandi, niente tasti gialli, fascia
+// Collaudo della corsa (pista 2, in prova col piano U: senza rullo né prova la corsa torna a
+// Pedala): velo di caricamento, numeri grandi, niente tasti gialli, fascia
 // centrale libera, pausa che si vede, «Termina» da tenere premuto, giro salvato da solo, ripresa
 // dopo la scheda chiusa, incrocio con tre frecce, orizzontale e computer.
 // Lo chiamano ui-shot.mjs (in coda) e game-shot.mjs (holdFinish). Non apre un Chrome suo.
@@ -32,8 +33,8 @@ export const probe = `(() => {
   const c = r.querySelector('[data-testid=ride-stage] canvas');
   const cb = c ? c.getBoundingClientRect() : null;
   const big = [...r.querySelectorAll('[data-big]')].map((e) => Math.round(parseFloat(getComputedStyle(e).fontSize)));
-  // tasti gialli pieni: ammessa solo la velocità scelta del simulatore
-  const yellow = [...r.querySelectorAll('button')].filter((b) => vis(b) && getComputedStyle(b).backgroundColor === 'rgb(255, 200, 20)' && !(b.closest('[aria-label="Velocità del simulatore"]') && b.getAttribute('aria-pressed') === 'true')).map((b) => (b.getAttribute('aria-label') || b.textContent).trim().slice(0, 24));
+  // tasti gialli pieni: nessuno (la velocità scelta della prova è chiara sul binario, non gialla)
+  const yellow = [...r.querySelectorAll('button')].filter((b) => vis(b) && getComputedStyle(b).backgroundColor === 'rgb(255, 200, 20)' && !(b.closest('[aria-label="Velocità del tempo nella prova"]') && b.getAttribute('aria-pressed') === 'true')).map((b) => (b.getAttribute('aria-label') || b.textContent).trim().slice(0, 24));
   // la fascia 35–65% dell'altezza del 3D: libera, tranne l'incrocio
   const band = cb ? [cb.top + cb.height * 0.35, cb.top + cb.height * 0.65] : [0, 0];
   const panels = [
@@ -49,7 +50,7 @@ export const probe = `(() => {
   }
   // la velocità scelta contro quella non scelta: contrasto dei fondi ≥ 3:1
   const lum = (c) => { const m = c.match(/[\\d.]+/g); if (!m) return null; const [R, G, B] = m.slice(0, 3).map((v) => { const s = Number(v) / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; }); return 0.2126 * R + 0.7152 * G + 0.0722 * B; };
-  const group = r.querySelector('[aria-label="Velocità del simulatore"]');
+  const group = r.querySelector('[aria-label="Velocità del tempo nella prova"]');
   const on = group?.querySelector('[aria-pressed=true]');
   let speedContrast = null;
   if (group && on) { const a = lum(getComputedStyle(on).backgroundColor), b = lum(getComputedStyle(group).backgroundColor); if (a != null && b != null) speedContrast = Math.round(((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) * 10) / 10; }
@@ -96,8 +97,14 @@ export async function collaudoCorsa({ b, base, check, out = '' }) {
   void out;
   const p = await b.phone(base);
   // il profilo c'è già nel browser (onboarding fatto da chi chiama): si entra
+  // piano U: senza rullo la corsa parte solo in prova. Si accende in Impostazioni (vale per tutte le
+  // schede di questo browser, anche quella che riprende il giro a metà); ?prova=1 vale per una scheda
+  await p.go('/impostazioni');
+  await p.waitFor(`!!document.querySelector('[data-testid=impostazioni-prova]')`, 15000);
+  if (await p.evaluate(`document.querySelector('[data-testid=impostazioni-prova]')?.getAttribute('aria-checked') === 'false'`)) await p.click('[data-testid=impostazioni-prova]');
+  await sleep(400);
   // 2.2 il velo prima del mondo
-  await p.go('/ride?world=bergamo&ride=citta-alta');
+  await p.go('/ride?world=bergamo&ride=citta-alta&prova=1');
   // l'app si avvia (sotto carico anche qualche secondo), poi la corsa si monta sotto il velo e aspetta il mondo
   await p.waitFor(`!!document.querySelector('[data-testid=ride-loading]') || ${ready}`, 60000);
   const veil0 = await p.evaluate(`({ veil: !!document.querySelector('[data-testid=ride-loading]') && !(${ready}), title: document.querySelector('[data-testid=ride-loading-title]')?.textContent ?? '' })`);
@@ -174,7 +181,7 @@ export async function collaudoCorsa({ b, base, check, out = '' }) {
   check(await p.evaluate(`document.body.innerText.includes(${JSON.stringify(saved)})`), 'salvataggio: il giro è nel diario dopo un ricaricamento', saved);
 
   // 2.1 la scheda si chiude a metà giro: alla riapertura «Riprendi»
-  await p.go('/ride?world=bergamo&ride=citta-alta');
+  await p.go('/ride?world=bergamo&ride=citta-alta&prova=1');
   await p.waitFor(ready, 150000);
   await p.clickText('10×');
   // si chiude la scheda a 60 s di giro (sul tempo del giro: col 3D lento il simulatore va più piano dell'orologio)
@@ -221,7 +228,7 @@ export async function collaudoCorsa({ b, base, check, out = '' }) {
 
   // 2.7 l'incrocio, a Città Alta at=130 e at=1500
   for (const at of [130, 1500]) {
-    await q.go(`/ride?world=bergamo&ride=citta-alta&at=${at}`);
+    await q.go(`/ride?world=bergamo&ride=citta-alta&at=${at}&prova=1`);
     await q.waitFor(ready, 150000);
     await q.clickText('4×');
     const seen = await q.waitFor(`!!document.querySelector('[data-testid=turn-picker]')`, 40000);
@@ -253,7 +260,7 @@ export async function collaudoLargo({ b, base, check }) {
   ]) {
     const p = await b.phone(base, { width: w, height: h });
     if (w >= 1280) await p.s('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 1, mobile: false });
-    await p.go('/ride?world=bergamo&ride=citta-alta&at=1500');
+    await p.go('/ride?world=bergamo&ride=citta-alta&at=1500&prova=1');
     check(await p.waitFor(ready, 150000), `${w}×${h}: mondo pronto`);
     await p.clickText('4×');
     await sleep(5000);

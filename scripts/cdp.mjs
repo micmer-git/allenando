@@ -46,8 +46,10 @@ export async function launch({ out, chromePath = process.env.CHROME ?? 'C:/Progr
     return new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
   };
 
-  async function phone(base, { width = 390, height = 844 } = {}) {
-    const { targetId } = await send('Target.createTarget', { url: 'about:blank' });
+  async function phone(base, { width = 390, height = 844, isolato = false } = {}) {
+    // isolato: un profilo nuovo (storage, IndexedDB, service worker) solo per questa scheda
+    const browserContextId = isolato ? (await send('Target.createBrowserContext', { disposeOnDetach: true })).browserContextId : undefined;
+    const { targetId } = await send('Target.createTarget', { url: 'about:blank', ...(browserContextId ? { browserContextId } : {}) });
     const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true });
     const errors = [];
     handlers.set(sessionId, (msg) => {
@@ -97,7 +99,12 @@ export async function launch({ out, chromePath = process.env.CHROME ?? 'C:/Progr
           .map((el) => (el.getAttribute('aria-label') || el.textContent || el.tagName).trim().slice(0, 30) + ' ' + Math.round(el.getBoundingClientRect().width) + 'x' + Math.round(el.getBoundingClientRect().height));
         return { overflow, small };
       })()`);
-    return { s, evaluate, go, waitFor, shot, click, clickText, audit, errors };
+    /** chiude la scheda (e il suo profilo, se isolato): la memoria torna libera */
+    const chiudi = async () => {
+      await send('Target.closeTarget', { targetId }).catch(() => null);
+      if (browserContextId) await send('Target.disposeBrowserContext', { browserContextId }).catch(() => null);
+    };
+    return { s, evaluate, go, waitFor, shot, click, clickText, audit, errors, chiudi };
   }
 
   // Browser.close prima di tutto: su Windows chrome.kill() ferma solo il lanciatore e i figli

@@ -260,15 +260,19 @@ export function giriProposti(w: Workout, vista: Pick<VistaDove, 'profilo'>, prof
 
 // ---------- il link della corsa ----------
 
-/** L'intento della scelta, coi tipi che il rullo permette; null se manca il Dove. */
-export function intentoDi(s: Scelta, tipi: readonly Tipo[]): Intento | null {
+/**
+ * L'intento della scelta, coi tipi che il rullo permette; null se manca il Dove. `conGiri`: il Dove
+ * si fa a passaggi (un anello, il va e torna) e i giri vanno nel link anche quando è uno solo, così
+ * un allenamento più lungo aggiunge da sé un giro (A12).
+ */
+export function intentoDi(s: Scelta, tipi: readonly Tipo[], conGiri = false): Intento | null {
   if (!s.dove) return null;
   const tipo = tipi.includes(s.tipo) ? s.tipo : tipi[0] ?? 'libera';
   const i: Intento = { dove: s.dove, tipo };
   if (tipo === 'fissa') i.watt = s.watt ?? undefined;
   if (tipo === 'allenamento' && s.workout) i.workout = s.workout;
   if (tipo === 'allenamento' && !s.workout) i.tipo = 'libera';
-  if (s.giri > 1) i.giri = s.giri;
+  if (conGiri || s.giri > 1) i.giri = Math.max(1, s.giri);
   if (!s.fantasma) i.fantasma = false;
   return i;
 }

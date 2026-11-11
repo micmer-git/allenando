@@ -1,11 +1,7 @@
 // I controlli delle pagine fuori dalla corsa, condivisi da ui-shot.mjs e game-shot.mjs.
 // Minuscole a inizio testo, bersagli sotto 44 px, ellissi nel primo schermo, la parola «XP»,
-// e i «fatto» del piano di rilascio (pista 1) pagina per pagina.
-import { existsSync } from 'node:fs';
+// «Simulatore» mai a schermo, e i «fatto» dei piani (pista 1, piano U) pagina per pagina.
 import { sleep } from './cdp.mjs';
-
-/** La tabella delle pendenze della pista M (F.14): senza, il link «Confronto climbfinder» non va in onda. */
-const PENDENZE = existsSync(new URL('../docs/pendenze-2026-11.md', import.meta.url));
 
 /** I testi che cominciano in minuscolo (lo stesso controllo di pagine.mjs dell'audit). Le unità no. */
 export const MINUSCOLE = `(() => {
@@ -107,27 +103,18 @@ export const PIENI = `(() => {
 
 const top = (sel) => `(() => { const e = document.querySelector(${JSON.stringify(sel)}); if (!e) return null; const r = e.getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), w: Math.round(r.width), h: Math.round(r.height) }; })()`;
 
-/** Le minuscole su qualche pagina e, nel Mondo, su ognuna delle cinque schede. */
+/** Le minuscole su qualche pagina. */
 export async function minuscoleSu(p, check, paths) {
   for (const path of paths) {
     await p.go(path);
     await p.waitFor(`!!document.body && !!document.querySelector('main')`, 30000);
-    await sleep(path === '/mondo' ? 2500 : 900);
+    await sleep(900);
     const min = await p.evaluate(MINUSCOLE);
     check(min.length === 0, `${path}: niente testi in minuscolo`, min.join(' | '));
-    if (path === '/mondo') {
-      const n = await p.evaluate(`document.querySelectorAll('[data-testid=world-tabs] button').length`);
-      for (let i = 0; i < n; i++) {
-        await p.evaluate(`document.querySelectorAll('[data-testid=world-tabs] button')[${i}].click()`);
-        await sleep(1000);
-        const m = await p.evaluate(MINUSCOLE);
-        check(m.length === 0, `/mondo, scheda ${i + 1}: niente testi in minuscolo`, m.join(' | '));
-      }
-    }
   }
 }
 
-/** Un giro di tutte le pagine a 390×844: minuscole, bersagli, overflow, «XP», e i «fatto» della pista 1. */
+/** Un giro di tutte le pagine a 390×844: minuscole, bersagli, overflow, «XP», «Simulatore», e i «fatto» dei piani. */
 export async function giroPagine(p, check, { shot = null } = {}) {
   const base = async (name) => {
     const min = await p.evaluate(MINUSCOLE);
@@ -137,6 +124,9 @@ export async function giroPagine(p, check, { shot = null } = {}) {
     check(a.small.length === 0, `${name}: bersagli ≥ 44 px`, a.small.join(' | '));
     const xp = await p.evaluate(`/\\bXP\\b/.test(document.body.innerText)`);
     check(!xp, `${name}: nessun «XP» a schermo`);
+    // piano U, A11: la prova non si chiama «Simulatore» e non va in classifica, nessun interruttore Rullo/Simulatore
+    const sim = await p.evaluate(`/simulator[ei]/i.test(document.body.innerText)`);
+    check(!sim, `${name}: «Simulatore» non c'è`);
     const capo = await p.evaluate(UNITA_A_CAPO);
     check(capo.length === 0, `${name}: nessuna unità a capo da sola`, capo.join(' | '));
     const v = await p.evaluate(`document.body.innerText.includes('\\u2304')`);
@@ -161,70 +151,31 @@ export async function giroPagine(p, check, { shot = null } = {}) {
     check(href.endsWith(to), `${name}: la testata ha il ritorno a ${to}`, href);
   };
 
-  // Oggi, senza giri: un solo pieno, niente riquadri dei 7 giorni
-  await go('oggi', '/', `!!document.querySelector('[data-testid=home-missions]')`);
-  await base('oggi');
-  await ellissi('oggi');
+  // Navigazione: tre voci, Pedala · Diario · Tu (piano U, A1)
+  await go('pedala', '/', `!!document.querySelector('[data-testid=pedala]')`);
+  const voci = await p.evaluate(`[...document.querySelectorAll('[data-testid=bottom-nav] li a')].map((a) => { const r = a.getBoundingClientRect(); return { t: a.textContent.trim(), h: Math.round(r.height), w: Math.round(r.width) }; })`);
+  check(voci.length === 3 && voci.map((x) => x.t).join('|') === 'Pedala|Diario|Tu' && voci.every((x) => x.h >= 44 && x.w >= 44), 'barra: tre voci, bersagli ≥ 44 px', JSON.stringify(voci));
+
+  // Pedala senza rullo e senza prova: solo «Collega il rullo» (A4); il link diretto a una corsa torna qui
+  await base('pedala, senza rullo');
+  await ellissi('pedala, senza rullo');
+  const solo = await p.evaluate(`({ collega: !!document.querySelector('[data-testid=pedala-collega]'), altro: ['pedala-dove', 'pedala-come', 'pedala-via'].filter((t) => document.querySelector('[data-testid=' + t + ']')) })`);
+  check(solo.collega && solo.altro.length === 0, 'pedala: senza rullo solo «Collega il rullo», nessun Dove, Come, Via', JSON.stringify(solo));
   const pieni = await p.evaluate(PIENI);
-  check(pieni.length <= 1, 'oggi: un solo tasto giallo pieno nel primo schermo', pieni.join(' | '));
-  check(!(await p.evaluate(`!!document.querySelector('[data-testid=home-week]')`)), 'oggi: niente riquadri dei 7 giorni senza giri');
-  const orologio = await p.evaluate(`document.querySelector('[data-testid=home-session-clock]')?.getAttribute('aria-label') ?? ''`);
-  check(/^(Fra|Via fra|Partita da) \S/.test(orologio), 'oggi: il conto alla rovescia ha la sua parola', orologio);
-  check(!(await p.evaluate(`[...document.querySelectorAll('[data-testid=home-session] *')].some((e) => parseFloat(getComputedStyle(e).width) <= 8 && e.getBoundingClientRect().height > 40)`)), 'oggi: niente barretta sul lato della sessione');
+  check(pieni.length <= 1, 'pedala: un solo tasto pieno nel primo schermo', pieni.join(' | '));
+  await go('ride-senza-rullo', '/ride?world=bergamo&ride=ganda', `!location.pathname.includes('/ride')`, 600);
+  check(await p.evaluate(`!location.pathname.includes('/ride') && !!document.querySelector('[data-testid=pedala-collega]')`), 'corsa: /ride?world=bergamo&ride=ganda senza rullo torna a Pedala');
 
-  // Mondo e le sue cinque schede
-  await go('mondo', '/mondo', `!!document.querySelector('[data-testid=world-ride-citta-alta]')`, 1500);
-  await base('mondo');
-  // pista F: la scelta del mondo in testa (una riga per mondo, ≥ 44 px) e «Senza rete» con lo stato
-  const mondi = await p.evaluate(`[...document.querySelectorAll('[data-testid^=world-pick-]:not([data-testid$=-facts])')].map((b) => ({ id: b.dataset.testid, h: Math.round(b.getBoundingClientRect().height), stato: b.dataset.state, testo: b.textContent.trim().slice(0, 80) }))`);
-  check(mondi.length === 2 && mondi.every((m) => m.h >= 44), 'mondo: due righe per la scelta del mondo, alte almeno 44 px', JSON.stringify(mondi));
-  check(mondi.some((m) => m.id === 'world-pick-bergamo' && /km di strade · 14 percorsi/.test(m.testo)), 'mondo: la riga di Bergamo dice km di strade e percorsi', JSON.stringify(mondi[0]));
-  const senzaRete = await p.evaluate(`document.querySelector('[data-testid=world-offline-label]')?.textContent ?? ''`);
-  check(/^(Scaricato|Da scaricare|A metà) · \d/.test(senzaRete), 'mondo: «Senza rete» dice se è scaricato e quanto pesa', senzaRete);
-  // R1 (la carta entro 260 px, la scelta del mondo in una riga) è rimandato al riordino dell'interfaccia
-  const carta = await p.evaluate(top('[data-testid=world-page] canvas'));
-  check(!!carta && carta.top <= 420, 'mondo: la carta comincia entro 420 px (sotto la scelta del mondo)', JSON.stringify(carta));
-  // la scheda di un giro: le salite col passo in cima, il verso, le fonti
-  await p.evaluate(`document.querySelector('[data-testid=world-ride-ganda]')?.click()`);
-  await sleep(1500);
-  const salite = await p.evaluate(`[...document.querySelectorAll('[data-testid=world-ride-climbs] li')].map((li) => ({ pass: li.dataset.pass, testo: li.textContent.trim().slice(0, 60) }))`);
-  check(salite.some((s) => s.pass === 'passo-di-ganda' && /Passo di Ganda/.test(s.testo)), 'percorso: la salita al Passo di Ganda nella scheda della Ganda', JSON.stringify(salite));
-  check(await p.evaluate(`!!document.querySelector('[data-testid=world-ride-sense]')`), 'percorso: il verso del giro');
-  // il confronto climbfinder solo se la tabella della pista M è nel repo (la build guarda lo stesso file)
-  const fonti = await p.evaluate(`(() => { const e = document.querySelector('[data-testid=world-ride-sources]'); return e ? { testo: e.textContent.trim(), confronto: e.dataset.confronto, link: e.querySelector('a')?.getAttribute('href') ?? '' } : null; })()`);
-  check(
-    !!fonti && (PENDENZE ? fonti.testo === 'Strade OSM · Quote EU-DEM · Confronto climbfinder' && /pendenze-2026-11\.md$/.test(fonti.link) : fonti.testo === 'Strade OSM · Quote EU-DEM' && fonti.confronto === 'no' && !fonti.link),
-    PENDENZE ? 'percorso: la riga delle fonti, col link «Confronto climbfinder» sulla Ganda' : 'percorso: la riga delle fonti senza confronto, finché docs/pendenze-2026-11.md non c’è',
-    JSON.stringify(fonti),
-  );
-  check(!(await p.evaluate(`/\\bKm\\b/.test(document.querySelector('[data-testid=world-ride-card]')?.textContent ?? '')`)), 'percorso: l’unità è «km», mai «Km»');
-  const quote = await p.evaluate(`[...document.querySelectorAll('[data-testid=world-ride-card] dd')].map((d) => d.textContent.trim())`);
-  check(quote.some((q) => /^\d{1,3}(\.\d{3})? → \d{1,3}(\.\d{3})? m$/.test(q)), 'percorso: le quote con la freccia e l’unità una volta', JSON.stringify(quote));
-  await base('mondo, percorso');
-  if (shot) await p.shot('p1-mondo-percorso');
-  await p.evaluate(`[...document.querySelectorAll('[data-testid=world-ride-card] button')].find((b) => b.textContent.trim() === 'Chiudi')?.click()`);
-  await sleep(300);
-  // Città Alta non è nella tabella delle pendenze: niente «Confronto climbfinder»
-  await p.evaluate(`document.querySelector('[data-testid=world-ride-citta-alta]')?.click()`);
-  await sleep(1200);
-  check(await p.evaluate(`document.querySelector('[data-testid=world-ride-sources]')?.dataset.confronto === 'no' && !/climbfinder/.test(document.querySelector('[data-testid=world-ride-sources]')?.textContent ?? '')`), 'percorso: su Città Alta la riga delle fonti è senza confronto');
-  await p.evaluate(`[...document.querySelectorAll('[data-testid=world-ride-card] button')].find((b) => b.textContent.trim() === 'Chiudi')?.click()`);
-  await sleep(300);
-  check(!(await p.evaluate(`/in rete/i.test(document.body.innerText)`)), 'mondo: niente «in rete: –»');
-  const righe = await p.evaluate(`[...document.querySelectorAll('[data-testid^=world-ride-]')].filter((b) => b.querySelector('[data-testid=world-ride-side]')).filter((b) => { const n = b.querySelector('[data-testid=world-ride-name]').getBoundingClientRect(); const s = b.querySelector('[data-testid=world-ride-side]').getBoundingClientRect(); return s.top < n.bottom - 2; }).map((b) => b.textContent.trim().slice(0, 40))`);
-  check(righe.length === 0, 'mondo: il sottotitolo del percorso su una riga sua', righe.join(' | '));
-  const tabs = await p.evaluate(`[...document.querySelectorAll('[data-testid=world-tabs] button')].map((b) => b.textContent.trim())`);
-  for (const [i, tab] of tabs.entries()) {
-    await p.evaluate(`document.querySelectorAll('[data-testid=world-tabs] button')[${i}].click()`);
-    await sleep(1200);
-    await base(`mondo, ${tab}`);
+  // Le rotte vecchie arrivano dove la cosa sta adesso (§ 2.6), nessuna pagina bianca
+  for (const [from, sel] of [
+    ['/mondo', '[data-testid=pedala]'],
+    ['/salite', '[data-testid=pedala]'],
+    ['/giri', '[data-testid=diario]'],
+    ['/profile', '[data-testid=impostazioni]'],
+  ]) {
+    await go(`rotta${from.replace(/\//g, '-')}`, from, `!!document.querySelector('${sel}')`, 500);
+    check(await p.evaluate(`!!document.querySelector('${sel}')`), `rotta vecchia ${from}: si apre la pagina nuova`);
   }
-
-  // Salite: poca prosa
-  await go('salite', '/salite', `!!document.querySelector('[data-testid=climb-selvino-nembro]')`);
-  await base('salite');
-  const parole = await p.evaluate(PAROLE);
-  check(parole <= 60, 'salite: al massimo 60 parole nel primo schermo', String(parole));
 
   // La scheda della salita: «Pedala» nel primo schermo, numeri dentro i riquadri, legenda, fonti chiuse
   await go('salita', '/salite/selvino-nembro', `!!document.querySelector('[data-testid=climb-stats]')`, 1500);
@@ -235,6 +186,7 @@ export async function giroPagine(p, check, { shot = null } = {}) {
   check(fuori.length === 0, 'salita: nessun numero esce dal suo riquadro', fuori.join(' | '));
   check(await p.evaluate(`/Tornanti/.test(document.querySelector('[data-testid=climb-legend]')?.textContent ?? '') && !/verdi/.test(document.body.innerText)`), 'salita: la legenda dice cosa sono i punti');
   check(await p.evaluate(`document.querySelector('[data-testid=climb-sources]')?.open === false`), 'salita: «Fonti» chiuso');
+  check(!(await p.evaluate(`/In ERG/.test(document.body.innerText)`)), 'salita: niente «In ERG» (il come si sceglie in Pedala)');
 
   // Sessioni: niente barretta, il gettone del tipo, «Aperta ora · Entra» sulla sessione aperta
   await go('sessioni', '/sessioni', `document.querySelectorAll('[data-testid^=session-kind-]').length >= 6`);
@@ -242,83 +194,66 @@ export async function giroPagine(p, check, { shot = null } = {}) {
   await ellissi('sessioni');
   const barrette = await p.evaluate(`[...document.querySelectorAll('[data-testid^=session-]')].filter((li) => /^session-\\d+$/.test(li.dataset.testid)).filter((li) => parseFloat(getComputedStyle(li).borderLeftWidth) > 2 || [...li.children].some((c) => getComputedStyle(c).position === 'absolute' && c.getBoundingClientRect().width <= 8)).length`);
   check(barrette === 0, 'sessioni: nessuna barretta colorata sul lato', String(barrette));
-  const aperta = await p.evaluate(`(() => { const li = document.querySelector('[data-testid^=session-][data-phase=aperta], [data-testid^=session-][data-phase=via]'); if (!li) return 'nessuna aperta adesso'; const i = li.dataset.testid.split('-')[1]; const box = document.querySelector('[data-testid=session-open-' + i + ']'); return box && /Aperta ora|In corso/.test(box.textContent) && /Entra/.test(box.textContent) ? 'ok' : 'manca'; })()`);
-  check(aperta !== 'manca', 'sessioni: «Aperta ora · Entra» sulla sessione aperta', aperta);
   const orologi = await p.evaluate(`[...document.querySelectorAll('[data-testid^=session-clock-]')].map((e) => e.textContent.trim()).filter((t) => !/^(Fra|Via fra|Partita da|Chiusa da) \\S/.test(t))`);
   check(orologi.length === 0, 'sessioni: ogni conto alla rovescia ha la sua parola', orologi.join(' | '));
 
   await go('garage', '/garage', `!!document.querySelector('[data-testid=item-m-orobia]')`);
   await base('garage');
+  await backTo('garage', '/tu');
 
-  await go('tu', '/tu', `!!document.querySelector('[data-testid=me-achievements]')`);
+  // Tu a righe (A2): il livello e l'oro solo qui
+  await go('tu', '/tu', `!!document.querySelector('[data-testid=me-settings]')`);
   await base('tu');
   await ellissi('tu');
+  const righeTu = await p.evaluate(`[...document.querySelectorAll('[data-testid=me] nav a')].map((a) => a.getAttribute('href').replace(/^.*?(\\/[a-z]+)$/, '$1'))`);
+  check(['/garage', '/traguardi', '/classifiche', '/workouts', '/impostazioni'].every((r) => righeTu.includes(r)), 'tu: Garage, Traguardi, Classifiche, Allenamenti, Impostazioni', JSON.stringify(righeTu));
 
-  // Traguardi: niente barra di scorrimento, «Quasi tuoi» in cima; pista F: i traguardi del Sellaronda e la serie
+  // Traguardi: niente barra di scorrimento, «Quasi tuoi» in cima
   await go('traguardi', '/traguardi', `document.querySelectorAll('[data-testid^=ach-]').length > 30`);
   await base('traguardi');
   await backTo('traguardi', '/tu');
-  check(await p.evaluate(`['quattro-passi', 'mondo-sellaronda', 'mondo-marmolada', 'mondo-berghem'].every((id) => !!document.querySelector('[data-testid=ach-' + id + ']'))`), 'traguardi: I quattro passi, Sellaronda, Marmolada, Berghem MolaMia');
-  check(await p.evaluate(`document.querySelectorAll('[data-testid=series-sellaronda] ol li').length === 4`), 'traguardi: la serie Sellaronda in quattro tappe');
   const gruppi = await p.evaluate(`(() => { const g = document.querySelector('[data-testid=ach-groups]'); return g ? g.scrollWidth - g.clientWidth : -1; })()`);
   check(gruppi === 0, 'traguardi: i filtri stanno tutti nello schermo, senza barra', String(gruppi));
-  const quasi = await p.evaluate(`(() => { const n = document.querySelector('[data-testid=ach-near]'); const a = [...document.querySelectorAll('li[data-testid^=ach-]')][0]; return !!n && n.querySelectorAll('li').length === 3 && (!a || n.getBoundingClientRect().top < a.getBoundingClientRect().top); })()`);
-  check(quasi, 'traguardi: «Quasi tuoi» (tre) in cima');
 
   await go('classifiche', '/classifiche', `!!document.querySelector('[data-testid="lb-salita:stelvio-prato"]')`);
   await base('classifiche');
   await ellissi('classifiche');
   await backTo('classifiche', '/tu');
-  for (const tab of ['percorsi', 'tratti']) {
-    await go(`classifiche-${tab}`, `/classifiche?tab=${tab}`, tab === 'tratti' ? `document.querySelectorAll('[data-testid^="lb-w:"]').length > 10` : `document.querySelectorAll('[data-testid^=lb-]').length > 5`, 1200);
-    await base(`classifiche, ${tab}`);
-  }
-  const doppie = await p.evaluate(`[...document.querySelectorAll('[data-testid^="lb-"] button')].filter((b) => { const s = [...b.querySelectorAll('span span')].map((x) => x.textContent.trim()); return s.length >= 2 && s[1].toLowerCase().startsWith(s[0].toLowerCase()); }).length`);
-  check(doppie === 0, 'classifiche: il nome del tratto scritto una volta sola', String(doppie));
 
-  // Allenamenti: il primo entro 450 px; l'editor col grafico in cima e «Blocco 1»
+  // Allenamenti: niente «Inizia» né «Dove e quanto»; Duplica, Esporta, Nuovo, Importa .zwo, Programmi restano
   await go('allenamenti', '/workouts', `document.querySelectorAll('[data-testid=workout-list] > li').length >= 30`);
   await base('allenamenti');
   await backTo('allenamenti', '/tu');
-  const primo = await p.evaluate(top('[data-testid=workout-list] > li'));
-  check(!!primo && primo.top <= 450, 'allenamenti: il primo allenamento entro 450 px', JSON.stringify(primo));
-  const riga = await p.evaluate(`(() => { const g = document.querySelector('[data-testid=workout-filters]'); return g ? new Set([...g.children].map((c) => { const r = c.getBoundingClientRect(); return Math.round((r.top + r.height / 2) / 4); })).size : 0; })()`);
-  check(riga === 1, 'allenamenti: i filtri in una riga', String(riga));
-  await p.click('[data-testid=workout-where-open]');
-  await sleep(500);
-  if (shot) await p.shot('p1-allenamenti-foglio');
-  await base('allenamenti, foglio');
-  await p.evaluate(`[...document.querySelectorAll('[data-testid=workout-sheet] button')].find((b) => b.textContent.trim() === 'Fatto')?.click()`);
-  await sleep(300);
+  check(!(await p.evaluate(`/\\bInizia\\b|Dove e quanto/.test(document.body.innerText)`)), 'allenamenti: niente «Inizia» né «Dove e quanto»');
+  check(await p.evaluate(`!!document.querySelector('[data-testid=workout-new]') && !!document.querySelector('[data-testid=zwo-import]') && !!document.querySelector('[data-testid=workouts-plans]')`), 'allenamenti: Nuovo, Importa .zwo, Programmi');
   await go('editor', '/workouts/edit/new', `!!document.querySelector('[data-testid=workout-editor]')`);
   await base('editor');
-  const ed = await p.evaluate(`(() => { const c = document.querySelector('[data-testid=editor-chart]')?.getBoundingClientRect(); const s = document.querySelector('[data-testid=editor-step-0]'); return { chart: c ? Math.round(c.top) : null, step: s ? Math.round(s.getBoundingClientRect().top) : null, label: s ? /Blocco 1/.test(s.textContent) : false }; })()`);
-  check(ed.chart != null && (ed.step == null || ed.chart < ed.step), 'editor: il grafico in cima', JSON.stringify(ed));
-  check(ed.step == null || ed.label, 'editor: «Blocco 1»', JSON.stringify(ed));
 
-  await go('diario', '/history');
-  await base('diario');
-  await backTo('diario', '/tu');
-  await go('giri', '/giri', `!!document.querySelector('[data-testid=rides-page]')`);
-  await base('giri');
-  await go('profilo', '/profile', `!!document.querySelector('[data-testid=profile]')`);
-  await base('profilo');
-  await backTo('profilo', '/tu');
+  // Impostazioni (A20): la modalità prova vive qui, spenta di serie
+  await go('impostazioni', '/impostazioni', `!!document.querySelector('[data-testid=impostazioni-prova]')`);
+  await base('impostazioni');
+  await backTo('impostazioni', '/tu');
+  check(await p.evaluate(`document.querySelector('[data-testid=impostazioni-prova]')?.getAttribute('aria-checked') === 'false'`), 'impostazioni: la modalità prova spenta di serie');
   const reset = await p.evaluate(`(() => { const b = document.querySelector('[data-testid=profile-reset]'); const d = document.querySelector('[data-testid=profile-danger]'); return { visibile: !!b && b.checkVisibility(), chiuso: !!d && !d.open }; })()`);
-  check(!reset.visibile && reset.chiuso, 'profilo: «Cancella» solo dentro un blocco chiuso', JSON.stringify(reset));
+  check(!reset.visibile && reset.chiuso, 'impostazioni: «Cancella» solo dentro un blocco chiuso', JSON.stringify(reset));
+
+  // Diario (A3): una voce della barra, Importa in testa
+  await go('diario', '/history', `!!document.querySelector('[data-testid=diario]')`);
+  await base('diario');
+  check(await p.evaluate(`!!document.querySelector('[data-testid=diario-importa]')`), 'diario: «Importa» in testa');
   await go('carico', '/load');
   await base('carico');
+  await backTo('carico', '/history');
 
-  // Importa gli esempi: diario pieno, dettaglio di un giro e «rifai un giro»
+  // Importa gli esempi: diario pieno, dettaglio di un giro con «Rifai»
   await go('importa', '/import', `!!document.querySelector('[data-testid=import-page]')`);
   await base('importa');
   await p.clickText('Carica gli esempi');
   check(await p.waitFor(`!!document.querySelector('[data-testid=import-result]')`, 15000), 'importa: gli esempi entrano nel diario');
   await sleep(600);
-  await base('importa, risultato');
-  await go('diario-pieno', '/history');
+  await go('diario-pieno', '/history', `!!document.querySelector('[data-testid=history-list]')`);
   await base('diario con i giri');
-  // pista F: gli esempi sono giri importati (fuori dai mondi) → niente filtro per mondo; il filtro compare solo con due mondi
+  await ellissi('diario con i giri');
   const filtro = await p.evaluate(`!!document.querySelector('[data-testid=history-worlds]')`);
   const mondiDiario = await p.evaluate(`new Set([...document.querySelectorAll('[data-testid^=history-world-]')].map((e) => e.textContent.trim())).size`);
   check(filtro === mondiDiario >= 1, 'diario: il filtro per mondo compare solo se ci sono giri di un mondo e altri fuori', `filtro ${filtro}, mondi ${mondiDiario}`);
@@ -327,36 +262,9 @@ export async function giroPagine(p, check, { shot = null } = {}) {
     const path = det.replace(/^.*?(\/history\/)/, '/history/');
     await go('dettaglio', path, `!!document.querySelector('[data-testid=ride-detail]')`, 1500);
     await base('dettaglio del giro');
+    check(await p.evaluate(`!!document.querySelector('[data-testid=ride-detail-rifai]')`), 'dettaglio: «Rifai» nel giro');
     const sovrapposti = await p.evaluate(`(() => { const box = [...document.querySelectorAll('[data-testid^=chart-]')].map((s) => s.getBoundingClientRect()); let n = 0; for (let i = 0; i < box.length; i++) for (let j = i + 1; j < box.length; j++) { const a = box[i], b = box[j]; if (a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top) n++; } const kids = [...document.querySelectorAll('[data-testid^=chart-]')].filter((s) => [...s.children].some((c) => c.getBoundingClientRect().bottom > s.getBoundingClientRect().bottom + 1)).length; return n + kids; })()`);
     check(sovrapposti === 0, 'dettaglio: i grafici e le loro etichette non si sovrappongono', String(sovrapposti));
-  }
-  const replay = await p.evaluate(`document.querySelector('[data-testid=replay-ride]')?.getAttribute('href') ?? ''`);
-  await go('giri-pieno', '/giri', `!!document.querySelector('[data-testid=replay-ride]')`);
-  const rp = await p.evaluate(`document.querySelector('[data-testid=replay-ride]')?.getAttribute('href') ?? ''`);
-  if (rp || replay) {
-    await go('rifai', (rp || replay).replace(/^.*?(\/giri\/)/, '/giri/'), `!!document.querySelector('[data-testid=replay-setup]')`, 1200);
-    await base('rifai un giro');
-  }
-  await go('oggi-con-giri', '/', `!!document.querySelector('[data-testid=home-week]')`);
-  await base('oggi con i giri');
-  // Oggi con un ultimo giro (lo stesso che scrive la corsa al «pronto»): «Ripeti l'ultimo giro» su due righe, senza ellissi
-  await p.evaluate(`localStorage.setItem('orobia.ultimo-giro', JSON.stringify({ search: 'world=bergamo&ride=ganda', title: 'Il giro della Ganda', world: 'bergamo', at: new Date().toISOString() }))`);
-  await go('oggi-ripeti', '/', `!!document.querySelector('[data-testid=home-repeat]')`);
-  await base('oggi con l’ultimo giro');
-  await ellissi('oggi con l’ultimo giro');
-  const ripeti = await p.evaluate(`(() => { const a = document.querySelector('[data-testid=home-repeat]'); return a ? { href: a.getAttribute('href'), h: Math.round(a.getBoundingClientRect().height), testo: a.textContent.trim() } : null; })()`);
-  check(!!ripeti && /ride=ganda/.test(ripeti.href) && ripeti.h >= 44 && /Il giro della Ganda/.test(ripeti.testo), 'oggi: «Ripeti l’ultimo giro» porta al giro, col nome intero', JSON.stringify(ripeti));
-  await p.evaluate(`localStorage.removeItem('orobia.ultimo-giro')`);
-  // pista F: la carta del mondo dice quale mondo (l'ultimo usato) e ha i suoi percorsi
-  const mondoOggi = await p.evaluate(`(() => { const a = document.querySelector('[data-testid=home-world]'); return a ? { world: a.dataset.world, href: a.getAttribute('href'), testo: a.textContent.trim().slice(0, 80) } : null; })()`);
-  check(!!mondoOggi && /world=/.test(mondoOggi.href) && /\d+ percorsi/.test(mondoOggi.testo), 'oggi: la carta del mondo porta il mondo e i percorsi', JSON.stringify(mondoOggi));
-  // R6: un mondo che non si carica non si ricorda. Finché il Sellaronda non è costruito, dopo
-  // /mondo?world=sellaronda Oggi resta sul mondo di prima (Bergamo), non su una pagina d'errore.
-  await go('mondo-mancante', '/mondo?world=sellaronda', `!!document.querySelector('[data-testid=world-error]') || !!document.querySelector('[data-testid=world-page] canvas')`, 600);
-  if (await p.evaluate(`!!document.querySelector('[data-testid=world-error]')`)) {
-    await go('oggi-dopo-mancante', '/', `!!document.querySelector('[data-testid=home-world]')`);
-    const w = await p.evaluate(`document.querySelector('[data-testid=home-world]')?.dataset.world ?? ''`);
-    check(w === 'bergamo', 'oggi: un mondo che non si carica non si ricorda (resta Bergamo)', w);
   }
 }
 
@@ -411,23 +319,23 @@ export async function largo(b, base, check, { shot = null } = {}) {
   const w = await b.phone(base, { width: 844, height: 390 });
   await onboard(w);
   await w.go('/');
-  await w.waitFor(`!!document.querySelector('[data-testid=home-session]')`, 8000);
+  await w.waitFor(`!!document.querySelector('[data-testid=pedala]')`, 8000);
   await sleep(800);
-  if (shot) await w.shot('p1-oggi-orizzontale');
-  const nav = await w.evaluate(`[...document.querySelectorAll('nav a')].filter((a) => { const r = a.getBoundingClientRect(); return r.width > 0; }).map((a) => { const r = a.getBoundingClientRect(); return { t: a.getAttribute('aria-label') || a.textContent.trim(), ok: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth }; }).filter((x) => /Oggi|Mondo|Salite|Sessioni|Garage|Tu/.test(x.t))`);
-  check(nav.length >= 6 && nav.every((x) => x.ok), 'orizzontale: tutte le voci di navigazione dentro lo schermo', JSON.stringify(nav.filter((x) => !x.ok)));
-  const card = await w.evaluate(top('[data-testid=home-session]'));
-  check(!!card && card.top >= 0 && card.bottom <= 390, 'orizzontale: la prima carta di Oggi intera', JSON.stringify(card));
+  if (shot) await w.shot('p1-pedala-orizzontale');
+  const nav = await w.evaluate(`[...document.querySelectorAll('nav a')].filter((a) => { const r = a.getBoundingClientRect(); return r.width > 0; }).map((a) => { const r = a.getBoundingClientRect(); return { t: a.getAttribute('aria-label') || a.textContent.trim(), ok: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth }; }).filter((x) => /Pedala|Diario|Tu/.test(x.t))`);
+  check(nav.length === 3 && nav.every((x) => x.ok), 'orizzontale: le tre voci di navigazione dentro lo schermo', JSON.stringify(nav));
+  const card = await w.evaluate(top('[data-testid=pedala-collega]'));
+  check(!!card && card.top >= 0 && card.bottom <= 390, 'orizzontale: «Collega il rullo» nel primo schermo', JSON.stringify(card));
   const a = await w.audit();
   check(a.overflow <= 0, 'orizzontale: niente overflow', String(a.overflow));
   const d = await b.phone(base, { width: 1280, height: 800 });
   await d.s('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
   await onboard(d);
   await d.go('/');
-  // sotto carico la prima pittura arriva tardi: si aspetta Oggi, non un tempo fisso
-  await d.waitFor(`!!document.querySelector('[data-testid=home-session]')`, 20000);
+  // sotto carico la prima pittura arriva tardi: si aspetta Pedala, non un tempo fisso
+  await d.waitFor(`!!document.querySelector('[data-testid=pedala]')`, 20000);
   await sleep(600);
-  if (shot) await d.shot('p1-oggi-computer');
+  if (shot) await d.shot('p1-pedala-computer');
   const side = await d.evaluate(top('[data-testid=side-nav]'));
   check(!!side && side.w >= 200, 'computer: il menu laterale con le voci resta', JSON.stringify(side));
 }

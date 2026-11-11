@@ -45,9 +45,15 @@ export function HistoryPage() {
       />
       {rides.length > 0 ? (
         <p className="mt-3 flex flex-wrap items-center gap-1.5" data-testid="diario-settimana">
-          <Gettone>{`7 gg · ${formatKmText(km)}`}</Gettone>
-          <Gettone>{formatHours(sec)}</Gettone>
-          <Gettone>{`TSS ${formatTss(tss)}`}</Gettone>
+          {week.length > 0 ? (
+            <>
+              <Gettone>{`7 gg · ${formatKmText(km)}`}</Gettone>
+              <Gettone>{formatHours(sec)}</Gettone>
+              <Gettone>{`TSS ${formatTss(tss)}`}</Gettone>
+            </>
+          ) : (
+            <Gettone>7 gg · Nessun giro</Gettone>
+          )}
           <Link to="/load" className="inline-flex h-11 items-center rounded-full border border-line px-3 text-xs font-semibold" data-testid="diario-forma">
             {`Forma ${form ? `${form.tsb > 0 ? '+' : ''}${formatNumber(form.tsb, 0)}` : '–'} ›`}
           </Link>

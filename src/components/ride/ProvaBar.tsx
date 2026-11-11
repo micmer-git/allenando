@@ -37,7 +37,7 @@ export const ProvaBar = forwardRef<HTMLDivElement, { engine: RideEngine; effort:
             key={scale}
             type="button"
             aria-pressed={engine.timeScale === scale}
-            className={cn('h-11 w-11 rounded-full text-sm font-semibold', engine.timeScale === scale ? 'bg-[var(--thumb)] text-ink' : 'text-muted')}
+            className={cn('h-11 w-11 rounded-full text-sm font-semibold', engine.timeScale === scale ? 'bg-accent text-accent-ink' : 'text-muted')}
             onClick={() => {
               engine.timeScale = scale;
               onScale();

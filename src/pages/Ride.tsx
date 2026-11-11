@@ -1119,7 +1119,7 @@ function RideScreen({
               <dd className="mt-0.5 text-xs leading-tight text-muted">{traguardo != null ? 'km al traguardo' : onRoute ? 'km all’arrivo' : 'km fatti'}</dd>
             </div>
           </dl>
-          <p className={cn('num mt-1.5 flex flex-wrap gap-x-3.5 gap-y-0.5 text-[15px] leading-tight landscape:mt-0 landscape:grid landscape:min-w-0 landscape:flex-1 landscape:grid-cols-[auto_auto] landscape:justify-start landscape:gap-x-3 landscape:gap-y-0.5 lg:landscape:flex lg:landscape:gap-x-4', paused && 'opacity-45')} data-testid="ride-secondary">
+          <p className={cn('num mt-1.5 flex flex-wrap gap-x-3.5 gap-y-0.5 text-[15px] leading-tight landscape:mt-0 landscape:grid landscape:min-w-0 landscape:flex-1 landscape:grid-cols-[auto_auto] landscape:justify-start landscape:gap-x-3 landscape:gap-y-0.5 lg:landscape:flex lg:landscape:gap-x-4', paused && 'opacity-45', engine.tipo === 'fissa' && 'landscape:hidden lg:landscape:flex')} data-testid="ride-secondary">
             <span>
               <span className="font-semibold">{paused ? '–' : formatNumber(msToKmh(engine.speed), 1)}</span> <span className="text-xs text-muted">{t('units.kmh')}</span>
             </span>
@@ -1567,9 +1567,10 @@ function RideSummary({
             {game.sessionRank ? ` · ${game.sessionRank}` : ''}
           </p>
         ) : null}
-        {xp ? <LevelUp xp={xp.level.xp} gained={xp.total} /> : null}
-        {rewards ? <RewardsSummary outcome={rewards.outcome} results={rewards.results} /> : null}
-        {xp ? <XpSummary lines={xp.lines} total={xp.total} level={xp.level} rank={xp.rank} rankNote={xp.rankNote} /> : null}
+        {/* la prova non dà oro, punti né livello (A11): niente riquadri a zero */}
+        {xp && !ride.prova ? <LevelUp xp={xp.level.xp} gained={xp.total} /> : null}
+        {rewards && !ride.prova ? <RewardsSummary outcome={rewards.outcome} results={rewards.results} /> : null}
+        {xp && !ride.prova ? <XpSummary lines={xp.lines} total={xp.total} level={xp.level} rank={xp.rank} rankNote={xp.rankNote} /> : null}
 
         <div className="mt-1 flex flex-col gap-2">
           <Button data-testid="ride-done" className="h-14 text-lg" onClick={onDone}>

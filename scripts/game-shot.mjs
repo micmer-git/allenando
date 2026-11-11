@@ -45,14 +45,22 @@ try {
   }
   check(await p.waitFor(`!location.pathname.includes('/start')`, 6000), 'onboarding: si entra');
 
+  // piano U: senza rullo si pedala solo in prova; la si accende in Impostazioni (vale per tutte le schede)
+  await p.go('/impostazioni');
+  await p.waitFor(`!!document.querySelector('[data-testid=impostazioni-prova]')`, 8000);
+  if (await p.evaluate(`document.querySelector('[data-testid=impostazioni-prova]')?.getAttribute('aria-checked') === 'false'`)) await p.click('[data-testid=impostazioni-prova]');
+  await sleep(300);
+  // Pedala: le missioni sono una riga sotto «Via», la lista in un foglio
   await p.go('/');
-  check(await p.waitFor(`!!document.querySelector('[data-testid=home-missions]')`, 8000), 'oggi: missioni del giorno');
-  check(await p.evaluate(`document.querySelectorAll('[data-testid=home-missions] li').length === 3`), 'oggi: tre missioni');
-  check(await p.evaluate(`!!document.querySelector('[data-testid=home-session]')`), 'oggi: prossima sessione');
+  check(await p.waitFor(`!!document.querySelector('[data-testid=pedala-missioni]')`, 8000), 'pedala: la riga delle missioni');
+  await p.click('[data-testid=pedala-missioni]');
+  check(await p.waitFor(`document.querySelectorAll('[data-testid=home-missions] li').length >= 3`, 5000), 'pedala: tre missioni nel foglio');
   await sleep(500);
-  await p.shot('g02-oggi');
-  await p.shot('g02-oggi-tutta', true);
-  await auditCheck(p, 'oggi');
+  await p.shot('g02-pedala-missioni');
+  await p.click('[data-testid=foglio-chiudi]');
+  await sleep(300);
+  await p.shot('g02-pedala');
+  await auditCheck(p, 'pedala');
 
   await p.go('/garage');
   check(await p.waitFor(`!!document.querySelector('[data-testid=item-m-orobia]')`, 8000), 'garage: il guardaroba');
@@ -135,12 +143,12 @@ try {
       await p.s('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     };
 
-    // 1. carta → percorso
-    await p.go('/mondo');
-    check(await p.waitFor(`!!document.querySelector('[data-testid=world-page] canvas')`, 60000), 'carta: la carta dei percorsi');
+    // 1. carta → percorso (piano U: la carta sta in Dove)
+    await p.go('/?dove=1');
+    check(await p.waitFor(`!!document.querySelector('[data-testid=dove-carta] canvas')`, 60000), 'carta: la carta dei percorsi in Dove');
     await sleep(2500);
     const pt = await p.evaluate(`(() => {
-      const c = document.querySelector('[data-testid=world-page] canvas');
+      const c = document.querySelector('[data-testid=dove-carta] canvas');
       const g = c.getContext('2d');
       const W = c.width, H = c.height;
       const px = g.getImageData(0, 0, W, H).data;
@@ -156,14 +164,12 @@ try {
     check(!!pt, 'carta: trovata una linea di percorso da toccare');
     if (pt) {
       await tap(pt.x, pt.y);
-      check(await p.waitFor(`!!document.querySelector('[data-testid=world-ride-card]')`, 8000), 'carta: il tocco sulla linea apre la scheda del percorso');
-      check(await p.evaluate(`/Pedala/.test(document.querySelector('[data-testid=world-ride-start]')?.textContent ?? '')`), 'carta: la scheda ha «Pedala»');
-      check(await p.evaluate(`!!document.querySelector('[data-testid^=world-ride-].border-accent')`), 'carta: il percorso scelto è evidenziato anche nella lista');
+      check(await p.waitFor(`!!document.querySelector('[data-testid^=dove-riga-][aria-current=true]')`, 8000), 'carta: il tocco sulla linea evidenzia il percorso nella lista');
       await sleep(1800);
       await p.evaluate('scrollTo(0, 0)');
       await sleep(400);
       await p.shot('g12-carta-percorso');
-      await auditCheck(p, 'mondo, percorso scelto');
+      await auditCheck(p, 'dove, percorso evidenziato');
     }
 
     // 2. allenamenti: filtri, dove pedalare, il link
@@ -180,23 +186,21 @@ try {
     check(await p.evaluate(`document.querySelectorAll('[data-testid=workout-list] > li').length`) < soglia.length, 'allenamenti: il filtro per durata');
     await p.shot('g13-allenamenti-filtri');
     await p.click('[data-testid=workout-type-tutti]');
-    await p.clickText('Tutte');
-    await p.clickText('Percorso');
-    check(await p.waitFor(`document.querySelectorAll('[data-testid=workout-where-ride] option').length >= 13`, 60000), 'allenamenti: i percorsi del mondo da loadWorld');
-    await p.evaluate(`(() => { const s = document.querySelector('[data-testid=workout-where-ride]'); const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set; set.call(s, 'citta-alta'); s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
-    await sleep(300);
-    const href = await p.evaluate(`document.querySelector('[data-testid=workout-risveglio]')?.getAttribute('href') ?? ''`);
-    check(/workout=risveglio/.test(href) && /world=bergamo/.test(href) && /ride=citta-alta/.test(href), 'allenamenti: il link mette insieme allenamento e percorso', href);
-    await p.shot('g13-allenamenti-dove');
-    await auditCheck(p, 'allenamenti, dove');
-    await p.clickText('Libero');
+    await p.clickText('Ogni durata');
+    // piano U: l'allenamento e il posto si scelgono in Pedala (Dove, Come, Via); il link li mette insieme
+    await spa('/?dove=percorso&world=bergamo&ride=citta-alta');
+    await p.waitFor(`/Città Alta/.test(document.querySelector('[data-testid=pedala-dove-titolo]')?.textContent ?? '')`, 60000);
+    await p.click('[data-testid=pedala-come-allenamento]');
+    await p.waitFor(`!!document.querySelector('[data-testid=allenamento-riga-risveglio]')`, 8000);
+    await p.click('[data-testid=allenamento-riga-risveglio]');
     await sleep(500);
-    check(/edge=\d+/.test(await p.evaluate(`document.querySelector('[data-testid=workout-risveglio]')?.getAttribute('href') ?? ''`)), 'allenamenti: il giro libero da un paese');
-    await p.clickText('Percorso');
-    await sleep(300);
+    const href = await p.evaluate(`document.querySelector('[data-testid=pedala-via]')?.getAttribute('href') ?? ''`);
+    check(/workout=risveglio/.test(href) && /world=bergamo/.test(href) && /ride=citta-alta/.test(href), 'pedala: il link mette insieme allenamento e percorso', href);
+    await p.shot('g13-pedala-allenamento');
+    await auditCheck(p, 'pedala, allenamento');
 
     // 3. allenamento nel mondo: l'arco dell'ERG davanti, col bersaglio
-    await p.click('[data-testid=workout-risveglio]');
+    await p.click('[data-testid=pedala-via]');
     check(await ready(), 'erg nel mondo: pronto');
     check(await p.waitFor(`!!document.querySelector('[data-testid=erg-target]')`, 10000), 'erg nel mondo: il bersaglio ERG');
     check(await p.waitFor(`(document.querySelector('[data-testid=ride-arches]')?.dataset.list ?? '').includes('erg:start')`, 30000), 'erg nel mondo: l’arco d’inizio intervallo');
@@ -307,7 +311,7 @@ try {
     // ---------- le novità (pista 4): fantasma, cartolina, programmi, .zwo ----------
     const p = await b.phone(base);
     await p.go('/');
-    await p.waitFor(`!!document.querySelector('[data-testid=home-missions]')`, 15000);
+    await p.waitFor(`!!document.querySelector('[data-testid=pedala-missioni]')`, 15000);
     const basePath = new URL(base).pathname.replace(/\/$/, '');
     const nav = async (path) => {
       await p.evaluate(`(() => { history.pushState({}, '', ${JSON.stringify(basePath + '/')}); dispatchEvent(new PopStateEvent('popstate')); })()`);
