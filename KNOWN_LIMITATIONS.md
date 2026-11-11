@@ -3,7 +3,7 @@
 ## Il gioco
 
 - Oro, guardaroba, traguardi e record stanno sul dispositivo: cancellare i dati del sito li perde, e non passano da un telefono all’altro.
-- Le classifiche non sono un’autenticazione: il server scarta i tempi impossibili ma non può sapere se un tempo è stato fatto davvero. Il rullo e il simulatore stanno in classifiche separate.
+- Le classifiche non sono un’autenticazione: il server scarta i tempi impossibili ma non può sapere se un tempo è stato fatto davvero. I giri di prova non vanno in classifica; i tempi «sim» di prima restano sul server e non si mostrano più.
 - I tratti dei percorsi si ricavano dal profilo con una regola: un GPM, una volata, una crono. Se il mondo viene ricostruito con dati OSM diversi, un tratto può spostarsi di qualche metro e cambiare record.
 - Le volate del cassonetto si ricavano dove la strada entra in piano in un paese: citta-alta, maresana, selvino, colle-gallo e zambla-nossa non ne hanno.
 - Gli archi in ERG trasformano il tempo in distanza con la velocità del momento: se si cambia ritmo all’ultimo, l’arco e il cambio di passo possono distare qualche secondo. Sulle salite verificate il giro finisce in cima anche se l’allenamento no.
@@ -24,12 +24,30 @@
 - Il manifesto (`manifest.json`) è un file in più da rigenerare dopo ogni `world:build` (`node scripts/world-manifest.mjs`): se manca, la riga del mondo non dice i km né il peso e lo scarico non si offre.
 - Il «mondo» di un giro salvato prima del 07/11/2026 si deduce dal GPS (riquadri in `WORLD_CATALOG`): un giro importato da fuori che cade dentro il riquadro di Bergamo finisce nel filtro «Bergamo».
 - La neve del 3D segue il calendario (`snowLine` in `src/open/look.ts`). `snowLine` in `src/open/weather.ts` calcola la quota dal meteo del giorno ma non sposta ancora il terreno.
-- Nell'onboarding la carta di Bergamo ha una schermata vera del 3D (`public/mondi/bergamo.jpg`, 24 kB); quella del Sellaronda è ancora una sagoma disegnata (`WorldArt`): la schermata vera del Sellaronda arriva col riordino dell'interfaccia.
-- La riga delle fonti sotto un percorso dice «Confronto climbfinder» (ed è il link) solo per i percorsi la cui salita sta nella tabella di `docs/pendenze-2026-11.md` con una scheda climbfinder (pista M.5, elenco `CONFRONTATE` in `src/pages/World.tsx`: niente Città Alta, niente Maresana), e solo se quel file c’è al momento della build (`__PENDENZE_PRONTE__` in `vite.config.ts`). Su questo ramo il file non c’è: la riga dice «Strade OSM · Quote EU-DEM» ovunque, e il link va in onda col merge di M.
-- **Rimandato al riordino dell’interfaccia** (navigazione, avvio della corsa, pagina Mondo, Oggi, onboarding), che arriva subito dopo questo rilascio: in Mondo la scelta del mondo resta di due righe più «Senza rete», e la carta comincia a 406 px dall’alto invece che entro 260 (R1 del PM, 07/11/2026; il controllo di `scripts/pagine-check.mjs` resta a 420).
+- Nell'onboarding la carta di Bergamo ha una schermata vera del 3D (`public/mondi/bergamo.jpg`, 24 kB); quella del Sellaronda è ancora una sagoma disegnata (`WorldArt`): il riordino dell'interfaccia (piano U) non l'ha cambiata.
+- La riga delle fonti sotto un percorso dice «Confronto climbfinder» (ed è il link) solo per i percorsi la cui salita sta nella tabella di `docs/pendenze-2026-11.md` con una scheda climbfinder (pista M.5, elenco `CONFRONTATE` in `src/pages/World.tsx`: niente Città Alta, niente Maresana), e solo se quel file c’è al momento della build (`__PENDENZE_PRONTE__` in `vite.config.ts`).
 - Il nome del percorso nel FIT sta nel messaggio `WORKOUT` (`wkt_name`): Garmin Connect lo mostra, Strava lo ignora e prende il titolo dall'orario.
 
 Passa i test (geometria, terreno sotto la strada, replay, Intervals con API simulata, parser) e la build di produzione. Il mondo 3D è stato visto in Chrome headless (WebGL software) su viewport 390×844. **Non è certificato su un rullo fisico.**
+
+## Pedala · Diario · Tu (piano U, 11/11/2026)
+
+- Un rullo FTMS vero non è ancora stato collaudato: ERG fisso (− +), allenamento a bersaglio e passaggi SIM ↔ ERG sono provati solo col rullo finto e nelle prove (resta il punto 3 del «Collaudo da fare»).
+- «Ricollega da solo» usa `bluetooth.getDevices()`, che non c'è su tutti i Chrome e non è stato provato su un telefono vero; dove manca resta «Ricollega» in un tocco. Dopo un ricaricamento un giro a metà ripreso chiede prima il rullo (o la prova accesa in Impostazioni: `?prova=1` vale solo per la scheda).
+- «Annulla» mentre il selettore del browser è aperto non lo chiude (è del browser): rilascia il rullo quando il selettore torna.
+- In corsa la prova non si spegne e il rullo non si scollega dal chip (si fa da Pedala e da Impostazioni).
+- Il mondo leggero non ha case né terreno a 25 m: il terreno lontano (passo 250 m a Bergamo, 120 m nelle Dolomiti) vale anche vicino, il suolo è tutto prato (niente città né bosco dal DEM), gli alberi sono pochi. La strada spiana il terreno nel suo corridoio come nel mondo intero.
+- Il mondo leggero scende dalla pagina nella cache del service worker dopo il primo avvio, solo per il mondo scelto e mai con «Risparmio dati»: non è nel precache dell'installazione.
+- Senza rete il meteo è sereno, salvo quello letto online negli ultimi 15 minuti (cache della scheda).
+- Un giro a più passaggi ripreso dopo un crash non ha i tempi dei passaggi di prima: non va in classifica.
+- I tempi dei tratti (volate, GPM) fatti offline non vanno in coda: solo il tempo del percorso.
+- Con un allenamento i tratti cronometrati non si accendono (né archi, né tempi, né record): il ritmo lo decide l'ERG. Prima dell'11/11/2026 un tratto fatto in allenamento poteva diventare un record.
+- «Rifai» rifà il giro intero: la scelta del tratto (tempo, km, giro del file) della vecchia `/giri/:id` non c'è più in Pedala; `ReplaySetup.tsx` resta solo per `decodeSection`.
+- «Crea un anello» per un allenamento cerca la lunghezza con una velocità in piano a quei watt (`kmPerMinuti`), non con `stimaSecondi`; i giri proposti dopo sì.
+- Il foglio Dove carica il grafo del mondo quando si apre (Pedala no: il Dove scelto si ricorda con nome, km, miniatura e profilo).
+- La lista Sessioni si apre solo dal nome della sessione aperta in Pedala (e dalla rotta `/sessioni`).
+- I filtri del foglio Allenamento scorrono in orizzontale (otto tipi).
+- Sul percorso scelto la scelta all'incrocio è una riga di frecce senza i nomi delle strade che non sono il percorso (il nome è nell'etichetta per chi legge lo schermo); i nomi grandi restano nel giro libero e fuori percorso.
 
 ## Il mondo Sellaronda (7 novembre 2026)
 
@@ -118,7 +136,7 @@ Passa i test (geometria, terreno sotto la strada, replay, Intervals con API simu
 
 ## Collaudo da fare
 
-1. Aprire una salita, pedalare col simulatore a 10× fino in cima: arrivo, riepilogo, salvataggio, poi «Contro il fantasma».
+1. Aprire una salita, pedalare in Modalità prova a 10× fino in cima: arrivo, riepilogo, salvataggio, poi «Contro il fantasma».
 2. Import Intervals.icu con una chiave vera, un’attività con potenza e GPS: power replay e grade replay.
 3. Rullo FTMS: ERG nel power replay, simulazione nel grade replay, nessun comando misto.
 4. Pedala insieme con due telefoni veri su reti diverse: invito via chat, ingresso, distacchi, una caduta di rete e il rientro.

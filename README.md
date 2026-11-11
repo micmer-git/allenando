@@ -2,6 +2,20 @@
 
 Le strade vere di Bergamo e del Sellaronda, sul rullo, nel browser. Un mondo aperto (Bergamo, Val Brembana, Val Seriana) con volate, GPM, cronometro e sessioni di gruppo; quattro salite verificate (Selvino, Mortirolo, Stelvio da Prato e da Bormio); i tuoi giri veri, rifatti sul rullo.
 
+## Pedala · Diario · Tu (piano U, 11/11/2026)
+
+La barra ha tre voci. **Pedala** è la casa (`/`): «Collega il rullo», poi **Dove · Come · Via**; la scelta si ricorda (kv `pedala`) e ripetere l'ultimo giro è un tocco. **Diario**: i giri, la settimana, la forma, «Importa». **Tu**: livello, punti, oro, Garage, Traguardi, Classifiche, Allenamenti e Programmi, Impostazioni (`/impostazioni`: Tu, Rullo e sensori, Modalità prova, Mondi senza rete, Grafica, Aspetto, Meteo e luce, Dati). Le rotte di prima (`/mondo`, `/salite`, `/giri`, `/giri/:id`, `/profile`) portano alla pagina nuova (`redirectFor` in `src/App.tsx`).
+
+- **Il rullo**: uno per l'app, collegato da Pedala; resta fra una corsa e l'altra e si ricollega in un tocco (da solo dove c'è `bluetooth.getDevices()`). Senza un sensore di potenza (e senza la Modalità prova) Pedala ha un tasto solo e la corsa non parte: un link a `/ride` torna a Pedala.
+- **Dove**: un foglio (sul computer una colonna) con la carta, Giro libero · Crea un anello · A → B e i filtri Tutti · Anelli · Salite · Tuoi giri; un tocco su una riga sceglie e chiude.
+- **Come si pedala**: Libera (la pendenza al rullo), Potenza fissa (ERG costante, − + di 5 W, la prima volta dal 75 % dell'FTP), Allenamento (ERG a blocchi, o a bersaglio col solo misuratore di potenza), Watt di allora su un tuo giro. I tipi sono quelli che il sensore permette (`tipiAmmessi` in `src/sim/rullo.ts`).
+- **Giri**: su un anello i giri si ripetono, su un percorso aperto con un allenamento si va e si torna; i giri si propongono dalla stima del giro (`stimaSecondi`, la fisica del motore sul profilo) e, se l'allenamento non è finito al traguardo, arriva un giro in più da solo (fino a 20). In corsa «Giro 1 di 2» e i km al traguardo.
+- **Modalità prova**: il simulatore, spento di serie, si accende solo in Impostazioni (`?prova=1` vale per la scheda, per i collaudi). I giri di prova vanno nel Diario col gettone «Prova», mai in classifica, oro, punti, record, né si esportano.
+- **Classifica e record**: Libera e Potenza fissa sì; Allenamento no (né il tempo del percorso né i tratti cronometrati, che con un allenamento non si accendono); Prova mai.
+- **In corsa** l'HUD dice watt, tempo, km, il blocco dell'allenamento e il giro; sul percorso scelto la scelta all'incrocio è una riga sola con le frecce (le carte grandi restano nel giro libero e fuori percorso) e la cartina è piccola; il meteo compare solo quando il vento si sente.
+- **Senza rete**: «Offline». L'app si apre dal service worker; il **mondo leggero** (strade, terreno lontano, nomi, monumenti: 6,8 MB in cache, 2,4 MB da scaricare per Bergamo) scende da solo dopo il primo avvio e basta per pedalare ogni percorso; il mondo intero si scarica in Impostazioni › Mondi senza rete. I tempi fatti offline vanno in classifica quando torna la rete (kv `coda`).
+- **Collaudo**: `node scripts/flusso-shot.mjs <base> <out> [pagine|corsa|tocchi]` (schermate del wireframe in tre misure, i controlli del piano, i tocchi contati); `npm run build && node scripts/offline-check.mjs --port 4187` (senza rete). Il rullo finto dei collaudi si accende solo da `localStorage['orobia.collaudo']` (`rullo`, `potenza`, `cardio`), mai da un link.
+
 Sito: [https://micmer-git.github.io/allenando/](https://micmer-git.github.io/allenando/)
 
 **Il nome.** Fino al 3 novembre 2026 si chiamava ALLENANDO. OROBIA: «oro» come il giallo del marchio, le Orobie come le montagne di Bergamo. L’indirizzo `/allenando/`, il repo e il database locale (`allenando`) restano quelli: cambiarli farebbe perdere i giri salvati e le app già installate. Il marchio sta in `src/brand.ts` (nome, colori, geometria del simbolo) e in `public/favicon.svg`.
@@ -17,25 +31,25 @@ Tutto sul dispositivo (IndexedDB, chiave `career`), come i giri; in rete vanno s
 - **Traguardi del Sellaronda**: «I quattro passi» (Sella, Pordoi, Gardena, Campolongo nello stesso giro), «Sellaronda» (il giro intero, in un verso o nell'altro), «Marmolada» (il Fedaia da Canazei), «Berghem MolaMia» (il corto della granfondo). Gli id dei percorsi e dei passi stanno in `src/game/passes.ts`.
 - **Tratti cronometrati** (`src/game/segments.ts`): nei percorsi del mondo si ricavano dal profilo — il GPM sulla salita con più dislivello, una volata da 300 m piatti prima dell’arrivo, una crono regolare da 3–8 km — e si ancorano agli archi del grafo: valgono anche nel giro libero, per chiunque ci passi nel verso giusto. Dal 7 novembre 2026 **ogni salita che finisce su un passo ha il suo GPM** (`derivePassGpm`: sul Sellaronda quattro, non due), con gli id che continuano la numerazione (`gpm3`…) così i record di prima non cambiano. Sulle salite verificate il GPM è la salita intera, più gli ultimi 3 km. Il tempo parte sotto l’arco e si ferma sotto l’arco d’arrivo, interpolato fra due fotogrammi; chi svolta fuori dal tratto lo annulla.
 - **Sessioni** (`src/game/sessions.ts`): ogni mezz’ora, a :00 e :30, una sessione (gruppo, crono, volate, salita) su un percorso del mondo. Il calendario dipende solo dall’orologio, quindi è lo stesso su tutti i telefoni senza un server. Si entra da 15 minuti prima a 5 minuti dopo il via; in griglia si aspetta il via, tutti insieme. Nelle uscite di gruppo pedala un gruppo virtuale a W/kg dichiarati, con la fisica vera, e la sua scia abbassa il CdA fino al 35%.
-- **Classifiche**: salite, percorsi, tratti, sessioni e punti, col tempo del rullo separato da quello del simulatore. Il server rifiuta i tempi sotto quello credibile di un professionista (`boardLimit` in `src/multiplayer/world-protocol.ts`).
+- **Classifiche** (Tu › Classifiche): salite, percorsi, tratti, sessioni e punti; i giri di prova non ci vanno. Il server rifiuta i tempi sotto quello credibile di un professionista (`boardLimit` in `src/multiplayer/world-protocol.ts`).
 - **Volate del cassonetto**: volate da 150–300 m in piano all’ingresso dei paesi, al massimo due per percorso, col traguardo su tre bidoni della differenziata. Si ricavano dai dati (`deriveCassonetti`), sono ancorate al grafo come gli altri tratti e hanno la loro classifica (`w:<percorso>:cassonetto1|2`).
 - **Archi dei km**: sulle salite un portale a ogni km, col numero e la pendenza del km che viene; fuori dalle salite uno ogni 5 km; «Ultimo km» rosso prima dell’arrivo (`kmArchSpecs` in `src/game/arches.ts`).
-- **Allenamenti** (`src/domain/workouts.ts`): 27 nuovi da 30 minuti a 2 ore (fondo, tempo, sweet spot, soglia, over-under, VO2max, sprint, cadenza, rifinitura, recupero), da filtrare per durata e tipo e da pedalare dove si vuole: una salita verificata, un percorso del mondo, il giro libero da un paese o un anello lungo quanto l’allenamento. Se il percorso finisce prima, si prosegue libero. In ERG un arco sulla strada segna l’inizio e la fine di ogni intervallo di lavoro (`src/game/ergArches.ts`): la distanza è la velocità per il tempo che manca.
-- **Carta**: nella scheda Percorsi del Mondo si tocca una linea e si apre quel percorso.
-- **Il tuo fantasma** (`src/game/ghosts.ts`): il giro migliore su ognuno dei 14 percorsi, su ogni tratto e sulle salite verificate si salva da solo (secondi al metro, in IndexedDB `kv` → `ghosts`). Al giro dopo pedala accanto a te un ciclista trasparente, e una pillola dice «Dietro al fantasma · 3 s» o «Davanti al fantasma · 12 s».
+- **Allenamenti** (`src/domain/workouts.ts`): 27 nuovi da 30 minuti a 2 ore (fondo, tempo, sweet spot, soglia, over-under, VO2max, sprint, cadenza, rifinitura, recupero), da filtrare per durata e tipo; si scelgono in Pedala › Come › Allenamento e si pedalano dove si vuole: una salita, un percorso del mondo (coi giri, o andata e ritorno), il giro libero o un anello lungo quanto l’allenamento. In ERG un arco sulla strada segna l’inizio e la fine di ogni intervallo di lavoro (`src/game/ergArches.ts`): la distanza è la velocità per il tempo che manca.
+- **Carta**: in Dove si tocca una linea e la riga di quel percorso si accende.
+- **Il tuo fantasma** (`src/game/ghosts.ts`): il giro migliore su ognuno dei percorsi, su ogni tratto e sulle salite verificate si salva da solo (secondi al metro, in IndexedDB `kv` → `ghosts`). Al giro dopo pedala accanto a te un ciclista trasparente, e una pillola dice «Dietro al fantasma · 3 s» o «Davanti al fantasma · 12 s».
 - **Cartolina** (`src/io/share-image.ts`): un'immagine 1080×1350 del giro, con la traccia d'oro sulla carta del mondo, i monumenti passati, il profilo e i numeri; la riga sopra il titolo dice il mondo, una riga dice il punto più alto toccato («Passo di Ganda · 1.053 m») e lo sfondo cambia col mondo (notte calda a Bergamo, notte fredda al Sella). Dal riepilogo e dal diario; si condivide dal telefono o si scarica.
 - **Diario e file**: ogni giro nel mondo ricorda il suo mondo (`ride.world`; i giri di prima si riconoscono dal GPS); il diario si filtra per mondo quando ce n'è più d'uno, e la carta del dettaglio è quella del mondo giusto. Il FIT porta il nome del percorso e del mondo in un messaggio `WORKOUT`, il GPX in `<desc>`.
-- **Ripeti l'ultimo giro**: in Oggi, una riga sotto la carta del mondo riapre l'ultima pedalata cominciata (percorso, anello, giro libero o salita).
-- **Allenamenti**: dove pedalarli si sceglie anche per mondo, e «La salita giusta per la durata» prende dal mondo attivo il percorso in salita lungo quanto l'allenamento (`climbForMinutes`). Le sessioni di gruppo hanno il mondo esplicito nel link e, senza rete, dicono se il mondo non è scaricato invece di far entrare in una stanza vuota.
-- **Programmi** (`src/domain/plans.ts`, pagina `/programmi`): «Primo Selvino» (4 settimane), «Base d'inverno» (6) e «Pronti per la Ganda» (4), fatti con gli allenamenti della libreria, ognuno col suo percorso. In Oggi la carta «L'allenamento di oggi» apre la corsa con allenamento e percorso; una seduta saltata si recupera entro due giorni.
-- **File `.zwo`** (`src/io/zwo.ts`): gli allenamenti di Zwift si importano (Allenamenti › «Importa .zwo») e ognuno si esporta.
+- **Ripeti l'ultimo giro**: Pedala si apre con l'ultima scelta (Dove e Come): «Via» e si riparte.
+- **Sessioni di gruppo**: la prossima è una riga di Pedala («Entra»); hanno il mondo esplicito nel link e senza rete si pedalano (il gruppo è virtuale), la loro classifica no.
+- **Programmi** (`src/domain/plans.ts`, pagina `/programmi`): «Primo Selvino» (4 settimane), «Base d'inverno» (6) e «Pronti per la Ganda» (4), fatti con gli allenamenti della libreria, ognuno col suo percorso. In Pedala la riga del programma («Usa») mette allenamento e percorso nella scelta; una seduta saltata si recupera entro due giorni.
+- **File `.zwo`** (`src/io/zwo.ts`): gli allenamenti di Zwift si importano (Tu › Allenamenti › «Importa .zwo») e ognuno si esporta.
 - **Il giro non si perde** (`src/sim/recovery.ts`): al «Termina» va nel diario da solo. Mentre si pedala si mette da parte ogni 15 s, in pausa e quando l'app va in secondo piano; riaprendo dopo un crash compare «Hai un giro a metà» con Riprendi, Salva com'è e Scarta. «Termina» si tiene premuto 0,8 s, così un tocco per sbaglio non chiude il giro.
 
 ## Il mondo
 
-Dal 7 novembre 2026 i mondi sono **due**, scelti in testa alla pagina Mondo (la scelta si ricorda): **Bergamo e le valli** e **Sellaronda**. Ogni mondo ha la sua cartella `public/world/<id>/`, i suoi percorsi (id unici fra i mondi), i suoi monumenti e la sua classifica; la corsa, il dettaglio del giro, la cartolina, le classifiche, le sessioni e gli allenamenti portano l'id del mondo (`?world=`). La tabella dei mondi sta in `scripts/world/config.mjs` (confini, orizzonte, passo del terreno lontano, linea del bosco) e in `src/open/world-table.ts` (`WORLDS`: nomi, zone, paesi di partenza). `src/open/worlds.ts` ci aggiunge centro, riquadro e il manifesto (`node scripts/world-manifest.mjs`, da rilanciare dopo ogni `world:build`).
+Dal 7 novembre 2026 i mondi sono **due**, scelti in testa al foglio Dove (la scelta si ricorda): **Bergamo e le valli** e **Sellaronda**. Ogni mondo ha la sua cartella `public/world/<id>/`, i suoi percorsi (id unici fra i mondi), i suoi monumenti e la sua classifica; la corsa, il dettaglio del giro, la cartolina, le classifiche, le sessioni e gli allenamenti portano l'id del mondo (`?world=`). La tabella dei mondi sta in `scripts/world/config.mjs` (confini, orizzonte, passo del terreno lontano, linea del bosco) e in `src/open/world-table.ts` (`WORLDS`: nomi, zone, paesi di partenza). `src/open/worlds.ts` ci aggiunge centro, riquadro e il manifesto (`node scripts/world-manifest.mjs`, da rilanciare dopo ogni `world:build`).
 
-- **Senza rete**: in Mondo, «Senza rete · Scarica» mette tutto il mondo (grafo, percorsi, luoghi, monumenti, terreno lontano, mattonelle del terreno e delle case) nella cache del service worker (`allenando-world-v1`), con l'avanzamento in MB; «Togli» la svuota. Lo stato si legge dalla cache, non da una spunta salvata.
+- **Senza rete**: il leggero scende da solo (sopra); in Impostazioni › Mondi senza rete «Scarica» mette tutto il mondo (anche le mattonelle del terreno a 25 m e delle case) nella cache del service worker (`allenando-world-v1`), con l'avanzamento in MB, e si ferma e riparte; «Togli» toglie l'intero e lascia il leggero. Lo stato si legge dalla cache, non da una spunta salvata. Senza rete e senza l'intero la corsa usa il leggero (`data-reason=leggero` su `world-ready`, nessuna richiesta a `dem/` né `b/`).
 - **In montagna**: sopra i 1000 m la quota resta nel pannello della corsa; quando il prossimo passo è entro 5 km una pillola dice «Passo di Ganda fra 3,2 km · +210 m»; i passi e le cime sono segnati sopra il profilo; la scheda del percorso elenca le salite col passo in cima (km, D+, media, quota) e, per i giri, il verso (orario o antiorario) con il rimando al giro nell'altro verso se c'è. Le quote si scrivono sempre col separatore («2.240 m»). Il meteo è quello del centro del mondo in cui si pedala.
 
 ### Sellaronda
@@ -105,18 +119,18 @@ Street View non è una fonte: l’app ne mette solo il link ufficiale a Google M
 
 Le tracce si rigenerano con `npm run climbs` (scrive `public/routes/*.json`, circa sei minuti per il limite di una richiesta al secondo di OpenTopoData).
 
-Il **catalogo** elenca altre sedici grandi salite italiane senza numeri: sono segnate «traccia da acquisire» finché non arriva una traccia verificata. Nel frattempo si può importare il GPX di un proprio giro e pedalarlo.
+In Dove le salite verificate sono le **Grandi salite** (Mortirolo e i due Stelvio; la Selvino verificata esce dalla lista, resta quella del mondo, e la sua rotta e la sua classifica restano). Il catalogo delle salite «traccia da acquisire» non c'è più: si importa il GPX di un proprio giro e lo si pedala.
 
 ## I tuoi giri: power replay, grade replay, fantasma
 
-**Giri** importa un’attività in due modi:
+**Diario › Importa** porta dentro un’attività in due modi:
 
 - **Intervals.icu** con la chiave API personale (Settings → Developer). La chiave resta nello stato della pagina: non va in localStorage, in IndexedDB, nei log o nel repo. L’API di Intervals.icu risponde alle chiamate dal browser (CORS verificato il 02/11/2026). Le attività sincronizzate da Strava arrivano senza dati per i termini di Strava: l’app le segna e propone il file.
 - **File** FIT, TCX, GPX o lo ZIP di Garmin Connect, letti sul dispositivo.
 
-Poi si sceglie il pezzo (tutto, da minuto a minuto, da km a km, o un lap del file) e il modo:
+Il giro sta poi nel Diario e in Dove › Tuoi giri; «Rifai» lo rimette in Pedala (il giro intero), con il modo:
 
-- **Power replay**: il rullo va in ERG con i watt del giro originale, allineati sul tempo trascorso. La pendenza non viene inviata.
+- **Watt di allora** (power replay): il rullo va in ERG con i watt del giro originale, allineati sul tempo trascorso. La pendenza non viene inviata.
 - **Grade replay**: il rullo riceve la pendenza della strada del giro (simulazione FTMS); i watt li metti tu.
 - **Fantasma**: pendenza al rullo e, accanto, il giro di allora alla sua velocità, con il distacco in secondi calcolato sul tempo al metro.
 
@@ -126,7 +140,7 @@ Sulle salite del pacchetto, al primo arrivo in cima il tempo diventa il fantasma
 
 ## Pedala insieme
 
-Due o più telefoni (fino a 8) sulla **stessa salita**, ognuno con il suo rullo o con il simulatore: ci si vede sulla strada (ciclisti con colori diversi e il nome sopra), con un pannello dei distacchi in metri e dei watt, e lo stato del collegamento.
+Due o più telefoni (fino a 8) sulla **stessa salita**, ognuno con il suo rullo (o in prova): ci si vede sulla strada (ciclisti con colori diversi e il nome sopra), con un pannello dei distacchi in metri e dei watt, e lo stato del collegamento.
 
 1. In una salita verificata tocca l’icona delle persone in alto, scegli il nome e **Crea la stanza e invita**.
 2. Manda il link (condivisione del telefono o «Copia link»). Il link contiene la salita e un id di stanza di 128 bit casuali: non si indovina.
@@ -153,11 +167,11 @@ node ../../scripts/room-smoke.mjs https://allenando-rooms.micmer-recastello.work
 
 ## Sul telefono
 
-È una PWA: si installa e si apre a schermo intero, e salite, giri salvati e simulatore funzionano senza rete (il service worker tiene in cache app e tracce). In **Oggi** c’è il riquadro «Mettila sul telefono»: su Chrome Android usa il prompt di installazione del sistema, su iPhone spiega Condividi → Aggiungi alla schermata Home. Una fascia avvisa quando sei offline.
+È una PWA: si installa e si apre a schermo intero, e salite, giri salvati e il mondo leggero funzionano senza rete (il service worker tiene in cache app e tracce). In **Tu** c’è «Mettila sul telefono»: su Chrome Android usa il prompt di installazione del sistema, su iPhone spiega Condividi → Aggiungi alla schermata Home. Senza rete lo dice una parola: «Offline».
 
 ## Rullo e sensori
 
-Web Bluetooth (Chrome/Edge su Android, Mac, Windows, Linux; Bluefy su iPhone). Profili: FTMS (dati, potenza obiettivo, simulazione), Cycling Power, Heart Rate, Cycling Speed and Cadence. Senza rullo c’è il simulatore.
+Web Bluetooth (Chrome/Edge su Android, Mac, Windows, Linux; Bluefy su iPhone). Profili: FTMS (dati, potenza obiettivo, simulazione), Cycling Power, Heart Rate, Cycling Speed and Cadence. Il rullo si collega da Pedala e si scollega da Impostazioni; senza Web Bluetooth (Safari, Firefox) Pedala lo dice e su iPhone porta a Bluefy. Senza rullo si pedala solo in Modalità prova.
 
 ## Avvio
 
