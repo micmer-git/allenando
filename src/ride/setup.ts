@@ -4,6 +4,7 @@ import { geoPointsFromSamples, hasAltitude, hasGps, profileFromSamples, sliceSec
 import { loadRouteFile, routeMeta, trackFromGeo, trackFromRouteFile, type LoadedRoute } from '@/domain/routes';
 import { createRouteTrack } from '@/domain/track';
 import type { RideSample } from '@/domain/types';
+import { reteAdesso, statoPacco } from '@/lib/rete';
 import { loadPlan } from '@/open/plan';
 import { WorldSession } from '@/open/session';
 import { loadWorld, type WorldData } from '@/open/world';
@@ -93,11 +94,18 @@ export function useRideSetup(): { setup: RideSetup | null; error: string | null 
     }
     // la prova vale per tutta la corsa: decisa qui, alla partenza
     const prova = rulloAdesso().prova;
-    const base = { intento, prova, pacco: 'intero' as PaccoMondo };
+    const base: { intento: Intento; prova: boolean; pacco: PaccoMondo } = { intento, prova, pacco: 'intero' };
     const dove = intento.dove;
     if (dove.kind === 'percorso' || dove.kind === 'piano' || dove.kind === 'libero') {
-      loadWorld(dove.world)
-        .then((data) => {
+      // senza rete e senza il mondo intero sul telefono: il mondo leggero (strade e terreno lontano)
+      const offline = reteAdesso() === 'offline';
+      (offline ? statoPacco(dove.world).catch(() => null) : Promise.resolve(null))
+        .then((p) => {
+          base.pacco = offline && p?.stato !== 'intero' ? 'leggero' : 'intero';
+          return loadWorld(dove.world);
+        })
+        .then((loaded) => {
+          const data: WorldData = base.pacco === 'leggero' ? { ...loaded, leggero: true } : loaded;
           const n = npcCount(quality);
           let session: WorldSession;
           let title: string;
@@ -126,7 +134,7 @@ export function useRideSetup(): { setup: RideSetup | null; error: string | null 
           const route: LoadedRoute = { id: 'world', title, subtitle, track: session.path, dem: null, origin: data.graph.origin, attribution: data.graph.attribution, verified: true };
           done({ ...base, route, label: subtitle && dove.kind === 'percorso' ? `${title} ${subtitle}` : title, world: { data, session } });
         })
-        .catch((err: unknown) => done(null, err instanceof Error ? err.message : 'Mondo non disponibile.'));
+        .catch((err: unknown) => done(null, offline ? 'Offline: questo mondo non è ancora sul telefono.' : err instanceof Error ? err.message : 'Mondo non disponibile.'));
       return () => {
         alive = false;
       };

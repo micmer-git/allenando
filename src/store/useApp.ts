@@ -66,6 +66,12 @@ export const useApp = create<AppState>((set, get) => ({
       rides: sortRides(rides),
       workouts,
     });
+    // dopo il primo avvio: il mondo leggero scende da solo, e i tempi rimasti in coda partono
+    if (typeof window !== 'undefined' && profile?.onboarded) {
+      window.setTimeout(() => {
+        void import('@/lib/rete').then((m) => m.avvioLeggero()).catch(() => undefined);
+      }, 2500);
+    }
   },
 
   async completeOnboarding(profile) {

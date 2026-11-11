@@ -1,4 +1,5 @@
 import type { Profile, Settings, Workout } from '@/domain/types';
+import { accoda } from '@/open/coda';
 import { applyRide, levelOf, loadProgress, postResult, postXp, type WorldProgress, type XpLine } from '@/open/progress';
 import type { WorldSession } from '@/open/session';
 import { sunFor } from '@/open/sky';
@@ -62,6 +63,8 @@ export interface CommitDeps {
   career: () => Career;
   setCareer: (c: Career) => Promise<void>;
   now: () => Date;
+  /** il tempo fatto senza rete: in coda, parte quando torna (src/open/coda.ts) */
+  accoda: typeof accoda;
 }
 
 const defaultDeps: CommitDeps = {
@@ -72,6 +75,7 @@ const defaultDeps: CommitDeps = {
   career: () => useGame.getState().career,
   setCareer: (c) => useGame.getState().setCareer(c),
   now: () => new Date(),
+  accoda,
 };
 
 /** La potenza media migliore su `n` campioni consecutivi (1 Hz). */
@@ -153,10 +157,15 @@ export async function commitProgress(input: CommitInput, deps: Partial<CommitDep
   if (session?.ride && workout) rankNote = 'Con un allenamento il tempo non va in classifica.';
   else if (session && completed && session.ride && profile.name) {
     const avg = engine.samples.length ? engine.samples.reduce((a, x) => a + x.power, 0) / engine.samples.length : engine.power3s;
-    const res = await d.postResult({ nick: profile.name, ride: session.ride.id, sec, wkg: profile.weightKg > 0 ? avg / profile.weightKg : 0, sim });
+    const wkg = profile.weightKg > 0 ? avg / profile.weightKg : 0;
+    const res = await d.postResult({ nick: profile.name, ride: session.ride.id, sec, wkg, sim });
     if (res.ok && res.rank) rank = `${res.rank}° in classifica${sim ? ' (simulatore)' : ''}${res.best ? ', il tuo tempo migliore' : ''}`;
     else if (res.error === 'implausible') rankNote = 'Tempo troppo veloce per essere vero: non va in classifica.';
-    else if (res.error === 'rete') rankNote = 'Senza rete: il tempo resta qui, non in classifica.';
+    else if (res.error === 'rete') {
+      // offline: il tempo aspetta in coda, e va in classifica quando torna la rete (A16)
+      await d.accoda({ nick: profile.name, ride: session.ride.id, sec, wkg, sim }).catch(() => undefined);
+      rankNote = 'Offline: il tempo va in classifica quando torna la rete.';
+    }
   } else if (session?.ride && !completed) rankNote = session.offRoute || session.rejoined ? 'Sei uscito dal percorso: il tempo non va in classifica.' : 'Percorso non finito: niente tempo in classifica.';
   if (profile.name) void d.postXp(out.next, profile.name);
   const xp: XpView = { lines: out.lines, total, level: { ...levelOf(out.next.xp), xp: out.next.xp }, rank, rankNote };

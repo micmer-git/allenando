@@ -45,14 +45,22 @@ export function tileStage(t: {
   return t.dshown ? 1 : 0.93;
 }
 
-/** Perché si è detto «pronto»: tutto intorno, un errore (DEM o terreno lontano mancanti), il tetto di tempo. */
-export type ReadyReason = 'tutto' | 'errore' | 'tetto';
+/**
+ * Perché si è detto «pronto»: tutto intorno, il mondo leggero (strade e terreno lontano, senza
+ * rete), un errore (DEM o terreno lontano mancanti), il tetto di tempo.
+ */
+export type ReadyReason = 'tutto' | 'leggero' | 'errore' | 'tetto';
+
+/** Nel mondo leggero non c'è niente da aspettare dalla rete: il velo non resta più di così, ms. */
+export const LIGHT_CAP = 6000;
 
 /**
  * Si dice «pronto» quando c'è tutto; prima solo per un errore o dopo `cap` ms. Un telefono lento
- * aspetta di più dietro il velo, ma non vede un mondo a metà.
+ * aspetta di più dietro il velo, ma non vede un mondo a metà. Nel mondo leggero il motivo è sempre
+ * `leggero`, e il tetto è LIGHT_CAP: le mattonelle si costruiscono dal terreno lontano, subito.
  */
-export function readyReason(progress: number, error: boolean, elapsed: number, cap: number): ReadyReason | null {
+export function readyReason(progress: number, error: boolean, elapsed: number, cap: number, leggero = false): ReadyReason | null {
+  if (leggero) return progress >= 1 || elapsed > Math.min(cap, LIGHT_CAP) ? 'leggero' : error ? 'errore' : null;
   if (progress >= 1) return 'tutto';
   if (error) return 'errore';
   if (elapsed > cap) return 'tetto';

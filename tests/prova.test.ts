@@ -82,6 +82,7 @@ function deps() {
     career: () => career,
     setCareer: vi.fn(async () => undefined),
     now: () => new Date('2026-11-11T18:00:00Z'),
+    accoda: vi.fn(async () => undefined),
   } satisfies CommitDeps;
   return { d, career };
 }
