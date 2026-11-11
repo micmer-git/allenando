@@ -96,6 +96,11 @@ export class WorldSession {
   private crossed = 0;
   private lapStart = 0;
   private lapClock = false;
+  /**
+   * I passaggi li ha chiesti il link (`giri=`): allora un allenamento più lungo aggiunge un
+   * passaggio. Un link di prima, senza giri, prosegue libero a fine percorso come prima.
+   */
+  private readonly extraLaps: boolean = false;
   private finishCache: { version: number; at: number[] } | null = null;
 
   constructor(
@@ -114,6 +119,7 @@ export class WorldSession {
       this.chiuso = isClosed(this.graph, this.baseLegs);
       this.backLegs = this.chiuso ? this.baseLegs : percorribili(this.graph, rovescia(this.baseLegs));
       this.routeLegs = [];
+      this.extraLaps = opts.giri != null;
       const n = Math.min(PASSAGGI_MAX, Math.max(1, Math.round(opts.giri ?? 1)));
       for (let i = 0; i < n; i++) this.pushPassage();
       const first = this.routeLegs[0];
@@ -200,7 +206,7 @@ export class WorldSession {
    */
   allenamentoContinua(distance: number): void {
     if (!this.onRoute || this.routeEnd != null || this.path.length - distance >= 400) return;
-    if (this.baseLegs.length > 0 && this.giri < PASSAGGI_MAX) {
+    if (this.extraLaps && this.baseLegs.length > 0 && this.giri < PASSAGGI_MAX) {
       this.addPassage();
       this.toast(this.chiuso ? 'Giro in più' : 'Un’altra tratta', `L’allenamento continua: ${this.chiuso ? 'giro' : 'tratta'} ${this.giri}`, 'info');
       return;

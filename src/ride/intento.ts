@@ -87,12 +87,15 @@ export function intentoDaSearch(p: URLSearchParams): Intento | null {
 }
 
 /**
- * Dall'intento al link di `/ride`, senza «?». Scrive anche i parametri vecchi che le pagine e
- * il punto di ripresa sanno già leggere (`mode` sui tuoi giri, `workout`).
+ * Dall'intento al link di `/ride`, senza «?». Scrive i parametri che le pagine e il punto di
+ * ripresa sanno già leggere (`workout`, `mode` sui tuoi giri), nello stesso ordine dei link di
+ * prima: `tipo` solo quando non si capisce da sé (Potenza fissa, o Libera dove il link direbbe altro).
  */
 export function intentoInSearch(i: Intento): string {
   const q = new URLSearchParams();
   const d = i.dove;
+  const tipo: Tipo = i.tipo === 'allora' && d.kind !== 'giro' ? 'libera' : i.tipo;
+  if (tipo === 'allenamento' && i.workout) q.set('workout', i.workout);
   switch (d.kind) {
     case 'percorso':
       q.set('world', d.world);
@@ -105,31 +108,49 @@ export function intentoInSearch(i: Intento): string {
     case 'libero':
       q.set('world', d.world);
       q.set('edge', String(d.edge));
-      q.set('dir', String(d.dir));
       q.set('s', String(Math.round(d.s)));
+      q.set('dir', String(d.dir));
       break;
     case 'salita':
       q.set('route', d.route);
       break;
     case 'giro':
       q.set('replay', d.replay);
-      if (d.sec) q.set('sec', d.sec);
       break;
   }
-  const tipo: Tipo = i.tipo === 'allora' && d.kind !== 'giro' ? 'libera' : i.tipo;
-  if (tipo !== 'libera') q.set('tipo', tipo);
+  // il tipo si scrive solo se il resto del link non lo dice già
+  const implicito = tipo === 'libera' || (tipo === 'allenamento' && !!i.workout) || (tipo === 'allora' && d.kind === 'giro');
+  if (!implicito) q.set('tipo', tipo);
   if (tipo === 'fissa' && i.watt != null) q.set('watt', String(wattFissi(i.watt)));
-  if (tipo === 'allenamento' && i.workout) q.set('workout', i.workout);
   if (d.kind === 'giro') {
     // il modo di oggi: i watt, il fantasma o la sola pendenza del giro di allora
     if (tipo === 'allora') {
       q.set('mode', 'power');
       if (i.fantasma != null) q.set('fantasma', i.fantasma ? '1' : '0');
     } else if (i.fantasma != null) q.set('mode', i.fantasma ? 'ghost' : 'grade');
+    if (d.sec) q.set('sec', d.sec);
   } else if (i.fantasma != null) q.set('fantasma', i.fantasma ? '1' : '0');
   if (i.giri != null) q.set('giri', String(Math.min(GIRI_MAX, Math.max(1, Math.round(i.giri)))));
   if (i.session) q.set('session', i.session);
   if (i.room) q.set('room', i.room);
+  return q.toString();
+}
+
+/** I parametri del link che non stanno nell'intento e vanno tenuti: il fantasma di un giro, il punto, la ripresa. */
+export const FUORI_INTENTO = ['ghost', 'at', 'resume'] as const;
+
+/** Il link rifatto dall'intento, coi parametri fuori intento che c'erano (o null se il link non dice dove). */
+export function normalizzaSearch(search: string, drop: readonly string[] = []): string | null {
+  const p = new URLSearchParams(search);
+  const i = intentoDaSearch(p);
+  if (!i) return null;
+  if (drop.includes('session')) delete i.session;
+  if (drop.includes('room')) delete i.room;
+  const q = new URLSearchParams(intentoInSearch(i));
+  for (const k of FUORI_INTENTO) {
+    const v = p.get(k);
+    if (v != null && !drop.includes(k)) q.set(k, v);
+  }
   return q.toString();
 }
 
