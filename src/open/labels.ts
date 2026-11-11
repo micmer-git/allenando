@@ -4,6 +4,8 @@
  * `kindLabel` da questo file, e il pacchetto iniziale dell'app resta senza WebGL.
  */
 
+import { formatAltText } from '@/domain/format';
+
 const KIND: Record<string, string> = {
   citta: 'Città',
   paese: 'Paese',
@@ -37,6 +39,15 @@ const OVVI = new Set(['citta', 'paese', 'cima', 'passo', 'luogo', 'fiume', 'lago
 /** La seconda riga del nome nel 3D: il tipo solo quando aggiunge qualcosa. */
 export function landmarkSub(kind: string): string {
   return OVVI.has(kind) ? '' : kindLabel(kind);
+}
+
+/**
+ * La quota sotto il nome di una cima o di un passo nel cielo: col separatore delle migliaia come
+ * tutte le quote dell'app («2.112 m», F.13). Il cartello del passo (Passi.tsx) resta «2240 m», come
+ * i cartelli veri. `toLocaleString('it-IT')` non basta: l'italiano raggruppa solo da cinque cifre.
+ */
+export function peakSub(ele: number): string {
+  return formatAltText(ele);
 }
 
 // ---------- i nomi nella scena ----------

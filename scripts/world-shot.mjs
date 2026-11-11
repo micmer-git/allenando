@@ -9,8 +9,13 @@
 // SPOTS="nome|/ride?...;nome2|/ride?..." visita solo quei punti del mondo (dopo l'accesso) e ne
 // fa una schermata quando il 3D è pronto: serve a guardare l'arredo stradale in un posto preciso
 // (es. /ride?world=bergamo&edge=27&dir=-1&s=70). WIDE=1: telefono in orizzontale (844×390).
-// CAM="indietro,su[,lato[,gradi]]" (o il terzo campo di un punto): la camera di collaudo; i gradi
-// girano lo sguardo di lato (negativi a sinistra), per guardare una parete o un impianto.
+// CAM="indietro,su[,lato[,gradi[,inclinazione]]]" (o il terzo campo di un punto): la camera di
+// collaudo; i gradi girano lo sguardo di lato (negativi a sinistra), l'inclinazione lo alza (gradi,
+// positivi in su), per guardare una parete, una cima o un impianto.
+// LOOK='{"sellaronda":{"rock":{"light":"#…"}}}': ritocca l'aspetto del mondo (look.ts) senza
+// ricostruire; DATE=2026-08-15: la stagione di quel giorno (neve, larici, prati). SKY=1: misura il
+// cielo al 10% dall'alto (luminanza e saturazione, R5 del PM) e lo scrive nel rapporto. TUTTE=1:
+// la schermata solo quando tutte le mattonelle dell'anello sono pronte.
 
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync, mkdtempSync } from 'node:fs';
@@ -159,18 +164,28 @@ async function onboard(p, name) {
 try {
   const a = await phone('mondo', false);
   await onboard(a, 'Anna');
+  if (process.env.LOOK || process.env.DATE) {
+    const src = `${process.env.LOOK ? `globalThis.__orobiaLook = ${process.env.LOOK};` : ''}${process.env.DATE ? `globalThis.__orobiaDate = ${JSON.stringify(process.env.DATE)};` : ''}`;
+    await a.s('Page.addScriptToEvaluateOnNewDocument', { source: src });
+  }
 
   if (process.env.SPOTS) {
     for (const spot of process.env.SPOTS.split(';').filter(Boolean)) {
       const [name, path, cam] = spot.split('|');
-      await a.go(path);
+      // TUTTE=1: si aspetta che tutte le mattonelle dell'anello siano pronte (?stats=1), non solo
+      // quelle entro 400 m: le pareti a 2 km, se no, sono ancora il terreno lontano a 120 m
+      await a.go(process.env.TUTTE ? `${path}${path.includes('?') ? '&' : '?'}stats=1` : path);
       const t0 = Date.now();
       const ok = await a.waitFor(`document.querySelector('[data-testid=world-ready]')?.dataset.ready === 'yes'`, 120000);
       check(ok, `${name}: mondo 3D pronto`, `${((Date.now() - t0) / 1000).toFixed(1)} s`);
-      // NOON=1: luce di mezzogiorno, SERENO=1: meteo «Sempre sereno» (per confrontare con le foto
+      if (process.env.TUTTE) {
+        const all = await a.waitFor(`(() => { const t = window.__orobiaStats?.tiles; return !!t && t.pending === 0; })()`, 150000);
+        check(all, `${name}: tutte le mattonelle`, `${((Date.now() - t0) / 1000).toFixed(1)} s`);
+      }
+      // NOON=1: luce di mezzogiorno, MATTINA=1: il sole a 18° a est, SERENO=1: meteo «Sempre sereno» (per confrontare con le foto
       // col cielo blu). Il pannello «Impostazioni» sta nel velo della pausa: si mette in pausa, si
       // sceglie, si riprende. Le scelte restano salvate per i punti dopo.
-      const wanted = [['NOON', 'Mezzodì'], ['SERENO', 'Sempre sereno']].filter(([flag]) => process.env[flag]);
+      const wanted = [['NOON', 'Mezzodì'], ['MATTINA', 'Mattina'], ['SERENO', 'Sempre sereno']].filter(([flag]) => process.env[flag]);
       if (wanted.length) {
         await a.evaluate(`(() => { [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Pausa')?.click(); return true; })()`);
         await sleep(600);
@@ -190,6 +205,19 @@ try {
       if (process.env.CLEAN) await a.evaluate(`(() => { const st = document.createElement('style'); st.textContent = '* { visibility: hidden !important } canvas { visibility: visible !important }'; document.head.appendChild(st); return true; })()`);
       await sleep(300);
       await a.shot(`spot-${name}`);
+      if (process.env.SKY) {
+        // il cielo: una striscia al 10% dall'alto, letta dalla schermata (il canvas WebGL non si legge)
+        const { data } = await a.s('Page.captureScreenshot', { format: 'png' });
+        const probe = `(async () => { const img = new Image(); img.src = 'data:image/png;base64,DATA'; await img.decode();
+          const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0);
+          const y = Math.round(img.height * 0.1); const d = g.getImageData(Math.round(img.width * 0.2), y, Math.round(img.width * 0.6), 1).data;
+          let r = 0, gg = 0, b = 0; for (let i = 0; i < d.length; i += 4) { r += d[i]; gg += d[i + 1]; b += d[i + 2]; } const n = d.length / 4;
+          r /= n * 255; gg /= n * 255; b /= n * 255; const mx = Math.max(r, gg, b), mn = Math.min(r, gg, b), l = (mx + mn) / 2;
+          const sat = mx === mn ? 0 : (mx - mn) / (1 - Math.abs(2 * l - 1));
+          return { lum: 0.2126 * r + 0.7152 * gg + 0.0722 * b, sat, rgb: [r, gg, b].map((v) => Math.round(v * 255)) }; })()`;
+        const sky = await a.evaluate(probe.replace('DATA', data));
+        check(sky.lum < 0.45 && sky.sat > 0.45, `${name}: cielo d'alta quota al 10% dall'alto`, `luminanza ${sky.lum.toFixed(2)} · saturazione ${sky.sat.toFixed(2)} · rgb ${sky.rgb.join(',')}`);
+      }
     }
     check(a.errors.length === 0, 'punti: nessun errore di pagina', a.errors.join(' | '));
     throw Object.assign(new Error('fine dei punti'), { done: true });

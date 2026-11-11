@@ -1,6 +1,7 @@
 import { unzlibSync } from 'fflate';
 import { projector, type LatLon } from '@/domain/geo';
 import { WorldGraph, type WorldGraphFile } from './graph';
+import { RILIEVO, sharpenRelief } from './rilievo';
 import { isWorld, WORLD_ID, type RideArea } from './world-table';
 
 /**
@@ -476,6 +477,9 @@ export class Terrain {
             return null;
           }
           const tile = decodeDemTile(new Uint8Array(await res.arrayBuffer()), this.n, tx, tz);
+          // le pareti delle Dolomiti: il contrasto che il DEM a 25 m ha perso (rilievo.ts)
+          const rv = RILIEVO[this.graph.id];
+          if (rv) sharpenRelief(tile.h, this.n + 1, this.graph.demStep, rv);
           this.tiles.set(key, tile);
           return tile;
         })

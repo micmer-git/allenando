@@ -208,7 +208,7 @@ function triGeometry(t: Tri): THREE.BufferGeometry | null {
 }
 
 /** Un punto del muretto a monte: dove sta, il verso del monte (lx, lz) e l'altezza. */
-interface WallPt {
+export interface WallPt {
   x: number;
   y: number;
   z: number;
@@ -217,20 +217,61 @@ interface WallPt {
   h: number;
 }
 
-const WALL_STONE = new THREE.Color('#9d978c');
-const WALL_DARK = new THREE.Color('#857f78');
+/** Pietra grigia a corsi, scura e netta contro la strada (km58-46376395); la testa più chiara. */
+const WALL_STONE = new THREE.Color('#878580');
+const WALL_DARK = new THREE.Color('#64625d');
+const WALL_CAP = new THREE.Color('#9b9891');
 const wallTmp = new THREE.Color();
+/** Altezza di un corso di pietra, metri. */
+export const WALL_COURSE = 0.5;
+/** Pietre per tratto di muro (i punti sono a 4 m: pietre di 2 m, sfalsate di mezza a ogni corso). */
+const WALL_BLOCKS = 2;
 
-/** Il muretto: la faccia verso la strada da 35 cm sotto il ciglio alla cima, e la testa di 40 cm. */
-function wallAlong(m: Mesh, pts: WallPt[]): void {
-  let prev = -1;
-  for (const p of pts) {
-    const c = wallTmp.copy(WALL_STONE).lerp(WALL_DARK, hash2(p.z, p.x));
-    const b = m.vertex(p.x, p.y - 0.35, p.z, 0, 0, c);
-    m.vertex(p.x, p.y + p.h, p.z, 0, 1, c);
-    m.vertex(p.x + p.lx * 0.4, p.y + p.h + 0.04, p.z + p.lz * 0.4, 1, 1, c);
-    if (prev >= 0) m.idx.push(prev, b, prev + 1, prev + 1, b, b + 1, prev + 1, b + 1, prev + 2, prev + 2, b + 1, b + 2);
-    prev = b;
+/**
+ * Il muro: la faccia verso la strada da 35 cm sotto il ciglio alla cima, a corsi di 50 cm di
+ * pietre sfalsate, ognuna col suo grigio fra `WALL_STONE` e `WALL_DARK` (vertici suoi: i corsi
+ * restano netti, non sfumano), e la testa di 40 cm più chiara. Prima era una fascia beige
+ * uniforme che sul taglio non si leggeva (R3 del PM).
+ */
+export function wallAlong(m: Mesh, pts: WallPt[]): void {
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const a = pts[i];
+    const b = pts[i + 1];
+    const topA = a.y + a.h;
+    const topB = b.y + b.h;
+    const rows = Math.ceil((Math.max(a.h, b.h) + 0.35) / WALL_COURSE);
+    for (let r = 0; r < rows; r++) {
+      const ya0 = Math.min(topA, a.y - 0.35 + r * WALL_COURSE);
+      const ya1 = Math.min(topA, a.y - 0.35 + (r + 1) * WALL_COURSE);
+      const yb0 = Math.min(topB, b.y - 0.35 + r * WALL_COURSE);
+      const yb1 = Math.min(topB, b.y - 0.35 + (r + 1) * WALL_COURSE);
+      if (ya1 - ya0 < 0.01 && yb1 - yb0 < 0.01) continue;
+      // i giunti verticali: a ogni corso sfalsati di mezza pietra
+      const cuts = [0];
+      for (let k = 1; k <= WALL_BLOCKS; k++) cuts.push((k - (r % 2) * 0.5) / WALL_BLOCKS);
+      cuts[cuts.length - 1] = 1;
+      for (let k = 0; k + 1 < cuts.length; k++) {
+        const t0 = cuts[k];
+        const t1 = cuts[k + 1];
+        if (t1 - t0 < 0.01) continue;
+        const shade = hash2(a.x * 0.37 + r * 3.1 + k, a.z * 0.41 - r * 1.7);
+        const c = wallTmp.copy(WALL_STONE).lerp(WALL_DARK, shade);
+        const X = (t: number) => a.x + (b.x - a.x) * t;
+        const Z = (t: number) => a.z + (b.z - a.z) * t;
+        const Y = (t: number, ya: number, yb: number) => ya + (yb - ya) * t;
+        const v = m.vertex(X(t0), Y(t0, ya0, yb0), Z(t0), t0, 0, c);
+        m.vertex(X(t1), Y(t1, ya0, yb0), Z(t1), t1, 0, c);
+        m.vertex(X(t0), Y(t0, ya1, yb1), Z(t0), t0, 1, c);
+        m.vertex(X(t1), Y(t1, ya1, yb1), Z(t1), t1, 1, c);
+        m.idx.push(v, v + 1, v + 2, v + 2, v + 1, v + 3);
+      }
+    }
+    // la testa
+    const v = m.vertex(a.x, topA, a.z, 0, 0, WALL_CAP);
+    m.vertex(b.x, topB, b.z, 1, 0, WALL_CAP);
+    m.vertex(a.x + a.lx * 0.4, topA + 0.04, a.z + a.lz * 0.4, 0, 1, WALL_CAP);
+    m.vertex(b.x + b.lx * 0.4, topB + 0.04, b.z + b.lz * 0.4, 1, 1, WALL_CAP);
+    m.idx.push(v, v + 1, v + 2, v + 2, v + 1, v + 3);
   }
 }
 
