@@ -15,8 +15,9 @@ export const SHIFT_MAX = 2.5;
 /** Un passaggio voltato: la strada passa sotto la casa da qui in su. */
 export const PASSAGE_H = 4.3;
 /**
- * Ogni quanto si prova un muro quando si sposta o si ritaglia una casa: lo spigolo di un incrocio
- * (un vertice del poligono dei raccordi) entra fra due punti a 2 m e non lo vede nessuno.
+ * Ogni quanto si prova un muro quando si sposta o si ritaglia una casa (per trovarla basta un punto
+ * al metro, come nella prova del mondo): lo spigolo di un incrocio, un vertice del poligono dei
+ * raccordi, entra fra due punti a 2 m e non lo vede nessuno.
  */
 const FIT_STEP = 0.5;
 
@@ -149,7 +150,7 @@ export interface FitResult {
  * troppo bassa, si toglie.
  */
 export function fitRingToRoads(ring: Ring, h: number, minH: number, probe: RoadProbe, margin = ROAD_MARGIN): FitResult {
-  const pen = ringPenetration(ring, probe, margin, FIT_STEP);
+  const pen = ringPenetration(ring, probe, margin, 1);
   if (pen.max <= 0.02) return { ring, minH, action: 'ferma', before: pen.max };
   if (minH >= PASSAGE_H - 0.5) return { ring, minH, action: 'ferma', before: pen.max };
   if (pen.through) {

@@ -270,7 +270,8 @@ describe('case fuori dalla carreggiata (M.2)', () => {
     expect(buildings).toBeGreaterThan(100000);
     expect(passages).toBeGreaterThan(50);
     expect(bad.length, bad.slice(0, 20).join('\n')).toBe(0);
-  }, 180000);
+    // un punto al metro su 140 000 case: da sola ci mette un minuto, nella suite intera fino a quattro
+  }, 420000);
 });
 
 describe('innesto degli incroci (M.3)', () => {

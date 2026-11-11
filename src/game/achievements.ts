@@ -157,7 +157,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: 'quattro-passi', name: 'I quattro passi', desc: 'Sella, Pordoi, Gardena e Campolongo in un giro solo.', group: 'mondo', glyph: 'gpm', oro: 400, rare: true, check: (_c, f) => fourPasses(f.landmarks) },
   { id: 'mondo-sellaronda', name: 'Sellaronda', desc: 'Il giro intero del Sella, in un verso o nell’altro. Vale la maglia Sella.', group: 'mondo', glyph: 'coppa', oro: 500, rare: true, check: (c) => worldRide(c, SELLARONDA_RIDES) },
   { id: 'mondo-marmolada', name: 'Marmolada', desc: 'Il Passo Fedaia da Canazei, sotto il ghiacciaio.', group: 'mondo', glyph: 'salita', oro: 250, check: (c) => worldRide(c, MARMOLADA_RIDES) },
-  { id: 'mondo-berghem', name: 'Berghem MolaMia', desc: 'La granfondo di Gazzaniga, il corto o il medio: Ganda, Selvino, Zambla.', group: 'mondo', glyph: 'fiamma', oro: 300, check: (c) => worldRide(c, BERGHEM_RIDES) },
+  { id: 'mondo-berghem', name: 'Berghem MolaMia', desc: 'La granfondo di Gazzaniga, il corto o il medio: Selvino, Serina, Zambla.', group: 'mondo', glyph: 'fiamma', oro: 300, check: (c) => worldRide(c, BERGHEM_RIDES) },
   { id: 'luoghi-10', name: 'Curioso', desc: 'Dieci luoghi scoperti nel mondo.', group: 'mondo', glyph: 'campana', oro: 60, check: (_c, f) => f.discovered >= 10 },
   { id: 'luoghi-40', name: 'Guida delle valli', desc: 'Quaranta luoghi scoperti nel mondo.', group: 'mondo', glyph: 'campana', oro: 250, rare: true, check: (_c, f) => f.discovered >= 40 },
   count('punti-20', 'Fontanelle e campanili', 'Venti punti caldi passati.', 'mondo', 'goccia', 'pois', 20, 120),
