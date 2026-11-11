@@ -181,6 +181,11 @@ export const PROFILE_LIMITS = {
   crr: [0.001, 0.02],
 } as const satisfies Record<string, readonly [number, number]>;
 
+/** Un giro si esporta (FIT, TCX, GPX) se è vero: quelli di prova no, Strava avrebbe un giro finto. */
+export function esportabile(ride: Pick<Ride, 'prova'>): boolean {
+  return ride.prova !== true;
+}
+
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'dark',
   camilla: false,

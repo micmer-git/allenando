@@ -95,9 +95,29 @@ export function sessionBonus(game: RideGame, results: SegmentResult[]): OroLine[
   return results.filter((r) => r.kind === want).map((r) => ({ label: `Sessione, doppio: ${r.name}`, oro: ORO_RULES[want] }));
 }
 
+/** Il riepilogo di un giro di prova: niente punti, livello invariato, nessun oro (A11). */
+async function commitProva(input: CommitInput, d: CommitDeps): Promise<{ xp: XpView; outcome: CareerOutcome; results: SegmentResult[] }> {
+  const { engine, game } = input;
+  const prev = await d.loadProgress();
+  const career = d.career();
+  const results = game.results.slice(input.committed.results);
+  const xp: XpView = { lines: [], total: 0, level: { ...levelOf(prev.xp), xp: prev.xp }, rank: null, rankNote: 'Giro di prova: niente classifica, punti né oro.' };
+  const outcome: CareerOutcome = { next: career, lines: [], total: 0, unlocked: [], pbs: [], missions: [], steps: [], items: [] };
+  input.session?.markCommitted(engine.distance);
+  input.committed.distance = engine.odometer;
+  input.committed.sample = engine.samples.length;
+  input.committed.elapsed = engine.elapsed;
+  input.committed.results = game.results.length;
+  input.committed.gain = 0;
+  input.committed.pois = game.poisPassed.length;
+  return { xp, outcome, results };
+}
+
 /** Punti, livello e, se vale, il tempo del percorso in classifica. Poi oro e traguardi. */
 export async function commitProgress(input: CommitInput, deps: Partial<CommitDeps> = {}): Promise<{ xp: XpView; outcome: CareerOutcome; results: SegmentResult[] }> {
   const d: CommitDeps = { ...defaultDeps, ...deps };
+  // la prova non tocca classifiche, punti, livello, oro, missioni né traguardi (A11)
+  if (input.engine.prova) return commitProva(input, d);
   const { engine, game, session, workout, profile, sim } = input;
   const c = input.committed;
   const climbId = !session && input.routeId && engine.arrived && !input.replay && !workout ? input.routeId : undefined;
