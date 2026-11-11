@@ -1,4 +1,5 @@
 import type { Dove, Rete, Rullo, Tipo } from '@/ride/contract';
+import { tipiAmmessi } from '@/sim/rullo';
 
 /*
  * Cosa mostra Pedala, deciso fuori da React (piano U, § 3, prove in tests/pedala.test.ts).
@@ -37,12 +38,14 @@ export interface Contesto {
   allora?: boolean;
 }
 
-/** Piano U, A8, con la prova: il rullo collegato vince sempre sulla prova (A5). */
-export function tipiDi(r: Rullo): Tipo[] {
-  if (r.sa.erg) return ['libera', 'fissa', 'allenamento'];
-  if (r.sa.potenza) return ['libera', 'allenamento'];
-  if (r.prova) return ['libera', 'fissa', 'allenamento'];
-  return [];
+/**
+ * I tipi del segmento Come (A7, A8): quelli che il rullo permette, e «Watt di allora» solo su un
+ * tuo giro con la potenza, al posto di Allenamento.
+ */
+export function tipiDi(r: Rullo, dove?: Dove | null, allora = false): Tipo[] {
+  const ok = tipiAmmessi(r);
+  if (dove?.kind === 'giro') return ok.filter((t) => t !== 'allenamento' && (t !== 'allora' || allora));
+  return ok.filter((t) => t !== 'allora');
 }
 
 export function pannelloDi(r: Rullo): Pannello {
@@ -57,11 +60,8 @@ export function pannelloDi(r: Rullo): Pannello {
 
 export function vistaPedala(r: Rullo, rete: Rete, c: Contesto = {}): VistaPedala {
   const offline = rete === 'offline';
-  let tipi = tipiDi(r);
-  if (tipi.length === 0) return { pannello: pannelloDi(r), blocchi: ['rullo'], tipi: [], chip: r.stato === 'collegato' ? 'rullo' : null, offline };
-  // su un tuo giro con la potenza «Watt di allora» prende il posto di Allenamento (A7)
-  if (c.dove?.kind === 'giro' && c.allora) tipi = tipi.map((t) => (t === 'allenamento' ? 'allora' : t));
-  else if (c.dove?.kind === 'giro') tipi = tipi.filter((t) => t !== 'allenamento');
+  if (tipiAmmessi(r).length === 0) return { pannello: pannelloDi(r), blocchi: ['rullo'], tipi: [], chip: r.stato === 'collegato' ? 'rullo' : null, offline };
+  const tipi = tipiDi(r, c.dove, !!c.allora);
   const tipo = c.tipo && tipi.includes(c.tipo) ? c.tipo : tipi[0];
   const blocchi: Blocco[] = [];
   // la sessione si pedala solo in rete (il gruppo è virtuale, la classifica no: A16)

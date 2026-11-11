@@ -4,7 +4,6 @@ import { Wordmark } from '@/components/ui';
 import { useOnline } from '@/components/Install';
 import { formatGainText, formatKmText } from '@/domain/format';
 import { loadRouteFile, routeMeta, trackFromRouteFile } from '@/domain/routes';
-import type { Settings } from '@/domain/types';
 import { lastWorld, isWorldId } from '@/open/worlds';
 import type { Rete } from '@/ride/contract';
 import { useApp } from '@/store/useApp';
@@ -12,7 +11,7 @@ import { cn } from '@/lib/cn';
 import { HomePage } from './Home';
 import { DoveContenuto, DoveFoglio, idScelto, useMondo, type Filtro, type Scelto, type Strumento } from './pedala/Dove';
 import { RulloChip, RulloFoglio, RulloPannello } from './pedala/Rullo';
-import { useRullo } from './pedala/rulloFinto';
+import { useRullo } from '@/sim/rullo';
 import { intentoDi, intentoInSearchLocale, leggiScelta, salvaScelta, SCELTA_VUOTA, vistaGiro, vistaPercorso, vistaSalita, type Scelta, type VistaDove } from './pedala/scelta';
 import { vistaPedala } from './pedala/vista';
 
@@ -134,7 +133,7 @@ export function PedalaPage() {
     } catch {
       /* niente storage */
     }
-    void updateSettings({ prova: false } as Partial<Settings>);
+    void updateSettings({ prova: false });
     setFoglio(false);
   };
   const intento = scelta ? intentoDi(scelta, v.tipi) : null;

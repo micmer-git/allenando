@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import type { Rullo as RulloStato } from '@/ride/contract';
 import { cn } from '@/lib/cn';
 import { Foglio } from './Foglio';
-import { rullo } from './rulloFinto';
+import { rullo } from '@/sim/rullo';
 import type { Pannello } from './vista';
 
 const BLUEFY = 'https://apps.apple.com/app/bluefy-web-ble-browser/id1492822055';
