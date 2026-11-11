@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { Capacita, Rullo } from '../src/ride/contract';
 import { vistaPedala, type Pannello } from '../src/pages/pedala/vista';
+import { clampWatt, fisicaDi, giriProposti, intentoDi, SCELTA_VUOTA, stimaGiro, wattIniziali } from '../src/pages/pedala/scelta';
+import { giriPer, wattMedi } from '../src/domain/stima';
+import { ALL_BUILTIN, workoutDuration } from '../src/domain/workouts';
+import { DEFAULT_PROFILE } from '../src/domain/types';
 
 /*
  * Piano U, § 3 «Prove»: cosa mostra Pedala per gli 8 stati del rullo, con la prova spenta e accesa.
@@ -98,5 +102,33 @@ describe('i blocchi di Pedala', () => {
   it('l’ordine: Dove, Come, Via, poi le missioni', () => {
     const b = vistaPedala(r, 'online', { dove: ganda, giri: true, record: true }).blocchi;
     expect(b).toEqual(['dove', 'giri', 'come', 'fantasma', 'via', 'missioni']);
+  });
+});
+
+describe('la scelta: watt, giri, link', () => {
+  const flat: [number, number][] = Array.from({ length: 101 }, (_, i) => [i * 100, 250]);
+  const sweet = ALL_BUILTIN.find((w) => w.kind === 'sweetspot')!;
+  it('Potenza fissa parte dal 75 % dell’FTP, arrotondato a 5 (A7)', () => {
+    expect(wattIniziali(220)).toBe(165);
+    expect(wattIniziali(250)).toBe(190);
+    expect(clampWatt(1234)).toBe(1000);
+    expect(clampWatt(12)).toBe(50);
+  });
+  it('giriProposti: la durata dell’allenamento ÷ la stima del giro, per eccesso', () => {
+    const giro = stimaGiro(flat, wattMedi(sweet, DEFAULT_PROFILE.ftp), fisicaDi(DEFAULT_PROFILE));
+    const n = giriProposti(sweet, { profilo: flat }, DEFAULT_PROFILE);
+    expect(n).toBe(giriPer(workoutDuration(sweet), giro));
+    expect(n * giro).toBeGreaterThanOrEqual(workoutDuration(sweet));
+    expect((n - 1) * giro).toBeLessThan(workoutDuration(sweet));
+    expect(n).toBeGreaterThanOrEqual(2);
+  });
+  it('l’intento: i watt solo per Potenza fissa, l’allenamento senza schema torna Libera', () => {
+    const dove = { kind: 'percorso', world: 'bergamo', ride: 'ganda' } as const;
+    const base = { ...SCELTA_VUOTA, dove };
+    expect(intentoDi({ ...base, tipo: 'fissa', watt: 165 }, ['libera', 'fissa', 'allenamento'])).toMatchObject({ tipo: 'fissa', watt: 165 });
+    expect(intentoDi({ ...base, tipo: 'allenamento', workout: null }, ['libera', 'fissa', 'allenamento'])?.tipo).toBe('libera');
+    expect(intentoDi({ ...base, tipo: 'fissa', watt: 165 }, ['libera', 'allenamento'])?.tipo).toBe('libera');
+    expect(intentoDi({ ...base, giri: 3, fantasma: false }, ['libera'])).toMatchObject({ giri: 3, fantasma: false });
+    expect(intentoDi(SCELTA_VUOTA, ['libera'])).toBeNull();
   });
 });

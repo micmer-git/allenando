@@ -14,11 +14,12 @@ import type { PlanSession } from '@/domain/plans';
 import { DoveContenuto, DoveFoglio, idScelto, useMondo, type Filtro, type Scelto, type Strumento } from './pedala/Dove';
 import { RulloChip, RulloFoglio, RulloPannello } from './pedala/Rullo';
 import { useRullo } from '@/sim/rullo';
-import { clampWatt, fisicaDi, giriPerLocale, intentoDi, leggiScelta, salvaScelta, SCELTA_VUOTA, stimaLocale, vistaGiro, vistaPercorso, vistaSalita, wattDelTipo, wattIniziali, type Scelta, type VistaDove } from './pedala/scelta';
+import { clampWatt, fisicaDi, intentoDi, leggiScelta, salvaScelta, SCELTA_VUOTA, stimaGiro, vistaGiro, vistaPercorso, vistaSalita, wattDelTipo, wattIniziali, type Scelta, type VistaDove } from './pedala/scelta';
 import { AllenamentoCard, ComeSegmento, Fantasma, Giri, VaETorna, WattFissi } from './pedala/Come';
 import { AllenamentoFoglio } from './pedala/Allenamento';
 import { workoutTitle } from './Workouts';
 import { findWorkout, workoutDuration } from '@/domain/workouts';
+import { giriPer } from '@/domain/stima';
 import { intentoInSearch } from '@/ride/intento';
 import { useI18n } from '@/i18n';
 import { vistaPedala } from './pedala/vista';
@@ -155,7 +156,7 @@ export function PedalaPage() {
   const vistaD = scelta?.vista ?? null;
   const fisica = useMemo(() => fisicaDi(profile), [profile]);
   /** secondi per un passaggio del Dove, ai watt del tipo (A14) */
-  const giroSec = useMemo(() => (vistaD && vistaD.profilo.length > 1 ? stimaLocale(vistaD.profilo, wattDelTipo(tipo, profile.ftp, watt, workout), fisica) : null), [vistaD, tipo, profile.ftp, watt, workout, fisica]);
+  const giroSec = useMemo(() => (vistaD && vistaD.profilo.length > 1 ? stimaGiro(vistaD.profilo, wattDelTipo(tipo, profile.ftp, watt, workout), fisica) : null), [vistaD, tipo, profile.ftp, watt, workout, fisica]);
   const durataAll = workout ? workoutDuration(workout) : null;
   const aperto = !!vistaD && !vistaD.anello && scelta?.dove?.kind !== 'libero' && scelta?.dove?.kind !== 'giro' && scelta?.dove?.kind !== 'salita';
   const giriSi = !!vistaD?.anello || (aperto && tipo === 'allenamento' && !!workout);
@@ -184,7 +185,7 @@ export function PedalaPage() {
     const key = `${JSON.stringify(scelta.dove)}|${workout.id}`;
     if (proposta.current === key) return;
     proposta.current = key;
-    const n = vistaD?.anello ? giriPerLocale(durataAll, giroSec) : aperto ? (durataAll > giroSec * 1.08 ? 2 : 1) : 1;
+    const n = vistaD?.anello ? giriPer(durataAll, giroSec) : aperto ? (durataAll > giroSec * 1.08 ? 2 : 1) : 1;
     if (n !== scelta.giri) setScelta({ giri: n });
   }, [scelta?.dove, scelta?.giri, tipo, workout, giroSec, durataAll, vistaD?.anello, aperto, setScelta]);
 

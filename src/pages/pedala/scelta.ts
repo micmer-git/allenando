@@ -1,8 +1,10 @@
 import { loadKv, saveKv } from '@/db/db';
-import { steadyStateSpeed, STANDARD_AIR, type PhysicsParams } from '@/domain/physics';
+import { STANDARD_AIR, type PhysicsParams } from '@/domain/physics';
+import { giriPer, stimaSecondi, wattMedi } from '@/domain/stima';
+import { chiuso } from '@/open/passaggi';
 import type { LoadedRoute, RouteMeta } from '@/domain/routes';
 import type { Profile, Ride, Workout } from '@/domain/types';
-import { workoutDuration, workoutPowerSeries } from '@/domain/workouts';
+import { workoutDuration } from '@/domain/workouts';
 import type { Leg } from '@/open/graph';
 import { loadPlan, savePlan } from '@/open/plan';
 import type { RideDef, WorldData } from '@/open/world';
@@ -153,8 +155,9 @@ const salitaGain = (profilo: [number, number][]) => {
 };
 
 export function vistaPercorso(data: WorldData, ride: RideDef, record?: VistaDove['record']): VistaDove {
-  const { punti, profilo } = lineaDiLegs(data, ride.legs.map(([edge, dir]) => ({ edge, dir })));
-  const anello = siChiude(punti);
+  const legs = ride.legs.map(([edge, dir]) => ({ edge, dir }));
+  const { punti, profilo } = lineaDiLegs(data, legs);
+  const anello = chiuso(data.graph, legs);
   return {
     titolo: ride.name,
     sotto: cap(ride.side),
@@ -171,7 +174,7 @@ export function vistaPercorso(data: WorldData, ride: RideDef, record?: VistaDove
 
 export function vistaPiano(data: WorldData, legs: readonly Leg[], titolo: string, sotto: string, partenza?: string): VistaDove {
   const { punti, profilo } = lineaDiLegs(data, legs);
-  const anello = siChiude(punti);
+  const anello = chiuso(data.graph, [...legs]);
   const p = riduci(profilo);
   return {
     titolo,
@@ -237,42 +240,22 @@ export function fisicaDi(p: Pick<Profile, 'weightKg' | 'bikeWeightKg' | 'cda' | 
   return { massKg: p.weightKg + p.bikeWeightKg, cda: p.cda, crr: p.crr, ...STANDARD_AIR };
 }
 
-/** Secondi per pedalare il profilo a watt costanti, senza scia né vento (A14). */
-export function stimaLocale(profilo: readonly [number, number][], watt: number, fisica: PhysicsParams): number {
-  let t = 0;
-  for (let i = 1; i < profilo.length; i++) {
-    const ds = profilo[i][0] - profilo[i - 1][0];
-    if (ds <= 0) continue;
-    const grade = Math.max(-0.25, Math.min(0.25, (profilo[i][1] - profilo[i - 1][1]) / ds));
-    const v = Math.min(20, Math.max(1.5, steadyStateSpeed(watt, grade, fisica)));
-    t += ds / v;
-  }
-  return t;
-}
-
-/** I watt medi di un allenamento, pesati sul tempo (A14). */
-export function wattMediLocale(w: Workout, ftp: number): number {
-  const s = workoutPowerSeries(w, ftp);
-  return s.length ? s.reduce((a, b) => a + b, 0) / s.length : ftp * 0.7;
-}
-
-/** ⌈durata ÷ giro⌉, fra 1 e 20 (A12, tetto del § 6). */
-export function giriPerLocale(durataSec: number, giroSec: number): number {
-  if (!(giroSec > 0) || !(durataSec > 0)) return 1;
-  return Math.min(20, Math.max(1, Math.ceil(durataSec / giroSec - 0.08)));
+/** Secondi per un passaggio del profilo a watt costanti: la fisica del motore, senza scia né vento (A14). */
+export function stimaGiro(profilo: readonly [number, number][], watt: number, fisica: PhysicsParams): number {
+  return stimaSecondi(profilo.map(([distance, altitude]) => ({ distance, altitude })), watt, fisica);
 }
 
 /** I watt con cui si stima un giro, per tipo (A14). */
 export function wattDelTipo(tipo: Tipo, ftp: number, watt: number | null, w: Workout | null): number {
   if (tipo === 'fissa') return watt ?? wattIniziali(ftp);
-  if (tipo === 'allenamento' && w) return wattMediLocale(w, ftp);
+  if (tipo === 'allenamento' && w) return wattMedi(w, ftp);
   return ftp * 0.75;
 }
 
 /** I giri proposti per un allenamento su un anello (piano U, § 3 «Prove»). */
 export function giriProposti(w: Workout, vista: Pick<VistaDove, 'profilo'>, profilo: Profile): number {
-  const giro = stimaLocale(vista.profilo, wattMediLocale(w, profilo.ftp), fisicaDi(profilo));
-  return giriPerLocale(workoutDuration(w), giro);
+  const giro = stimaGiro(vista.profilo, wattMedi(w, profilo.ftp), fisicaDi(profilo));
+  return giriPer(workoutDuration(w), giro);
 }
 
 // ---------- il link della corsa ----------
@@ -288,35 +271,4 @@ export function intentoDi(s: Scelta, tipi: readonly Tipo[]): Intento | null {
   if (s.giri > 1) i.giri = s.giri;
   if (!s.fantasma) i.fantasma = false;
   return i;
-}
-
-/** Il link di § 2.2, finché `intentoInSearch` di U-motore non c'è. */
-export function intentoInSearchLocale(i: Intento): string {
-  const q = new URLSearchParams();
-  const d = i.dove;
-  if (d.kind === 'percorso') {
-    q.set('world', d.world);
-    q.set('ride', d.ride);
-  } else if (d.kind === 'piano') {
-    q.set('world', d.world);
-    q.set('plan', d.plan);
-  } else if (d.kind === 'libero') {
-    q.set('world', d.world);
-    q.set('edge', String(d.edge));
-    q.set('dir', String(d.dir));
-    q.set('s', String(Math.round(d.s)));
-  } else if (d.kind === 'salita') q.set('route', d.route);
-  else {
-    q.set('replay', d.replay);
-    q.set('mode', i.tipo === 'allora' ? 'power' : i.fantasma === false ? 'grade' : 'ghost');
-    if (d.sec) q.set('sec', d.sec);
-  }
-  q.set('tipo', i.tipo);
-  if (i.tipo === 'fissa' && i.watt) q.set('watt', String(i.watt));
-  if (i.tipo === 'allenamento' && i.workout) q.set('workout', i.workout);
-  if (i.giri && i.giri > 1) q.set('giri', String(i.giri));
-  if (i.fantasma === false) q.set('fantasma', '0');
-  if (i.session) q.set('session', i.session);
-  if (i.room) q.set('room', i.room);
-  return q.toString();
 }

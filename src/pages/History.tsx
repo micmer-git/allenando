@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { cap, formatDuration, formatHours, formatKmText, formatNumber, formatTss } from '@/domain/format';
 import { localDateKey, trainingLoad } from '@/domain/load';
-import type { Ride } from '@/domain/types';
 import { PageHeader, Segmented } from '@/components/ui';
 import { WORLD_CATALOG, worldInfo, worldOfRide } from '@/open/worlds';
 
@@ -72,7 +71,7 @@ export function HistoryPage() {
                   <span className="min-w-0">
                     <span className="flex flex-wrap items-center gap-1.5 font-semibold leading-snug">
                       {ride.name}
-                      {(ride as Ride & { prova?: boolean }).prova ? <span className="rounded-full border border-line px-2 py-px text-xs font-semibold" data-testid="diario-prova">Prova</span> : null}
+                      {ride.prova ? <span className="rounded-full border border-line px-2 py-px text-xs font-semibold" data-testid="diario-prova">Prova</span> : null}
                     </span>
                     <span className="block text-sm leading-snug text-muted">
                       {cap(quando(ride.startTime))}

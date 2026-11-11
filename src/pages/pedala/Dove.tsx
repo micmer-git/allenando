@@ -8,6 +8,7 @@ import type { Ride } from '@/domain/types';
 import type { Leg } from '@/open/graph';
 import { worldStorage } from '@/open/offline';
 import { pickRoute } from '@/open/pick';
+import { chiuso } from '@/open/passaggi';
 import { savePlan } from '@/open/plan';
 import { EMPTY_PROGRESS, loadProgress, type WorldProgress } from '@/open/progress';
 import { startTowns, townPoint } from '@/open/starts';
@@ -18,7 +19,7 @@ import { useApp } from '@/store/useApp';
 import { cn } from '@/lib/cn';
 import { AbTab, FreeTab, LoopTab, RideCard, ROUTE_COLORS, type PuntoLibero } from '../World';
 import { Foglio } from './Foglio';
-import { lineaDiLegs, siChiude, vistaGiro, vistaLibero, vistaPercorso, vistaPiano, vistaSalita, type Scelta, type VistaDove } from './scelta';
+import { vistaGiro, vistaLibero, vistaPercorso, vistaPiano, vistaSalita, type Scelta, type VistaDove } from './scelta';
 
 /*
  * Dove (piano U, F3; wireframe D1, D2, G2, P1). Un foglio a tutta altezza (sul computer una
@@ -77,7 +78,7 @@ export function rifacibile(r: Ride): boolean {
 
 /** Il record di una salita verificata: il giro più veloce del diario fatto tutto. */
 function recordSalita(rides: readonly Ride[], id: string, lunghezza: number): VistaDove['record'] {
-  const best = rides.filter((r) => r.routeId === id && r.distanceM >= lunghezza - 5 && !(r as Ride & { prova?: boolean }).prova).sort((a, b) => a.durationSec - b.durationSec)[0];
+  const best = rides.filter((r) => r.routeId === id && r.distanceM >= lunghezza - 5 && !r.prova).sort((a, b) => a.durationSec - b.durationSec)[0];
   return best ? { sec: best.durationSec, at: best.startTime, ghost: best.id } : null;
 }
 
@@ -109,21 +110,9 @@ export function useGrandiSalite(attivo: boolean): Record<string, VistaDove | nul
   return out;
 }
 
-/** Si chiude su sé stesso? Solo dai due capi: il primo punto del primo arco, l'ultimo dell'ultimo. */
+/** Si chiude su sé stesso: finisce nel nodo da cui parte (`chiuso` di U-motore). */
 function chiusoRide(data: WorldData, r: RideDef): boolean {
-  const a = r.legs[0];
-  const b = r.legs[r.legs.length - 1];
-  if (!a || !b) return false;
-  const ea = data.graph.edges[a[0]];
-  const eb = data.graph.edges[b[0]];
-  if (!ea || !eb) return false;
-  const ia = a[1] > 0 ? 0 : ea.xs.length - 1;
-  const ib = b[1] > 0 ? eb.xs.length - 1 : 0;
-  return siChiude([
-    { x: ea.xs[ia], z: ea.zs[ia] },
-    { x: 0, z: 0 },
-    { x: eb.xs[ib], z: eb.zs[ib] },
-  ]);
+  return chiuso(data.graph, r.legs.map(([edge, dir]) => ({ edge, dir })));
 }
 
 export function DoveFoglio(props: Omit<DoveProps, 'colonna'> & { open: boolean; onClose: () => void }) {
@@ -205,8 +194,7 @@ export function DoveContenuto({ mondo, setWorld, strumento, setStrumento, filtro
   const scegliPiano = (legs: Leg[], name: string, partenza: string) => {
     if (!data) return;
     const plan = savePlan({ legs, name });
-    const via = lineaDiLegs(data, legs);
-    const sotto = siChiude(via.punti) ? `Da ${partenza}` : name;
+    const sotto = chiuso(data.graph, legs) ? `Da ${partenza}` : name;
     onScegli({ dove: { kind: 'piano', world: data.graph.id, plan }, vista: vistaPiano(data, legs, name, sotto, partenza), piano: { name, legs: legs.map((l) => [l.edge, l.dir]) } });
   };
   const scegliLibero = (p: PuntoLibero) => {

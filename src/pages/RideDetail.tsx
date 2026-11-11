@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { LineChart, ZoneBar } from '@/components/Charts';
 import { Button, PageHeader } from '@/components/ui';
+import { esportabile } from '@/domain/types';
 import { CartolinaButton } from '@/components/ShareCard';
 import { WorldMap, type MapMarker, type MapOverlay } from '@/components/WorldMap';
 import { loadWorld, Terrain, WORLD_KV, type WorldData } from '@/open/world';
@@ -38,7 +39,7 @@ export function RideDetailPage() {
   const alts = ride.samples.map((sample) => sample.altitude);
   const gps = ride.samples.some((s) => validPosition(s.lat, s.lon));
   // un giro di prova non si esporta: Strava avrebbe un giro finto (A11)
-  const prova = (ride as typeof ride & { prova?: boolean }).prova === true;
+  const prova = !esportabile(ride);
   const rifai = ride.samples.length > 10 && ride.distanceM > 200;
   return (
     <main className="mx-auto w-full max-w-3xl px-4 pb-nav pt-5 md:px-8 md:pt-10" data-testid="ride-detail">
