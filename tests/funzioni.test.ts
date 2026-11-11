@@ -146,7 +146,7 @@ describe('F.1 · i due mondi e l’ultimo ricordato', () => {
     expect(m.files.some(([p]) => p === 'graph.json')).toBe(true);
     expect(m.files.some(([p]) => p === 'far.bin')).toBe(true);
     expect(m.bytes).toBe(m.files.reduce((s, f) => s + f[1], 0));
-    expect(worldFacts(m)).toMatch(/^\d{1,2}\.\d{3} km di strade · 14 percorsi$/);
+    expect(worldFacts(m)).toMatch(/^\d{1,2}\.\d{3} km di strade · 16 percorsi$/);
   });
   it('fetchManifest: un mondo non costruito dà null senza lanciare', async () => {
     const fetcher = (async () => new Response('', { status: 404 })) as unknown as typeof fetch;
@@ -208,6 +208,8 @@ describe('F.3 · le salite del giro, col passo in cima e il verso', () => {
     expect(rideSense(graph, rideDef('due-valli'))).not.toBeNull();
     expect(siblingRide(graph, rides, rideDef('ganda'))).toBeNull();
     expect(siblingRide(graph, rides, rideDef('selvino'))).toBeNull();
+    // il corto della Berghem MolaMia condivide metà della Ganda (Nembro, Selvino) ma non è il suo gemello
+    expect(siblingRide(graph, rides, rideDef('berghem-corto'))).toBeNull();
   });
 });
 

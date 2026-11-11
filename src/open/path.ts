@@ -24,6 +24,15 @@ export interface PathLeg extends Leg {
 
 const STEP = 2;
 const CORNER = 7;
+/**
+ * La pendenza mostrata è la media sui 30 m prima e sui 30 m dopo (piano OROBIA 07/11, M.6): con
+ * ±10 m il «%» dell'HUD saltava di tre-quattro punti a ogni vertice della pianta, a Gazzaniga
+ * anche in piano. Il piano diceva ±25 m: con 25 in fondo a un sottopasso e sul dosso di Via
+ * Europa a Ponte Nossa, a 25 km/h, il salto era ancora di 2,1–2,5 punti al secondo; con 30
+ * sta sotto i 2. La quota è già livellata nel grafo: qui si toglie solo lo scatto.
+ */
+export const GRADE_WINDOW_M = 30;
+const GRADE_STEPS = Math.ceil(GRADE_WINDOW_M / STEP);
 
 export class WorldPath implements Track {
   readonly closed = false;
@@ -163,14 +172,14 @@ export class WorldPath implements Track {
     }
     // direzione e pendenza dai vicini, su una finestra un po' più larga del tratto rifatto
     const pts = this.points;
-    const a = Math.max(0, i0 - 12);
+    const a = Math.max(0, i0 - GRADE_STEPS - 2);
     const b = pts.length - 1;
     for (let i = a; i <= b; i++) {
       const h0 = Math.max(0, i - 3);
       const h1 = Math.min(b, i + 3);
       pts[i].heading = Math.atan2(pts[h1].x - pts[h0].x, pts[h1].z - pts[h0].z);
-      const g0 = Math.max(0, i - 5);
-      const g1 = Math.min(b, i + 5);
+      const g0 = Math.max(0, i - GRADE_STEPS);
+      const g1 = Math.min(b, i + GRADE_STEPS);
       const run = pts[g1].distance - pts[g0].distance;
       pts[i].grade = run > 0 ? (pts[g1].y - pts[g0].y) / run : 0;
     }
