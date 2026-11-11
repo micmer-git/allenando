@@ -5,14 +5,20 @@ import { useOnline } from '@/components/Install';
 import { formatGainText, formatKmText } from '@/domain/format';
 import { loadRouteFile, routeMeta, trackFromRouteFile } from '@/domain/routes';
 import { lastWorld, isWorldId } from '@/open/worlds';
-import type { Rete } from '@/ride/contract';
+import type { Rete, Tipo } from '@/ride/contract';
 import { useApp } from '@/store/useApp';
 import { cn } from '@/lib/cn';
 import { HomePage } from './Home';
 import { DoveContenuto, DoveFoglio, idScelto, useMondo, type Filtro, type Scelto, type Strumento } from './pedala/Dove';
 import { RulloChip, RulloFoglio, RulloPannello } from './pedala/Rullo';
 import { useRullo } from '@/sim/rullo';
-import { intentoDi, intentoInSearchLocale, leggiScelta, salvaScelta, SCELTA_VUOTA, vistaGiro, vistaPercorso, vistaSalita, type Scelta, type VistaDove } from './pedala/scelta';
+import { clampWatt, fisicaDi, giriPerLocale, intentoDi, leggiScelta, salvaScelta, SCELTA_VUOTA, stimaLocale, vistaGiro, vistaPercorso, vistaSalita, wattDelTipo, wattIniziali, type Scelta, type VistaDove } from './pedala/scelta';
+import { AllenamentoCard, ComeSegmento, Fantasma, Giri, VaETorna, WattFissi } from './pedala/Come';
+import { AllenamentoFoglio } from './pedala/Allenamento';
+import { workoutTitle } from './Workouts';
+import { findWorkout, workoutDuration } from '@/domain/workouts';
+import { intentoInSearch } from '@/ride/intento';
+import { useI18n } from '@/i18n';
 import { vistaPedala } from './pedala/vista';
 
 /** «Offline», una parola (piano U, A16). */
@@ -60,6 +66,10 @@ export function PedalaPage() {
   const rides = useApp((s) => s.rides);
   const largo = useMedia('(min-width: 1024px) and (min-height: 600px)');
   const [foglio, setFoglio] = useState(false);
+  const [allenamenti, setAllenamenti] = useState(false);
+  const profile = useApp((s) => s.profile);
+  const workouts = useApp((s) => s.workouts);
+  const { t } = useI18n();
   const chiudiFoglio = useCallback(() => setFoglio(false), []);
   const [scelta, setSceltaState] = useState<Scelta | null>(null);
   const [dove, setDove] = useState<{ open: boolean; strumento: Strumento; filtro: Filtro; solo?: boolean; ride?: string | null }>({ open: false, strumento: 'lista', filtro: 'tutti' });
@@ -136,8 +146,39 @@ export function PedalaPage() {
     void updateSettings({ prova: false });
     setFoglio(false);
   };
-  const intento = scelta ? intentoDi(scelta, v.tipi) : null;
-  const via = intento ? `/ride?${intentoInSearchLocale(intento)}` : null;
+  // ---- Come: il tipo, i watt, l'allenamento, i giri (F4) ----
+  const tipo: Tipo = scelta && v.tipi.includes(scelta.tipo) ? scelta.tipo : v.tipi[0] ?? 'libera';
+  const workout = scelta?.workout ? findWorkout(scelta.workout, workouts) ?? null : null;
+  const watt = scelta?.watt ?? wattIniziali(profile.ftp);
+  const vistaD = scelta?.vista ?? null;
+  const fisica = useMemo(() => fisicaDi(profile), [profile]);
+  /** secondi per un passaggio del Dove, ai watt del tipo (A14) */
+  const giroSec = useMemo(() => (vistaD && vistaD.profilo.length > 1 ? stimaLocale(vistaD.profilo, wattDelTipo(tipo, profile.ftp, watt, workout), fisica) : null), [vistaD, tipo, profile.ftp, watt, workout, fisica]);
+  const durataAll = workout ? workoutDuration(workout) : null;
+  const aperto = !!vistaD && !vistaD.anello && scelta?.dove?.kind !== 'libero' && scelta?.dove?.kind !== 'giro' && scelta?.dove?.kind !== 'salita';
+  const giriSi = !!vistaD?.anello || (aperto && tipo === 'allenamento' && !!workout);
+  const vv = vistaPedala(r, rete, { dove: scelta?.dove ?? null, tipo, record: !!vistaD?.record, giri: giriSi, allora: !!vistaD?.potenza });
+  // con un allenamento i giri si propongono da soli: durata / stima del giro (A12), il va e torna sul percorso aperto (A13)
+  const proposta = useRef<string>('');
+  useEffect(() => {
+    if (!scelta?.dove || tipo !== 'allenamento' || !workout || !giroSec || !durataAll) return;
+    const key = `${JSON.stringify(scelta.dove)}|${workout.id}`;
+    if (proposta.current === key) return;
+    proposta.current = key;
+    const n = vistaD?.anello ? giriPerLocale(durataAll, giroSec) : aperto ? (durataAll > giroSec * 1.08 ? 2 : 1) : 1;
+    if (n !== scelta.giri) setScelta({ giri: n });
+  }, [scelta?.dove, scelta?.giri, tipo, workout, giroSec, durataAll, vistaD?.anello, aperto, setScelta]);
+
+  const sceltaTipo = (t: Tipo) => {
+    setScelta({ tipo: t, watt: t === 'fissa' ? watt : scelta?.watt ?? null });
+    if (t === 'allenamento' && !workout) setAllenamenti(true);
+  };
+  const intento = scelta && scelta.dove ? intentoDi({ ...scelta, tipo, watt: tipo === 'fissa' ? watt : scelta.watt, giri: giriSi ? scelta.giri : 1 }, vv.tipi) : null;
+  let via = intento ? `/ride?${intentoInSearch(intento)}` : null;
+  // la salita col fantasma: il giro piu' veloce del diario (?route=R&ghost=ID, par. 2.2)
+  if (via && intento?.dove.kind === 'salita' && intento.fantasma !== false && vistaD?.record?.ghost && tipo !== 'allenamento') via += `&ghost=${encodeURIComponent(vistaD.record.ghost)}`;
+  const minutiAll = tipo === 'allenamento' && durataAll ? durataAll / 60 : undefined;
+  const fineInCima = scelta?.dove?.kind === 'salita' && tipo === 'allenamento' && !!durataAll && !!giroSec && giroSec < durataAll * 0.98;
 
   const doveProps = {
     mondo,
@@ -151,6 +192,8 @@ export function PedalaPage() {
     offline: v.offline,
     schedaRide: dove.ride ?? null,
     soloStrumento: dove.solo,
+    minuti: minutiAll,
+    watt: wattDelTipo(tipo, profile.ftp, watt, workout),
   };
   const apriDove = () => setDove({ open: true, strumento: 'lista', filtro: dove.filtro });
   const scheda = scelta?.dove?.kind === 'percorso' ? () => setDove({ open: true, strumento: 'scheda', filtro: dove.filtro, solo: true, ride: (scelta.dove as { ride: string }).ride }) : scelta?.dove?.kind === 'libero' ? () => setDove({ open: true, strumento: 'libero', filtro: dove.filtro, solo: true }) : scelta?.dove?.kind === 'salita' ? () => navigate(`/salite/${(scelta.dove as { route: string }).route}`) : null;
@@ -158,13 +201,33 @@ export function PedalaPage() {
   const pannelloScelta = scelta ? (
     <div className="flex flex-col" data-testid="pedala-scelta">
       {!largo ? <Occhiello>Dove</Occhiello> : null}
-      {!largo ? <DoveCard vista={scelta.vista} onClick={apriDove} /> : <DoveTesta vista={scelta.vista} />}
-      {scheda ? (
-        <div className="mt-1.5 flex items-center justify-end">
-          <button type="button" className="h-11 rounded-full px-3 font-semibold" onClick={scheda} data-testid="pedala-scheda">
-            Scheda
-          </button>
+      {!largo ? <DoveCard vista={vistaD} onClick={apriDove} /> : <DoveTesta vista={vistaD} />}
+      {(vv.blocchi.includes('giri') && vistaD?.anello) || scheda ? (
+        <div className="mt-1.5 flex min-h-11 items-center justify-between gap-2">
+          {vv.blocchi.includes('giri') && vistaD?.anello ? <Giri n={scelta.giri} durataSec={tipo === 'allenamento' && giroSec ? giroSec * scelta.giri : null} onChange={(n) => setScelta({ giri: n })} /> : <span />}
+          {scheda ? (
+            <button type="button" className="h-11 rounded-full px-3 font-semibold" onClick={scheda} data-testid="pedala-scheda">
+              Scheda
+            </button>
+          ) : null}
         </div>
+      ) : null}
+      {vv.blocchi.includes('giri') && aperto ? <VaETorna n={Math.min(2, scelta.giri)} andataSec={giroSec} onChange={(n) => setScelta({ giri: n })} /> : null}
+      {aperto && tipo === 'allenamento' && workout && vistaD?.partenza && durataAll ? (
+        <button type="button" className="flex min-h-12 w-full items-center justify-between gap-3 border-b border-line text-left" onClick={() => setDove({ open: true, strumento: 'anello', filtro: dove.filtro, solo: true })} data-testid="pedala-anello-per">
+          <span>{`Anello da ${vistaD.partenza} per ${Math.round(durataAll / 60)} min`}</span>
+          <span aria-hidden="true" className="text-muted">
+            ›
+          </span>
+        </button>
+      ) : null}
+      {fineInCima && giroSec && durataAll ? <p className="mt-2 text-sm font-semibold text-warn" data-testid="pedala-fine-in-cima">{`⚠ Finisce in cima · ${Math.round(giroSec / 60)} di ${Math.round(durataAll / 60)} min`}</p> : null}
+      <Occhiello>Come</Occhiello>
+      <ComeSegmento tipi={vv.tipi} tipo={tipo} sa={r.sa} prova={r.prova} onChange={sceltaTipo} />
+      {tipo === 'fissa' ? <WattFissi watt={watt} ftp={profile.ftp} durataSec={giroSec ? giroSec * (giriSi ? scelta.giri : 1) : null} onChange={(w) => setScelta({ watt: clampWatt(w) })} /> : null}
+      {tipo === 'allenamento' ? <AllenamentoCard workout={workout} titolo={workout ? workoutTitle(workout, t) : ''} ftp={profile.ftp} onClick={() => setAllenamenti(true)} /> : null}
+      {vv.blocchi.includes('fantasma') && vistaD?.record ? (
+        <Fantasma on={scelta.fantasma} sec={vistaD.record.sec} at={vistaD.record.at} titolo={scelta.dove?.kind === 'giro' ? 'Contro il fantasma' : 'Contro il record'} onChange={(f) => setScelta({ fantasma: f })} />
       ) : null}
       {via ? (
         <Link to={via} className="mt-4 flex h-14 items-center justify-center rounded-full bg-accent text-[17px] font-semibold text-accent-ink transition active:scale-[0.98]" data-testid="pedala-via">
@@ -198,7 +261,7 @@ export function PedalaPage() {
         </div>
       ) : largo ? (
         <div className="grid flex-1 grid-cols-[minmax(0,1fr)_380px] gap-6 pb-6">
-          <DoveContenuto {...doveProps} colonna />
+          <DoveContenuto {...doveProps} strumento="lista" setStrumento={(strumento) => setDove((d) => ({ ...d, open: true, strumento, solo: true }))} colonna />
           <aside className="self-start rounded-3xl border border-line bg-elev p-4" data-testid="pedala-colonna">
             {pannelloScelta}
           </aside>
@@ -211,6 +274,16 @@ export function PedalaPage() {
       )}
       {!largo ? <DoveFoglio {...doveProps} open={dove.open} onClose={() => setDove((d) => ({ ...d, open: false, strumento: 'lista', solo: false }))} /> : null}
       {largo && dove.open && dove.strumento !== 'lista' ? <DoveFoglio {...doveProps} open onClose={() => setDove((d) => ({ ...d, open: false, strumento: 'lista', solo: false }))} /> : null}
+      <AllenamentoFoglio
+        open={allenamenti}
+        onClose={() => setAllenamenti(false)}
+        scelto={scelta?.workout ?? null}
+        onScegli={(w) => {
+          proposta.current = '';
+          setScelta({ workout: w.id, tipo: 'allenamento' });
+          setAllenamenti(false);
+        }}
+      />
       <RulloFoglio r={r} open={foglio} onClose={chiudiFoglio} onSpegniProva={spegniProva} />
     </main>
   );

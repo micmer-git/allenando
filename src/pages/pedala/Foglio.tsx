@@ -47,6 +47,7 @@ export function Foglio({
       <div
         ref={panel}
         tabIndex={-1}
+        style={{ outline: 'none' }}
         className={cn(
           'absolute inset-x-0 bottom-0 mx-auto flex w-full max-w-lg flex-col rounded-t-3xl border border-line bg-elev outline-none wide:bottom-auto wide:top-1/2 wide:-translate-y-1/2 wide:rounded-3xl',
           alto ? 'top-[max(1.5rem,env(safe-area-inset-top))] wide:top-1/2 wide:h-[min(86dvh,860px)]' : 'max-h-[88dvh]',
