@@ -29,15 +29,33 @@ export const STALE_MS = 3000;
 
 const emptyServices = (): TrainerServices => ({ ftms: false, power: false, hr: false, csc: false });
 
+/** Le richieste al selettore del browser: il rullo (o un sensore di potenza), una fascia, tutto, un nome. */
+export type Scelta = 'sensori' | 'tutti' | 'cardio' | { nome: string };
+
+export function requestOptions(scelta: Scelta): RequestDeviceOptions {
+  if (scelta === 'tutti') return { acceptAllDevices: true, optionalServices: SERVICES };
+  if (scelta === 'cardio') return { filters: [{ services: [HR] }], optionalServices: SERVICES };
+  if (typeof scelta === 'object') return { filters: [{ name: scelta.nome }], optionalServices: SERVICES };
+  return { filters: SERVICES.map((service) => ({ services: [service] })), optionalServices: SERVICES };
+}
+
+/** Il rullo finto dei collaudi (A23 del piano U): mai in produzione da un link, solo da localStorage. */
+export type Collaudo = 'rullo' | 'potenza' | 'cardio';
+
+export interface TrainerOptions {
+  /** Il simulatore si può accendere? Di serie no: lo decide la Modalità prova (src/sim/rullo.ts). */
+  simulatore?: () => boolean;
+}
+
 /**
- * Adattatore Web Bluetooth. Se il browser non lo espone, il chiamante resta
- * sul simulatore e mostra il messaggio (su iOS: Bluefy).
+ * Adattatore Web Bluetooth, uno per l'app (src/sim/rullo.ts). Parte spento: niente simulatore da
+ * solo. Il simulatore c'è ancora, ma si accende soltanto se `simulatore()` lo permette (la prova).
  */
 export class BluetoothTrainer implements TelemetrySource {
-  mode: TelemetrySource['mode'] = 'simulator';
+  mode: TelemetrySource['mode'] = 'bluetooth';
   power = 0;
-  hr = 70;
-  cadence = 85;
+  hr = 0;
+  cadence = 0;
 
   private listeners = new Set<() => void>();
   private services: TrainerServices = emptyServices();
@@ -67,6 +85,16 @@ export class BluetoothTrainer implements TelemetrySource {
   private cpsCadence: number | undefined;
   private cscCadence: number | undefined;
   private simT = 0;
+  private readonly allowSim: () => boolean;
+  /** il rullo finto dei collaudi, se acceso */
+  private fake: Collaudo | null = null;
+  /** i comandi che il rullo finto avrebbe ricevuto, gli ultimi 64 */
+  readonly sent: Uint8Array[] = [];
+
+  constructor(opts: TrainerOptions = {}) {
+    this.allowSim = opts.simulatore ?? (() => false);
+  }
+
   private onDisconnect = (event: Event) => {
     const device = event.target as BluetoothDevice | null;
     this.devices = this.devices.filter((item) => item !== device);
@@ -89,6 +117,7 @@ export class BluetoothTrainer implements TelemetrySource {
   };
 
   snapshot(): TrainerSnapshot {
+    const ftms = this.services.ftms && (this.controlChar != null || this.fake === 'rullo');
     return {
       mode: this.mode,
       deviceName: this.deviceName,
@@ -97,7 +126,22 @@ export class BluetoothTrainer implements TelemetrySource {
       simulation: this.simulation,
       status: this.status,
       busy: this.busy,
+      can: {
+        erg: ftms && this.targetPowerSupported && this.control !== 'denied' && this.control !== 'unsupported',
+        sim: ftms && this.simulation !== 'unsupported' && this.control !== 'denied',
+      },
     };
+  }
+
+  /** Il rullo finto dei collaudi (A23): un dispositivo collegato senza Bluetooth. */
+  get collaudo(): Collaudo | null {
+    return this.fake;
+  }
+
+  /** Le periferiche collegate, quella che comanda per prima: la prima è il rullo da ricordare. */
+  get known(): { id: string; name?: string }[] {
+    const list = this.controlDevice ? [this.controlDevice, ...this.devices.filter((d) => d !== this.controlDevice)] : this.devices;
+    return list.map((d) => ({ id: d.id, name: d.name }));
   }
 
   subscribe(listener: () => void): () => void {
@@ -111,6 +155,7 @@ export class BluetoothTrainer implements TelemetrySource {
       return;
     }
     const now = performance.now();
+    if (this.fake && this.status === 'connected') this.advanceFake(input, now);
     this.dropStale(now);
     if (this.status !== 'connected') return;
     if (input.erg && input.targetPower != null && this.control === 'granted' && this.targetPowerSupported) {
@@ -142,39 +187,72 @@ export class BluetoothTrainer implements TelemetrySource {
     }
   }
 
+  /**
+   * Il simulatore della Modalità prova. Con la prova spenta non si accende: si resta col rullo
+   * (o con niente), e la corsa non parte (src/sim/rullo.ts, `puoPedalare`).
+   */
   async useSimulator(): Promise<void> {
+    if (!this.allowSim()) return;
     this.disconnect();
+    this.fake = null;
     this.mode = 'simulator';
     this.status = 'idle';
     this.deviceName = null;
     this.services = emptyServices();
     this.control = 'none';
     this.simulation = 'none';
+    this.power = 0;
+    this.cadence = 0;
+    this.hr = 70;
+    this.emit();
+  }
+
+  /** Spegne il simulatore: si torna al Bluetooth, senza periferiche. */
+  stopSimulator(): void {
+    if (this.mode !== 'simulator') return;
+    this.mode = 'bluetooth';
+    this.status = 'idle';
+    this.power = this.cadence = this.hr = 0;
     this.emit();
   }
 
   async connectBluetooth(acceptAll: boolean): Promise<void> {
+    await this.choose(acceptAll ? 'tutti' : 'sensori');
+  }
+
+  /** Il selettore del browser con una richiesta: il rullo, una fascia, tutto, un nome ricordato. */
+  async choose(scelta: Scelta): Promise<void> {
     const support = bluetoothSupport();
-    if (!support.available || !navigator.bluetooth) {
+    const bt = typeof navigator === 'undefined' ? undefined : navigator.bluetooth;
+    if (!support.available || !bt) {
       this.status = 'failed';
       this.emit();
       throw new Error(support.reason === 'ios' ? 'ios' : 'missing');
     }
+    await this.connectWith(() => bt.requestDevice(requestOptions(scelta)));
+  }
+
+  /** Una periferica già nota (bluetooth.getDevices): si ricollega senza selettore. */
+  async connectKnown(device: BluetoothDevice): Promise<void> {
+    await this.connectWith(async () => device);
+  }
+
+  private async connectWith(pick: () => Promise<BluetoothDevice>): Promise<void> {
+    // un rullo vero prende il posto di quello finto dei collaudi
+    if (this.fake) {
+      this.disconnect();
+      this.fake = null;
+      this.status = 'idle';
+    }
     // con un rullo già collegato si può aggiungere una fascia: se l'aggiunta fallisce, il rullo resta
     const already = this.mode === 'bluetooth' && this.devices.length > 0;
+    const before = this.mode;
     this.busy = true;
     if (!already) this.status = 'connecting';
     this.emit();
     let device: BluetoothDevice | null = null;
     try {
-      device = await navigator.bluetooth.requestDevice(
-        acceptAll
-          ? { acceptAllDevices: true, optionalServices: SERVICES }
-          : {
-              filters: SERVICES.map((service) => ({ services: [service] })),
-              optionalServices: SERVICES,
-            },
-      );
+      device = await pick();
       device.addEventListener('gattserverdisconnected', this.onDisconnect);
       const server = await device.gatt?.connect();
       if (!server) throw new Error('gatt');
@@ -186,6 +264,7 @@ export class BluetoothTrainer implements TelemetrySource {
       this.deviceName = this.devices.map((item) => item.name).filter(Boolean).join(' + ') || null;
       this.mode = 'bluetooth';
       this.status = 'connected';
+      this.fake = null;
       if (this.controlChar && this.controlChar !== hadControl) {
         await this.requestControl();
       }
@@ -195,7 +274,8 @@ export class BluetoothTrainer implements TelemetrySource {
       if (already) this.status = 'connected';
       else if (name === 'NotFoundError') this.status = 'cancelled';
       else if (this.status !== 'connected') this.status = 'failed';
-      if (this.status !== 'connected') this.mode = 'simulator';
+      // un tentativo andato male non accende niente: si resta dove si era (il simulatore solo se c'era già)
+      if (this.status !== 'connected') this.mode = before;
       throw error;
     } finally {
       this.busy = false;
@@ -227,6 +307,46 @@ export class BluetoothTrainer implements TelemetrySource {
     this.control = 'none';
     this.simulation = 'none';
     if (this.mode === 'bluetooth') this.status = 'disconnected';
+  }
+
+  /** «Scollega»: via le periferiche (e il rullo finto), e si torna a prima del primo collegamento. */
+  release(): void {
+    this.disconnect();
+    this.fake = null;
+    this.deviceName = null;
+    this.power = this.cadence = this.hr = 0;
+    if (this.mode === 'bluetooth') this.status = 'idle';
+    this.emit();
+  }
+
+  /** Il rullo finto dei collaudi (A23): collegato subito, con le capacità del tipo scelto. */
+  connectFake(kind: Collaudo): void {
+    this.disconnect();
+    this.fake = kind;
+    this.mode = 'bluetooth';
+    this.status = 'connected';
+    this.deviceName = kind === 'rullo' ? 'Rullo di collaudo' : kind === 'potenza' ? 'Potenza di collaudo' : 'Fascia di collaudo';
+    this.services = { ftms: kind === 'rullo', power: kind === 'potenza', hr: kind === 'cardio', csc: false };
+    this.control = kind === 'rullo' ? 'granted' : 'none';
+    this.simulation = 'none';
+    this.targetPowerSupported = true;
+    this.lastPowerCmd = this.lastGrade = Number.NaN;
+    this.sent.length = 0;
+    const now = performance.now();
+    this.powerAt = this.cadenceAt = this.hrAt = now;
+    this.emit();
+  }
+
+  /**
+   * Fine corsa: il rullo resta collegato per la prossima, ma non deve restare in ERG sull'ultimo
+   * bersaglio. Se sa simulare, va in piano; i prossimi comandi ripartono da zero.
+   */
+  rest(): void {
+    this.lastPowerCmd = Number.NaN;
+    this.lastGrade = Number.NaN;
+    this.lastCmdAt = 0;
+    if (this.mode !== 'bluetooth' || this.status !== 'connected' || this.control !== 'granted' || this.simulation === 'unsupported') return;
+    this.enqueue(encodeIndoorBikeSimulation({ windSpeedMs: 0, grade: 0, crr: 0.004, cw: 0.4 }));
   }
 
   private async discover(server: BluetoothRemoteGATTServer, device: BluetoothDevice): Promise<void> {
@@ -395,6 +515,11 @@ export class BluetoothTrainer implements TelemetrySource {
   }
 
   private enqueue(bytes: Uint8Array): void {
+    if (this.fake) {
+      this.sent.push(bytes);
+      if (this.sent.length > 64) this.sent.shift();
+      return;
+    }
     if (!this.controlChar) return;
     this.pending = bytes;
     if (!this.writing) void this.flush();
@@ -441,6 +566,13 @@ export class BluetoothTrainer implements TelemetrySource {
     this.cadence += (cadTarget - this.cadence) * (1 - Math.exp(-Math.max(0, input.dt) / 2.2));
     if (this.cadence < 1) this.cadence = 0;
     this.simT += input.dt;
+  }
+
+  /** Il rullo finto: la potenza insegue il bersaglio (o lo sforzo), come il simulatore. */
+  private advanceFake(input: SourceUpdate, now: number): void {
+    this.advanceSimulator(input);
+    if (this.fake === 'cardio') this.power = this.cadence = 0;
+    this.powerAt = this.cadenceAt = this.hrAt = now;
   }
 
   private emit(): void {

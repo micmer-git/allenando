@@ -32,6 +32,11 @@ export interface Settings {
   weather: 'vero' | 'sereno';
   /** Mondo aperto: la luce dell'ora vera o di un momento scelto. */
   daytime: 'vera' | 'mattina' | 'mezzogiorno' | 'sera';
+  /**
+   * Modalità prova: il simulatore al posto del rullo, spento di serie (A3 del piano U). I giri di
+   * prova vanno nel Diario col gettone, ma non in classifica, né in oro, punti, record, esportazione.
+   */
+  prova?: boolean;
 }
 
 export interface RideSample {
