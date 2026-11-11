@@ -1,5 +1,5 @@
 import { Component, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { WorkoutChart } from '@/components/WorkoutChart';
 import { gradeColor, ProfileChart, RouteMap } from '@/components/RouteViz';
 import { legsBounds, WorldMap, type MapMarker, type MapOverlay } from '@/components/WorldMap';
@@ -8,21 +8,10 @@ import { bluetoothSupport } from '@/bluetooth/support';
 import { BluetoothTrainer } from '@/bluetooth/trainer';
 import { formatAlt, formatAltText, formatDuration, formatGrade, formatKm, formatKmText, formatNumber, formatTss, msToKmh, withUnit } from '@/domain/format';
 import { STANDARD_AIR, type PhysicsParams } from '@/domain/physics';
-import {
-  gapSeconds,
-  geoPointsFromSamples,
-  ghostDistanceAt,
-  hasAltitude,
-  hasGps,
-  powerAtTime,
-  profileFromSamples,
-  sliceSection,
-  type ReplayMode,
-} from '@/domain/replay';
-import { headingToBearing, loadRouteFile, mapillaryUrl, routeMeta, streetViewUrl, trackFromGeo, trackFromRouteFile, type LoadedRoute } from '@/domain/routes';
+import { gapSeconds, ghostDistanceAt, powerAtTime } from '@/domain/replay';
+import { headingToBearing, mapillaryUrl, routeMeta, streetViewUrl, type LoadedRoute } from '@/domain/routes';
 import { projector } from '@/domain/geo';
 import { RIDER_COLORS } from '@/multiplayer/protocol';
-import { createRouteTrack } from '@/domain/track';
 import type { Profile, Quality, Ride, RideSample, Settings, Workout, WorkoutStep } from '@/domain/types';
 import { estimateLthr, powerZone } from '@/domain/zones';
 import { findWorkout, workoutAt } from '@/domain/workouts';
@@ -31,25 +20,25 @@ import { RideEngine } from '@/sim/engine';
 import { CHECKPOINT_EVERY_MS, clearCheckpoint, loadCheckpoint, resumePath, rideFromCheckpoint, RideKeeper, rideSearch, sameRide, type RideCheckpoint } from '@/sim/recovery';
 import { useApp } from '@/store/useApp';
 import { RideScene } from '@/world/Scene';
-import { decodeSection } from './ReplaySetup';
 import { RoomPanel, RoomSheet, useRoom } from './RideRoom';
 import { RecoveryCard } from './RideRecovery';
 import { workoutTitle } from './Workouts';
-import { isWorld, loadWorld, Terrain, worldBase, type RideDef, type WorldData } from '@/open/world';
+import { isWorld, Terrain, worldBase, type RideDef } from '@/open/world';
 import { createWorldField } from '@/open/field';
 import { WorldSession } from '@/open/session';
-import { WorldScene, npcCount, type RemoteWorldRider } from '@/open/WorldScene';
+import { WorldScene, type RemoteWorldRider } from '@/open/WorldScene';
 import { loadPlan } from '@/open/plan';
 import { WorldClient } from '@/multiplayer/world-client';
-import { applyRide, levelOf, loadProgress, postResult, postXp, type XpLine } from '@/open/progress';
+import { levelOf, type XpLine } from '@/open/progress';
 import { AheadProfile, cap, LoopSheet, MapSheet, Nearby, Toasts, TurnPicker, WeatherChip, WorldMini, XpSummary } from './WorldHud';
-import type { Dir } from '@/open/graph';
 import { fetchWeather, type WeatherNow } from '@/open/weather';
 import { nextPass, passesAlongPath, passSub, rideMarks, type PassPoint } from '@/game/passes';
 import { rememberRide } from '@/open/lastRide';
 import { rememberWorld, worldInfo } from '@/open/worlds';
-import { sunFor } from '@/open/sky';
-import { applyCareer, ORO_RULES, type CareerOutcome, type OroLine, type RideFacts, type SegmentResult } from '@/game/career';
+import { type CareerOutcome, type SegmentResult } from '@/game/career';
+import { commitProgress as commitRide, NOTHING_COMMITTED, type Committed } from '@/game/commit';
+import { useRideSetup, type RideSetup } from '@/ride/setup';
+import { puoPedalare, rullo, useRullo } from '@/sim/rullo';
 import { RideGame, rideFrame } from '@/game/rideGame';
 import { SEGMENT_STYLE } from '@/game/arches';
 import { sessionById } from '@/game/sessions';
@@ -66,40 +55,6 @@ const HOLD_MS = 800;
 /** dopo quanto il velo offre «Parti lo stesso» (rete lenta, mattonelle che non arrivano) */
 const SLOW_LOAD_MS = 20_000;
 
-interface RideSetup {
-  route: LoadedRoute;
-  /** id della salita verificata, per legare il giro salvato al fantasma futuro */
-  routeId?: string;
-  replayMode?: ReplayMode;
-  replaySamples?: RideSample[];
-  ghostSamples?: RideSample[];
-  label: string;
-  note?: string;
-  /** mondo aperto: il grafo e la pedalata che lo percorre */
-  world?: { data: WorldData; session: WorldSession };
-}
-
-/** La potenza media migliore su `n` campioni consecutivi (1 Hz). */
-function peakAvg(powers: number[], n: number): number {
-  if (powers.length < n) return 0;
-  let sum = 0;
-  for (let i = 0; i < n; i++) sum += powers[i];
-  let best = sum;
-  for (let i = n; i < powers.length; i++) {
-    sum += powers[i] - powers[i - n];
-    if (sum > best) best = sum;
-  }
-  return best / n;
-}
-
-/** Nelle sessioni «volate» e «salita» i tratti del loro tipo valgono doppio. */
-function sessionBonus(game: RideGame, results: SegmentResult[]): OroLine[] {
-  const kind = game.sessionDef?.kind;
-  if (kind !== 'volate' && kind !== 'salita') return [];
-  const want = kind === 'volate' ? 'volata' : 'gpm';
-  return results.filter((r) => r.kind === want).map((r) => ({ label: `Sessione, doppio: ${r.name}`, oro: ORO_RULES[want] }));
-}
-
 /** Da distanza sulla strada a latitudine e longitudine; null se la strada non è da nessuna parte. */
 export function geoFor(route: LoadedRoute): ((distance: number) => { lat: number; lon: number } | null) | undefined {
   if (route.id === 'neutral' || (route.origin.lat === 0 && route.origin.lon === 0)) return undefined;
@@ -108,138 +63,6 @@ export function geoFor(route: LoadedRoute): ((distance: number) => { lat: number
     const p = route.track.poseAt(distance);
     return Number.isFinite(p.x) && Number.isFinite(p.z) ? proj.toGeo(p.x, p.z) : null;
   };
-}
-
-/** Strada neutra, dritta, per i giri senza GPS: lo diciamo, non la spacciamo per vera. */
-function neutralRoute(samples: RideSample[]): LoadedRoute {
-  const prof = hasAltitude(samples) ? profileFromSamples(samples) : [];
-  const total = Math.max(200, samples[samples.length - 1]?.distance ?? 1000);
-  const pts = [];
-  for (let d = 0; d <= total; d += 10) {
-    let ele: number | null = null;
-    if (prof.length) {
-      const k = prof.findIndex((p) => p.distance >= d);
-      ele = (k < 0 ? prof[prof.length - 1] : prof[k]).altitude;
-    }
-    pts.push({ x: 0, z: d, ele });
-  }
-  return {
-    id: 'neutral',
-    title: 'Strada neutra',
-    subtitle: 'Giro senza GPS',
-    track: createRouteTrack(pts, { halfWidth: 3 }),
-    dem: null,
-    origin: { lat: 0, lon: 0 },
-    attribution: '',
-    verified: false,
-  };
-}
-
-function useRideSetup(): { setup: RideSetup | null; error: string | null } {
-  const [params] = useSearchParams();
-  const rides = useApp((s) => s.rides);
-  const quality = useApp((s) => s.settings.quality);
-  const [state, setState] = useState<{ setup: RideSetup | null; error: string | null }>({ setup: null, error: null });
-  // entrare o uscire da una stanza cambia ?room=, non la strada: non si ricarica niente
-  const key = useMemo(() => {
-    const p = new URLSearchParams(params);
-    p.delete('room');
-    return p.toString();
-  }, [params]);
-  useEffect(() => {
-    let alive = true;
-    const done = (setup: RideSetup | null, error: string | null = null) => {
-      if (alive) setState({ setup, error });
-    };
-    if (params.get('world')) {
-      loadWorld(params.get('world'))
-        .then((data) => {
-          const n = npcCount(quality);
-          const rideId = params.get('ride');
-          const planKey = params.get('plan');
-          let session: WorldSession;
-          let title: string;
-          let subtitle: string;
-          if (rideId) {
-            const ride = data.rides.find((r) => r.id === rideId);
-            if (!ride) throw new Error('Percorso sconosciuto.');
-            session = new WorldSession(data, { ride }, n);
-            title = ride.name;
-            subtitle = ride.side;
-          } else if (planKey) {
-            const plan = loadPlan(planKey);
-            if (!plan || plan.legs.length === 0) throw new Error('Anello non più disponibile: rifallo da Mondo.');
-            session = new WorldSession(data, { legs: plan.legs, name: plan.name }, n);
-            title = plan.name;
-            subtitle = 'Anello suggerito';
-          } else {
-            const edge = Number(params.get('edge'));
-            const e = data.graph.edges[edge];
-            if (!e) throw new Error('Punto di partenza fuori dal mondo.');
-            const dir = (params.get('dir') === '-1' ? -1 : 1) as Dir;
-            const s0 = Math.min(e.length, Math.max(0, Number(params.get('s')) || 0));
-            session = new WorldSession(data, { edge, dir: data.graph.allowed(edge, dir) ? dir : ((-dir) as Dir), s: s0 }, n);
-            title = 'Giro libero';
-            subtitle = e.name || e.ref || worldInfo(data.graph.id).name;
-          }
-          const route: LoadedRoute = { id: 'world', title, subtitle, track: session.path, dem: null, origin: data.graph.origin, attribution: data.graph.attribution, verified: true };
-          done({ route, label: subtitle && rideId ? `${title} ${subtitle}` : title, world: { data, session } });
-        })
-        .catch((err: unknown) => done(null, err instanceof Error ? err.message : 'Mondo non disponibile.'));
-      return () => {
-        alive = false;
-      };
-    }
-    const replayId = params.get('replay');
-    if (replayId) {
-      const ride = rides.find((r) => r.id === replayId);
-      if (!ride) {
-        done(null, 'Giro da rifare non trovato.');
-        return;
-      }
-      const raw = params.get('mode') ?? '';
-      const mode: ReplayMode = raw === 'power' || raw === 'ghost' ? raw : 'grade';
-      const samples = sliceSection(ride, decodeSection(params.get('sec')));
-      if (samples.length < 2) {
-        done(null, 'Il pezzo scelto è vuoto.');
-        return;
-      }
-      let route: LoadedRoute;
-      let note: string | undefined;
-      try {
-        route = hasGps(samples)
-          ? trackFromGeo(`replay-${ride.id}`, ride.name, geoPointsFromSamples(samples), 'Traccia del tuo giro')
-          : neutralRoute(samples);
-        if (!hasGps(samples)) note = 'Giro senza GPS: strada neutra, pendenza dal file se c’è.';
-        else if (!hasAltitude(samples)) note = 'Il file non ha quota: la strada è in piano.';
-      } catch {
-        route = neutralRoute(samples);
-        note = 'Traccia GPS inutilizzabile: strada neutra.';
-      }
-      done({ route, replayMode: mode, replaySamples: samples, ghostSamples: mode === 'grade' ? undefined : samples, label: ride.name, note });
-      return;
-    }
-    const id = params.get('route') ?? DEFAULT_ROUTE;
-    const meta = routeMeta(id);
-    if (!meta) {
-      done(null, 'Salita sconosciuta.');
-      return;
-    }
-    const ghostId = params.get('ghost');
-    const ghost = ghostId ? rides.find((r) => r.id === ghostId) : undefined;
-    loadRouteFile(id)
-      .then((file) => {
-        const route = trackFromRouteFile(file, meta.halfWidth);
-        done({ route, routeId: id, ghostSamples: ghost?.samples, label: `${meta.name} ${meta.side}` });
-      })
-      .catch((err: unknown) => done(null, err instanceof Error ? err.message : 'Traccia non disponibile.'));
-    return () => {
-      alive = false;
-    };
-    // salvare un giro cambia la lista: la strada non va ricaricata per questo
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
-  return state;
 }
 
 /**
@@ -303,6 +126,13 @@ function useQuickTitle(params: URLSearchParams): { title?: string; subtitle?: st
 export function RidePage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
+  // senza un sensore di potenza (e senza la prova) la corsa non parte: si torna a Pedala (A4).
+  // Si decide una volta, all'entrata: un rullo perso a metà giro non chiude la corsa.
+  const rulloNow = useRullo();
+  const [ammesso, setAmmesso] = useState<boolean | null>(() => (rulloNow.stato === 'cerco' ? null : puoPedalare(rulloNow)));
+  useEffect(() => {
+    if (ammesso === null && rulloNow.stato !== 'cerco') setAmmesso(puoPedalare(rulloNow));
+  }, [ammesso, rulloNow]);
   const { setup, error } = useRideSetup();
   const quick = useQuickTitle(params);
   const title = setup?.route.title ?? quick.title;
@@ -350,13 +180,14 @@ export function RidePage() {
     };
   }, [cp, same, saveRide]);
   const back = () => (window.history.length > 1 ? navigate(-1) : navigate('/'));
+  if (ammesso === false) return <Navigate to="/" replace />;
   if (error) {
     return (
       <div className="grid min-h-dvh place-items-center px-6 text-center">
         <div>
           <p className="text-lg">{error}</p>
-          <Link to="/salite" className="mt-3 inline-flex h-11 items-center font-semibold text-accent">
-            Salite
+          <Link to="/" className="mt-3 inline-flex h-11 items-center font-semibold text-accent">
+            Pedala
           </Link>
         </div>
       </div>
@@ -372,7 +203,7 @@ export function RidePage() {
     );
   }
   const kept = keptNote ? <p className="mt-6 text-sm text-muted" data-testid="ride-kept">Il giro di prima è nel diario</p> : null;
-  if (cp === undefined || (cp && !same) || !setup || !gameReady) {
+  if (ammesso === null || cp === undefined || (cp && !same) || !setup || !gameReady) {
     return (
       <LoadingVeil title={title} subtitle={subtitle} onBack={back}>
         {kept}
@@ -405,7 +236,8 @@ function RideSession({ setup, resume, kept }: { setup: RideSetup; resume: RideCh
   const workout = workoutId ? findWorkout(workoutId, custom) ?? null : null;
   const parts = useRef<{ engine: RideEngine; trainer: BluetoothTrainer; game: RideGame } | null>(null);
   if (!parts.current) {
-    const trainer = new BluetoothTrainer();
+    // il rullo dell'app, già collegato da Pedala; il simulatore solo in prova (src/sim/rullo.ts)
+    const trainer = rullo.sorgente();
     const replay = setup.replayMode === 'power' ? setup.replaySamples : undefined;
     const engine = new RideEngine({
       track: setup.route.track,
@@ -476,7 +308,8 @@ function RideSession({ setup, resume, kept }: { setup: RideSetup; resume: RideCh
     frame = requestAnimationFrame(loop);
     return () => {
       cancelAnimationFrame(frame);
-      trainer.disconnect();
+      // il rullo resta collegato per la corsa dopo: torna in piano, e il simulatore si spegne
+      rullo.riposa();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine, trainer]);
@@ -820,90 +653,28 @@ function RideScreen({
   }, [ready, keeper, engine]);
 
   // quanto è già stato contato: «Continua a pedalare» dopo il riepilogo non conta due volte
-  const committed = useRef({ distance: 0, sample: 0, elapsed: 0, results: 0, gain: 0, pois: 0 });
+  const committed = useRef<Committed>({ ...NOTHING_COMMITTED });
   const [rewards, setRewards] = useState<{ outcome: CareerOutcome; results: SegmentResult[] } | null>(null);
-  const setGameProgress = useGame((s) => s.setProgress);
-  const setCareer = useGame((s) => s.setCareer);
 
-  /** Punti, livello e, se vale, il tempo del percorso in classifica. Poi oro e traguardi. */
+  /** Punti, livello e, se vale, il tempo del percorso in classifica. Poi oro e traguardi (src/game/commit.ts). */
   async function commitProgress(): Promise<void> {
-    const c = committed.current;
-    const sim = snap.mode === 'simulator';
-    const climbId = !session && setup.routeId && engine.arrived && !setup.replayMode && !workout ? setup.routeId : undefined;
-    // un allenamento più lungo del percorso prosegue libero: il percorso è fatto quando si passa la sua fine
-    const routeFinished = !!session && (engine.arrived || (session.routeEnd != null && engine.distance >= session.routeEnd));
-    const completed = session ? routeFinished && session.rankable : !!climbId;
-    // dislivello: il mondo lo conta da sé; sulle salite e nei replay dai campioni
-    const fresh = engine.samples.slice(c.sample);
-    let climbGain = 0;
-    for (let i = 1; i < fresh.length; i++) climbGain += Math.max(0, fresh[i].altitude - fresh[i - 1].altitude);
-    const gainM = session ? session.gainM - session.committedGain : climbGain;
-    const landmarks = session ? [...session.passed].filter((id) => !session.committedLandmarks.has(id)) : [];
-    const prev = await loadProgress();
-    const out = applyRide(prev, {
-      rideId: session ? session.ride?.id : climbId ? `salita:${climbId}` : undefined,
-      completed,
-      // con un allenamento il tempo non è quello del percorso: niente record
-      sec: completed && !workout ? engine.elapsed : undefined,
-      sim,
-      distanceM: engine.odometer - c.distance,
-      gainM,
-      landmarks,
-    });
-    session?.markCommitted(engine.distance);
-    await setGameProgress(out.next);
-    const total = out.lines.reduce((a, l) => a + l.xp, 0);
-    let rank: string | null = null;
-    let rankNote: string | undefined;
-    if (session?.ride && workout) rankNote = 'Con un allenamento il tempo non va in classifica.';
-    else if (session && completed && session.ride && profile.name) {
-      const avg = engine.samples.length ? engine.samples.reduce((a, x) => a + x.power, 0) / engine.samples.length : engine.power3s;
-      const res = await postResult({ nick: profile.name, ride: session.ride.id, sec: engine.elapsed, wkg: profile.weightKg > 0 ? avg / profile.weightKg : 0, sim });
-      if (res.ok && res.rank) rank = `${res.rank}° in classifica${sim ? ' (simulatore)' : ''}${res.best ? ', il tuo tempo migliore' : ''}`;
-      else if (res.error === 'implausible') rankNote = 'Tempo troppo veloce per essere vero: non va in classifica.';
-      else if (res.error === 'rete') rankNote = 'Senza rete: il tempo resta qui, non in classifica.';
-    } else if (session?.ride && !completed) rankNote = session.offRoute || session.rejoined ? 'Sei uscito dal percorso: il tempo non va in classifica.' : 'Percorso non finito: niente tempo in classifica.';
-    if (profile.name) void postXp(out.next, profile.name);
-    setXp({ lines: out.lines, total, level: { ...levelOf(out.next.xp), xp: out.next.xp }, rank, rankNote });
-
-    // la carriera: oro, record, missioni, traguardi
-    const powers = fresh.map((s) => s.power);
-    const results = game.results.slice(c.results);
-    const origin = world?.data.graph.origin;
-    const facts: RideFacts = {
-      distanceM: engine.odometer - c.distance,
-      gainM,
-      durationSec: engine.elapsed - c.elapsed,
-      sim,
-      startedAt: engine.startedAt,
-      avgPower: powers.length ? powers.reduce((a, p) => a + p, 0) / powers.length : 0,
-      peak5s: peakAvg(powers, 5),
-      peak5min: peakAvg(powers, 300),
-      ftp: profile.ftp,
-      climbDone: climbId,
-      worldRideDone: session?.ride && completed ? session.ride.id : undefined,
-      segments: results,
-      pois: game.poisPassed.slice(c.pois),
-      landmarks,
-      discovered: Object.keys(out.next.visited).length,
+    const out = await commitRide({
+      engine,
+      game,
+      session,
+      routeId: setup.routeId,
+      replay: !!setup.replayMode,
+      workout,
+      profile,
+      sim: snap.mode === 'simulator',
+      origin: world?.data.graph.origin,
       rain: !!session && weatherMode === 'vero' && (weather?.rain ?? 0) >= 0.1,
-      night: !!origin && sunFor(daytime, new Date(), origin.lat, origin.lon).night,
-      session: game.sessionDef ? { id: game.sessionDef.id, kind: game.sessionDef.kind, finished: game.stage === 'arrivo', withPack: game.pack ? game.withPack : 1 } : undefined,
-      workoutDone: engine.workoutDone,
+      daytime,
       together: (room.snap?.riders.length ?? 0) > 0 || peers.length > 0,
-      level: levelOf(out.next.xp).level,
-      extra: sessionBonus(game, results),
-    };
-    const outcome = applyCareer(useGame.getState().career, facts);
-    // il tempo del percorso intero, per i record della pagina Classifiche
-    if (facts.worldRideDone && !workout) {
-      const key = `w:${facts.worldRideDone}`;
-      const old = outcome.next.pbs[key];
-      if (!old || engine.elapsed < old.sec) outcome.next.pbs[key] = { sec: Math.round(engine.elapsed), at: new Date().toISOString(), sim, count: (old?.count ?? 0) + 1 };
-    }
-    await setCareer(outcome.next);
-    committed.current = { distance: engine.odometer, sample: engine.samples.length, elapsed: engine.elapsed, results: game.results.length, gain: 0, pois: game.poisPassed.length };
-    setRewards({ outcome, results });
+      committed: committed.current,
+    });
+    setXp(out.xp);
+    setRewards({ outcome: out.outcome, results: out.results });
   }
 
   // dove sei, per aprire la strada vera nel visore ufficiale (non per disegnarla nel 3D)

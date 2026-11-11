@@ -150,6 +150,35 @@ describe('BluetoothTrainer con un rullo finto', () => {
     expect(trainer.snapshot().mode).toBe('bluetooth');
   });
 
+  it('parte spento: niente simulatore da solo, né dopo un tentativo andato male', async () => {
+    const trainer = new BluetoothTrainer();
+    expect(trainer.snapshot().mode).toBe('bluetooth');
+    expect(trainer.snapshot().status).toBe('idle');
+    await trainer.useSimulator();
+    expect(trainer.snapshot().mode).toBe('bluetooth');
+    vi.stubGlobal('navigator', {
+      bluetooth: { requestDevice: async () => Promise.reject(new DOMException('annullato', 'NotFoundError')) },
+      userAgent: 'test',
+    });
+    await expect(trainer.connectBluetooth(false)).rejects.toThrow();
+    expect(trainer.snapshot().mode).toBe('bluetooth');
+    expect(trainer.snapshot().status).toBe('cancelled');
+    // la prova lo accende, e solo lei
+    const prova = new BluetoothTrainer({ simulatore: () => true });
+    await prova.useSimulator();
+    expect(prova.snapshot().mode).toBe('simulator');
+  });
+
+  it('a fine corsa il rullo resta collegato e torna in piano', async () => {
+    const { trainer, control } = await connected();
+    trainer.update(erg(220));
+    await flush();
+    trainer.rest();
+    await flush();
+    expect(control.writes.at(-1)?.[0]).toBe(0x11);
+    expect(trainer.snapshot().status).toBe('connected');
+  });
+
   it('uscendo stacca tutte le periferiche', async () => {
     const first = makeTrainer('Rullo');
     const { trainer } = await connected(first);
