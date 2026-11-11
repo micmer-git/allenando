@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ProfileChart, RouteMap } from '@/components/RouteViz';
 import { Button, PageHeader, Segmented, TextInput } from '@/components/ui';
-import { formatDuration, formatKm, formatKmText, formatMetersText, formatNumber } from '@/domain/format';
+import { formatAltText, formatDuration, formatKm, formatKmText, formatNumber } from '@/domain/format';
 import { geoPointsFromSamples, hasAltitude, hasGps, hasPower, sectionSummary, sliceSection, type ReplayMode, type SectionSpec } from '@/domain/replay';
 import { trackFromGeo } from '@/domain/routes';
 import { useApp } from '@/store/useApp';
@@ -130,7 +130,7 @@ export function ReplaySetupPage() {
           <dl className="grid grid-cols-4 gap-2 text-center">
             <Cell label="Tempo" value={formatDuration(summary.durationSec)} />
             <Cell label="km" value={formatKm(summary.distanceM)} />
-            <Cell label="D+" value={`${formatMetersText(summary.gainM)}`} />
+            <Cell label="D+" value={formatAltText(summary.gainM)} />
             <Cell label="Watt" value={summary.avgPower != null ? formatNumber(summary.avgPower, 0) : '–'} />
           </dl>
         ) : (

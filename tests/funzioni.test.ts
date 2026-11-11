@@ -14,7 +14,7 @@ import { formatAlt, formatAltText, formatGainText, formatTempText } from '../src
 import { climbForMinutes, workoutRideLink } from '../src/domain/workouts';
 import { DEFAULT_WORLD, fetchManifest, isWorldId, WORLD_CATALOG, worldFacts, worldFromParams, worldInfo, worldName, worldOfRide, type WorldManifest } from '../src/open/worlds';
 import { formatBytes, storageState, worldUrls } from '../src/open/offline';
-import { loopSense, nextPass, passesAlongPath, passText, rideClimbs, rideMarks, rideSense, SELLARONDA_PASSES, siblingRide } from '../src/game/passes';
+import { BERGHEM_RIDES, loopSense, MARMOLADA_RIDES, nextPass, passesAlongPath, passSub, passText, rideClimbs, rideMarks, rideSense, SELLARONDA_PASSES, SELLARONDA_RIDES, siblingRide } from '../src/game/passes';
 import { derivePassGpm, rideProfile, worldSegments, type ProfilePoint } from '../src/game/segments';
 import { ACHIEVEMENT_BY_ID, fourPasses } from '../src/game/achievements';
 import { advanceSeries, SERIES, SERIES_BY_ID } from '../src/game/missions';
@@ -23,7 +23,7 @@ import { availability, ITEM_BY_ID, STARTER_ITEMS } from '../src/game/kit';
 import { sessionAt, sessionWorld } from '../src/game/sessions';
 import { roomEntry, sessionHref } from '../src/pages/Sessions';
 import { worldFilters } from '../src/pages/History';
-import { PENDENZE_URL, SOURCES_LINE } from '../src/pages/World';
+import { CONFRONTATE, isConfrontata, PENDENZE_PRONTE, PENDENZE_URL, SOURCES_LINE } from '../src/pages/World';
 import { snowLine, weatherCacheKey } from '../src/open/weather';
 import { encodeGpx, rideDescription } from '../src/io/gpx-export';
 import { encodeActivityFit } from '../src/io/fit';
@@ -223,6 +223,10 @@ describe('F.4 · il prossimo passo nell’HUD, F.5 · i segni sul profilo', () =
     const np = nextPass(marks, at - 3200, 841);
     expect(np).toEqual({ name: 'Passo di Ganda', inM: 3200, upM: 210 });
     expect(passText(np!)).toBe('Passo di Ganda fra 3,2 km · +210 m');
+    // nella pillola il nome sta sulla prima riga e «fra … · +…» sulla seconda, mai spezzata (R2)
+    expect(passSub(np!)).toContain('fra 3,2');
+    expect(passSub(np!)).toContain('+210');
+    expect(passText(np!)).toBe(`Passo di Ganda ${passSub(np!)}`);
     expect(nextPass(marks, at - 5600, 700)).toBeNull();
     expect(nextPass(marks, at + 10, 1051)).toBeNull();
     expect(passText({ name: 'Passo Sella', inM: 400, upM: 2 })).toBe('Passo Sella fra 400 m');
@@ -311,7 +315,7 @@ describe('F.6 · i traguardi del Sellaronda', () => {
     for (const [ach, ride] of [
       ['mondo-sellaronda', 'sellaronda-orario'],
       ['mondo-marmolada', 'fedaia-canazei'],
-      ['mondo-berghem', 'berghem-molamia'],
+      ['mondo-berghem', 'berghem-corto'],
     ]) {
       expect(ACHIEVEMENT_BY_ID.get(ach)!.check(c, facts())).toBe(false);
       const out = applyCareer(c, facts({ worldRideDone: ride }));
@@ -437,9 +441,52 @@ describe('F.12 · il meteo per mondo e la neve di oggi', () => {
 
 // ---------- F.14 fonti ----------
 describe('F.14 · la riga delle fonti', () => {
-  it('OSM, EU-DEM, climbfinder, e il confronto delle pendenze della pista M', () => {
-    expect(SOURCES_LINE).toBe('Strade OSM · Quote EU-DEM · Confronto climbfinder');
+  const doc = join(__dirname, '..', 'docs', 'pendenze-2026-11.md');
+  it('OSM ed EU-DEM sempre; il confronto solo sui percorsi della tabella di M.5', () => {
+    expect(SOURCES_LINE).toBe('Strade OSM · Quote EU-DEM');
     expect(PENDENZE_URL).toMatch(/docs\/pendenze-2026-11\.md$/);
+    // con la tabella: la Ganda sì, Città Alta («non confrontabili»), la Maresana (solo bikeclimbs) e la Val Seriana no
+    expect(isConfrontata('ganda', true)).toBe(true);
+    expect(isConfrontata('citta-alta', true)).toBe(false);
+    expect(isConfrontata('maresana', true)).toBe(false);
+    expect(isConfrontata('val-seriana', true)).toBe(false);
+    for (const id of CONFRONTATE) expect(rides.some((r) => r.id === id), id).toBe(true);
+  });
+  it('senza docs/pendenze-2026-11.md il link non c’è da nessuna parte; con il file c’è', () => {
+    // la build lo decide guardando il file (vite.config.ts): la prova guarda lo stesso file
+    expect(PENDENZE_PRONTE).toBe(existsSync(doc));
+    for (const id of CONFRONTATE) expect(isConfrontata(id, false), id).toBe(false);
+    expect(isConfrontata('ganda')).toBe(existsSync(doc));
+  });
+  it.skipIf(!existsSync(doc))('la tabella delle pendenze (pista M) nomina le salite confrontate', () => {
+    const text = readFileSync(doc, 'utf8');
+    for (const name of ['Ganda', 'Selvino', 'San Marco', 'Presolana', 'Foppolo', 'Zambla', 'Colle Gallo']) expect(text, name).toContain(name);
+  });
+});
+
+// ---------- R5: gli id del Sellaronda, pretesi dai dati quando ci sono ----------
+describe('gli id del Sellaronda che traguardi, serie e GPM pretendono', () => {
+  const sdir = join(__dirname, '..', 'public', 'world', 'sellaronda');
+  const have = existsSync(join(sdir, 'rides.json')) && existsSync(join(sdir, 'features.json'));
+  it.skipIf(!have)('i nove percorsi della pista S1 hanno gli id attesi da passes.ts', () => {
+    const list = (JSON.parse(readFileSync(join(sdir, 'rides.json'), 'utf8')) as RideDef[]).map((r) => r.id);
+    for (const id of ['sellaronda', 'sellaronda-orario', 'sella-canazei', 'pordoi-arabba', 'pordoi-canazei', 'gardena-corvara', 'gardena-selva', 'campolongo-corvara', 'fedaia-canazei']) expect(list, id).toContain(id);
+    for (const id of [...SELLARONDA_RIDES, ...MARMOLADA_RIDES]) expect(list, id).toContain(id);
+  });
+  it.skipIf(!have)('i quattro passi sono luoghi di tipo «passo» con gli id attesi, e il giro intero li tocca tutti', () => {
+    const f = decodeFeatures(JSON.parse(readFileSync(join(sdir, 'features.json'), 'utf8')) as Parameters<typeof decodeFeatures>[0]);
+    for (const id of SELLARONDA_PASSES) {
+      const lm = f.landmarks.find((l) => l.id === id);
+      expect(lm, id).toBeDefined();
+      expect(lm!.kind, id).toBe('passo');
+    }
+    const list = JSON.parse(readFileSync(join(sdir, 'rides.json'), 'utf8')) as RideDef[];
+    const giro = list.find((r) => r.id === 'sellaronda')!;
+    for (const id of SELLARONDA_PASSES) expect(giro.landmarks.some((l) => l.id === id && l.off <= 300), id).toBe(true);
+  });
+  it('la Berghem MolaMia (pista M.7), se c’è a Bergamo, ha uno degli id attesi', () => {
+    const berghem = rides.map((r) => r.id).filter((id) => /berghem/.test(id));
+    for (const id of berghem) expect(BERGHEM_RIDES as readonly string[], id).toContain(id);
   });
 });
 

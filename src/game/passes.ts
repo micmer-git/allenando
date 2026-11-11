@@ -27,7 +27,8 @@ export const SELLARONDA_PASSES = ['passo-sella', 'passo-pordoi', 'passo-gardena'
 /** I percorsi che fanno il giro intero, nei due versi, e quelli della Marmolada e della granfondo. */
 export const SELLARONDA_RIDES = ['sellaronda', 'sellaronda-orario'] as const;
 export const MARMOLADA_RIDES = ['fedaia-canazei'] as const;
-export const BERGHEM_RIDES = ['berghem-molamia', 'berghem-molamia-corto'] as const;
+/** La granfondo di Gazzaniga: gli id li scrive la pista M in scripts/world/rides.ts (il corto e il medio). */
+export const BERGHEM_RIDES = ['berghem-corto', 'berghem-medio'] as const;
 
 /** I passi e le cime di un percorso, dai suoi luoghi (hanno già la distanza sul percorso). */
 export function rideMarks(landmarks: readonly Landmark[], ride: Pick<RideDef, 'landmarks'>): PassPoint[] {
@@ -81,10 +82,15 @@ export function nextPass(marks: readonly PassPoint[], distance: number, altitude
   return best ? { name: best.name, inM: best.at - distance, upM: Math.max(0, Math.round(best.alt - altitude)) } : null;
 }
 
-/** «Passo Pordoi fra 3,2 km · +210 m»; sotto il chilometro «fra 400 m»; in cima «+0 m» non si scrive. */
-export function passText(n: NextPass): string {
+/** La seconda riga della pillola: «fra 3,2 km · +210 m»; sotto il chilometro «fra 400 m»; in cima «+0 m» non si scrive. */
+export function passSub(n: NextPass): string {
   const km = n.inM >= 950 ? `${(n.inM / 1000).toFixed(1).replace('.', ',')} km` : `${Math.max(0, Math.round(n.inM / 10) * 10)} m`;
-  return n.upM >= 5 ? `${n.name} fra ${km} · +${n.upM} m` : `${n.name} fra ${km}`;
+  return n.upM >= 5 ? `fra ${km} · +${n.upM} m` : `fra ${km}`;
+}
+
+/** «Passo Pordoi fra 3,2 km · +210 m»: il nome e la seconda riga insieme, per chi legge in una riga sola. */
+export function passText(n: NextPass): string {
+  return `${n.name} ${passSub(n)}`;
 }
 
 export interface RideClimb {

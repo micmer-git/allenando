@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type Ref } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button, PageHeader, Segmented } from '@/components/ui';
 import { WorldMap, legsBounds, type MapMarker, type MapOverlay } from '@/components/WorldMap';
-import { cap, formatAlt, formatAltText, formatDuration, formatGainText, formatKm, formatKmText, formatNumber } from '@/domain/format';
+import { cap, formatAlt, formatAltText, formatDuration, formatGainText, formatKmText, formatNumber } from '@/domain/format';
 import { OfflineCard, useWorldManifests, WorldChooser } from '@/components/WorldPicker';
 import { rideClimbs, rideSense, SENSE_LABEL, siblingRide } from '@/game/passes';
 import { rememberWorld, worldFromParams, worldInfo } from '@/open/worlds';
@@ -30,9 +30,20 @@ function areasOf(worldId: string, rides: RideDef[]): { id: string; label: string
   return out;
 }
 
-/** La riga delle fonti sotto il percorso (F.14): strade, quote e, per le salite, il confronto con le schede in rete. */
-export const SOURCES_LINE = 'Strade OSM · Quote EU-DEM · Confronto climbfinder';
+/** La riga delle fonti sotto il percorso (F.14): strade e quote; il confronto in rete solo dove qualcuno ha confrontato davvero. */
+export const SOURCES_LINE = 'Strade OSM · Quote EU-DEM';
 export const PENDENZE_URL = 'https://github.com/micmer-git/allenando/blob/main/docs/pendenze-2026-11.md';
+/**
+ * I percorsi la cui salita sta nella tabella di docs/pendenze-2026-11.md (pista M.5) con una scheda
+ * climbfinder accanto. Fuori: Città Alta («non confrontabili») e la Maresana (solo bikeclimbs).
+ */
+export const CONFRONTATE = ['ganda', 'selvino', 'presolana', 'zambla-nossa', 'zambla-zogno', 'foppolo', 'san-marco', 'colle-gallo'] as const;
+/**
+ * La tabella c'è nel repo? Si decide alla build (`define` in vite.config.ts): finché la pista M non la
+ * consegna, il link porterebbe a una pagina che non esiste, e la riga dice solo strade e quote.
+ */
+export const PENDENZE_PRONTE: boolean = typeof __PENDENZE_PRONTE__ === 'boolean' && __PENDENZE_PRONTE__;
+export const isConfrontata = (rideId: string, pronte: boolean = PENDENZE_PRONTE): boolean => pronte && (CONFRONTATE as readonly string[]).includes(rideId);
 
 type Tab = 'percorsi' | 'libero' | 'anello' | 'ab' | 'classifiche';
 const TABS: { value: Tab; label: string }[] = [
@@ -60,7 +71,7 @@ export function WorldPage() {
   const info = worldInfo(worldId);
   const chooseWorld = (id: string) => {
     if (id === worldId) return;
-    rememberWorld(id);
+    // niente rememberWorld qui: lo fa il caricamento riuscito, così un mondo che non c'è non si ricorda (R6)
     setPicked(null);
     const next = new URLSearchParams(params);
     next.set('world', id);
@@ -72,10 +83,11 @@ export function WorldPage() {
     setData(null);
     setError(null);
     setFar(null);
-    rememberWorld(worldId);
     loadWorld(worldId)
       .then((d) => {
         if (!alive) return;
+        // si ricorda solo un mondo che si è caricato davvero (R6)
+        rememberWorld(worldId);
         setData(d);
         const t = new Terrain(d.graph);
         void t.loadFar().then((h) => alive && setFar(h));
@@ -304,7 +316,7 @@ function RideCard({ data, ride, progress, onClose, onRide, onPick, startRef }: {
         </p>
       ) : null}
       <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-4">
-        <Stat label="Km" value={formatKm(ride.lengthM)} />
+        <Stat label="Lunghezza" value={formatKmText(ride.lengthM)} />
         <Stat label="D+" value={formatAltText(ride.gainM)} />
         <Stat label="Quote" value={`${formatAlt(ride.startAlt)} → ${formatAltText(ride.maxAlt)}`} />
         <Stat label="Max 200 m" value={pctStr(ride.maxGrade)} />
@@ -320,7 +332,7 @@ function RideCard({ data, ride, progress, onClose, onRide, onPick, startRef }: {
           <ol className="mt-2 flex flex-col gap-1.5" data-testid="world-ride-climbs">
             {climbs.map((c, i) => (
               <li key={i} className="flex items-center gap-2.5 rounded-xl bg-bg/50 px-3 py-2" data-pass={c.passId ?? ''}>
-                <span className="num w-12 shrink-0 text-xs font-semibold text-muted">{`Km ${formatKm(c.from)}`}</span>
+                <span className="num w-14 shrink-0 text-xs font-semibold text-muted">{`Al km ${formatNumber(c.from / 1000, 1)}`}</span>
                 <span className="min-w-0 flex-1">
                   <span className="block font-semibold">{c.name}</span>
                   <span className="num block text-xs text-muted">{`${formatKmText(c.lengthM)} · ${formatGainText(c.gainM)} · Media ${pctStr(c.grade)} · In cima ${formatAltText(c.topAlt)}`}</span>
@@ -337,7 +349,7 @@ function RideCard({ data, ride, progress, onClose, onRide, onPick, startRef }: {
           if (!lm) return null;
           return (
             <li key={l.id} className="flex gap-2.5 rounded-xl bg-bg/50 px-3 py-2">
-              <span className="num w-12 shrink-0 text-xs font-semibold text-muted">{`Km ${formatKm(l.at)}`}</span>
+              <span className="num w-14 shrink-0 text-xs font-semibold text-muted">{`Al km ${formatNumber(l.at / 1000, 1)}`}</span>
               <span className="min-w-0">
                 <span className="font-semibold">{lm.name}</span> <span className="text-xs text-muted">{cap(kindLabel(lm.kind))}</span>
                 {progress.visited[lm.id] ? <span className="ml-1 text-xs font-semibold text-good">✓ Visto</span> : null}
@@ -363,13 +375,13 @@ function RideCard({ data, ride, progress, onClose, onRide, onPick, startRef }: {
         </div>
       </div>
       <BoardList board={board} />
-      <p className="mt-4 text-xs leading-relaxed text-muted" data-testid="world-ride-sources">
+      <p className="mt-4 text-xs leading-relaxed text-muted" data-testid="world-ride-sources" data-confronto={isConfrontata(ride.id) ? 'si' : 'no'}>
         {SOURCES_LINE}
-        {climbs.length ? (
+        {isConfrontata(ride.id) ? (
           <>
             {' · '}
             <a href={PENDENZE_URL} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center font-semibold text-accent">
-              Le pendenze a confronto
+              Confronto climbfinder
             </a>
           </>
         ) : null}
@@ -409,7 +421,7 @@ function RideSegments({ data, ride }: { data: WorldData; ride: RideDef }) {
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-semibold">{s.name}</span>
-                <span className="num block text-xs text-muted">{`Km ${formatKm(s.from)} → ${formatKm(s.to)}${lead ? ` · 1° ${lead.nick} ${formatDuration(lead.sec)}` : ''}`}</span>
+                <span className="num block text-xs text-muted">{`Dal km ${formatNumber(s.from / 1000, 1)} al km ${formatNumber(s.to / 1000, 1)}${lead ? ` · 1° ${lead.nick} ${formatDuration(lead.sec)}` : ''}`}</span>
               </span>
               {pbs[s.id] ? <span className="num shrink-0 text-xs font-semibold text-accent">{`Tu ${formatDuration(pbs[s.id].sec)}`}</span> : null}
             </li>

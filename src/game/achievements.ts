@@ -1,6 +1,7 @@
 import type { Career, RideFacts } from './career';
 import { WORLD_RIDES } from '@/multiplayer/world-rides';
 import { BERGHEM_RIDES, MARMOLADA_RIDES, SELLARONDA_PASSES, SELLARONDA_RIDES } from './passes';
+import { formatAltText } from '@/domain/format';
 
 /** I percorsi del mondo, quanti sono oggi: li scrive build-world, la Ganda è il quattordicesimo. */
 const ALL_RIDES = Object.keys(WORLD_RIDES).length;
@@ -57,7 +58,7 @@ const km = (id: string, name: string, goal: number, oro: number, rare = false): 
 const gain = (id: string, name: string, goal: number, oro: number, rare = false): Achievement => ({
   id,
   name,
-  desc: `${goal.toLocaleString('it-IT')} m di dislivello in tutto.`,
+  desc: `${formatAltText(goal)} di dislivello in tutto.`,
   group: 'salite',
   glyph: 'salita',
   oro,
@@ -115,7 +116,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     check: (c) => ['selvino-nembro', 'mortirolo-mazzo', 'stelvio-prato', 'stelvio-bormio'].every((id) => (c.counts.climbs[id] ?? 0) > 0),
     progress: (c) => [['selvino-nembro', 'mortirolo-mazzo', 'stelvio-prato', 'stelvio-bormio'].filter((id) => (c.counts.climbs[id] ?? 0) > 0).length, 4],
   },
-  { id: 'su-1000-giro', name: 'Mille in un giro', desc: '1000 m di dislivello in un giro solo.', group: 'salite', glyph: 'salita', oro: 200, check: (_c, f) => f.gainM >= 1000 },
+  { id: 'su-1000-giro', name: 'Mille in un giro', desc: `${formatAltText(1000)} di dislivello in un giro solo.`, group: 'salite', glyph: 'salita', oro: 200, check: (_c, f) => f.gainM >= 1000 },
   // volate, GPM, crono
   count('volata-1', 'Prima volata', 'Una volata tirata fino alla riga.', 'traguardi', 'volata', 'volata', 1, 40),
   count('volata-5', 'Velocista', 'Cinque volate. Vale la maglia ciclamino.', 'traguardi', 'volata', 'volata', 5, 120),
@@ -156,7 +157,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: 'quattro-passi', name: 'I quattro passi', desc: 'Sella, Pordoi, Gardena e Campolongo in un giro solo.', group: 'mondo', glyph: 'gpm', oro: 400, rare: true, check: (_c, f) => fourPasses(f.landmarks) },
   { id: 'mondo-sellaronda', name: 'Sellaronda', desc: 'Il giro intero del Sella, in un verso o nell’altro. Vale la maglia Sella.', group: 'mondo', glyph: 'coppa', oro: 500, rare: true, check: (c) => worldRide(c, SELLARONDA_RIDES) },
   { id: 'mondo-marmolada', name: 'Marmolada', desc: 'Il Passo Fedaia da Canazei, sotto il ghiacciaio.', group: 'mondo', glyph: 'salita', oro: 250, check: (c) => worldRide(c, MARMOLADA_RIDES) },
-  { id: 'mondo-berghem', name: 'Berghem MolaMia', desc: 'Il corto della granfondo di Gazzaniga: Ganda, Selvino, Zambla.', group: 'mondo', glyph: 'fiamma', oro: 300, check: (c) => worldRide(c, BERGHEM_RIDES) },
+  { id: 'mondo-berghem', name: 'Berghem MolaMia', desc: 'La granfondo di Gazzaniga, il corto o il medio: Ganda, Selvino, Zambla.', group: 'mondo', glyph: 'fiamma', oro: 300, check: (c) => worldRide(c, BERGHEM_RIDES) },
   { id: 'luoghi-10', name: 'Curioso', desc: 'Dieci luoghi scoperti nel mondo.', group: 'mondo', glyph: 'campana', oro: 60, check: (_c, f) => f.discovered >= 10 },
   { id: 'luoghi-40', name: 'Guida delle valli', desc: 'Quaranta luoghi scoperti nel mondo.', group: 'mondo', glyph: 'campana', oro: 250, rare: true, check: (_c, f) => f.discovered >= 40 },
   count('punti-20', 'Fontanelle e campanili', 'Venti punti caldi passati.', 'mondo', 'goccia', 'pois', 20, 120),
