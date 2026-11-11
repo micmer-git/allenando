@@ -319,6 +319,78 @@ export const SPECS_BERGAMO: RideSpec[] = [
     ],
   },
   {
+    // Michele, 07/11/2026: «berghem mola mia percorsi as possible choices as well? find online paths?»
+    // Il tracciato è quello raccontato dal servizio di Bergamo TV (L'Eco di Bergamo) sulla granfondo
+    // di Gazzaniga: Nembro, la salita di Selvino col primo ristoro, Serina, Oltre il Colle, il Passo
+    // di Zambla col secondo ristoro, la discesa su Ponte Nossa e il rientro. Il GPX ufficiale non è
+    // in rete (cercato il 07/11/2026: trainerday, granfondobgy, ecodibergamo, komoot): fra una tappa
+    // e l'altra la strada la sceglie il navigatore, come per gli altri percorsi.
+    id: 'berghem-corto',
+    name: 'Berghem MolaMia · corto',
+    side: 'Gazzaniga, Selvino, Zambla, Ponte Nossa',
+    area: 'seriana',
+    kind: 'giro',
+    blurb: 'Il percorso corto della granfondo di Gazzaniga: giù a Nembro, su per i tornanti di Selvino, la Val Serina fino a Oltre il Colle e al Colle di Zambla, poi la discesa della Val del Riso fino a Ponte Nossa e il rientro lungo il Serio.',
+    via: [{ place: 'Gazzaniga' }, { place: 'Nembro' }, { place: 'Selvino' }, { place: 'Serina' }, { place: 'Oltre il Colle' }, { pass: 'Colle di Zambla' }, { place: 'Ponte Nossa' }, { place: 'Gazzaniga' }],
+    landmarks: [
+      { q: { place: 'Gazzaniga' }, kind: 'paese', note: 'Partenza e arrivo della granfondo, in media valle.', within: 900 },
+      { q: { river: SERIO }, kind: 'fiume', note: 'Il Serio, all’andata verso Nembro e al ritorno da Ponte Nossa.', within: 1500 },
+      { q: { place: 'Nembro' }, kind: 'paese', note: 'Qui si lascia il fondovalle: cominciano i venti tornanti di Selvino.', within: 900 },
+      { q: { peak: 'Monte Purito' }, kind: 'cima', note: 'Il dosso sopra Selvino, a destra salendo.', within: 2500 },
+      { q: { place: 'Selvino' }, kind: 'paese', note: 'L’altopiano a quasi mille metri: il primo ristoro.', within: 900 },
+      { q: { place: 'Serina' }, kind: 'paese', note: 'Il paese di Palma il Vecchio, in fondo alla Val Serina.', within: 700 },
+      { q: { place: 'Oltre il Colle' }, kind: 'paese', note: 'L’ultimo paese prima del colle.', within: 900 },
+      { q: { peak: 'Monte Alben' }, kind: 'cima', note: 'Il massiccio calcareo che si gira attorno salendo a Zambla.', within: 5000 },
+      { q: { pass: 'Colle di Zambla' }, kind: 'passo', note: 'Il colle a 1264 metri: il secondo ristoro, poi solo discesa.', within: 400 },
+      { q: { peak: 'Pizzo Arera' }, kind: 'cima', note: 'La montagna dei fiori rari, 2512 metri, sopra la Val del Riso.', within: 7000 },
+      { q: { place: 'Ponte Nossa' }, kind: 'paese', note: 'Dove i percorsi della granfondo si dividono: il corto torna a Gazzaniga.', within: 700 },
+    ],
+  },
+  {
+    // Il medio: da Ponte Nossa si prosegue per Clusone e si scende al Sebino (Lovere, Castro, Riva di
+    // Solto, Solto Collina), poi la Val Cavallina (Endine, Ranzanico, Bianzano) e il colle verso Cene.
+    // Stessa fonte del corto; anche qui le strade fra le tappe le sceglie il navigatore.
+    id: 'berghem-medio',
+    name: 'Berghem MolaMia · medio',
+    side: 'Zambla, Clusone, il Sebino, la Val Cavallina',
+    area: 'valli',
+    kind: 'giro',
+    blurb: 'Il percorso medio della granfondo di Gazzaniga: Selvino e il Colle di Zambla come il corto, poi Clusone, la discesa al lago d’Iseo con Lovere e Riva di Solto, la Val Cavallina lungo il lago di Endine e il colle di Bianzano che scende a Cene.',
+    via: [
+      { place: 'Gazzaniga' },
+      { place: 'Nembro' },
+      { place: 'Selvino' },
+      { place: 'Serina' },
+      { place: 'Oltre il Colle' },
+      { pass: 'Colle di Zambla' },
+      { place: 'Ponte Nossa' },
+      { place: 'Clusone' },
+      { place: 'Lovere' },
+      { place: 'Castro' },
+      { place: 'Riva di Solto' },
+      { place: 'Solto Collina' },
+      { place: 'Endine Gaiano' },
+      { place: 'Ranzanico' },
+      { place: 'Bianzano' },
+      { place: 'Cene' },
+      { place: 'Gazzaniga' },
+    ],
+    landmarks: [
+      { q: { place: 'Nembro' }, kind: 'paese', note: 'Qui si lascia il fondovalle: cominciano i tornanti di Selvino.', within: 900 },
+      { q: { place: 'Selvino' }, kind: 'paese', note: 'L’altopiano a quasi mille metri: il primo ristoro.', within: 900 },
+      { q: { place: 'Serina' }, kind: 'paese', note: 'In fondo alla Val Serina.', within: 700 },
+      { q: { pass: 'Colle di Zambla' }, kind: 'passo', note: 'Il colle a 1264 metri: il secondo ristoro.', within: 400 },
+      { q: { place: 'Ponte Nossa' }, kind: 'paese', note: 'Il medio non torna indietro: si prosegue verso Clusone.', within: 700 },
+      { q: { place: 'Clusone' }, kind: 'paese', note: 'La capitale dell’altopiano, poi giù per la Val Borlezza.', within: 900 },
+      { q: { place: 'Lovere' }, kind: 'paese', note: 'Sul lago d’Iseo, uno dei borghi più belli d’Italia.', within: 900 },
+      { q: { peak: 'Corna Trentapassi' }, kind: 'cima', note: 'Di là dal lago, la montagna che precipita nel Sebino.', within: 4500 },
+      { q: { place: 'Riva di Solto' }, kind: 'paese', note: 'Lungo la riva, sotto gli orridi del Bögn.', within: 900 },
+      { q: { place: 'Endine Gaiano' }, kind: 'paese', note: 'Il lago di Endine, in Val Cavallina.', within: 900 },
+      { q: { place: 'Bianzano' }, kind: 'paese', note: 'Il borgo del castello: da qui il colle verso la Val Seriana.', within: 900 },
+      { q: { place: 'Cene' }, kind: 'paese', note: 'Di nuovo sul Serio, a due passi dall’arrivo.', within: 900 },
+    ],
+  },
+  {
     id: 'due-valli',
     name: 'Il giro delle due valli',
     side: 'Bergamo, Val Seriana, Zambla, Val Brembana',

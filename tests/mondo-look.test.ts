@@ -26,6 +26,9 @@ describe('la linea di neve per la data', () => {
     expect(snowLine(new Date('2026-06-01'), sella)).toBeCloseTo(2600, 0);
     expect(snowLine(new Date('2026-08-01'), sella)).toBeCloseTo(2900, 0);
     expect(snowLine(new Date('2026-10-01'), sella)).toBeCloseTo(2500, 0);
+    // novembre: da 2450 a 1900 nel mese (a metà mese i passi del Sella sono ancora prati a sud)
+    expect(snowLine(new Date('2026-11-01'), sella)).toBeCloseTo(2450, 0);
+    expect(snowLine(new Date('2026-12-01'), sella)).toBeCloseTo(1900, 0);
     expect(snowLine(new Date('2026-01-20'), sella)).toBe(1500);
     expect(snowLine(new Date('2026-02-10'), sella)).toBeLessThan(1600);
   });
@@ -149,7 +152,9 @@ describe('gli alberi e la linea del bosco', () => {
     const ctx = lookContext('sellaronda', new Date('2026-11-07'));
     expect(ctx.look.case).toBe('ladino');
     expect(ctx.season.larch).toBe('oro');
-    expect(ctx.season.snowLine).toBeLessThan(2000);
+    // il 7 novembre la linea sta sopra i passi (2240): prati a sud, neve sui versanti a nord
+    expect(ctx.season.snowLine).toBeGreaterThan(2250);
+    expect(ctx.season.snowLine).toBeLessThan(2450);
   });
 });
 

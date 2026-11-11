@@ -4,7 +4,7 @@
 // attraverso world-rides.ts che mette insieme i mondi.
 
 export const WORLD_ID = 'bergamo';
-export const WORLD_EDGES = 28603;
+export const WORLD_EDGES = 28610;
 export const WORLD_RIDES: Record<string, { timedM: number; minSec: number }> = {
   "citta-alta": {
     "timedM": 4927,
@@ -40,11 +40,11 @@ export const WORLD_RIDES: Record<string, { timedM: number; minSec: number }> = {
   },
   "val-brembana": {
     "timedM": 24107,
-    "minSec": 1568
+    "minSec": 1569
   },
   "ciclovia-brembana": {
     "timedM": 16037,
-    "minSec": 1103
+    "minSec": 1104
   },
   "foppolo": {
     "timedM": 20243,
@@ -56,10 +56,18 @@ export const WORLD_RIDES: Record<string, { timedM: number; minSec: number }> = {
   },
   "ganda": {
     "timedM": 38509,
-    "minSec": 2776
+    "minSec": 2777
+  },
+  "berghem-corto": {
+    "timedM": 72540,
+    "minSec": 5119
+  },
+  "berghem-medio": {
+    "timedM": 122813,
+    "minSec": 8554
   },
   "due-valli": {
     "timedM": 87837,
-    "minSec": 5879
+    "minSec": 5880
   }
 };

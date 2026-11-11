@@ -4,10 +4,11 @@ import { CLS, FLAG, type Edge, type EdgePose, type WorldGraph } from './graph';
 import type { WorldField } from './field';
 import { BUILDING_KIND, COVER, type Building, type Place, type WorldFeatures } from './world';
 import { addBuilding, BLANK_UV, earcut, ringArea, Tris } from './buildings';
-import { groundLook, lookContext, treeDensity, treeSpecies, type LookCtx } from './look';
+import { bandsWeight, groundLook, lookContext, treeDensity, treeSpecies, type LookCtx } from './look';
 import { ringAt, ringBranch, ringsIn, smoothRingOf, type Pt, type RingGeo } from './rings';
 import { portalClear, tunnelGeometry } from './tunnels';
 import { pavedWeight } from './urban';
+import { junctionCut, junctionsIn, mitreAt, type JunctionGeo } from './junctions';
 
 /*
  * Le mattonelle del mondo vicino al ciclista: terreno raccordato alle strade, nastri d'asfalto
@@ -86,6 +87,8 @@ export interface P {
   z: number;
   h: number;
   d: number;
+  /** quanto allargare la sezione qui (il taglio a bisettrice in testa a un nastro, junctions.ts) */
+  w?: number;
 }
 
 /** Striscia fra due scostamenti laterali (sinistra positiva), con il proprio sollevamento. */
@@ -96,8 +99,9 @@ export function strip(m: Mesh, pts: P[], a: number, liftA: number, b: number, li
       prev = -1;
       continue;
     }
-    const lx = Math.cos(p.h);
-    const lz = -Math.sin(p.h);
+    const sc = p.w ?? 1;
+    const lx = Math.cos(p.h) * sc;
+    const lz = -Math.sin(p.h) * sc;
     const i = m.vertex(p.x + lx * a, p.y + liftA, p.z + lz * a, 0, p.d / uvLen, color);
     m.vertex(p.x + lx * b, p.y + liftB, p.z + lz * b, 1, p.d / uvLen, color);
     if (prev >= 0) {
@@ -108,16 +112,23 @@ export function strip(m: Mesh, pts: P[], a: number, liftA: number, b: number, li
   }
 }
 
-/** Le corse dell'arco dentro il rettangolo, campionate ogni `step` metri nel verso dell'arco. */
+/**
+ * Le corse dell'arco dentro il rettangolo, campionate ogni `step` metri nel verso dell'arco.
+ * In testa e in coda, ai nodi con due sole strade, la sezione è tagliata sulla bisettrice con
+ * l'altra strada (junctions.ts): i due nastri combaciano, senza cuneo scoperto né sovrapposizione.
+ */
 export function runsInside(graph: WorldGraph, e: Edge, x0: number, z0: number, x1: number, z1: number, step: number): P[][] {
   const out: P[][] = [];
   let cur: P[] | null = null;
   let lastOut: P | null = null;
   const n = Math.max(1, Math.ceil(e.length / step));
+  const mA = mitreAt(graph, e.id, true);
+  const mB = mitreAt(graph, e.id, false);
   for (let k = 0; k <= n; k++) {
     const s = (e.length * k) / n;
     const pose = graph.pose(e.id, s, 1);
-    const p = { x: pose.x, y: pose.y, z: pose.z, h: pose.heading, d: s };
+    const m = k === 0 ? mA : k === n ? mB : null;
+    const p: P = m ? { x: pose.x, y: pose.y, z: pose.z, h: m.h, d: s, w: m.w } : { x: pose.x, y: pose.y, z: pose.z, h: pose.heading, d: s };
     const inside = p.x >= x0 && p.x <= x1 && p.z >= z0 && p.z <= z1;
     if (inside) {
       if (!cur) {
@@ -150,7 +161,7 @@ const COVER_COLOR: Record<number, THREE.Color> = {
 const PAVED = ['#a6a197', '#9d988e', '#aca69b'].map((h) => new THREE.Color(h));
 
 /**
- * Il terreno della mattonella, con un bordo che scende di 25 m per chiudere le fessure col terreno
+ * Il terreno della mattonella, con un bordo che scende di SKIRT_M per chiudere le fessure col terreno
  * lontano. `urban` (densità delle case intorno, urban.ts) pavimenta il suolo aperto delle città.
  * Il colore viene da look.ts (quota, pendenza, esposizione, stagione, uso del suolo); l'attributo
  * `rock` dice allo shader dove disegnare le bande della roccia (rockShader.ts).
@@ -200,7 +211,8 @@ export function* terrainJob(field: WorldField, spec: TileSpec, urban?: (x: numbe
     skirtStart.push(v);
     for (const k of line) {
       pos[v * 3] = pos[k * 3];
-      pos[v * 3 + 1] = pos[k * 3 + 1] - 25;
+      // la gonna scende SKIRT_M: deve coprire il terreno lontano, che sta sotto anche di 100 m (farSinks)
+      pos[v * 3 + 1] = pos[k * 3 + 1] - SKIRT_M;
       pos[v * 3 + 2] = pos[k * 3 + 2];
       uv[v * 2] = pos[k * 3] / DETAIL_M;
       uv[v * 2 + 1] = pos[k * 3 + 2] / DETAIL_M;
@@ -221,7 +233,6 @@ export function* terrainJob(field: WorldField, spec: TileSpec, urban?: (x: numbe
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setIndex(idx);
   geo.computeVertexNormals();
-  const nrm = geo.attributes.normal as THREE.BufferAttribute;
   const c = new THREE.Color();
   for (let k = 0; k < side * side; k++) {
     const x = pos[k * 3];
@@ -234,13 +245,22 @@ export function* terrainJob(field: WorldField, spec: TileSpec, urban?: (x: numbe
     let cov = field.terrain.cover(x, z);
     // sopra la linea del bosco il bosco dei dati non c'è: prato alpino, ghiaia, roccia
     if (cov === COVER.forest && y > ctx.look.treeLine - 40) cov = COVER.open;
-    const g = groundLook(c, ctx.look, ctx.season, y, nrm.getY(k), nrm.getZ(k), noise, cov);
-    rock[k] = g.rock;
+    // la pendenza che decide roccia, ghiaione e prato è quella del DEM, non quella del terreno
+    // raccordato: il taglio di una strada (2-5 m a 1:1) non è una parete, e non deve avere né il
+    // colore né le bande della roccia (R2 del PM: a San Marco e alla Ganda i tagli erano a righe)
+    const dd = spec.spacing;
+    const gx = (field.terrain.height(x + dd, z) - field.terrain.height(x - dd, z)) / (2 * dd);
+    const gz = (field.terrain.height(x, z + dd) - field.terrain.height(x, z - dd)) / (2 * dd);
+    const gl = Math.sqrt(1 + gx * gx + gz * gz);
+    const g = groundLook(c, ctx.look, ctx.season, y, 1 / gl, -gz / gl, noise, cov);
+    // le bande solo dove c'è una parete: non sui versanti che i dati dicono bosco
+    const rk = g.rock * bandsWeight(ctx.look, cov, y);
+    rock[k] = rk;
     // i paesi, i campi a mosaico, i parchi, il bosco: sopra il colore della quota, ma non sopra
     // la neve né la roccia; il mosaico dei prati finisce dove finisce il bosco pieno
     const mosaic = cov === COVER.farmland || (cov === COVER.open && y < ctx.look.forestFull);
     const cc = mosaic ? parcelColor(x, z, cov) : COVER_COLOR[cov];
-    if (cc && cov !== COVER.water) c.lerp(tmpC.copy(cc).offsetHSL(0, 0, (noise - 0.5) * 0.06), (cov === COVER.open ? 0.45 : 0.72) * (1 - g.snow) * (1 - g.rock));
+    if (cc && cov !== COVER.water) c.lerp(tmpC.copy(cc).offsetHSL(0, 0, (noise - 0.5) * 0.06), (cov === COVER.open ? 0.45 : 0.72) * (1 - g.snow) * (1 - rk));
     // in città il suolo aperto è una piazza o un cortile, non un prato (i parchi restano verdi)
     if (urban && (cov === COVER.open || URBAN.has(cov))) {
       const pv = pavedWeight(urban(x, z), dist[k]);
@@ -258,10 +278,11 @@ export function* terrainJob(field: WorldField, spec: TileSpec, urban?: (x: numbe
     for (let i = 0; i < line.length; i++) {
       const src = line[i] * 3;
       const dst = (skirtStart[s] + i) * 3;
+      // la gonna è il colore del bordo, più scuro, e senza le bande della roccia
       col[dst] = col[src] * 0.8;
       col[dst + 1] = col[src + 1] * 0.8;
       col[dst + 2] = col[src + 2] * 0.8;
-      rock[skirtStart[s] + i] = rock[line[i]];
+      rock[skirtStart[s] + i] = 0;
     }
   }
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
@@ -273,6 +294,11 @@ export function* terrainJob(field: WorldField, spec: TileSpec, urban?: (x: numbe
 
 /** La grana del suolo si ripete ogni 12 m. */
 const DETAIL_M = 12;
+/**
+ * Quanto scende la gonna di una mattonella: chiude la fessura col terreno lontano, che ora sta
+ * sotto il DEM anche di 100 m nelle valli strette (farSinks in farMask.ts, R1 del PM).
+ */
+export const SKIRT_M = 120;
 
 /**
  * Campi a mosaico: appezzamenti di 70 × 45 m (orientati come la centuriazione della pianura) con colture
@@ -303,6 +329,9 @@ export const URBAN = new Set<number>([COVER.residential, COVER.industrial]);
  */
 export function junctionClear(graph: WorldGraph, node: number, self: number): number {
   if (graph.adjStart[node + 1] - graph.adjStart[node] < 3) return 0;
+  // dove c'è l'innesto (junctions.ts) vale il suo taglio: il nastro riprende i bordi oltre i raccordi
+  const cut = junctionCut(graph, node, self);
+  if (cut > 0) return cut;
   let w = 0;
   for (let i = graph.adjStart[node]; i < graph.adjStart[node + 1]; i++) {
     const id = graph.adjEdges[i];
@@ -503,7 +532,10 @@ export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec):
     const hw = e.hw;
     const lift = roadLift(e.cls);
     const surface = e.flags & FLAG.cobbles || e.cls === CLS.pedestrian ? stone : e.cls === CLS.cycleway ? cycle : asphalt;
-    const nearEnd = (p: P) => p.d > 10 && p.d < e.length - 10;
+    // l'innesto dell'incrocio (junctions.ts): da lì in poi il nastro ha i suoi bordi
+    const jA = junctionCut(graph, e.a, id);
+    const jB = junctionCut(graph, e.b, id);
+    const nearEnd = (p: P) => p.d > Math.max(10, jA) && p.d < e.length - Math.max(10, jB);
     /** il punto a `off` di lato (sinistra positiva) non cade sulla carreggiata di un'altra strada */
     // (le strade si sovrappongono vicino ai nodi: a metà arco non si chiede, costa)
     const offOthers = (p: P, off: number) => (p.d > 60 && p.d < e.length - 60) || graph.asphaltMargin(p.x + Math.cos(p.h) * off, p.z - Math.sin(p.h) * off, p.y, 1.5, id) < -0.05;
@@ -530,8 +562,11 @@ export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec):
     const walkSide = (side: number) => (p: P) =>
       walkAt(p) && ((p.d > 60 && p.d < e.length - 60) || graph.asphaltMargin(p.x + Math.cos(p.h) * side * (hw + 1), p.z - Math.sin(p.h) * side * (hw + 1), p.y, 2.5, id) < -0.4);
     const lineW = e.cls <= CLS.primary ? 0.15 : 0.12;
-    for (const pts of runs) {
-      if (pts.length < 2) continue;
+    for (const raw of runs) {
+      if (raw.length < 2) continue;
+      // un punto esatto sul taglio dell'innesto: banchine e cordoli finiscono dove comincia il raccordo
+      const pts = withCuts(graph, e, raw, [jA, e.length - jB]);
+      const past = (p: P) => p.d >= jA - 1e-6 && p.d <= e.length - jB + 1e-6;
       strip(surface, pts, hw, lift, -hw, lift, surface === stone ? 4 : surface === asphalt ? ASPHALT_REPEAT_M : 10);
       if (e.cls <= CLS.unclassified && !tun) {
         // le linee di margine si fermano dove passano sull'asfalto di un'altra strada (due sensi
@@ -562,7 +597,7 @@ export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec):
         // i gradini isolati del punto M5), e lì resta la banchina
         const sides = walkable ? [1, -1].map((side) => trimWalk(pts, pts.map(walkSide(side)))) : null;
         const onWalk = sides ? sides.map((on) => new Set(pts.filter((_, i) => on[i]))) : null;
-        const bank = (i: number) => (p: P) => !onWalk || !onWalk[i].has(p);
+        const bank = (i: number) => (p: P) => past(p) && (!onWalk || !onWalk[i].has(p));
         strip(verge, pts, hw + 0.8, lift - 0.1, hw, lift - 0.02, 8, bank(0));
         strip(verge, pts, -hw, lift - 0.02, -hw - 0.8, lift - 0.1, 8, bank(1));
         strip(verge, pts, hw + 2, -3.4, hw + 0.8, lift - 0.1, 8, bank(0));
@@ -580,6 +615,8 @@ export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec):
   }
   // le rotatorie lisce: ognuna nella mattonella che ne ha il centro
   for (const g of ringsIn(graph, x0, z0, x1, z1)) if (g.smooth) drawRing(g, graph, field, { surface: g.cobbles ? stone : asphalt, paint, kerb });
+  // gli innesti degli incroci: ognuno nella mattonella che ne ha il nodo
+  for (const g of junctionsIn(graph, ids, x0, z0, x1, z1)) drawJunction(g, field, { surface: g.stone ? stone : asphalt, kerb });
   return {
     asphalt: asphalt.build(),
     stone: stone.build(),
@@ -591,6 +628,56 @@ export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec):
     tunnel: tunnel.build(false),
     tunnelRoad: tunnelRoad.build(false),
   };
+}
+
+/** La corsa con un punto esatto a ogni distanza di `cuts` che cade al suo interno. */
+function withCuts(graph: WorldGraph, e: Edge, pts: P[], cuts: number[]): P[] {
+  let out = pts;
+  for (const d of cuts) {
+    if (!(d > 0.05 && d < e.length - 0.05)) continue;
+    const k = out.findIndex((p) => p.d >= d);
+    if (k <= 0 || Math.abs(out[k].d - d) < 0.05 || Math.abs(out[k - 1].d - d) < 0.05) continue;
+    const pose = graph.pose(e.id, d, 1);
+    out = [...out.slice(0, k), { x: pose.x, y: pose.y, z: pose.z, h: pose.heading, d }, ...out.slice(k)];
+  }
+  return out;
+}
+
+// ---------- incroci ----------
+
+/**
+ * L'innesto di un incrocio (junctions.ts): un ventaglio dal nodo al bordo del poligono, con un
+ * anello intermedio a metà raggio così la superficie segue il dosso della strada; sta due
+ * centimetri sopra i nastri, le cui teste squadrate finiscono sotto. Il cordolo (o la banchina)
+ * segue il bordo fra un taglio e l'altro.
+ */
+function drawJunction(g: JunctionGeo, field: WorldField, m: { surface: Mesh; kerb: Mesh }): void {
+  let lift = roadLift(g.cls);
+  for (const a of g.arms) lift = Math.max(lift, roadLift(a.cls));
+  lift += 0.02;
+  const n = g.ring.length;
+  if (n < 3) return;
+  const uv = (x: number, z: number): [number, number] => [x / 6, z / ASPHALT_REPEAT_M];
+  const c = m.surface.vertex(g.cx, g.cy + lift, g.cz, ...uv(g.cx, g.cz));
+  const half: number[] = [];
+  const full: number[] = [];
+  for (const v of g.ring) {
+    const hx = (g.cx + v.x) / 2;
+    const hz = (g.cz + v.z) / 2;
+    half.push(m.surface.vertex(hx, v.yh + lift, hz, ...uv(hx, hz)));
+    full.push(m.surface.vertex(v.x, v.y + lift, v.z, ...uv(v.x, v.z)));
+  }
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    triUpIdx(m.surface, c, half[i], half[j]);
+    quadUp(m.surface, half[i], full[i], half[j], full[j]);
+  }
+  const urban = URBAN.has(field.terrain.cover(g.cx, g.cz));
+  const walk = WALK[Math.floor(hash2(g.cx, g.cz) * WALK.length) % WALK.length];
+  for (const curb of g.curbs) {
+    if (curb.pts.length < 2) continue;
+    curbAlong(m.kerb, curb.pts.map((p) => ({ ...p, y: p.y + lift })), urban, walk);
+  }
 }
 
 // ---------- rotatorie ----------
@@ -984,7 +1071,8 @@ export function* treesJob(field: WorldField, spec: TileSpec, seed = 0, forestOnl
         const x = cx + (rx - 0.5) * cell;
         const z = cz + (rz - 0.5) * cell;
         const y = field.height(x, z, spec.spacing);
-        if (field.lastRoadDist() < 4 || field.lastWater() || field.inTube(x, z, y)) continue;
+        // né sull'asfalto, né nell'acqua, né dentro una galleria, né sotto un ponte (la chioma bucava l'impalcato)
+        if (field.lastRoadDist() < 4 || field.lastWater() || field.inTube(x, z, y) || field.nearBridge(x, z)) continue;
         const kind = cov === COVER.rock ? 'rock' : treeSpecies(look, y, hash2(x * 1.7, z * 2.3));
         if (!kind) continue;
         // pendenza dal terreno: sulle pareti non cresce un bosco (sui versanti ripidi sì)

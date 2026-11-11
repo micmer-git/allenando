@@ -307,11 +307,25 @@ export class WorldGraph {
 
   /** Il punto di strada più vicino entro `maxD` metri, oppure null. */
   nearest(x: number, z: number, maxD = 150, accept?: (e: Edge) => boolean): Hit | null {
+    return this.nearestBy(x, z, maxD, accept, false);
+  }
+
+  /**
+   * La strada col BORDO più vicino entro `maxD` metri dalla mezzeria: una statale larga a 3 m
+   * vince su un vicolo a 2,5 m. `d` resta la distanza dalla mezzeria. Serve a chi deve stare
+   * fuori dalla carreggiata (le case, footprints.ts).
+   */
+  nearestBorder(x: number, z: number, maxD = 15, accept?: (e: Edge) => boolean): Hit | null {
+    return this.nearestBy(x, z, maxD, accept, true);
+  }
+
+  private nearestBy(x: number, z: number, maxD: number, accept: ((e: Edge) => boolean) | undefined, byBorder: boolean): Hit | null {
     const r = Math.ceil(maxD / CELL);
     const cx = Math.floor(x / CELL);
     const cz = Math.floor(z / CELL);
     let best: Hit | null = null;
     let bestD = maxD * maxD;
+    let bestEdge = Infinity;
     const seen = new Set<number>();
     for (let oz = -r; oz <= r; oz++) {
       for (let ox = -r; ox <= r; ox++) {
@@ -333,14 +347,19 @@ export class WorldGraph {
           const px = ax + dx * u;
           const pz = az + dz * u;
           const d2 = (x - px) ** 2 + (z - pz) ** 2;
-          if (d2 < bestD) {
+          if (byBorder) {
+            if (d2 >= bestD) continue;
+            const fromBorder = Math.sqrt(d2) - e.hw;
+            if (fromBorder >= bestEdge) continue;
+            bestEdge = fromBorder;
+            best = { edge: id, s: e.cum[k] + Math.sqrt(len2) * u, d: Math.sqrt(d2) };
+          } else if (d2 < bestD) {
             bestD = d2;
-            best = { edge: id, s: e.cum[k] + Math.sqrt(len2) * u, d: 0 };
+            best = { edge: id, s: e.cum[k] + Math.sqrt(len2) * u, d: Math.sqrt(d2) };
           }
         }
       }
     }
-    if (best) best.d = Math.sqrt(bestD);
     return best;
   }
 

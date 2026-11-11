@@ -52,6 +52,8 @@ export interface WorldLook {
   case: 'lombardo' | 'ladino';
   /** fin dove si legge il nome di una cima, metri */
   peakRange: number;
+  /** metri di vista in più (camera e foschia): nelle Dolomiti la Marmolada sta a 6-7 km dai passi */
+  farExtra: number;
 }
 
 export const LOOKS: Record<WorldLookId, WorldLook> = {
@@ -68,26 +70,56 @@ export const LOOKS: Record<WorldLookId, WorldLook> = {
     ringExtra: 0,
     case: 'lombardo',
     peakRange: 8000,
+    farExtra: 0,
   },
   sellaronda: {
     id: 'sellaronda',
-    // dolomia: grigio chiaro 0.78/0.76/0.72 con l'ocra nelle bande, ghiaioni quasi bianchi
-    rock: { light: '#c7c2b8', dark: '#8d877d', scree: '#c9c5bc', gravel: '#b5ae9f', bands: 1 },
+    // dolomia: grigio chiaro caldo con l'ocra nelle bande e i colatoi scuri, ghiaioni quasi bianchi,
+    // la ghiaia del tavolato più grigia (ritoccati l'11/11/2026 contro passo-sella-53922638,
+    // sella-torri-181736516, passo-pordoi-81859236: con 0,78/0,76/0,72 sotto il sole di
+    // mezzogiorno pareti, ghiaia e neve diventavano lo stesso bianco e le pareti non si leggevano)
+    rock: { light: '#b3afa6', dark: '#6e6b66', scree: '#cfccc5', gravel: '#a19d93', bands: 1 },
     forestFull: 1850,
     treeLine: 2150,
-    meadowTop: 2250,
+    // i prati dei passi arrivano ai piedi delle pareti (Pordoi 2239, Sella 2240 sono prati)
+    meadowTop: 2500,
     snowOffset: 0,
     cliffDeg: 38,
     farFine: true,
     ringExtra: 1,
     case: 'ladino',
     peakRange: 8000,
+    farExtra: 4000,
   },
 };
 
-/** L'aspetto di un mondo dal suo id; un id sconosciuto ha l'aspetto di Bergamo. */
+/** Un ritocco dell'aspetto per il collaudo: i campi di WorldLook, e della roccia solo quelli che cambiano. */
+export type LookTweak = Partial<Omit<WorldLook, 'id' | 'rock'>> & { rock?: Partial<RockLook> };
+
+const tweaked = new Map<string, { src: LookTweak; look: WorldLook }>();
+
+/**
+ * L'aspetto di un mondo dal suo id; un id sconosciuto ha l'aspetto di Bergamo. Per il collaudo
+ * (scripts/world-shot.mjs con LOOK='{"sellaronda":{…}}') `globalThis.__orobiaLook` ritocca i
+ * valori senza ricostruire l'app: serve a confrontare le viste con le foto.
+ */
 export function lookFor(id: string): WorldLook {
-  return LOOKS[id as WorldLookId] ?? LOOKS.bergamo;
+  const base = LOOKS[id as WorldLookId] ?? LOOKS.bergamo;
+  const src = (globalThis as { __orobiaLook?: Record<string, LookTweak> }).__orobiaLook?.[base.id];
+  if (!src) return base;
+  let t = tweaked.get(base.id);
+  if (!t || t.src !== src) {
+    t = { src, look: { ...base, ...src, id: base.id, rock: { ...base.rock, ...src.rock } } };
+    tweaked.set(base.id, t);
+  }
+  return t.look;
+}
+
+/** La data della stagione: adesso, o quella del collaudo (`globalThis.__orobiaDate`, «2026-08-15»). */
+export function seasonDate(now = new Date()): Date {
+  const d = (globalThis as { __orobiaDate?: string }).__orobiaDate;
+  const t = d ? new Date(`${d}T12:00:00`) : null;
+  return t && !Number.isNaN(t.getTime()) ? t : now;
 }
 
 // ---------- la stagione ----------
@@ -95,9 +127,12 @@ export function lookFor(id: string): WorldLook {
 /**
  * La linea di neve nelle Alpi orientali, quota in metri per mese (indice 0 = 1º gennaio, 12 = il
  * gennaio dopo). Giugno 2600, agosto 2900, ottobre 2500, inverno 1500: fra un punto e l'altro si
- * interpola per giorno.
+ * interpola per giorno. A novembre i passi del Sella (2240) sono ancora scoperti a sud: la linea
+ * scende da 2450 a 1900 nel mese (a metà novembre ~2200, 220 m più giù a nord) e solo a dicembre
+ * sotto i 2000 (sella-torri-181736516, fine ottobre; le viste del 09/11/2026 con 2000 avevano i
+ * passi e i prati sepolti, e le pareti non si staccavano più da niente).
  */
-const SNOW_BY_MONTH = [1500, 1500, 1650, 1900, 2250, 2600, 2800, 2900, 2800, 2500, 2000, 1600, 1500];
+const SNOW_BY_MONTH = [1500, 1500, 1650, 1900, 2250, 2600, 2800, 2900, 2800, 2500, 2450, 1900, 1500];
 
 export function snowLineBase(date: Date): number {
   const m = date.getMonth();
@@ -142,7 +177,7 @@ export interface LookCtx {
   season: Season;
 }
 
-export function lookContext(id: string, date = new Date()): LookCtx {
+export function lookContext(id: string, date = seasonDate()): LookCtx {
   const look = lookFor(id);
   return { look, season: seasonOf(date, look) };
 }
@@ -160,7 +195,8 @@ const C = {
   valley2: new THREE.Color('#77a04a'),
   forest: new THREE.Color('#3f6a33'),
   meadow: new THREE.Color('#729548'),
-  meadowOcra: new THREE.Color('#a89a5a'),
+  // il prato d'autunno: bruno-ocra, più scuro della roccia (sella-torri-181736516)
+  meadowOcra: new THREE.Color('#968249'),
   piste: new THREE.Color('#86a85a'),
   snow: new THREE.Color('#eef2f6'),
   glacier: new THREE.Color('#dfe9f2'),
@@ -170,12 +206,24 @@ const tmp = new THREE.Color();
 const rockCache = new Map<string, { light: THREE.Color; dark: THREE.Color; scree: THREE.Color; gravel: THREE.Color }>();
 
 function rockColors(look: WorldLook) {
-  let r = rockCache.get(look.id);
+  const key = `${look.id}${look.rock.light}${look.rock.dark}${look.rock.scree}${look.rock.gravel}`;
+  let r = rockCache.get(key);
   if (!r) {
     r = { light: new THREE.Color(look.rock.light), dark: new THREE.Color(look.rock.dark), scree: new THREE.Color(look.rock.scree), gravel: new THREE.Color(look.rock.gravel) };
-    rockCache.set(look.id, r);
+    rockCache.set(key, r);
   }
   return r;
+}
+
+/**
+ * Dove le bande della roccia hanno senso: non su un pendio che i dati dicono bosco (sotto la linea
+ * degli alberi è un versante ripido con gli alberi sopra, non una parete: alla Ganda le bande lo
+ * facevano a terrazze, R2 del PM). Il taglio di una strada non arriva qui: le mattonelle misurano
+ * la pendenza sul DEM, non sul terreno raccordato alla strada (tiles.ts).
+ */
+export function bandsWeight(look: WorldLook, cover: number, alt: number): number {
+  if (cover === COVER.forest && alt < look.treeLine) return 0;
+  return 1;
 }
 
 const RAD = Math.PI / 180;
@@ -228,7 +276,8 @@ export function groundLook(out: THREE.Color, look: WorldLook, season: Season, al
   // la neve: la linea della stagione, 220 m più bassa a nord, col rumore; sulle pareti ne resta poca
   const north = Math.min(1, Math.max(0, -nzSouth * 3));
   const line = season.snowLine - 220 * north + (noise - 0.5) * 220;
-  let snow = cover === COVER.glacier ? 1 : smoothstep(line - 120, line + 140, alt) * (1 - cliff * 0.75);
+  // sulle pareti verticali la neve non tiene (le torri del Sassolungo restano di roccia anche d'inverno)
+  let snow = cover === COVER.glacier ? 1 : smoothstep(line - 120, line + 160, alt) * (1 - cliff * 0.88);
   if (cover === COVER.water) snow = 0;
   if (snow > 0) out.lerp(C.snow, snow * 0.95);
   return { rock: cliff * (1 - snow * 0.6), snow };

@@ -172,8 +172,10 @@ export function siblingRide(graph: WorldGraph, rides: readonly RideDef[], ride: 
   if (!sense) return null;
   for (const r of rides) {
     if (r.id === ride.id || r.kind !== 'giro') continue;
+    // metà delle strade di ENTRAMBI: il corto della Berghem MolaMia sale a Selvino da Nembro e
+    // condivide metà della Ganda, ma non è la Ganda nell'altro verso
     const shared = r.legs.filter(([e]) => mine.has(e)).length;
-    if (shared < Math.min(mine.size, r.legs.length) * 0.5) continue;
+    if (shared < Math.max(mine.size, r.legs.length) * 0.5) continue;
     if (rideSense(graph, r) !== sense) return r;
   }
   return null;
