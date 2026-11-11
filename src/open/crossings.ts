@@ -83,6 +83,9 @@ export interface PlanCrossing {
   sj: number;
 }
 
+/** Segmenti per pianta nel codice delle celle: un fiume lungo (il Serio, 4738 vertici) ci sta. */
+const SEGS = 1 << 20;
+
 /**
  * Tutti i punti dove due piante diverse, senza nodi in comune, si attraversano. Le piante si
  * mettono in celle di `cell` metri; ogni coppia di segmenti si prova una volta sola.
@@ -101,7 +104,7 @@ export function planCrossings(lines: Polyline[], cell = 50): PlanCrossing[] {
       const cx1 = Math.floor(Math.max(l.xs[k], l.xs[k + 1]) / cell);
       const cz0 = Math.floor(Math.min(l.zs[k], l.zs[k + 1]) / cell);
       const cz1 = Math.floor(Math.max(l.zs[k], l.zs[k + 1]) / cell);
-      const code = i * 4096 + k;
+      const code = i * SEGS + k;
       for (let cx = cx0; cx <= cx1; cx++) {
         for (let cz = cz0; cz <= cz1; cz++) {
           const b = grid.get(key(cx, cz));
@@ -115,11 +118,11 @@ export function planCrossings(lines: Polyline[], cell = 50): PlanCrossing[] {
   const seen = new Set<string>();
   for (const bucket of grid.values()) {
     for (let p = 0; p < bucket.length; p++) {
-      const i = Math.floor(bucket[p] / 4096);
-      const k = bucket[p] % 4096;
+      const i = Math.floor(bucket[p] / SEGS);
+      const k = bucket[p] % SEGS;
       for (let q = p + 1; q < bucket.length; q++) {
-        const j = Math.floor(bucket[q] / 4096);
-        const m = bucket[q] % 4096;
+        const j = Math.floor(bucket[q] / SEGS);
+        const m = bucket[q] % SEGS;
         if (i === j) continue;
         const A = lines[i];
         const B = lines[j];
@@ -149,4 +152,63 @@ export function planCrossings(lines: Polyline[], cell = 50): PlanCrossing[] {
     }
   }
   return out;
+}
+
+// ---------- l'acqua sotto le strade (piano OROBIA 07/11, M.8) ----------
+
+/** Sotto un ponte l'acqua sta sotto la trave, con 60 cm d'aria. */
+export const WATER_UNDER_DECK = BRIDGE_DECK + 0.6;
+/** Una strada a raso su un torrente è un tombino: l'acqua passa sotto il rilevato, che la copre. */
+export const WATER_UNDER_ROAD = 1.5;
+/** L'acqua scende verso il ponte e risale dopo al più così: un tratto corto, nascosto dall'impalcato. */
+export const WATER_RAMP = 0.05;
+
+export interface WaterCrossing {
+  /** distanza lungo il fiume dal suo primo vertice */
+  s: number;
+  /** la quota più alta che l'acqua può avere lì */
+  top: number;
+  /** per quanti metri, prima e dopo, l'acqua resta a `top` (la fascia della strada vista dal fiume) */
+  half: number;
+}
+
+/**
+ * Il livello di un fiume abbassato dove passa sotto una strada. Il livello viene dal DEM a 25 m,
+ * che sotto un ponte stretto e in una forra pesca le sponde: prima 48 ponti avevano l'acqua sopra
+ * l'asfalto e 15 strade a raso la avevano in carreggiata. Si aggiungono i vertici al punto
+ * d'incrocio e ai bordi della fascia, poi ogni vertice scende sotto `top` più la rampa.
+ */
+export function lowerWaterAt(xz: [number, number][], ys: number[], crossings: WaterCrossing[]): { xz: [number, number][]; ys: number[]; lowered: number } {
+  if (!crossings.length || xz.length < 2) return { xz, ys, lowered: 0 };
+  const cum = [0];
+  for (let i = 1; i < xz.length; i++) cum.push(cum[i - 1] + Math.hypot(xz[i][0] - xz[i - 1][0], xz[i][1] - xz[i - 1][1]));
+  const L = cum[cum.length - 1];
+  const at = (s: number): [number, number, number] => {
+    let lo = 0;
+    let hi = cum.length - 1;
+    while (lo < hi - 1) {
+      const m = (lo + hi) >> 1;
+      if (cum[m] <= s) lo = m;
+      else hi = m;
+    }
+    const u = Math.min(1, Math.max(0, (s - cum[lo]) / (cum[hi] - cum[lo] || 1)));
+    return [xz[lo][0] + (xz[hi][0] - xz[lo][0]) * u, xz[lo][1] + (xz[hi][1] - xz[lo][1]) * u, ys[lo] + (ys[hi] - ys[lo]) * u];
+  };
+  let lowered = 0;
+  const extra: number[] = [];
+  for (const c of crossings) {
+    if (at(c.s)[2] > c.top + 0.01) lowered++;
+    for (const s of [c.s - c.half, c.s, c.s + c.half]) if (s > 0 && s < L) extra.push(s);
+  }
+  const ss = [...cum, ...extra].sort((a, b) => a - b).filter((s, i, a) => i === 0 || s - a[i - 1] > 0.05);
+  const outXz: [number, number][] = [];
+  const outYs: number[] = [];
+  for (const s of ss) {
+    const [x, z, y] = at(s);
+    let cap = Infinity;
+    for (const c of crossings) cap = Math.min(cap, c.top + Math.max(0, Math.abs(s - c.s) - c.half) * WATER_RAMP);
+    outXz.push([x, z]);
+    outYs.push(Math.min(y, cap));
+  }
+  return { xz: outXz, ys: outYs, lowered };
 }

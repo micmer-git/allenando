@@ -15,8 +15,9 @@ import { deflateSync } from 'node:zlib';
 import { CITY, DEM_STEP, FAR_STEP, HORIZON, ORIGIN, REGION, TILE } from './config.mjs';
 import { loadDem } from './dem.mjs';
 import { CLS, FLAG, MinHeap, WorldGraph, type WorldGraphFile } from '../../src/open/graph';
-import { crossingClearance, planCrossings } from '../../src/open/crossings';
-import { fitRingToRoads, type FitAction, type RoadProbe } from '../../src/open/footprints';
+import { crossingClearance, lowerWaterAt, planCrossings, WATER_UNDER_DECK, WATER_UNDER_ROAD, type WaterCrossing } from '../../src/open/crossings';
+import { deeperProbe, fitRingToRoads, junctionProbe, type FitAction, type JunctionShape, type RoadProbe } from '../../src/open/footprints';
+import { junctionAt } from '../../src/open/junctions';
 import { buildRides, resolveWaypoints } from './rides';
 import { buildMonumenti } from './monumenti';
 import { isPaintedCrossing, poiKind, POI_BUILT, POI_REACH, snapSignals, snapToRoad } from '../../src/open/snap';
@@ -548,7 +549,11 @@ function stiffness(e: RawEdge): number {
   }
 }
 
-/** La pendenza che una strada di questa classe può avere davvero: oltre è rumore del DEM. */
+/**
+ * La pendenza che una strada di questa classe può avere davvero: oltre è rumore del DEM.
+ * Le comunali arrivano al 20%: i 100 m più duri della Ganda (SP41, tornanti di Orezzo) sono al
+ * 18–19% su climbfinder e col tetto al 15% il mondo li dava al 15 (docs/pendenze-2026-11.md).
+ */
 function gradeCap(e: RawEdge): number {
   if (/Ciclovia Valle Brembana/i.test(e.name)) return 0.035;
   switch (e.cls) {
@@ -558,11 +563,11 @@ function gradeCap(e: RawEdge): number {
     case CLS.secondary:
       return 0.12;
     case CLS.tertiary:
-      return 0.15;
+      return 0.2;
     case CLS.cycleway:
       return 0.1;
     case CLS.unclassified:
-      return 0.2;
+      return 0.24;
     default:
       return 0.24;
   }
@@ -753,7 +758,7 @@ const nodeEle: number[] = nodeXZ.map(([x, z]) => demAt(x, z));
   // ponte corto pescano la quota del terrapieno spianato: a Gazzaniga la SS671 attraversava
   // Piazzale Costituzione alla stessa quota e il sottopasso ciclabile passava dentro la statale.
   // Si alza il ponte (o si abbassa la galleria) con una gobba a coseno che si stende sulla rete
-  // per i metri che servono a stare sotto il 6% (8% su piste e vie minori), anche attraverso gli
+  // per i metri che servono a stare sotto il 5%, anche attraverso gli
   // incroci: le strade laterali salgono sulla rampa, come nel vero.
   {
     const lines = prepared.map((p) => ({ xs: p.xz.map((q) => q[0]), zs: p.xz.map((q) => q[1]), a: p.a, b: p.b }));
@@ -782,12 +787,19 @@ const nodeEle: number[] = nodeXZ.map(([x, z]) => demAt(x, z));
       const low = cl.upper === 0 ? c.j : c.i;
       const sUp = cl.upper === 0 ? c.si : c.sj;
       const sLow = cl.upper === 0 ? c.sj : c.si;
-      return { ...cl, up, low, sUp, sLow, missing: cl.need - (yAt(up, sUp) - yAt(low, sLow)) };
+      const gap = yAt(up, sUp) - yAt(low, sLow);
+      // già separate nell'altro verso (la Galleria Lovere sta 48 m sopra la SS671 nella forra,
+      // con la montagna in mezzo): niente da fare
+      if (gap <= -cl.need) return null;
+      return { ...cl, up, low, sUp, sLow, missing: cl.need - gap };
     };
     /** una gobba di `amount` metri centrata sul punto s della strada ei, stesa sulla rete; la strada `skip` non si tocca */
     const bump = (ei: number, s: number, amount: number, skip: number) => {
       const e = prepared[ei].e;
-      const g = e.cls <= CLS.tertiary ? 0.06 : 0.08;
+      // rampe al 5%, e mai oltre il tetto di pendenza della strada (la Ciclovia Valle Brembana ha
+      // il 3,5%): più ripide, il «%» dell'HUD salta di due punti al secondo in fondo a un
+      // sottopasso (prova M.6), e il tetto le rispianerebbe dopo
+      const g = Math.min(0.05, gradeCap(e) * 0.9);
       const L = Math.min(400, Math.max(15, (Math.abs(amount) * Math.PI) / (2 * g)));
       const forbidden = new Set(edgeVars[skip].ids);
       const dist = new Map<number, number>();
@@ -833,8 +845,11 @@ const nodeEle: number[] = nodeXZ.map(([x, z]) => demAt(x, z));
       for (const { c } of order) {
         const d = deficit(c)!;
         if (d.missing <= 0.05) continue;
-        if (d.moveUpper > 0) bump(d.up, d.sUp, d.missing * d.moveUpper, d.low);
-        if (d.moveUpper < 1) bump(d.low, d.sLow, -d.missing * (1 - d.moveUpper), d.up);
+        // una strada col tetto di pendenza stretto (la Ciclovia Valle Brembana, 3,5%) non si può
+        // scavare: il tetto la rispianerebbe. Allora si alza quella sopra.
+        const mu = gradeCap(prepared[d.low].e) <= 0.05 ? 1 : d.moveUpper;
+        if (mu > 0) bump(d.up, d.sUp, d.missing * mu, d.low);
+        if (mu < 1) bump(d.low, d.sLow, -d.missing * (1 - mu), d.up);
         if (pass === 0) fixed++;
       }
     }
@@ -1286,6 +1301,59 @@ const riverOut = rivers.map((r) => {
   return { r, ys };
 });
 
+// ---- l'acqua sotto le strade (piano OROBIA 07/11, M.8) ----
+// Il livello dei fiumi viene dal DEM a 25 m: sotto un ponte stretto e in una forra pesca le
+// sponde, e l'acqua passava sopra l'impalcato (o in mezzo a una strada a raso, dove nel vero c'è
+// un tombino). Dove un fiume attraversa una strada l'acqua scende sotto la trave del ponte, o
+// sotto il rilevato della strada, con una rampa corta prima e dopo.
+{
+  const R = riverOut.length;
+  const lines = [
+    ...riverOut.map(({ r }, i) => ({ xs: r.xz.map((p) => p[0]), zs: r.xz.map((p) => p[1]), a: -1 - 2 * i, b: -2 - 2 * i })),
+    ...graph.edges.map((e) => ({ xs: e.xs, zs: e.zs, a: e.a, b: e.b })),
+  ];
+  const per = new Map<number, WaterCrossing[]>();
+  let n = 0;
+  let underDeck = 0;
+  for (const c of planCrossings(lines)) {
+    if (c.i < R === c.j < R) continue;
+    const ri = c.i < R ? c.i : c.j;
+    const ei = (c.i < R ? c.j : c.i) - R;
+    const sR = c.i < R ? c.si : c.sj;
+    const sE = c.i < R ? c.sj : c.si;
+    const e = graph.edges[ei];
+    if (e.flags & FLAG.tunnel) continue;
+    n++;
+    const bridge = (e.flags & FLAG.bridge) !== 0;
+    if (bridge) underDeck++;
+    const road = graph.pose(ei, sE);
+    // la fascia della strada vista dal fiume: più lunga se il fiume la taglia di sbieco
+    const xz = riverOut[ri].r.xz;
+    let k = 0;
+    for (let acc = 0; k < xz.length - 2; k++) {
+      const seg = Math.hypot(xz[k + 1][0] - xz[k][0], xz[k + 1][1] - xz[k][1]);
+      if (acc + seg >= sR) break;
+      acc += seg;
+    }
+    const rh = Math.atan2(xz[k + 1][0] - xz[k][0], xz[k + 1][1] - xz[k][1]);
+    const sin = Math.max(0.3, Math.abs(Math.sin(rh - road.heading)));
+    const cos = Math.abs(Math.cos(rh - road.heading));
+    const half = (e.hw + 2) / sin + (riverOut[ri].r.hw * cos) / sin;
+    const list = per.get(ri) ?? [];
+    list.push({ s: sR, top: road.y - (bridge ? WATER_UNDER_DECK : WATER_UNDER_ROAD), half });
+    per.set(ri, list);
+  }
+  let lowered = 0;
+  for (const [ri, list] of per) {
+    const o = riverOut[ri];
+    const out = lowerWaterAt(o.r.xz, o.ys, list);
+    o.r.xz = out.xz;
+    o.ys = out.ys;
+    lowered += out.lowered;
+  }
+  log(`acqua sotto le strade: ${n} incroci fiume/strada (${underDeck} sotto un ponte), ${lowered} con l'acqua abbassata`);
+}
+
 // ---------- mattonelle del terreno ----------
 
 {
@@ -1404,13 +1472,24 @@ function buildingInfo(t: Tags, inCity: boolean, area: number): { kind: number; h
 
 // La strada più vicina a un punto, per tenere le case fuori dalla carreggiata (footprints.ts).
 // Le gallerie non contano (la casa sta sopra), e un viadotto più alto di 4 m del terreno nemmeno.
-const roadProbe: RoadProbe = (x, z) => {
-  let hit = graph.nearest(x, z, 12, (e) => !(e.flags & FLAG.tunnel));
-  if (hit && graph.edges[hit.edge].flags & FLAG.bridge && graph.pose(hit.edge, hit.s).y - demAt(x, z) > 4) hit = graph.nearest(x, z, 12, (e) => !(e.flags & (FLAG.tunnel | FLAG.bridge)));
+const centerProbe: RoadProbe = (x, z) => {
+  let hit = graph.nearestBorder(x, z, 12, (e) => !(e.flags & FLAG.tunnel));
+  if (hit && graph.edges[hit.edge].flags & FLAG.bridge && graph.pose(hit.edge, hit.s).y - demAt(x, z) > 4) hit = graph.nearestBorder(x, z, 12, (e) => !(e.flags & (FLAG.tunnel | FLAG.bridge)));
   if (!hit) return null;
   const p = graph.pose(hit.edge, hit.s);
   return { hw: graph.edges[hit.edge].hw, d: hit.d, px: p.x, pz: p.z, heading: p.heading, edge: hit.edge };
 };
+// e l'asfalto degli incroci (junctions.ts): i raccordi d'angolo allargano la carreggiata oltre la
+// fascia dei nastri. Un incrocio su un viadotto non conta, come il viadotto.
+const junctionShapes: JunctionShape[] = [];
+for (let n = 0; n < graph.nodeCount; n++) {
+  if (graph.edgesAt(n).length < 3) continue;
+  const j = junctionAt(graph, n);
+  if (!j) continue;
+  if (j.arms.some((a) => graph.edges[a.edge].flags & FLAG.bridge) && j.cy - demAt(j.cx, j.cz) > 4) continue;
+  junctionShapes.push({ cx: j.cx, cz: j.cz, ring: j.ring });
+}
+const roadProbe: RoadProbe = deeperProbe(centerProbe, junctionProbe(junctionShapes));
 
 {
   const perTile = new Map<string, number[][]>();
@@ -1506,7 +1585,7 @@ const roadProbe: RoadProbe = (x, z) => {
     writeFileSync(join(OUT, 'b', `${key}.json`), s);
   }
   log(`edifici: ${count} in ${perTile.size} mattonelle, ${(bytes / 1e6).toFixed(1)} MB (scartati ${dropped} sotto i 12 m²)`);
-  log(`edifici nella carreggiata: ${bitten} mordevano la fascia → ${fitCount.spostata} spostati, ${fitCount.ritagliata} ritagliati, ${fitCount.passaggio} passaggi voltati, ${fitCount.tolta} tolti`);
+  log(`edifici nella carreggiata (nastri e ${junctionShapes.length} incroci): ${bitten} mordevano la fascia → ${fitCount.spostata} spostati, ${fitCount.ritagliata} ritagliati, ${fitCount.passaggio} passaggi voltati, ${fitCount.tolta} tolti`);
 }
 
 // ---------- mura, ferrovie, funivie ----------

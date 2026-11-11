@@ -25,11 +25,13 @@ export interface PathLeg extends Leg {
 const STEP = 2;
 const CORNER = 7;
 /**
- * La pendenza mostrata è la media sui 25 m prima e sui 25 m dopo (piano OROBIA 07/11, M.6): con
+ * La pendenza mostrata è la media sui 30 m prima e sui 30 m dopo (piano OROBIA 07/11, M.6): con
  * ±10 m il «%» dell'HUD saltava di tre-quattro punti a ogni vertice della pianta, a Gazzaniga
- * anche in piano. La quota è già livellata nel grafo: qui si toglie solo lo scatto.
+ * anche in piano. Il piano diceva ±25 m: con 25 in fondo a un sottopasso e sul dosso di Via
+ * Europa a Ponte Nossa, a 25 km/h, il salto era ancora di 2,1–2,5 punti al secondo; con 30
+ * sta sotto i 2. La quota è già livellata nel grafo: qui si toglie solo lo scatto.
  */
-export const GRADE_WINDOW_M = 25;
+export const GRADE_WINDOW_M = 30;
 const GRADE_STEPS = Math.ceil(GRADE_WINDOW_M / STEP);
 
 export class WorldPath implements Track {
