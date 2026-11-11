@@ -25,10 +25,31 @@ const check = (ok, label, extra = '') => {
   if (!ok) failures += 1;
 };
 const scatti = [];
+/** le pagine si fotografano in tre misure; la corsa ha le sue (O1–O4, H1 al computer) */
+let tre = false;
+/**
+ * Una schermata. Se il nome finisce in -390x844, la stessa schermata anche a 844×390 (telefono in
+ * orizzontale) e a 1280×800 (computer), poi si torna al telefono: lo stato resta quello.
+ */
 const scatta = async (p, nome, full = false) => {
   await p.evaluate('document.activeElement?.blur?.()');
   await p.shot(nome, full);
   scatti.push(nome);
+  if (!nome.endsWith('-390x844') || !tre) return;
+  const radice = nome.slice(0, -'-390x844'.length);
+  for (const [w, h, desk] of [
+    [844, 390, false],
+    [1280, 800, true],
+  ]) {
+    await p.s('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: desk ? 1 : 2, mobile: !desk });
+    await sleep(desk ? 1800 : 1000);
+    await p.shot(`${radice}-${w}x${h}`);
+    scatti.push(`${radice}-${w}x${h}`);
+    const a = await p.audit();
+    check(a.overflow <= 0, `${radice} ${w}×${h}: niente overflow orizzontale`, a.overflow > 0 ? `${a.overflow}px` : '');
+  }
+  await p.s('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
+  await sleep(900);
 };
 /** Misure comuni: overflow, bersagli, minuscole, ellissi, «Simulatore», «XP». */
 const base390 = async (p, nome, { pieni = 1, foglio = null } = {}) => {
@@ -70,6 +91,7 @@ process.exit(failures ? 1 : 0);
 // ---------------------------------------------------------------------------------------------
 
 async function pagine() {
+  tre = !process.env.SOLO_390;
   // I1 · primo avvio: mondo, nome, peso, FTP, «Entra»
   {
     const p = await b.phone(base, { isolato: true });
@@ -382,6 +404,7 @@ async function pagine() {
 // ---------------------------------------------------------------------------------------------
 
 async function corsa() {
+  tre = false;
   const casi = [
     // G4: il mondo leggero, sceso da solo dopo il primo avvio: la corsa dice «Leggero»
     { sigla: 'G4', o: null, nome: 'corsa-leggero', collaudo: 'rullo', url: '/ride?world=bergamo&ride=ganda', leggero: true },

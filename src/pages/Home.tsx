@@ -51,7 +51,8 @@ export function SessioneRiga({ now }: { now: number }) {
   const clock = sessionClock(s, now);
   return (
     <section className="flex items-center gap-3 rounded-2xl border border-line bg-elev px-3 py-2" data-testid="pedala-sessione">
-      <span className="min-w-0 flex-1">
+      {/* il nome porta a tutte le sessioni; «Entra» dritto in corsa */}
+      <Link to="/sessioni" className="block min-h-11 min-w-0 flex-1" data-testid="pedala-sessioni">
         <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <SessionKindToken kind={s.kind} />
           <span className="font-semibold leading-snug">{name}</span>
@@ -59,7 +60,7 @@ export function SessioneRiga({ now }: { now: number }) {
         <span className="num mt-0.5 block text-sm leading-snug text-muted" aria-label={clock.text} data-testid="pedala-sessione-clock">
           {`${s.pace ? `${paceLabel(s.pace)} · ` : ''}${clock.text}`}
         </span>
-      </span>
+      </Link>
       <Link to={sessionHref(s)} className="grid h-11 shrink-0 place-items-center rounded-full border border-line px-4 text-sm font-semibold" data-testid="pedala-sessione-entra">
         Entra
       </Link>
