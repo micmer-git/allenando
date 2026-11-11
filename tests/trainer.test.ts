@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BluetoothTrainer, STALE_MS } from '../src/bluetooth/trainer';
 import type { SourceUpdate } from '../src/sim/source';
+import { STANDARD_AIR } from '../src/domain/physics';
+import { getTrack } from '../src/domain/track';
+import { builtinById } from '../src/domain/workouts';
+import { RideEngine } from '../src/sim/engine';
 
 /**
  * Rullo FTMS finto: nessun hardware, solo la forma degli oggetti Web Bluetooth.
@@ -177,6 +181,55 @@ describe('BluetoothTrainer con un rullo finto', () => {
     await flush();
     expect(control.writes.at(-1)?.[0]).toBe(0x11);
     expect(trainer.snapshot().status).toBe('connected');
+  });
+
+  function engineOn(source: BluetoothTrainer, opts: Partial<ConstructorParameters<typeof RideEngine>[0]>) {
+    return new RideEngine({
+      track: getTrack(),
+      source,
+      physics: { massKg: 80, cda: 0.32, crr: 0.004, ...STANDARD_AIR },
+      ftp: 250,
+      maxHr: 186,
+      restHr: 52,
+      lthr: 166,
+      weightKg: 72,
+      withCamilla: false,
+      crr: 0.004,
+      cw: 0.39,
+      autoPause: false,
+      ...opts,
+    });
+  }
+
+  it('Potenza fissa: i watt nuovi arrivano al rullo entro 1 s, e in ERG nessuna pendenza', async () => {
+    const { trainer, control } = await connected();
+    const e = engineOn(trainer, { tipo: 'fissa', watt: 200 });
+    e.tick(0.05);
+    await flush();
+    expect(control.writes.at(-1)).toEqual([0x05, 200, 0]);
+    e.setWattFissi(205);
+    // entro un secondo di corsa (20 fotogrammi da 50 ms): il primo basta
+    let at = -1;
+    for (let i = 0; i < 20 && at < 0; i++) {
+      now += 50;
+      e.tick(0.05);
+      await flush();
+      if (control.writes.some((b) => b[0] === 0x05 && b[1] === 205)) at = i;
+    }
+    expect(at).toBeGreaterThanOrEqual(0);
+    expect(at * 50).toBeLessThan(1000);
+    expect(control.writes.some((b) => b[0] === 0x11)).toBe(false);
+  });
+
+  it('a bersaglio (senza ERG) nessun comando di potenza', async () => {
+    const { trainer, control } = await connected();
+    const e = engineOn(trainer, { workout: builtinById('risveglio'), ergAlRullo: false });
+    for (let i = 0; i < 30; i++) {
+      now += 50;
+      e.tick(0.05);
+      await flush();
+    }
+    expect(control.writes.some((b) => b[0] === 0x05)).toBe(false);
   });
 
   it('uscendo stacca tutte le periferiche', async () => {

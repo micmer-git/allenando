@@ -1,3 +1,5 @@
+import { normalizzaSearch } from '@/ride/intento';
+
 /**
  * L'ultimo giro cominciato: il link della pedalata, il nome e il mondo. Serve a «Ripeti l'ultimo
  * giro» in Oggi (F.11): una riga sola, e si riparte dallo stesso percorso, anello o salita.
@@ -35,8 +37,10 @@ export function loadLastRide(): LastRide | null {
   }
 }
 
-/** Il link per rifare quel giro: niente «resume», niente stanza. */
+/** Il link per rifare quel giro: lo stesso intento, ma niente «resume», niente stanza né sessione. */
 export function repeatHref(r: Pick<LastRide, 'search'>): string {
+  const norm = normalizzaSearch(r.search, ['resume', 'room', 'session', 'at']);
+  if (norm != null) return `/ride?${norm}`;
   const q = new URLSearchParams(r.search);
   for (const k of ['resume', 'room', 'session', 'at']) q.delete(k);
   return `/ride?${q.toString()}`;

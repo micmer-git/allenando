@@ -105,13 +105,13 @@ export function useRideSetup(): { setup: RideSetup | null; error: string | null 
           if (dove.kind === 'percorso') {
             const ride = data.rides.find((r) => r.id === dove.ride);
             if (!ride) throw new Error('Percorso sconosciuto.');
-            session = new WorldSession(data, { ride }, n);
+            session = new WorldSession(data, { ride }, n, { giri: intento.giri });
             title = ride.name;
             subtitle = ride.side;
           } else if (dove.kind === 'piano') {
             const plan = loadPlan(dove.plan);
             if (!plan || plan.legs.length === 0) throw new Error('Anello non più disponibile: rifallo da Pedala.');
-            session = new WorldSession(data, { legs: plan.legs, name: plan.name }, n);
+            session = new WorldSession(data, { legs: plan.legs, name: plan.name }, n, { giri: intento.giri });
             title = plan.name;
             subtitle = 'Anello suggerito';
           } else {

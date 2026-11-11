@@ -5,6 +5,8 @@ import type { Track, TrackPose } from '@/domain/track';
 import type { Ride, RideSample } from '@/domain/types';
 import type { Workout } from '@/domain/types';
 import { workoutAt } from '@/domain/workouts';
+import type { Tipo } from '@/ride/contract';
+import { wattFissi } from '@/ride/intento';
 import type { TelemetrySource } from './source';
 
 export type RidePhase = 'riding' | 'paused' | 'finished';
@@ -28,6 +30,12 @@ export interface EngineCheckpoint {
   workoutDone: boolean;
   effort: number;
   speed: number;
+  /** il tipo di attività e i watt della Potenza fissa di adesso (cambiano con − +) */
+  tipo?: Tipo;
+  wattFissi?: number | null;
+  /** giro di prova e passaggi scelti: tornano nel giro salvato dal punto di ripresa */
+  prova?: boolean;
+  giri?: number;
 }
 
 export interface EngineOptions {
@@ -57,6 +65,18 @@ export interface EngineOptions {
   geoAt?: (distance: number) => { lat: number; lon: number } | null;
   /** pausa automatica col rullo vero (0 W e 0 rpm per 3 s); mai col simulatore. Di serie sì. */
   autoPause?: boolean;
+  /**
+   * Il tipo di attività (A7 del piano U). Di serie: Allenamento se c'è `workout`, Watt di allora
+   * se c'è `powerTarget`, altrimenti Libera.
+   */
+  tipo?: Tipo;
+  /** Potenza fissa: i watt di partenza; di serie il 75 % dell'FTP, a passi di 5 */
+  watt?: number;
+  /**
+   * false: il bersaglio si mostra ma non si comanda al rullo (misuratore di potenza, rullo senza
+   * ERG): l'allenamento è «a bersaglio», i watt li tiene chi pedala. Di serie true.
+   */
+  ergAlRullo?: boolean;
 }
 
 export class RideEngine {
@@ -95,6 +115,16 @@ export class RideEngine {
   startedAt: Date;
   readonly withCamilla: boolean;
   readonly workout: Workout | null;
+  /** Libera, Potenza fissa, Allenamento, Watt di allora */
+  readonly tipo: Tipo;
+  /** Potenza fissa: i watt di adesso; null negli altri tipi */
+  wattFissi: number | null = null;
+  /** il bersaglio è solo da tenere: al rullo non va nessun comando di potenza */
+  readonly aBersaglio: boolean;
+  /** giro di prova (simulatore): nel Diario col gettone, fuori da classifiche, oro ed esportazione */
+  prova = false;
+  /** passaggi scelti (giri su un anello, tratte su un percorso aperto) */
+  giri = 1;
 
   readonly track: Track;
   private readonly source: TelemetrySource;
@@ -134,10 +164,19 @@ export class RideEngine {
     this.powerTarget = opts.powerTarget;
     this.geoAt = opts.geoAt;
     this.autoPause = opts.autoPause ?? true;
+    this.aBersaglio = opts.ergAlRullo === false;
     this.startedAt = new Date();
+    let tipo: Tipo = opts.tipo ?? (this.workout ? 'allenamento' : this.powerTarget ? 'allora' : 'libera');
+    if (tipo === 'allenamento' && !this.workout) tipo = 'libera';
+    if (tipo === 'allora' && !this.powerTarget) tipo = 'libera';
+    this.tipo = tipo;
     this.mode = this.workout ? 'erg' : 'free';
     // il bersaglio è giusto già prima del primo fotogramma, non 0 W
-    if (this.workout) this.targetPower = workoutAt(this.workout, 0, this.ftp).targetPower;
+    if (tipo === 'fissa') {
+      this.wattFissi = wattFissi(opts.watt ?? 0.75 * this.ftp);
+      this.mode = 'erg';
+      this.targetPower = this.wattFissi;
+    } else if (this.workout) this.targetPower = workoutAt(this.workout, 0, this.ftp).targetPower;
     else if (this.powerTarget) {
       const w = this.powerTarget(0, 0);
       if (w != null) {
@@ -182,6 +221,20 @@ export class RideEngine {
     }
   }
 
+  /**
+   * Potenza fissa: i watt nuovi (− + di 5, tenuto premuto 25). Il rullo li riceve al prossimo
+   * fotogramma: il bersaglio cambia, e il comando parte subito.
+   */
+  setWattFissi(w: number): void {
+    if (this.tipo !== 'fissa') return;
+    const next = wattFissi(w);
+    if (next === this.wattFissi) return;
+    this.wattFissi = next;
+    this.mode = 'erg';
+    this.targetPower = next;
+    this.emit();
+  }
+
   /** Lo stato da mettere da parte ogni 15 s: con questo il giro riprende dove era. */
   checkpoint(): EngineCheckpoint {
     return {
@@ -194,6 +247,10 @@ export class RideEngine {
       workoutDone: this.workoutDone,
       effort: this.effort,
       speed: this.speed,
+      tipo: this.tipo,
+      wattFissi: this.wattFissi,
+      prova: this.prova || undefined,
+      giri: this.giri,
     };
   }
 
@@ -216,7 +273,10 @@ export class RideEngine {
     const pose = this.track.poseAt(this.distance);
     this.grade = pose.grade;
     this.altitude = pose.altitude;
-    if (this.workout && !this.workoutDone) this.targetPower = workoutAt(this.workout, this.elapsed, this.ftp).targetPower;
+    if (this.tipo === 'fissa' && cp.wattFissi != null) {
+      this.wattFissi = wattFissi(cp.wattFissi);
+      this.targetPower = this.wattFissi;
+    } else if (this.workout && !this.workoutDone) this.targetPower = workoutAt(this.workout, this.elapsed, this.ftp).targetPower;
     this.emit();
   }
 
@@ -270,7 +330,7 @@ export class RideEngine {
 
   toRide(name: string): Ride {
     const samples = this.samples.length > 0 ? this.samples : [this.currentSample()];
-    return buildRide({
+    const ride = buildRide({
       id: this.rideId,
       name,
       sport: 'cycling',
@@ -285,11 +345,36 @@ export class RideEngine {
       workoutName: name,
       distanceM: this.odometer,
     });
+    ride.tipo = this.tipo;
+    if (this.giri > 1) ride.giri = this.giri;
+    if (this.prova) ride.prova = true;
+    return ride;
+  }
+
+  /** Cosa va al rullo: il bersaglio ERG, se si comanda; altrimenti la pendenza (o niente). */
+  private sourceInput(dt: number) {
+    const erg = this.mode === 'erg' && !this.aBersaglio;
+    return {
+      dt,
+      grade: this.grade,
+      targetPower: erg ? this.targetPower : null,
+      effort: this.effort,
+      ftp: this.ftp,
+      maxHr: this.maxHr,
+      restHr: this.restHr,
+      erg,
+      crr: this.crr * this.rolling,
+      cw: this.cw * this.aero,
+      windSpeedMs: this.wind,
+    };
   }
 
   private step(dt: number): void {
     this.elapsed += dt;
-    if (this.workout && !this.workoutDone) {
+    if (this.tipo === 'fissa') {
+      this.mode = 'erg';
+      this.targetPower = this.wattFissi ?? 0;
+    } else if (this.workout && !this.workoutDone) {
       const progress = workoutAt(this.workout, this.elapsed, this.ftp);
       if (progress.finished) {
         this.workoutDone = true;
@@ -308,19 +393,7 @@ export class RideEngine {
       this.targetPower = 0;
     }
 
-    this.source.update({
-      dt,
-      grade: this.grade,
-      targetPower: this.mode === 'erg' ? this.targetPower : null,
-      effort: this.effort,
-      ftp: this.ftp,
-      maxHr: this.maxHr,
-      restHr: this.restHr,
-      erg: this.mode === 'erg',
-      crr: this.crr * this.rolling,
-      cw: this.cw * this.aero,
-      windSpeedMs: this.wind,
-    });
+    this.source.update(this.sourceInput(dt));
     this.power = Math.max(0, this.source.power);
     this.hr = Math.max(0, this.source.hr);
     this.cadence = Math.max(0, this.source.cadence);
@@ -366,19 +439,7 @@ export class RideEngine {
 
   /** In pausa automatica: si ascolta il rullo, e alla prima pedalata si riparte. */
   private watchPedals(dt: number): void {
-    this.source.update({
-      dt,
-      grade: this.grade,
-      targetPower: this.mode === 'erg' ? this.targetPower : null,
-      effort: this.effort,
-      ftp: this.ftp,
-      maxHr: this.maxHr,
-      restHr: this.restHr,
-      erg: this.mode === 'erg',
-      crr: this.crr * this.rolling,
-      cw: this.cw * this.aero,
-      windSpeedMs: this.wind,
-    });
+    this.source.update(this.sourceInput(dt));
     if (this.source.mode === 'simulator' || this.source.power > 0 || this.source.cadence > 0) {
       this.autoPaused = false;
       this.idle = 0;

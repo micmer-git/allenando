@@ -3,6 +3,8 @@ import { localDateKey } from './load';
 import type { Ride } from './types';
 import { builtinById, workoutDuration, workoutEstimate, workoutRideLink } from './workouts';
 import { WORLD_ID, worldOfRide } from '@/multiplayer/world-rides';
+import type { Dove } from '@/ride/contract';
+import { intentoInSearch } from '@/ride/intento';
 
 /**
  * I programmi a settimane: tre, fatti coi 33 allenamenti che ci sono, ognuno col posto dove
@@ -99,7 +101,8 @@ export function planById(id: string): TrainingPlan | undefined {
 /** Il link della pedalata: allenamento e posto insieme; la prova è il percorso senza schema. */
 export function sessionLink(s: PlanSession): string {
   if (s.workout) return workoutRideLink(s.workout, s.place.kind === 'percorso' ? { kind: 'percorso', ride: s.place.ride } : { kind: 'salita', route: s.place.route });
-  return s.place.kind === 'percorso' ? `/ride?world=${worldOfRide(s.place.ride) ?? WORLD_ID}&ride=${s.place.ride}` : `/ride?route=${s.place.route}`;
+  const dove: Dove = s.place.kind === 'percorso' ? { kind: 'percorso', world: worldOfRide(s.place.ride) ?? WORLD_ID, ride: s.place.ride } : { kind: 'salita', route: s.place.route };
+  return `/ride?${intentoInSearch({ dove, tipo: 'libera' })}`;
 }
 
 export function placeName(place: PlanPlace): string {

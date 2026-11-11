@@ -38,7 +38,8 @@ import { rememberWorld, worldInfo } from '@/open/worlds';
 import { type CareerOutcome, type SegmentResult } from '@/game/career';
 import { commitProgress as commitRide, NOTHING_COMMITTED, type Committed } from '@/game/commit';
 import { useRideSetup, type RideSetup } from '@/ride/setup';
-import { puoPedalare, rullo, useRullo } from '@/sim/rullo';
+import { puoPedalare, rullo, rulloAdesso, tipiAmmessi, useRullo } from '@/sim/rullo';
+import { giriDi } from '@/ride/intento';
 import { RideGame, rideFrame } from '@/game/rideGame';
 import { SEGMENT_STYLE } from '@/game/arches';
 import { sessionById } from '@/game/sessions';
@@ -232,14 +233,22 @@ function RideSession({ setup, resume, kept }: { setup: RideSetup; resume: RideCh
   const profile = useApp((s) => s.profile);
   const settings = useApp((s) => s.settings);
   const custom = useApp((s) => s.workouts);
-  const workoutId = params.get('workout');
+  const intento = setup.intento;
+  // il tipo che quello che è collegato permette (A8): una Potenza fissa senza ERG diventa Libera
+  const [tipo] = useState(() => (tipiAmmessi(rulloAdesso()).includes(intento.tipo) ? intento.tipo : 'libera'));
+  const workoutId = tipo === 'allenamento' ? (intento.workout ?? null) : null;
   const workout = workoutId ? findWorkout(workoutId, custom) ?? null : null;
   const parts = useRef<{ engine: RideEngine; trainer: BluetoothTrainer; game: RideGame } | null>(null);
   if (!parts.current) {
     // il rullo dell'app, già collegato da Pedala; il simulatore solo in prova (src/sim/rullo.ts)
     const trainer = rullo.sorgente();
-    const replay = setup.replayMode === 'power' ? setup.replaySamples : undefined;
+    const r = rulloAdesso();
+    const replay = tipo === 'allora' && setup.replayMode === 'power' ? setup.replaySamples : undefined;
     const engine = new RideEngine({
+      tipo,
+      watt: intento.watt,
+      // misuratore di potenza o rullo senza ERG: l'allenamento è a bersaglio, al rullo nessun comando
+      ergAlRullo: r.sa.erg || r.prova,
       track: setup.route.track,
       source: trainer,
       physics: physicsFrom(profile),
@@ -256,6 +265,8 @@ function RideSession({ setup, resume, kept }: { setup: RideSetup; resume: RideCh
       // la traccia GPS vera nel FIT: dalla posa sulla strada, riproiettata sull'origine del mondo
       geoAt: geoFor(setup.route),
     });
+    engine.prova = setup.prova;
+    engine.giri = giriDi(intento);
     // un giro ripreso torna dov'era; ?at=metri parte da un punto della salita (per riprendere un tratto)
     const at = Number(params.get('at'));
     if (resume) engine.restore(resume.engine);
@@ -275,12 +286,18 @@ function RideSession({ setup, resume, kept }: { setup: RideSetup; resume: RideCh
       pbs: useGame.getState().career.pbs,
       sim: () => trainer.snapshot().mode === 'simulator',
       scale: () => (trainer.snapshot().mode === 'simulator' ? engine.timeScale : 1),
-      ranked: !setup.replayMode && !workout,
+      // in classifica Libera e Potenza fissa (i watt sono veri); Allenamento no; Prova mai (A10)
+      ranked: !setup.prova && !setup.replayMode && (engine.tipo === 'libera' || engine.tipo === 'fissa'),
+      prova: setup.prova,
+      // il fantasma: l'interruttore di Pedala, mai con un allenamento (A9)
+      fantasma: intento.fantasma !== false && engine.tipo !== 'allenamento',
     });
     if (resume) {
       // i tratti, i punti caldi, il dislivello e i luoghi di prima valgono ancora; si riparte in pausa
       game.restore(resume.game);
       const ws = setup.world?.session;
+      // i passaggi aggiunti prima del crash (giro in più) tornano: il percorso è lungo come allora
+      if (ws && resume.engine.giri) ws.ensureGiri(resume.engine.giri);
       if (ws && resume.world) {
         ws.gainM = resume.world.gainM;
         for (const id of resume.world.passed) ws.passed.add(id);
