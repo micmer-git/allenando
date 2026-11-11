@@ -1028,7 +1028,9 @@ function RideScreen({
                 <WorldMini session={session} size={mini} onOpen={() => setMapOpen(true)} />
               </div>
             ) : null}
-            <div className="pointer-events-none absolute bottom-[calc(var(--dock)+0.5rem)] left-2.5 right-[calc(var(--simw)+0.625rem)] z-10 rounded-xl bg-bg/55 p-1 backdrop-blur-md" data-testid="ride-profile">
+            {/* il telefono in orizzontale: l'altimetria a sinistra, sotto la scelta all'incrocio; nel
+                mezzo c'è il ciclista, che col blocco dell'allenamento nel pannello finiva sotto (O3) */}
+            <div className="pointer-events-none absolute bottom-[calc(var(--dock)+0.5rem)] left-2.5 right-[calc(var(--simw)+0.625rem)] z-10 rounded-xl bg-bg/55 p-1 backdrop-blur-md rail:right-[56%]" data-testid="ride-profile">
               {session && !session.onRoute ? (
                 <AheadProfile session={session} engine={engine} />
               ) : (
