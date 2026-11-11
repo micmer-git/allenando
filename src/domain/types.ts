@@ -103,6 +103,12 @@ export interface Ride {
   routeId?: string;
   /** Il mondo aperto in cui si è pedalato (`bergamo`, `sellaronda`), se nel mondo. */
   world?: string;
+  /** Giro di prova (simulatore): nel Diario col gettone, mai in classifica, oro, punti o esportazione. */
+  prova?: true;
+  /** Come si è pedalato: Libera, Potenza fissa, Allenamento, Watt di allora. */
+  tipo?: 'libera' | 'fissa' | 'allenamento' | 'allora';
+  /** Passaggi scelti: giri su un anello, tratte su un percorso aperto. */
+  giri?: number;
 }
 
 export interface SleepSession {

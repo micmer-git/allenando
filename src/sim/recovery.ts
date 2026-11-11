@@ -77,6 +77,9 @@ export function rideFromCheckpoint(cp: RideCheckpoint): Ride {
   });
   if (cp.routeId) ride.routeId = cp.routeId;
   if (cp.worldId) ride.world = cp.worldId;
+  if (e.tipo) ride.tipo = e.tipo;
+  if (e.giri && e.giri > 1) ride.giri = e.giri;
+  if (e.prova) ride.prova = true;
   return ride;
 }
 

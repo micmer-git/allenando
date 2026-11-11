@@ -253,7 +253,7 @@ export class RideGhosts {
 
   /** Il fantasma da battere adesso, o null. */
   now(): GhostNow | null {
-    if (!this.opts.enabled) return null;
+    if (!this.opts.enabled || !this.opts.game.fantasma) return null;
     const e = this.opts.engine;
     const s = this.opts.session;
     // il percorso intero: solo partendo dal via e restando sul percorso
@@ -291,7 +291,7 @@ export class RideGhosts {
 
   /** C'è un fantasma per questa strada: il percorso o uno dei suoi tratti (per montare il ciclista solo se serve). */
   get any(): boolean {
-    if (!this.opts.enabled) return false;
+    if (!this.opts.enabled || !this.opts.game.fantasma) return false;
     if (this.routeKey && this.traces[this.routeKey]) return true;
     return this.opts.game.tracker.windows.some((w) => !!this.traces[w.seg.id]);
   }
@@ -301,7 +301,8 @@ export class RideGhosts {
    * finisce il percorso) ne fa un fantasma, che resta se è il primo o il più veloce.
    */
   readonly observe = (): void => {
-    if (!this.opts.enabled) return;
+    // un giro di prova non lascia fantasmi (A11)
+    if (!this.opts.enabled || this.opts.game.prova) return;
     const { engine: e, game, session } = this.opts;
     for (const l of game.tracker.live) this.seen.set(l.seg.id, { from: l.from, to: l.to, t0: l.t0 });
     while (this.resultsSeen < game.results.length) {

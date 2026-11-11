@@ -50,6 +50,10 @@ export interface RideGameOptions {
   scale: () => number;
   /** niente classifiche dei tratti: replay e allenamenti ERG non sono corse */
   ranked: boolean;
+  /** giro di prova: niente record, niente classifica della sessione, niente fantasma registrato */
+  prova?: boolean;
+  /** il fantasma da battere si mostra? (interruttore di Pedala, A9) Di serie sì */
+  fantasma?: boolean;
 }
 
 export class RideGame {
@@ -84,6 +88,16 @@ export class RideGame {
   private readonly erg: ErgArchPlanner | null;
   private ergCur: { gate: { id: string; role: 'start' | 'finish'; label: string; sub?: string }; d: number } | null = null;
   private ergSpec: ArchSpec | null = null;
+
+  /** giro di prova: niente record né fantasmi registrati */
+  get prova(): boolean {
+    return !!this.opts.prova;
+  }
+
+  /** il fantasma si mostra (A9) */
+  get fantasma(): boolean {
+    return this.opts.fantasma !== false;
+  }
 
   constructor(opts: RideGameOptions) {
     this.opts = opts;
@@ -160,7 +174,8 @@ export class RideGame {
     for (const ev of this.tracker.update(e.distance, e.elapsed, e.power, e.altitude)) {
       if (ev.type !== 'finish') continue;
       const old = this.pbs[ev.seg.id];
-      const isPb = !old || ev.sec < old.sec;
+      // in prova nessun record: il tempo del simulatore non batte niente
+      const isPb = !this.opts.prova && (!old || ev.sec < old.sec);
       const wkg = this.opts.weightKg > 0 ? ev.avgPower / this.opts.weightKg : 0;
       this.results.push({ id: ev.seg.id, kind: ev.seg.kind, name: ev.seg.name, sec: ev.sec, wkg, lengthM: ev.lengthM, gainM: ev.gainM });
       if (isPb) this.pbs[ev.seg.id] = { sec: ev.sec, at: new Date().toISOString(), sim: this.opts.sim(), count: (old?.count ?? 0) + 1 };
@@ -211,7 +226,7 @@ export class RideGame {
     // arrivo della sessione: tempo nella classifica della sessione
     if (def && this.stage === 'corsa' && e.arrived) {
       this.stage = 'arrivo';
-      if (!this.sessionPosted && this.opts.nick) {
+      if (!this.sessionPosted && this.opts.nick && !this.opts.prova) {
         this.sessionPosted = true;
         const avg = e.samples.length ? e.samples.reduce((s, x) => s + x.power, 0) / e.samples.length : e.power3s;
         void postResult({ nick: this.opts.nick, ride: sessionBoardId(def), sec: e.elapsed, wkg: this.opts.weightKg > 0 ? avg / this.opts.weightKg : 0, sim: this.opts.sim() }).then((r) => {
