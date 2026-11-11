@@ -383,17 +383,33 @@ async function pagine() {
 
 async function corsa() {
   const casi = [
+    // G4: il mondo leggero, sceso da solo dopo il primo avvio: la corsa dice «Leggero»
+    { sigla: 'G4', o: null, nome: 'corsa-leggero', collaudo: 'rullo', url: '/ride?world=bergamo&ride=ganda', leggero: true },
     { sigla: 'H1', o: 'O1', nome: 'libera', collaudo: 'rullo', url: '/ride?world=bergamo&ride=citta-alta' },
     { sigla: 'H2', o: 'O2', nome: 'potenza-fissa', collaudo: 'rullo', url: '/ride?world=bergamo&ride=citta-alta&tipo=fissa&watt=165' },
     { sigla: 'H3', o: 'O3', nome: 'allenamento-anello', collaudo: 'rullo', url: '/ride?workout=sweet-spot&world=bergamo&ride=ganda&giri=2' },
     { sigla: 'H4', o: 'O4', nome: 'prova', collaudo: null, url: '/ride?world=bergamo&ride=citta-alta&prova=1' },
   ];
+  // SOLO=G4,H2: solo quelle schermate della corsa
+  const solo = process.env.SOLO ? process.env.SOLO.split(',') : null;
   for (const c of casi) {
+    if (solo && !solo.includes(c.sigla)) continue;
     const p = await apri(b, base, { collaudo: c.collaudo, bassa: true });
+    if (c.leggero) {
+      await p.go('/impostazioni');
+      const ok = await p.waitFor(`!!document.querySelector('[data-testid=impostazioni-leggero-bergamo]')`, 120000);
+      check(ok, 'G4: il mondo leggero scende da solo dopo il primo avvio');
+    }
     if (c.collaudo) {
       await p.go('/');
       await p.click('[data-testid=pedala-collega]');
       await p.waitFor(`!!document.querySelector('[data-testid=rullo-chip]')`, 8000);
+      // G4: senza rete, la corsa usa il pacco leggero (src/ride/setup.ts)
+      if (c.leggero) {
+        await p.s('Network.enable');
+        await p.s('Network.emulateNetworkConditions', { offline: true, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+        await sleep(500);
+      }
       // dentro l'app: il rullo resta collegato (un ricaricamento lo perderebbe)
       await p.evaluate(`(() => { history.pushState({}, '', '${base.replace(/^https?:\/\/[^/]+/, '')}${c.url}'); dispatchEvent(new PopStateEvent('popstate')); return true; })()`);
     } else await p.go(c.url);
@@ -436,6 +452,12 @@ async function corsa() {
       check(/km al traguardo/.test(await p.evaluate(`document.querySelector('[data-testid=ride-km]')?.textContent ?? ''`)), 'H3: i km al traguardo del giro');
     }
     if (c.sigla === 'H4') check(m.prova, 'H4: «Prova» nel titolo');
+    if (c.sigla === 'G4') {
+      check(await vede(p, '[data-testid=ride-leggero]'), 'G4: «Leggero» accanto al titolo');
+      await p.chiudi();
+      await sleep(1500);
+      continue;
+    }
     // orizzontale e computer: la stessa corsa, ridimensionata
     await metrica(p, 844, 390);
     await sleep(2500);
