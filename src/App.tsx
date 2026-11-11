@@ -3,7 +3,7 @@ import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { BottomNav, SideNav } from '@/components/Nav';
 import { useI18n } from '@/i18n';
 import { OnboardingPage } from '@/pages/Onboarding';
-import { HomePage } from '@/pages/Home';
+import { PedalaPage } from '@/pages/Pedala';
 import { WorkoutsPage } from '@/pages/Workouts';
 import { WorkoutEditorPage } from '@/pages/WorkoutEditor';
 import { HistoryPage } from '@/pages/History';
@@ -38,7 +38,7 @@ export function App() {
       <Routes>
         <Route element={<Shell />}>
           <Route path="/start" element={<OnboardingPage />} />
-          <Route path="/" element={<HomePage />} />
+          <Route path="/" element={<PedalaPage />} />
           <Route path="/ride" element={<Suspense fallback={<Splash />}><RidePage /></Suspense>} />
           <Route path="/workouts" element={<WorkoutsPage />} />
           <Route path="/workouts/edit/:id" element={<WorkoutEditorPage />} />

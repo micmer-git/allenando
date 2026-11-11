@@ -1,11 +1,9 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Wordmark } from '@/components/ui';
 import { Coin, Glyph } from '@/components/Glyph';
 import { useGame } from '@/game/useGame';
 import { missionsFor } from '@/game/missions';
 import { phaseOf, upcoming, WORLD_RIDE_NAMES } from '@/game/sessions';
-import { LevelRing } from './Me';
 import { paceLabel, sessionClock, sessionHref, SessionKindToken } from './Sessions';
 import { InstallCard } from '@/components/Install';
 import { cap, formatDateTime, formatDuration, formatKm, formatKmText, formatNumber, formatTss } from '@/domain/format';
@@ -24,13 +22,13 @@ import { cn } from '@/lib/cn';
 // la carta del programma (src/pages/Plans.tsx) si carica a parte: non pesa sull'avvio
 const TodayWorkout = lazy(() => import('./Plans').then((mod) => ({ default: mod.TodayWorkout })));
 
+/** Il corpo di Oggi, finché Pedala non lo sostituisce con Dove · Come · Via (piano U, F3–F5). */
 export function HomePage() {
   const { t } = useI18n();
   const profile = useApp((s) => s.profile);
   const rides = useApp((s) => s.rides);
   const hydrateGame = useGame((s) => s.hydrate);
   const career = useGame((s) => s.career);
-  const progress = useGame((s) => s.progress);
   useEffect(() => {
     void hydrateGame();
   }, [hydrateGame]);
@@ -54,18 +52,7 @@ export function HomePage() {
   const last = loadLastRide();
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 pb-nav pt-5 md:px-8 md:pt-10">
-      <header className="flex items-center justify-between gap-2">
-        <Wordmark className="rail:hidden wide:hidden" />
-        <Link to="/garage" className="num ml-auto inline-flex h-11 items-center gap-1.5 rounded-full border border-line bg-elev px-3 text-sm font-semibold" data-testid="home-oro">
-          <Coin size={16} />
-          {formatNumber(career.oro, 0)}
-        </Link>
-        <Link to="/tu" aria-label={t('a11y.openProfile')} className="inline-flex h-11 items-center gap-1.5 rounded-full border border-line bg-elev pl-3 pr-0.5 text-sm font-semibold" data-testid="home-level">
-          <span className="text-muted">Liv.</span>
-          <LevelRing xp={progress.xp} size={40} />
-        </Link>
-      </header>
+    <div>
       <h1 className="mt-5 font-display text-5xl uppercase leading-[0.9]">{t('home.hello', { name: profile.name || 'Atleta' })}</h1>
       {career.streak.days >= 2 ? (
         <p className="mt-1 inline-flex items-center gap-1.5 text-sm font-semibold text-accent">
@@ -191,7 +178,7 @@ export function HomePage() {
       </section>
 
       <InstallCard className="mt-6" />
-    </main>
+    </div>
   );
 }
 
