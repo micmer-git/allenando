@@ -6,7 +6,7 @@ import { cap, formatDuration, formatGainText, formatKmText } from '@/domain/form
 import { loadRouteFile, trackFromRouteFile, VERIFIED_ROUTES, type RouteMeta } from '@/domain/routes';
 import type { Ride } from '@/domain/types';
 import type { Leg } from '@/open/graph';
-import { worldStorage } from '@/open/offline';
+import { usePacco } from '@/lib/rete';
 import { pickRoute } from '@/open/pick';
 import { chiuso } from '@/open/passaggi';
 import { savePlan } from '@/open/plan';
@@ -158,19 +158,11 @@ export function DoveContenuto({ mondo, setWorld, strumento, setStrumento, filtro
   const rides = useApp((s) => s.rides);
   const manifests = useWorldManifests();
   const [scegliMondo, setScegliMondo] = useState(false);
-  const [intero, setIntero] = useState(false);
   const [evidenza, setEvidenza] = useState<string | null>(null);
   const grandi = useGrandiSalite(true);
   const data = mondo.data;
   const info = worldInfo(mondo.id);
-  useEffect(() => {
-    let alive = true;
-    const m = manifests[mondo.id];
-    if (m) void worldStorage(mondo.id, m).then((s) => alive && setIntero(s.downloaded));
-    return () => {
-      alive = false;
-    };
-  }, [manifests, mondo.id]);
+  const pacco = usePacco(mondo.id);
 
   const giri = useMemo(() => rides.filter(rifacibile), [rides]);
   const gruppi = useMemo(() => {
@@ -242,7 +234,7 @@ export function DoveContenuto({ mondo, setWorld, strumento, setStrumento, filtro
           <span className="min-w-0 whitespace-nowrap">{info.name}</span>
           <Chevron size={16} className={cn('shrink-0 text-muted transition', scegliMondo && 'rotate-180')} />
         </button>
-        {offline && !data ? <Token>Offline</Token> : intero ? <Token>Intero ✓</Token> : null}
+        {offline && !data ? <Token>Offline</Token> : pacco.stato === 'intero' ? <Token>Intero ✓</Token> : pacco.stato === 'leggero' ? <Token>Leggero</Token> : null}
       </div>
       {scegliMondo ? (
         <div className="mt-2">

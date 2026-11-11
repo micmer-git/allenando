@@ -1,8 +1,9 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BackLink, Button, Segmented, TextInput } from '@/components/ui';
 import { Chevron } from '@/components/Glyph';
-import { useWorldManifests, useWorldOffline } from '@/components/WorldPicker';
+import { useWorldManifests } from '@/components/WorldPicker';
+import { pesoLeggero, scaricaIntero, scaricaLeggero, togliIntero, usePacco } from '@/lib/rete';
 import { parseNumberInput } from '@/domain/format';
 import { PROFILE_LIMITS, type Quality, type Settings } from '@/domain/types';
 import { formatBytes } from '@/open/offline';
@@ -276,37 +277,70 @@ function Interruttore({ on }: { on: boolean }) {
   );
 }
 
-/** Un mondo: il pacco intero, con lo scarico che si ferma e riparte da dov'era (G3). */
+/** Un mondo: il pacco leggero e l'intero, con lo scarico che si ferma e riparte da dov'era (G3). */
 function MondoRighe({ world, manifest }: { world: WorldInfo; manifest: WorldManifest | null | undefined }) {
-  const h = useWorldOffline(world.id, manifest);
+  const pacco = usePacco(world.id);
+  const ctrl = useRef<AbortController | null>(null);
+  const [errore, setErrore] = useState<string | null>(null);
   if (manifest === null) return null;
-  const s = h.state;
-  const pct = h.progress && h.progress.total > 0 ? Math.round((h.progress.done / h.progress.total) * 100) : 0;
+  const leggeroB = manifest ? pesoLeggero(manifest) : 0;
   const tot = manifest ? formatBytes(manifest.bytes) : '';
-  const sotto = h.busy && h.progress ? `Scarico · ${formatBytes(h.progress.bytes)} di ${tot}` : h.error ? h.error : s?.downloaded ? `Scaricato · ${tot}` : s && s.cached > 0 ? `A metà · ${formatBytes(s.bytes)} di ${tot}` : tot;
+  const scarico = pacco.stato === 'scarico';
+  const pct = Math.round((pacco.progresso ?? 0) * 100);
+  const avvia = (cosa: 'leggero' | 'intero') => {
+    if (ctrl.current) return;
+    const c = new AbortController();
+    ctrl.current = c;
+    setErrore(null);
+    void (cosa === 'leggero' ? scaricaLeggero(world.id, c.signal) : scaricaIntero(world.id, c.signal))
+      .catch((e: unknown) => !c.signal.aborted && setErrore(e instanceof Error ? e.message : 'Scarico interrotto'))
+      .finally(() => {
+        ctrl.current = null;
+      });
+  };
+  const leggeroOk = pacco.stato === 'leggero' || pacco.stato === 'intero';
+  const tasto = 'h-11 shrink-0 rounded-full border border-line px-4 text-sm font-semibold';
   return (
-    <div className="border-b border-line py-2" data-testid={`impostazioni-mondo-${world.id}`} data-state={h.busy ? 'scarico' : s?.downloaded ? 'scaricato' : 'da-scaricare'}>
-      <div className="flex min-h-11 items-center justify-between gap-3">
+    <div className="border-b border-line py-1" data-testid={`impostazioni-mondo-${world.id}`} data-state={pacco.stato}>
+      <p className="mt-1 font-semibold">{world.name}</p>
+      <div className="flex min-h-12 items-center justify-between gap-3">
         <span className="min-w-0">
-          <span className="block font-semibold">{world.name}</span>
-          <span className="num block text-sm text-muted">{`Intero · ${sotto}`}</span>
+          <span className="block text-[15px]">Leggero</span>
+          <span className="num block text-sm text-muted">{`Strade, terreno lontano, nomi · ${formatBytes(leggeroB)}`}</span>
         </span>
-        {s && !s.available ? null : h.busy ? (
-          <button type="button" className="h-11 shrink-0 rounded-full border border-line px-4 text-sm font-semibold" onClick={h.stop} data-testid={`impostazioni-ferma-${world.id}`}>
-            Ferma
-          </button>
-        ) : s?.downloaded ? (
-          <button type="button" className="h-11 shrink-0 rounded-full border border-line px-4 text-sm font-semibold text-muted" onClick={h.remove}>
-            Togli
-          </button>
-        ) : (
-          <button type="button" className="h-11 shrink-0 rounded-full border border-line px-4 text-sm font-semibold" onClick={h.download} disabled={manifest === undefined || !s} data-testid={`impostazioni-scarica-${world.id}`}>
+        {leggeroOk ? (
+          <span className="shrink-0 rounded-full border border-line px-2.5 py-0.5 text-xs font-semibold" data-testid={`impostazioni-leggero-${world.id}`}>
+            ✓
+          </span>
+        ) : scarico ? null : (
+          <button type="button" className={tasto} onClick={() => avvia('leggero')} disabled={!manifest} data-testid={`impostazioni-scarica-leggero-${world.id}`}>
             Scarica
           </button>
         )}
       </div>
-      {h.busy ? (
-        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-elev2" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={`Scarico di ${world.name}`}>
+      <div className="flex min-h-12 items-center justify-between gap-3">
+        <span className="min-w-0">
+          <span className="block text-[15px]">Intero</span>
+          <span className="num block text-sm text-muted">
+            {errore ?? (scarico ? `Scarico · ${formatBytes((pacco.progresso ?? 0) * pacco.totale)} di ${tot}` : pacco.stato === 'intero' ? `Scaricato · ${tot}` : tot)}
+          </span>
+        </span>
+        {scarico ? (
+          <button type="button" className={tasto} onClick={() => ctrl.current?.abort()} data-testid={`impostazioni-ferma-${world.id}`}>
+            Ferma
+          </button>
+        ) : pacco.stato === 'intero' ? (
+          <button type="button" className={cn(tasto, 'text-muted')} onClick={() => void togliIntero(world.id)}>
+            Togli
+          </button>
+        ) : (
+          <button type="button" className={tasto} onClick={() => avvia('intero')} disabled={!manifest} data-testid={`impostazioni-scarica-${world.id}`}>
+            Scarica
+          </button>
+        )}
+      </div>
+      {scarico ? (
+        <div className="mb-2 h-1.5 overflow-hidden rounded-full bg-elev2" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={`Scarico di ${world.name}`}>
           <div className="h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
         </div>
       ) : null}

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Wordmark } from '@/components/ui';
-import { useOnline } from '@/components/Install';
+import { usePacco, useRete } from '@/lib/rete';
 import { formatGainText, formatKmText } from '@/domain/format';
 import { loadRouteFile, routeMeta, trackFromRouteFile } from '@/domain/routes';
 import { lastWorld, isWorldId } from '@/open/worlds';
@@ -33,8 +33,9 @@ export function ReteChip() {
   );
 }
 
+/** La rete adesso (U-motore, src/lib/rete.ts). */
 export function useReteOra(): Rete {
-  return useOnline() ? 'online' : 'offline';
+  return useRete();
 }
 
 function useMedia(query: string): boolean {
@@ -102,6 +103,7 @@ export function PedalaPage() {
   const v = vistaPedala(r, rete, { dove: scelta?.dove ?? null, tipo: scelta?.tipo, record: !!scelta?.vista?.record, giri: !!scelta?.vista?.anello, allora: !!scelta?.vista?.potenza });
   const puo = !v.pannello;
   const mondo = useMondo(worldId, puo && (dove.open || largo || !!attesa));
+  const pacco = usePacco(scelta?.dove && 'world' in scelta.dove ? scelta.dove.world : worldId);
 
   // ?dove=… dall'indirizzo: apre il foglio, o sceglie un Dove (piano U, § 2.6)
   const letti = useRef(false);
@@ -219,6 +221,8 @@ export function PedalaPage() {
   const scheda = scelta?.dove?.kind === 'percorso' ? () => setDove({ open: true, strumento: 'scheda', filtro: dove.filtro, solo: true, ride: (scelta.dove as { ride: string }).ride }) : scelta?.dove?.kind === 'libero' ? () => setDove({ open: true, strumento: 'libero', filtro: dove.filtro, solo: true }) : scelta?.dove?.kind === 'salita' ? () => navigate(`/salite/${(scelta.dove as { route: string }).route}`) : null;
 
   const rigaGiri = vv.blocchi.includes('giri') && !!vistaD?.anello;
+  // il mondo del Dove sul telefono: «Leggero» quando c'è solo il pacco leggero (G1)
+  const leggero = pacco.stato === 'leggero' && !!scelta?.dove && 'world' in scelta.dove;
   const schedaTasto = scheda ? (
     <button type="button" className="-mr-2 h-11 rounded-full px-3 font-semibold" onClick={scheda} data-testid="pedala-scheda">
       Scheda
@@ -238,7 +242,7 @@ export function PedalaPage() {
           {scheda && !rigaGiri ? schedaTasto : null}
         </div>
       ) : null}
-      {!largo ? <DoveCard vista={vistaD} onClick={apriDove} /> : <DoveTesta vista={vistaD} />}
+      {!largo ? <DoveCard vista={vistaD} onClick={apriDove} leggero={leggero} /> : <DoveTesta vista={vistaD} leggero={leggero} />}
       {rigaGiri || (largo && scheda) ? (
         <div className="mt-1.5 flex min-h-11 items-center justify-between gap-2">
           {rigaGiri ? <Giri n={scelta.giri} durataSec={tipo === 'allenamento' && giroSec ? giroSec * scelta.giri : null} onChange={(n) => setScelta({ giri: n })} /> : <span />}
@@ -348,19 +352,24 @@ function Miniatura({ vista, className }: { vista: VistaDove | null; className?: 
   );
 }
 
-function Numeri({ vista }: { vista: VistaDove }) {
+function Numeri({ vista, leggero = false }: { vista: VistaDove; leggero?: boolean }) {
   const km = vista.lunghezzaM != null ? formatKmText(vista.lunghezzaM) : null;
   const m = vista.dislivelloM != null ? formatGainText(vista.dislivelloM) : null;
   return (
     <span className="num mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
       {km || m ? <b className="whitespace-nowrap">{[km, m].filter(Boolean).join(' · ')}</b> : null}
       <span className="inline-flex items-center rounded-full border border-line px-2 py-px text-xs font-semibold">{vista.gettone}</span>
+      {leggero ? (
+        <span className="inline-flex items-center rounded-full border border-line px-2 py-px text-xs font-semibold" data-testid="pedala-leggero">
+          Leggero
+        </span>
+      ) : null}
     </span>
   );
 }
 
 /** Il Dove scelto (C1): miniatura, nome, da dove a dove, i numeri. Un tocco apre Dove. */
-function DoveCard({ vista, onClick }: { vista: VistaDove | null; onClick: () => void }) {
+function DoveCard({ vista, onClick, leggero }: { vista: VistaDove | null; onClick: () => void; leggero?: boolean }) {
   return (
     <button type="button" onClick={onClick} className="flex w-full items-center gap-3 rounded-2xl border border-line bg-elev p-2.5 text-left" data-testid="pedala-dove">
       <Miniatura vista={vista} className="h-[84px] w-[84px]" />
@@ -374,20 +383,20 @@ function DoveCard({ vista, onClick }: { vista: VistaDove | null; onClick: () => 
           </span>
         </span>
         {vista ? <span className="block text-sm leading-snug text-muted">{vista.sotto}</span> : null}
-        {vista ? <Numeri vista={vista} /> : <span className="block text-sm text-muted">Percorsi, anelli, salite, i tuoi giri</span>}
+        {vista ? <Numeri vista={vista} leggero={leggero} /> : <span className="block text-sm text-muted">Percorsi, anelli, salite, i tuoi giri</span>}
       </span>
     </button>
   );
 }
 
 /** Sul computer, in testa alla colonna di destra (P1): il nome e i numeri, e l'altimetria. */
-function DoveTesta({ vista }: { vista: VistaDove | null }) {
+function DoveTesta({ vista, leggero }: { vista: VistaDove | null; leggero?: boolean }) {
   if (!vista) return <p className="font-semibold text-muted">Scegli dove pedalare</p>;
   return (
     <div data-testid="pedala-dove">
       <p className="font-display text-2xl leading-tight">{vista.titolo}</p>
       <p className="text-sm text-muted">{vista.sotto}</p>
-      <Numeri vista={vista} />
+      <Numeri vista={vista} leggero={leggero} />
       <Altimetria profilo={vista.profilo} />
     </div>
   );
