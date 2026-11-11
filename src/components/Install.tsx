@@ -162,12 +162,16 @@ export function useOnline(): boolean {
   return online;
 }
 
-export function OfflineBanner() {
+/**
+ * Senza rete, una parola (piano U, A16): un gettone in alto a destra, sopra le pagine fuori dalla
+ * corsa. Pedala lo mette nella sua testata, accanto al rullo.
+ */
+export function OfflineBanner({ hidden = false }: { hidden?: boolean }) {
   const online = useOnline();
-  if (online) return null;
+  if (online || hidden) return null;
   return (
-    <p role="status" data-testid="offline-banner" className="sticky top-0 z-40 bg-warn/15 px-4 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] text-sm text-warn backdrop-blur">
-      Sei offline: salite, giri salvati e simulatore funzionano; le stanze «Pedala insieme» no.
+    <p role="status" data-testid="rete-offline" className="pointer-events-none fixed right-3 top-[max(0.5rem,env(safe-area-inset-top))] z-40 rounded-full border border-line bg-bg/90 px-3 py-1 text-sm font-semibold text-muted backdrop-blur">
+      Offline
     </p>
   );
 }

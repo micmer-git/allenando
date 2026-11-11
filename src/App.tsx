@@ -80,7 +80,7 @@ function Shell() {
     <div className="rail:grid rail:grid-cols-[76px_minmax(0,1fr)] wide:grid wide:grid-cols-[240px_minmax(0,1fr)]">
       <SideNav />
       <div>
-        <OfflineBanner />
+        <OfflineBanner hidden={location.pathname === '/'} />
         {memoryOnly ? <p className="bg-warn/15 px-4 py-2 text-sm text-warn">{t('app.memory')}</p> : null}
         <Outlet />
         <BottomNav />

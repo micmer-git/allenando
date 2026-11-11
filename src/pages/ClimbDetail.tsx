@@ -1,34 +1,19 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { GRADE_LEGEND, gradeColor, ProfileChart, RouteMap, useVerifiedRoute } from '@/components/RouteViz';
 import { Button, PageHeader } from '@/components/ui';
 import { BoardPanel } from '@/components/Board';
 import { Chevron } from '@/components/Glyph';
-import { cap, formatAlt, formatAltText, formatDuration, formatKm, formatNumber } from '@/domain/format';
+import { cap, formatAlt, formatAltText, formatKm, formatNumber } from '@/domain/format';
 import { projector } from '@/domain/geo';
 import { osmUrl, routeMeta, routeStats, streetViewUrl } from '@/domain/routes';
-import { ALL_BUILTIN } from '@/domain/workouts';
-import { useI18n } from '@/i18n';
-import { useApp } from '@/store/useApp';
-import { workoutTitle } from './Workouts';
 
 export function ClimbDetailPage() {
   const { id = '' } = useParams();
   const meta = routeMeta(id);
   const { route, error } = useVerifiedRoute(id);
   const navigate = useNavigate();
-  const { t } = useI18n();
-  const rides = useApp((s) => s.rides);
-  const custom = useApp((s) => s.workouts);
-  const [workoutId, setWorkoutId] = useState('');
   const stats = route ? routeStats(route.track) : null;
-  const best = useMemo(
-    () =>
-      rides
-        .filter((r) => r.routeId === id && route && r.distanceM >= route.track.length - 5)
-        .sort((a, b) => a.durationSec - b.durationSec)[0],
-    [rides, id, route],
-  );
   const kms = useMemo(() => {
     if (!route) return [];
     const out: { from: number; to: number; grade: number; alt: number }[] = [];
@@ -45,7 +30,7 @@ export function ClimbDetailPage() {
     return (
       <main className="mx-auto max-w-3xl px-4 pt-10">
         <p>Salita non trovata.</p>
-        <Link to="/salite" className="inline-flex h-11 items-center font-semibold text-accent">Torna alle salite</Link>
+        <Link to="/?dove=salite" className="inline-flex h-11 items-center font-semibold text-accent">Torna alle salite</Link>
       </main>
     );
   }
@@ -56,7 +41,7 @@ export function ClimbDetailPage() {
 
   return (
     <main className="mx-auto w-full max-w-4xl px-4 pb-nav-cta pt-3 md:px-8 md:pt-8" data-testid="climb-detail">
-      <PageHeader back={{ to: '/salite', label: 'Salite' }} eyebrow={meta.region} title={meta.name} sub={cap(meta.side)} size="lg" />
+      <PageHeader back={{ to: '/', label: 'Pedala' }} eyebrow={meta.region} title={meta.name} sub={cap(meta.side)} size="lg" />
 
       {stats ? (
         <dl className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-6" data-testid="climb-stats">
@@ -74,14 +59,10 @@ export function ClimbDetailPage() {
       {/* il tasto per cui si apre la pagina: fisso sopra la barra, sempre nel primo schermo */}
       <div className="cta-bar border-t border-line bg-bg/92 backdrop-blur-xl" data-testid="climb-cta">
         <div className="mx-auto flex w-full max-w-4xl gap-2 px-4 py-2.5 md:px-8">
-          <Button className="flex-1" data-testid="climb-ride" onClick={() => navigate(`/ride?route=${id}`)}>
+          {/* Pedala con questa salita come Dove: il come (e il fantasma del record) si sceglie lì */}
+          <Button className="flex-1" data-testid="climb-ride" onClick={() => navigate(`/?dove=salita&route=${id}`)}>
             Pedala
           </Button>
-          {best ? (
-            <Button variant="ghost" className="shrink-0" onClick={() => navigate(`/ride?route=${id}&ghost=${best.id}`)} data-testid="climb-ghost">
-              Fantasma · {formatDuration(best.durationSec)}
-            </Button>
-          ) : null}
         </div>
       </div>
 
@@ -117,27 +98,6 @@ export function ClimbDetailPage() {
                     </li>
                   ))}
                 </ul>
-              </div>
-              <div className="rounded-2xl border border-line bg-elev p-4">
-                <p className="eyebrow">In ERG</p>
-                <div className="mt-2 flex gap-2">
-                  <select
-                    aria-label="Allenamento ERG"
-                    className="h-12 min-w-0 flex-1 rounded-full border border-line bg-elev2 px-4 text-sm"
-                    value={workoutId}
-                    onChange={(e) => setWorkoutId(e.target.value)}
-                  >
-                    <option value="">Scegli l’allenamento</option>
-                    {[...ALL_BUILTIN, ...custom].map((w) => (
-                      <option key={w.id} value={w.id}>
-                        {workoutTitle(w, t)}
-                      </option>
-                    ))}
-                  </select>
-                  <Button variant="soft" disabled={!workoutId} onClick={() => navigate(`/ride?route=${id}&workout=${workoutId}`)}>
-                    Parti
-                  </Button>
-                </div>
               </div>
             </div>
           </section>
