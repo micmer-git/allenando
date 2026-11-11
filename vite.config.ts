@@ -50,6 +50,16 @@ export default defineConfig({
         globIgnores: ['**/world/**', '**/prima-dopo/**'],
         runtimeCaching: [
           {
+            // il manifesto del mondo dice cosa c'è da scaricare: dalla rete se c'è, dalla cache senza
+            urlPattern: ({ url }) => url.pathname.includes('/world/') && url.pathname.endsWith('/manifest.json'),
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'allenando-world-v1',
+              networkTimeoutSeconds: 4,
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          {
             urlPattern: ({ url }) => url.pathname.includes('/world/'),
             handler: 'CacheFirst',
             options: {

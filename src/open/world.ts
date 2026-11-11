@@ -266,6 +266,12 @@ export interface WorldData {
   features: WorldFeatures;
   proj: ReturnType<typeof projector>;
   toGeo(x: number, z: number): LatLon;
+  /**
+   * Il mondo leggero (A15 del piano U): strade, terreno lontano, nomi e monumenti, senza case
+   * (`b/`) né terreno a 25 m (`dem/`). Lo usa la corsa senza rete quando il mondo intero non è
+   * sul telefono: il terreno lontano vale anche vicino e la strada lo spiana sotto di sé.
+   */
+  leggero?: boolean;
 }
 
 export interface FeaturesFile {
@@ -427,6 +433,8 @@ export function decodeFar(buf: Uint8Array, nx: number, nz: number): Float32Array
  * c'è: dove la mattonella fine non è ancora arrivata usa il terreno lontano a 250 m.
  */
 export class Terrain {
+  /** mondo leggero: nessuna mattonella del DEM si chiede, il terreno lontano vale ovunque */
+  light = false;
   private tiles = new Map<string, DemTile>();
   private pending = new Map<string, Promise<DemTile | null>>();
   private farH: Float32Array | null = null;
@@ -466,7 +474,7 @@ export class Terrain {
     const key = `${tx}_${tz}`;
     const have = this.tiles.get(key);
     if (have) return Promise.resolve(have);
-    if (!this.inBounds(tx, tz)) return Promise.resolve(null);
+    if (!this.inBounds(tx, tz) || this.light) return Promise.resolve(null);
     let p = this.pending.get(key);
     if (!p) {
       p = fetch(`${this.base}dem/${key}.bin`)
@@ -491,6 +499,7 @@ export class Terrain {
 
   /** Carica le mattonelle entro `radius` metri da (x, z). */
   async around(x: number, z: number, radius: number): Promise<void> {
+    if (this.light) return;
     const [a0, b0] = this.tileOf(x - radius, z - radius);
     const [a1, b1] = this.tileOf(x + radius, z + radius);
     const jobs: Promise<unknown>[] = [];
