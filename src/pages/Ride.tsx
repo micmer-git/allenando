@@ -45,7 +45,7 @@ import { applyRide, levelOf, loadProgress, postResult, postXp, type XpLine } fro
 import { AheadProfile, cap, LoopSheet, MapSheet, Nearby, Toasts, TurnPicker, WeatherChip, WorldMini, XpSummary } from './WorldHud';
 import type { Dir } from '@/open/graph';
 import { fetchWeather, type WeatherNow } from '@/open/weather';
-import { nextPass, passesAlongPath, passText, rideMarks, type PassPoint } from '@/game/passes';
+import { nextPass, passesAlongPath, passSub, rideMarks, type PassPoint } from '@/game/passes';
 import { rememberRide } from '@/open/lastRide';
 import { rememberWorld, worldInfo } from '@/open/worlds';
 import { sunFor } from '@/open/sky';
@@ -614,7 +614,7 @@ function RideScreen({
     onReady();
     setReady(true);
     // l'ultimo giro, per «Ripeti l'ultimo giro» in Oggi (F.11); e il mondo, per Oggi e Mondo (F.1)
-    if (!resume) rememberRide({ search: rideSearch(paramsRef.current), title: setup.label, world: setup.world?.data.graph.id });
+    if (!resume) rememberRide({ search: rideSearch(paramsRef.current), title: setup.route.title, world: setup.world?.data.graph.id });
     if (setup.world) rememberWorld(setup.world.data.graph.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onReady]);
@@ -954,9 +954,10 @@ function RideScreen({
   const passMarks = usePassMarks(session, engine.distance);
   const pass = session ? nextPass(passMarks, engine.distance, engine.altitude) : null;
   const highAlt = !!session && engine.altitude >= worldInfo(session.data.graph.id).highAlt;
+  // la quota nel titolo solo finché non sta nel pannello (ride-alt): non due volte a schermo
   const where = session
-    ? cap([session.placeName(), session.roadLabel(engine.distance), formatAltText(engine.altitude)].filter(Boolean).join(' · '))
-    : cap([modeLabel, !setup.route.verified ? 'traccia non verificata' : `${formatNumber(engine.altitude, 0)} m`, track.hairpins.length > 0 ? `tornanti ${hairpinsDone}/${track.hairpins.length}` : ''].filter(Boolean).join(' · '));
+    ? cap([session.placeName(), session.roadLabel(engine.distance), highAlt ? '' : formatAltText(engine.altitude)].filter(Boolean).join(' · '))
+    : cap([modeLabel, !setup.route.verified ? 'traccia non verificata' : formatAltText(engine.altitude), track.hairpins.length > 0 ? `tornanti ${hairpinsDone}/${track.hairpins.length}` : ''].filter(Boolean).join(' · '));
 
   const settingsPanel = (
     <details className="group rounded-2xl border border-line bg-bg/60 text-left" data-testid="ride-settings">
@@ -1171,9 +1172,12 @@ function RideScreen({
                 <div className={cn('flex shrink-0 flex-col items-end gap-1.5', session && 'landscape:pt-[calc(var(--mini)+0.5rem)]')} data-testid="ride-hud-right">
                   {session ? <WeatherChip session={session} engine={engine} /> : null}
                   {pass ? (
-                    <p className="num max-w-[13rem] rounded-xl bg-bg/70 px-2.5 py-1 text-right text-xs font-semibold leading-tight backdrop-blur-md" data-testid="ride-next-pass">
-                      <span className="text-accent">▲ </span>
-                      {passText(pass)}
+                    <p className="num max-w-[14rem] rounded-xl bg-bg/70 px-2.5 py-1 text-right text-xs font-semibold leading-tight backdrop-blur-md" data-testid="ride-next-pass">
+                      <span className="block whitespace-nowrap">
+                        <span className="text-accent">▲ </span>
+                        {pass.name}
+                      </span>
+                      <span className="block whitespace-nowrap">{passSub(pass)}</span>
                     </p>
                   ) : null}
                   {gap != null ? (

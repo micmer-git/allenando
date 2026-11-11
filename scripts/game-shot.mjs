@@ -5,11 +5,12 @@
 // salita), un allenamento che va oltre il percorso, portali dei km, volata del cassonetto.
 // NOVITA=1 le novità: due giri su Maresana col fantasma, la cartolina (riepilogo e dettaglio, PNG
 // 1080×1350), i programmi con l'allenamento di oggi, un .zwo vero importato, esportato e in ERG.
+// PASSO=1 la corsa sulla Ganda a 3 km dal passo: la pillola del prossimo passo su due righe (F.4).
 // Esce con 1 se un controllo fallisce o la pagina lancia errori.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { launch, sleep } from './cdp.mjs';
-import { giroPagine } from './pagine-check.mjs';
+import { giroPagine, onboardingMondi, pillolaPasso } from './pagine-check.mjs';
 import { holdFinish } from './corsa-checks.mjs';
 
 const [base = 'http://127.0.0.1:5183/allenando', out = 'shots'] = process.argv.slice(2);
@@ -33,6 +34,8 @@ try {
   const p = await b.phone(base);
   await p.go('/start');
   check(await p.waitFor(`!!document.querySelector('[data-testid=onboarding]')`), 'onboarding: si apre');
+  // pista F: le due carte dei mondi, Bergamo con la schermata vera, un mondo che manca non si sceglie
+  await onboardingMondi(p, check);
   await p.evaluate(`(() => { const i = document.querySelector('[data-testid=onboarding-name]'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, 'Anna'); i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
   await p.shot('g01-onboarding');
   for (let step = 0; step < 4; step++) {
@@ -99,6 +102,8 @@ try {
 
   // pista 1: tutte le pagine (minuscole, bersagli, overflow, ellissi, «XP») e i «fatto» del piano
   await giroPagine(p, check, { shot: !!process.env.P1_SHOTS });
+  // PASSO=1: la corsa sulla Ganda a 3 km dal passo, per la pillola del prossimo passo (F.4)
+  if (process.env.PASSO) await pillolaPasso(p, check, { shot: !!process.env.P1_SHOTS });
 
   if (process.env.GIOCO) {
     // ---------- il gioco nuovo: carta → percorso, km alla Zwift, cassonetti, archi in ERG, allenamenti ----------

@@ -6,8 +6,11 @@ import { parseNumberInput } from '@/domain/format';
 import { DEFAULT_PROFILE, PROFILE_LIMITS as LIMITS } from '@/domain/types';
 import { useI18n } from '@/i18n';
 import { useApp } from '@/store/useApp';
-import { WorldArt } from '@/components/WorldPicker';
+import { useWorldManifests, WorldArt } from '@/components/WorldPicker';
 import { lastWorld, rememberWorld, WORLD_CATALOG } from '@/open/worlds';
+
+/** La schermata vera del 3D per la carta del mondo (R9); chi non ce l'ha ancora (il Sellaronda, finché S2 non consegna) usa la sagoma. */
+const WORLD_PHOTO: Record<string, string> = { bergamo: `${import.meta.env.BASE_URL}mondi/bergamo.jpg` };
 import { cn } from '@/lib/cn';
 
 export function OnboardingPage() {
@@ -20,10 +23,14 @@ export function OnboardingPage() {
   const [ftp, setFtp] = useState(String(DEFAULT_PROFILE.ftp));
   const [maxHr, setMaxHr] = useState(String(DEFAULT_PROFILE.maxHr));
   const [world, setWorld] = useState(lastWorld);
+  const manifests = useWorldManifests();
+  // un mondo che non c'è non si sceglie (R6): se era l'ultimo ricordato si torna a Bergamo
+  const missing = (id: string) => manifests[id] === null;
+  const chosen = missing(world) ? 'bergamo' : world;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    rememberWorld(world);
+    rememberWorld(chosen);
     await complete({
         ...DEFAULT_PROFILE,
         name: name.trim() || 'Atleta',
@@ -49,14 +56,19 @@ export function OnboardingPage() {
             key={w.id}
             type="button"
             role="radio"
-            aria-checked={world === w.id}
-            onClick={() => setWorld(w.id)}
-            className={cn('overflow-hidden rounded-2xl border text-left', world === w.id ? 'border-accent bg-elev2' : 'border-line bg-elev')}
+            aria-checked={chosen === w.id}
+            aria-disabled={missing(w.id) || undefined}
+            onClick={() => !missing(w.id) && setWorld(w.id)}
+            className={cn('overflow-hidden rounded-2xl border text-left', chosen === w.id ? 'border-accent bg-elev2' : 'border-line bg-elev', missing(w.id) && 'opacity-70')}
             data-testid={`onboarding-world-${w.id}`}
+            data-state={missing(w.id) ? 'presto' : 'pronto'}
           >
-            <WorldArt id={w.id} className="block aspect-[16/9] w-full" />
+            {WORLD_PHOTO[w.id] ? <img src={WORLD_PHOTO[w.id]} alt="" className="block aspect-[16/9] w-full object-cover" width={640} height={360} /> : <WorldArt id={w.id} className="block aspect-[16/9] w-full" />}
             <span className="block px-3 py-2">
-              <span className="block font-display text-lg leading-tight">{w.name}</span>
+              <span className="flex items-baseline gap-1.5">
+                <span className="min-w-0 font-display text-lg leading-tight">{w.name}</span>
+                {missing(w.id) ? <span className="shrink-0 text-[11px] font-bold uppercase tracking-wide text-muted">Presto</span> : null}
+              </span>
               <span className="block text-xs leading-snug text-muted">{w.blurb}</span>
             </span>
           </button>

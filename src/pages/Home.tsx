@@ -108,8 +108,10 @@ export function HomePage() {
         </nav>
         {last ? (
           <Link to={repeatHref(last)} data-testid="home-repeat" className="flex min-h-12 items-center gap-3 border-t border-line px-4 py-2 text-sm">
-            <span className="font-semibold">Ripeti l’ultimo giro</span>
-            <span className="min-w-0 flex-1 truncate text-muted">{`${last.title}${last.world && last.world !== worldId ? ` · ${worldInfo(last.world).short}` : ''}`}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block font-semibold">Ripeti l’ultimo giro</span>
+              <span className="block leading-snug text-muted">{`${last.title}${last.world && last.world !== worldId ? ` · ${worldInfo(last.world).short}` : ''}`}</span>
+            </span>
             <span aria-hidden="true" className="text-lg text-muted">→</span>
           </Link>
         ) : null}

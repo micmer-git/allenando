@@ -4,7 +4,7 @@ import { GRADE_LEGEND, gradeColor, ProfileChart, RouteMap, useVerifiedRoute } fr
 import { Button, PageHeader } from '@/components/ui';
 import { BoardPanel } from '@/components/Board';
 import { Chevron } from '@/components/Glyph';
-import { cap, formatDuration, formatKm, formatMetersText, formatNumber } from '@/domain/format';
+import { cap, formatAlt, formatAltText, formatDuration, formatKm, formatNumber } from '@/domain/format';
 import { projector } from '@/domain/geo';
 import { osmUrl, routeMeta, routeStats, streetViewUrl } from '@/domain/routes';
 import { ALL_BUILTIN } from '@/domain/workouts';
@@ -61,10 +61,10 @@ export function ClimbDetailPage() {
       {stats ? (
         <dl className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-6" data-testid="climb-stats">
           <Big label="Lunghezza" value={formatKm(stats.lengthM)} unit="km" />
-          <Big label="Dislivello" value={formatNumber(stats.endAlt - stats.startAlt, 0)} unit="m" />
+          <Big label="Dislivello" value={formatAlt(stats.endAlt - stats.startAlt)} unit="m" />
           <Big label="Media" value={formatNumber(stats.avgGrade * 100, 1)} unit="%" />
           <Big label="Km duro" value={formatNumber(stats.maxKmGrade * 100, 1)} unit="%" />
-          <Big label="Quota" value={formatNumber(stats.endAlt, 0)} unit="m" note={`Da ${formatMetersText(stats.startAlt)}`} />
+          <Big label="Quota" value={formatAlt(stats.endAlt)} unit="m" note={`Da ${formatAltText(stats.startAlt)}`} />
           <Big label="Tornanti" value={String(stats.hairpins)} unit="" />
         </dl>
       ) : (
@@ -172,7 +172,7 @@ export function ClimbDetailPage() {
             </summary>
             <div className="space-y-2 px-4 pb-4 leading-relaxed">
               <p>
-                {`Strada: OpenStreetMap, con OSRM. Quota: EU-DEM 25 m (Copernicus) via OpenTopoData, entro ±${formatMetersText(Math.ceil(route.track.maxElevationDelta))}; pendenza mediata su 40 m.`}
+                {`Strada: OpenStreetMap, con OSRM. Quota: EU-DEM 25 m (Copernicus) via OpenTopoData, entro ±${formatAltText(Math.ceil(route.track.maxElevationDelta))}; pendenza mediata su 40 m.`}
               </p>
               <p>Tornanti: curve oltre 150° in 70 m.</p>
               <p>{route.attribution}</p>

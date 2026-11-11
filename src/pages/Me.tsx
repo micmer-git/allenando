@@ -5,7 +5,7 @@ import { JerseyArt } from '@/components/KitArt';
 import { ACHIEVEMENTS } from '@/game/achievements';
 import { lookOf } from '@/game/kit';
 import { useGame } from '@/game/useGame';
-import { formatKm, formatNumber } from '@/domain/format';
+import { formatAlt, formatKm, formatNumber } from '@/domain/format';
 import { levelOf } from '@/open/progress';
 import { useApp } from '@/store/useApp';
 
@@ -64,7 +64,7 @@ export function MePage() {
       <dl className="mt-4 grid grid-cols-4 gap-2 text-center">
         <Tile label="oro" value={<span className="inline-flex items-center gap-1"><Coin size={16} />{formatNumber(career.oro, 0)}</span>} />
         <Tile label="km" value={formatKm(km)} />
-        <Tile label="D+ m" value={formatNumber(gain, 0)} />
+        <Tile label="D+ m" value={formatAlt(gain)} />
         <Tile label="di fila" value={`${career.streak.days}`} />
       </dl>
 
