@@ -1,5 +1,5 @@
 import type { PoiKind } from './world';
-import { worldBase } from './world';
+import { WORLD_ID, worldBase } from './world';
 
 /**
  * I monumenti del mondo: quaranta edifici e statue riconoscibili, ognuno col suo modello
@@ -8,7 +8,12 @@ import { worldBase } from './world';
  * public/world/<id>/monumenti.json; qui si leggono.
  */
 
-export type Archetipo = 'porta' | 'torre' | 'chiesa' | 'cappella' | 'tempietto' | 'mausoleo' | 'palazzo' | 'castello' | 'statua' | 'caduti' | 'stazione' | 'casa';
+/**
+ * Gli archetipi. Dal 07/11/2026 (Sellaronda) anche quelli dei passi: `chiesetta` (la cappella
+ * alpina bianca col tetto a scandole e il campaniletto), `rifugio` (pietra sotto, legno e balconi
+ * sopra, due-tre piani) e `ossario` (il sacrario del Pordoi: la rotonda di pietra con la torre).
+ */
+export type Archetipo = 'porta' | 'torre' | 'chiesa' | 'cappella' | 'tempietto' | 'mausoleo' | 'palazzo' | 'castello' | 'statua' | 'caduti' | 'stazione' | 'casa' | 'chiesetta' | 'rifugio' | 'ossario';
 
 /** Parametri dell'archetipo: numeri, parole, sì/no. */
 export type Params = Record<string, number | string | boolean>;
@@ -74,6 +79,9 @@ export const ARCHETIPO_LABEL: Record<Archetipo, string> = {
   caduti: 'Monumento ai caduti',
   stazione: 'Stazione',
   casa: 'Casa storica',
+  chiesetta: 'Cappella alpina',
+  rifugio: 'Rifugio',
+  ossario: 'Sacrario',
 };
 
 /** L'icona del punto caldo (src/pages/RideGameHud.tsx sceglie fra goccia, mappa e campana). */
@@ -82,7 +90,12 @@ export function monumentoPoiKind(m: Pick<Monumento, 'kind'>): PoiKind {
     case 'chiesa':
     case 'cappella':
     case 'tempietto':
+    case 'chiesetta':
       return 'chiesa';
+    case 'rifugio':
+      return 'rifugio';
+    case 'ossario':
+      return 'croce';
     case 'castello':
     case 'porta':
       return 'castello';
@@ -91,24 +104,37 @@ export function monumentoPoiKind(m: Pick<Monumento, 'kind'>): PoiKind {
   }
 }
 
-let cache: Promise<Monumento[]> | null = null;
+/** Una cache per mondo; `ready` è l'ultimo mondo caricato, quello in cui si pedala. */
+const cache = new Map<string, Promise<Monumento[]>>();
 let ready: Monumento[] = [];
+let readyWorld = '';
 
-/** Carica i monumenti una volta; un mondo senza il file (costruito prima) ne ha zero. */
+/** Carica i monumenti di un mondo una volta; un mondo senza il file (costruito prima) ne ha zero. */
 export function loadMonumenti(id?: string): Promise<Monumento[]> {
-  if (!cache) {
-    cache = fetch(`${worldBase(id)}monumenti.json`)
+  const wid = id ?? WORLD_ID;
+  let p = cache.get(wid);
+  if (!p) {
+    p = fetch(`${worldBase(wid)}monumenti.json`)
       .then((r) => (r.ok ? (r.json() as Promise<MonumentiFile>) : null))
       .then((f) => {
-        ready = f ? decodeMonumenti(f) : [];
-        return ready;
+        const list = f ? decodeMonumenti(f) : [];
+        ready = list;
+        readyWorld = wid;
+        return list;
       })
       .catch(() => {
-        cache = null;
+        cache.delete(wid);
         return [];
       });
+    cache.set(wid, p);
+  } else if (readyWorld !== wid) {
+    // già scaricato: torna a essere «pronto» questo mondo
+    void p.then((list) => {
+      ready = list;
+      readyWorld = wid;
+    });
   }
-  return cache;
+  return p;
 }
 
 /** Quelli già arrivati (vuoto finché il file non c'è): lo legge il gioco, che non aspetta. */

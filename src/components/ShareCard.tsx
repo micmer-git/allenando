@@ -4,7 +4,8 @@ import { validPosition } from '@/domain/metrics';
 import type { Ride } from '@/domain/types';
 import type { ShareOutcome, WorldContext } from '@/io/share-image';
 import { loadMonumenti } from '@/open/monumenti';
-import { loadWorld, Terrain } from '@/open/world';
+import { loadWorld, Terrain, WORLD_KV } from '@/open/world';
+import { loadKv } from '@/db/db';
 import { worldOfRide } from '@/open/worlds';
 
 // il disegno della cartolina si carica al primo tocco: non pesa sull'avvio dell'app
@@ -32,7 +33,7 @@ export function CartolinaButton({ ride, className }: { ride: Ride; className?: s
 async function worldFor(ride: Ride): Promise<WorldContext | null> {
   if (!ride.samples.some((s) => validPosition(s.lat, s.lon))) return null;
   try {
-    const data = await loadWorld(worldOfRide(ride) ?? 'bergamo');
+    const data = await loadWorld(worldOfRide(ride) ?? (await loadKv<string>(WORLD_KV)));
     const far = await new Terrain(data.graph).loadFar();
     return { data, far };
   } catch {

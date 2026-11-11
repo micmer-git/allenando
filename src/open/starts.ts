@@ -1,7 +1,7 @@
 import { CLS } from './graph';
 import { suggestLoops } from './loops';
 import { savePlan } from './plan';
-import type { WorldData } from './world';
+import { WORLD_ID, type WorldData } from './world';
 import { worldInfo } from './worlds';
 
 /**
@@ -10,7 +10,7 @@ import { worldInfo } from './worlds';
  */
 
 /** I paesi da cui si parte, presi dai dati del mondo. */
-export const START_TOWNS = worldInfo('bergamo').towns;
+export const START_TOWNS = worldInfo(WORLD_ID).towns;
 
 const norm = (s: string) => s.replace(/[’']/g, "'");
 

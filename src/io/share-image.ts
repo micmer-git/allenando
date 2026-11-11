@@ -4,7 +4,7 @@ import { projector } from '@/domain/geo';
 import { validPosition } from '@/domain/metrics';
 import type { Ride } from '@/domain/types';
 import { CLS } from '@/open/graph';
-import type { WorldData } from '@/open/world';
+import { type WorldData } from '@/open/world';
 import type { Monumento } from '@/open/monumenti';
 import { downloadBytes, safeFileName } from '@/lib/download';
 import { worldInfo, worldOfRide } from '@/open/worlds';
@@ -295,13 +295,15 @@ export function typo(s: string): string {
 
 /** Il nome e la riga sopra: un percorso del mondo si riconosce dal nome del giro. */
 export function cardTitle(ride: Pick<Ride, 'name' | 'routeId'>, rides: readonly { id: string; name: string; side: string }[]): { title: string; eyebrow: string } {
-  const byRoute = ride.routeId?.startsWith('bergamo:') ? rides.find((r) => `bergamo:${r.id}` === ride.routeId) : undefined;
+  // «mondo:percorso»: il percorso del mondo, qualunque mondo sia
+  const world = ride.routeId?.includes(':') ? ride.routeId.slice(0, ride.routeId.indexOf(':')) : '';
+  const byRoute = world ? rides.find((r) => `${world}:${r.id}` === ride.routeId) : undefined;
   const cut = ride.name.lastIndexOf(' · ');
   const prefix = cut > 0 ? ride.name.slice(0, cut) : '';
   const label = cut > 0 ? ride.name.slice(cut + 3) : ride.name;
   const def = byRoute ?? rides.find((r) => `${r.name} ${r.side}` === label);
   if (def) return { title: def.name, eyebrow: [prefix, def.side].filter(Boolean).join(' · ') };
-  return { title: label, eyebrow: prefix || 'Bergamo e le valli' };
+  return { title: label, eyebrow: prefix || worldInfo(world).name };
 }
 
 /** I dati della cartolina da un giro salvato (o appena finito). */

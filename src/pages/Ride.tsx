@@ -35,7 +35,7 @@ import { decodeSection } from './ReplaySetup';
 import { RoomPanel, RoomSheet, useRoom } from './RideRoom';
 import { RecoveryCard } from './RideRecovery';
 import { workoutTitle } from './Workouts';
-import { Terrain, loadWorld, worldBase, type RideDef, type WorldData } from '@/open/world';
+import { isWorld, loadWorld, Terrain, worldBase, type RideDef, type WorldData } from '@/open/world';
 import { createWorldField } from '@/open/field';
 import { WorldSession } from '@/open/session';
 import { WorldScene, npcCount, type RemoteWorldRider } from '@/open/WorldScene';
@@ -271,7 +271,7 @@ function useQuickTitle(params: URLSearchParams): { title?: string; subtitle?: st
   useEffect(() => {
     if (!rideId) return;
     let alive = true;
-    void fetch(`${worldBase(params.get('world') ?? undefined)}rides.json`)
+    void fetch(`${worldBase(isWorld(params.get('world')) ? params.get('world')! : undefined)}rides.json`)
       .then((r) => (r.ok ? (r.json() as Promise<RideDef[]>) : []))
       .then((list) => {
         const r = list.find((x) => x.id === rideId);
@@ -716,8 +716,8 @@ function RideScreen({
     };
   }, [world, session, weatherMode]);
   useEffect(() => {
-    if (!session || !share) return;
-    const client = new WorldClient({ world: world?.data.graph.id ?? 'bergamo', nick: profile.name || 'Ciclista' });
+    if (!session || !share || !world) return;
+    const client = new WorldClient({ world: world.data.graph.id, nick: profile.name || 'Ciclista' });
     session.client = client;
     let key = '';
     const off = client.subscribe(() => {
@@ -736,7 +736,7 @@ function RideScreen({
       session.client = null;
       setPeers([]);
     };
-  }, [session, share, profile.name]);
+  }, [session, share, world, profile.name]);
   const worldRemote = useMemo<RemoteWorldRider[]>(() => {
     if (!session) return [];
     const real = peers.map((p) => ({ id: p.id, nick: p.nick, color: RIDER_COLORS[p.color % RIDER_COLORS.length], pose: () => session.remoteNow.get(p.id) ?? null }));
@@ -777,7 +777,7 @@ function RideScreen({
           workoutId: workout?.id,
           routeId: () => {
             const s = setup.world?.session;
-            if (s?.ride && s.rankable && engine.arrived) return `bergamo:${s.ride.id}`;
+            if (s?.ride && s.rankable && engine.arrived) return `${setup.world!.data.graph.id}:${s.ride.id}`;
             if (setup.routeId && !workout && !setup.replayMode) return setup.routeId;
             return undefined;
           },

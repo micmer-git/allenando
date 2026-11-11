@@ -5,6 +5,7 @@ import type { TrackPose } from '@/domain/track';
 import { canvasTex } from '@/world/Scene';
 import type { Terrain, WorldData } from './world';
 import { LABEL_GONE, labelFade, landmarkSub, occluded, placeLabels, volumeBlocks, type LabelCandidate, type Rect, type Volume } from './labels';
+import { lookFor } from './look';
 
 /*
  * I nomi dei luoghi nel 3D (cime, passi, paesi, luoghi da riconoscere). Le regole stanno in
@@ -94,9 +95,12 @@ interface LabelItem {
 export function Labels({ data, playerPose, names }: { data: WorldData; playerPose: () => TrackPose; names: Set<THREE.Sprite> }) {
   const items = useMemo<LabelItem[]>(() => {
     const out: LabelItem[] = [];
+    // le cime con la quota si leggono da più lontano degli altri nomi (look.peakRange, 8 km):
+    // il nome sta 25 m sopra la vetta e si spegne dietro il terreno (Declutter, occluded)
+    const peakRange = lookFor(data.graph.id).peakRange;
     for (const p of data.features.peaks) {
       if (p.pass) out.push({ name: p.name, sub: `${p.ele} m`, x: p.x, y: p.ele + 12, z: p.z, ground: p.ele, range: 7000, peak: false });
-      else if (p.ele >= 1400) out.push({ name: p.name, sub: `${p.ele} m`, x: p.x, y: p.ele + 25, z: p.z, ground: p.ele, range: 22000, peak: true });
+      else if (p.ele >= 1400) out.push({ name: p.name, sub: `${p.ele} m`, x: p.x, y: p.ele + 25, z: p.z, ground: p.ele, range: peakRange, peak: true });
     }
     for (const p of data.features.places) {
       const range = p.kind === 'city' ? 30000 : p.kind === 'town' ? 9000 : p.kind === 'village' ? 4500 : p.kind === 'suburb' || p.kind === 'quarter' ? 1500 : 1200;
@@ -123,11 +127,12 @@ export function Labels({ data, playerPose, names }: { data: WorldData; playerPos
     if (!g || clock.current > 0) return;
     clock.current = 0.6;
     const p = playerPose();
-    // oltre LABEL_GONE un nome non si accende comunque: non serve la sua tela
+    // oltre la sua portata un nome non si accende comunque: non serve la sua tela (le cime
+    // arrivano a look.peakRange, gli altri a LABEL_GONE)
     const near: { i: number; k: number }[] = [];
     items.forEach((it, i) => {
       const d = Math.hypot(it.x - p.x, it.z - p.z);
-      const range = Math.min(it.range, LABEL_GONE);
+      const range = it.peak ? it.range : Math.min(it.range, LABEL_GONE);
       if (d < range && d > 60) near.push({ i, k: d / range });
     });
     near.sort((a, b) => a.k - b.k);
@@ -142,7 +147,7 @@ export function Labels({ data, playerPose, names }: { data: WorldData; playerPos
     for (const i of want) {
       if (live.current.has(i)) continue;
       const it = items[i];
-      const s = labelSprite(it.name, it.sub, it.peak, it.x, it.y, it.z, { prio: it.peak ? 2 : 1, range: Math.min(it.range, LABEL_GONE), ground: it.ground });
+      const s = labelSprite(it.name, it.sub, it.peak, it.x, it.y, it.z, { prio: it.peak ? 2 : 1, range: it.peak ? it.range : Math.min(it.range, LABEL_GONE), ground: it.ground });
       live.current.set(i, s);
       names.add(s);
       g.add(s);
@@ -274,7 +279,7 @@ export function Declutter({ names, terrain, playerPose, occluders }: { names: Se
       for (const s of names) {
         if (!s.visible) continue;
         const d = camera.position.distanceTo(s.position);
-        const f = labelFade(d);
+        const f = labelFade(d, (s.userData as LabelData).range);
         if (f <= 0) continue;
         v.copy(s.position).project(camera);
         if (v.z <= -1 || v.z >= 1) continue;
@@ -304,7 +309,8 @@ export function Declutter({ names, terrain, playerPose, occluders }: { names: Se
       const visible = cands.filter((c) => {
         const u = c.key.userData as LabelData;
         const s = c.key.position;
-        // dietro una montagna (il DEM), o dietro una casa o un monumento vicini (il punto del nome)
+        // dietro una montagna (il DEM: un campione ogni 60 m fino a 8 km, così una cresta in mezzo
+        // non scappa), o dietro una casa o un monumento vicini (il punto del nome)
         if (occluded(height, cam.x, cam.y, cam.z, s.x, u.ground + 8, s.z)) return false;
         for (const v of occluders.list) if (volumeBlocks(cam.x, cam.y, cam.z, s.x, s.y, s.z, v)) return false;
         return true;

@@ -4,7 +4,8 @@ import { LineChart, ZoneBar } from '@/components/Charts';
 import { Button, PageHeader } from '@/components/ui';
 import { CartolinaButton } from '@/components/ShareCard';
 import { WorldMap, type MapMarker, type MapOverlay } from '@/components/WorldMap';
-import { loadWorld, Terrain, type WorldData } from '@/open/world';
+import { loadWorld, Terrain, WORLD_KV, type WorldData } from '@/open/world';
+import { loadKv } from '@/db/db';
 import type { Ride } from '@/domain/types';
 import { cap, formatDateTime, formatDuration, formatKmText, formatNumber, formatTss, msToKmh } from '@/domain/format';
 import { HR_ZONES, POWER_ZONES } from '@/domain/zones';
@@ -157,8 +158,8 @@ function RideTrackMap({ ride }: { ride: Ride }) {
   useEffect(() => {
     if (pts.length < 2) return;
     let alive = true;
-    // il mondo del giro (F.10): Bergamo o il Sellaronda, dal giro stesso o da dove cade il GPS
-    void loadWorld(worldOfRide(ride) ?? 'bergamo')
+    // il mondo del giro: il campo, il prefisso del percorso o il GPS; sennò l'ultimo scelto
+    void (async () => loadWorld(worldOfRide(ride) ?? (await loadKv<string>(WORLD_KV))))()
       .then((d) => {
         if (!alive) return;
         setWorld(d);

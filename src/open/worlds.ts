@@ -1,13 +1,13 @@
 import { loadKv, saveKv } from '@/db/db';
+import { WORLD_ID, WORLDS } from './world-table';
 
 /**
  * I mondi che l'app conosce, e quale si sta usando. Un mondo è una cartella `public/world/<id>/`
  * costruita da scripts/world/build-world.ts; qui ci sono le cose che servono PRIMA di caricarlo
  * (nome, coordinate, come si chiamano le sue zone) e la memoria dell'ultimo scelto.
  *
- * ⚠ Da saldare con la pista S1: `WORLDS` in src/open/world.ts è la tabella di S1 (id, nome,
- * HORIZON, FAR_STEP…). Questo file aggiunge quello che serve alle pagine; al merge i campi
- * comuni (id, name, lat, lon) si leggono da lì e `WORLD_CATALOG` diventa una vista su `WORLDS`.
+ * Nomi, zone e paesi di partenza vengono da `WORLDS` (`src/open/world-table.ts`). Qui si aggiunge
+ * il centro, il riquadro geografico e la quota da cui l'HUD tiene sempre la quota a schermo.
  */
 
 export interface WorldInfo {
@@ -25,40 +25,41 @@ export interface WorldInfo {
   areas: Record<string, string>;
   /** i paesi da cui parte il giro libero; vuoto = i paesi grandi dei dati */
   towns: string[];
+  /** partenza proposta di A → B */
+  home: string;
+  /** arrivo proposto di A → B */
+  away: string;
   /** la quota tipica delle strade: sopra, la quota resta sempre a schermo (F.4) */
   highAlt: number;
   /** il riquadro geografico, per riconoscere il mondo di un giro dal suo GPS: [lat sud, lon ovest, lat nord, lon est] */
   box: [number, number, number, number];
 }
 
-export const DEFAULT_WORLD = 'bergamo';
+export const DEFAULT_WORLD = WORLD_ID;
 
-export const WORLD_CATALOG: WorldInfo[] = [
-  {
-    id: 'bergamo',
-    name: 'Bergamo e le valli',
-    short: 'Bergamo',
-    blurb: 'Città Alta, Val Brembana, Val Seriana',
-    lat: 45.8675,
-    lon: 9.8,
-    areas: { citta: 'Bergamo città', seriana: 'Val Seriana', brembana: 'Val Brembana', valli: 'Fra le due valli' },
-    towns: ['Bergamo', 'Città Alta', 'Ponteranica', 'Alzano Lombardo', 'Nembro', 'Albino', 'Gazzaniga', 'Ponte Nossa', 'Clusone', 'Castione della Presolana', 'Villa d’Almè', 'Zogno', 'San Pellegrino Terme', 'San Giovanni Bianco', 'Piazza Brembana', 'Branzi', 'Serina', 'Selvino'],
-    highAlt: 1000,
-    box: [45.45, 9.3, 46.3, 10.3],
-  },
-  {
-    id: 'sellaronda',
-    name: 'Sellaronda',
-    short: 'Sellaronda',
-    blurb: 'Sella, Pordoi, Gardena, Campolongo e la Marmolada',
-    lat: 46.51,
-    lon: 11.81,
-    areas: { sella: 'Il giro del Sella', passi: 'I passi', fassa: 'Val di Fassa', gardena: 'Val Gardena', badia: 'Alta Badia', marmolada: 'Marmolada' },
-    towns: ['Selva di Val Gardena', 'Corvara in Badia', 'Arabba', 'Canazei', 'Colfosco', 'Campitello di Fassa'],
-    highAlt: 1000,
-    box: [46.3, 11.55, 46.68, 12.1],
-  },
-];
+/** Centro, riquadro e nome corto: non stanno nella tabella dei percorsi. */
+const PLACE: Record<string, Pick<WorldInfo, 'short' | 'lat' | 'lon' | 'highAlt' | 'box'>> = {
+  bergamo: { short: 'Bergamo', lat: 45.8675, lon: 9.8, highAlt: 1000, box: [45.45, 9.3, 46.3, 10.3] },
+  sellaronda: { short: 'Sellaronda', lat: 46.51, lon: 11.81, highAlt: 1000, box: [46.3, 11.55, 46.68, 12.1] },
+};
+
+export const WORLD_CATALOG: WorldInfo[] = WORLDS.map((w) => {
+  const place = PLACE[w.id] ?? { short: w.name, lat: 0, lon: 0, highAlt: 1000, box: [0, 0, 0, 0] as [number, number, number, number] };
+  return {
+    id: w.id,
+    name: w.name,
+    short: place.short,
+    blurb: w.tagline,
+    lat: place.lat,
+    lon: place.lon,
+    areas: Object.fromEntries(w.areas.map((a) => [a.id, a.label])),
+    towns: [...w.starts],
+    home: w.home,
+    away: w.away,
+    highAlt: place.highAlt,
+    box: place.box,
+  };
+});
 
 /**
  * Il mondo di un giro salvato: il campo `world` se c'è (giri dal 07/11/2026), il prefisso del

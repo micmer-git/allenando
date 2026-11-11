@@ -26,7 +26,7 @@ export default defineConfig({
       manifest: {
         name: 'OROBIA',
         short_name: 'OROBIA',
-        description: 'Le strade vere di Bergamo sul rullo: mondo aperto in 3D, volate, GPM e crono, classifiche, kit da sbloccare, Stelvio e Mortirolo.',
+        description: 'Le strade vere di Bergamo e del Sellaronda sul rullo: mondo aperto in 3D, volate, GPM e crono, classifiche, kit da sbloccare, Stelvio e Mortirolo.',
         lang: 'it',
         dir: 'ltr',
         start_url: '/allenando/',

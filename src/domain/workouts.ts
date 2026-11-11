@@ -1,5 +1,6 @@
 import type { Workout, WorkoutStep } from './types';
 import { normalizedPower, trainingStressScore } from './metrics';
+import { WORLD_ID, worldOfRide } from '@/multiplayer/world-rides';
 
 export function stepPower(step: WorkoutStep, intoSec: number, ftp: number): number {
   const start =
@@ -338,7 +339,7 @@ export function workoutRideLink(id: string, place: WorkoutPlace): string {
   const q = new URLSearchParams({ workout: id });
   if (place.kind === 'salita') q.set('route', place.route);
   else if (place.kind === 'percorso') {
-    q.set('world', place.world ?? 'bergamo');
+    q.set('world', place.world ?? worldOfRide(place.ride) ?? WORLD_ID);
     q.set('ride', place.ride);
   } else for (const [k, v] of new URLSearchParams(place.query)) q.set(k, v);
   return `/ride?${q.toString()}`;

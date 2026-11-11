@@ -1,3 +1,5 @@
+import { WORLD_ID, worldOfRide } from '@/multiplayer/world-rides';
+
 /**
  * Le sessioni: ogni mezz'ora, a :00 e :30, parte qualcosa nel mondo di Bergamo. Il calendario
  * dipende solo dall'orologio, quindi è lo stesso su tutti i telefoni senza un server: chi
@@ -57,11 +59,11 @@ const PACES: { label: string; wkg: number }[] = [
   { label: 'A', wkg: 2.9 },
 ];
 
-/** Il mondo di ogni percorso delle sessioni: oggi tutti a Bergamo; i percorsi del Sellaronda entrano qui quando la pista S1 li consegna. */
+/** Il mondo di un percorso di sessione, se va forzato. Vuoto: lo decide il percorso (`worldOfRide`). */
 export const SESSION_WORLD: Record<string, string> = {};
 
 export function sessionWorld(rideId: string): string {
-  return SESSION_WORLD[rideId] ?? 'bergamo';
+  return SESSION_WORLD[rideId] ?? worldOfRide(rideId) ?? WORLD_ID;
 }
 
 export interface SessionDef {

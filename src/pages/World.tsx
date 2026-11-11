@@ -125,6 +125,9 @@ export function WorldPage() {
       />
       <div className="mt-3">
         <WorldChooser value={worldId} onChange={chooseWorld} manifests={manifests} />
+        <p className="mt-2 text-sm text-muted" data-testid="world-tagline">
+          {info.blurb}
+        </p>
         <OfflineCard id={worldId} manifest={manifests[worldId]} />
       </div>
     </>
@@ -606,8 +609,9 @@ function AbTab({ data, far }: { data: WorldData; far: Float32Array | null }) {
     const p = startPoint(data, n);
     return p ? { x: p.x, z: p.z, label: n } : null;
   };
-  const [a, setA] = useState<AbPoint | null>(() => fromName(starts[0]?.name ?? ''));
-  const [b, setB] = useState<AbPoint | null>(() => fromName(starts.find((s) => s.name === 'Selvino')?.name ?? starts[starts.length - 1]?.name ?? ''));
+  const ends = worldInfo(data.graph.id);
+  const [a, setA] = useState<AbPoint | null>(() => fromName(ends.home));
+  const [b, setB] = useState<AbPoint | null>(() => fromName(ends.away));
   const [picking, setPicking] = useState<'a' | 'b'>('b');
   const [back, setBack] = useState(true);
   const [cycle, setCycle] = useState(false);

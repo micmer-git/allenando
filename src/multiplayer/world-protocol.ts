@@ -11,7 +11,7 @@
  */
 
 import { cleanNick, rateCheck, type RateState } from './protocol';
-import { WORLD_EDGES, WORLD_RIDES } from './world-rides';
+import { isWorldId, WORLD_LIMITS, WORLD_RIDES, worldEdges } from './world-rides';
 
 export { cleanNick, rateCheck, type RateState };
 
@@ -33,11 +33,11 @@ export interface WorldJoin {
   pid: string;
 }
 
-/** Legge `/world/:id/ws?nick=…&pid=…`. */
+/** Legge `/world/:id/ws?nick=…&pid=…`: il mondo è uno di quelli costruiti (bergamo, sellaronda). */
 export function parseWorldJoin(url: URL): { ok: true; join: WorldJoin } | { ok: false; error: 'world' | 'nick' | 'pid' } {
   const m = url.pathname.match(/^\/world\/([^/]+)\/ws$/);
   const world = m?.[1];
-  if (!world || !WORLD_RE.test(world) || world !== 'bergamo') return { ok: false, error: 'world' };
+  if (!world || !WORLD_RE.test(world) || !isWorldId(world)) return { ok: false, error: 'world' };
   const nick = cleanNick(url.searchParams.get('nick'));
   if (!nick) return { ok: false, error: 'nick' };
   const pid = url.searchParams.get('pid');
@@ -76,7 +76,11 @@ function finite(v: unknown, min: number, max: number): number | null {
   return typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max ? v : null;
 }
 
-export function parseWorldMessage(raw: unknown): WorldClientMessage | null {
+/** Il più grande dei grafi: il tetto per un arco quando il mondo non si sa. */
+const MAX_EDGES = Math.max(...WORLD_LIMITS.map((w) => w.edges));
+
+/** `world`: il mondo della stanza, per rifiutare un arco che quel grafo non ha. */
+export function parseWorldMessage(raw: unknown, world?: string): WorldClientMessage | null {
   if (typeof raw !== 'string' || raw.length > 220) return null;
   let msg: unknown;
   try {
@@ -88,7 +92,8 @@ export function parseWorldMessage(raw: unknown): WorldClientMessage | null {
   const o = msg as Record<string, unknown>;
   if (o.t === 'ping') return { t: 'ping' };
   if (o.t !== 'pos') return null;
-  const e = finite(o.e, 0, WORLD_EDGES - 1);
+  const edges = world ? worldEdges(world) : MAX_EDGES;
+  const e = finite(o.e, 0, edges - 1);
   const s = finite(o.s, 0, 100_000);
   const w = finite(o.w, 0, 3000);
   const v = finite(o.v, 0, 40);

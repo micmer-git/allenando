@@ -1,29 +1,33 @@
-// Costruisce il mondo «Bergamo e le sue valli» da OpenStreetMap ed EU-DEM.
+// Costruisce un mondo («Bergamo e le sue valli», «Sellaronda») da OpenStreetMap ed EU-DEM.
 //
-//   python scripts/world/extract-pbf.py      (una volta: i dati OSM grezzi)
-//   npm run world:build                     (questo file)
+//   python scripts/world/extract-pbf.py                (una volta: i dati OSM grezzi di Bergamo)
+//   WORLD=sellaronda node scripts/world/fetch-osm.mjs  (una volta: quelli del Sellaronda, da Overpass)
+//   npm run world:build                               (questo file; WORLD=sellaronda per l'altro mondo)
 //
-// Scrive public/world/bergamo/: graph.json, rides.json, features.json, far.bin, dem/*.bin,
-// b/*.json, e src/multiplayer/world-rides.ts (lunghezze e tempi minimi per la classifica).
-// Ogni numero del mondo nasce qui da una fonte aperta: niente è disegnato a mano, tranne la
-// scelta dei percorsi e dei luoghi in rides.ts, che però si appoggiano a nodi OSM veri.
+// Scrive public/world/<id>/: graph.json, rides.json, features.json, far.bin, dem/*.bin,
+// b/*.json, monumenti.json, e src/multiplayer/world-rides-<id>.ts (lunghezze e tempi minimi
+// per la classifica). Ogni numero del mondo nasce qui da una fonte aperta: niente è disegnato
+// a mano, tranne la scelta dei percorsi e dei luoghi in rides.ts, che però si appoggiano a nodi
+// OSM veri.
 
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { deflateSync } from 'node:zlib';
-import { CITY, DEM_STEP, FAR_STEP, HORIZON, ORIGIN, REGION, TILE } from './config.mjs';
+import { CITY, DEM_STEP, FAR_STEP, HORIZON, ORIGIN, REGION, TILE, WORLD } from './config.mjs';
 import { loadDem } from './dem.mjs';
 import { CLS, FLAG, WorldGraph, type WorldGraphFile } from '../../src/open/graph';
 import { buildRides, resolveWaypoints } from './rides';
 import { buildMonumenti } from './monumenti';
+import { italianize } from './nomi';
 import { isPaintedCrossing, poiKind, POI_BUILT, POI_REACH, snapSignals, snapToRoad } from '../../src/open/snap';
 import type { PoiKind } from '../../src/open/world';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..', '..');
-const OSM = join(HERE, 'cache', 'osm');
-const OUT = join(ROOT, 'public', 'world', 'bergamo');
+const OSM = join(HERE, 'cache', WORLD.osmDir);
+const OUT = join(ROOT, 'public', 'world', WORLD.id);
+const ALPINO = WORLD.alpino ?? null;
 
 type Tags = Record<string, string>;
 interface OsmWay {
@@ -55,7 +59,13 @@ interface OsmPoi {
   tags: Tags;
 }
 
-const read = <T>(name: string): T[] => (JSON.parse(readFileSync(join(OSM, `${name}.json`), 'utf8')) as { elements: T[] }).elements;
+/** I dati OSM del tema; se il file non c'è (un tema che questo mondo non ha) una lista vuota. */
+const read = <T>(name: string): T[] => {
+  const file = join(OSM, `${name}.json`);
+  if (!existsSync(file)) return [];
+  const els = (JSON.parse(readFileSync(file, 'utf8')) as { elements: T[] }).elements;
+  return WORLD.lang === 'it' ? italianize(els) : els;
+};
 
 // ---------- proiezione: la stessa di src/domain/geo.ts ----------
 
@@ -929,6 +939,13 @@ const places = placesRaw
     return { name: p.tags.name, kind: p.tags.place, x, z, y: demAt(x, z), id: p.id, pop: Number(p.tags.population ?? 0) };
   })
   .filter((p) => p.x > BOUNDS.x0 - 20000 && p.x < BOUNDS.x1 + 20000 && p.z > BOUNDS.z0 - 20000 && p.z < BOUNDS.z1 + 20000);
+// le località senza abitato (un pianoro, un bivio con un nome): solo per le tappe dei percorsi, non nel file
+const localities = placesRaw
+  .filter((p) => p.tags.place === 'locality' && p.tags.name)
+  .map((p) => {
+    const [x, z] = toLocal(p.lat, p.lon);
+    return { name: p.tags.name, x, z };
+  });
 
 
 const named: { name: string; x: number; z: number }[] = [];
@@ -955,7 +972,7 @@ for (const w of rawWays) {
 // Un passo o una piazza possono stare a metà di un tratto lungo chilometri: lì si spezza la
 // strada, così il percorso comincia e finisce proprio in quel punto.
 {
-  const lite = { toLocal, toGeo, demAt, peaks, places, pois: poisRaw, named, rivers: [], log };
+  const lite = { world: WORLD.id, toLocal, toGeo, demAt, peaks, places, localities, pois: poisRaw, named, rivers: [], log };
   const wps = resolveWaypoints(lite as never);
   let splits = 0;
   for (const wp of wps) {
@@ -993,8 +1010,8 @@ for (const w of rawWays) {
 function graphFileOf(list: BuiltEdge[]): WorldGraphFile {
   return {
   v: 1,
-  id: 'bergamo',
-  name: 'Bergamo e le sue valli',
+  id: WORLD.id,
+  name: WORLD.name,
   origin: ORIGIN,
   bounds: BOUNDS,
   tile: TILE,
@@ -1190,6 +1207,79 @@ const riverOut = rivers.map((r) => {
   return { r, ys };
 });
 
+// ---------- montagna: roccia per pendenza, bosco solo sotto la sua linea, piste e pareti ----------
+
+/** Pennello sulla griglia del suolo lungo una linea: `value` dove `when` lo permette. */
+function brush(xz: [number, number][], hw: number, value: number, when: (cur: number) => boolean) {
+  const rad = Math.ceil(hw / DEM_STEP);
+  for (const [x, z] of densify(xz, DEM_STEP)) {
+    const ci = Math.round((x - BOUNDS.x0) / DEM_STEP);
+    const cj = Math.round((z - BOUNDS.z0) / DEM_STEP);
+    for (let dj = -rad; dj <= rad; dj++) {
+      for (let di = -rad; di <= rad; di++) {
+        const ii = ci + di;
+        const jj = cj + dj;
+        if (ii < 0 || jj < 0 || ii >= GW || jj >= GH || Math.hypot(di, dj) * DEM_STEP > hw) continue;
+        const c = jj * GW + ii;
+        if (when(cover[c])) cover[c] = value;
+      }
+    }
+  }
+}
+
+interface Piste {
+  name: string;
+  hw: number;
+  xz: [number, number][];
+}
+const pistes: Piste[] = [];
+if (ALPINO) {
+  const treeLine = ALPINO.treeLine;
+  const tanRock = Math.tan((ALPINO.rockSlope * Math.PI) / 180);
+  let rock = 0;
+  let opened = 0;
+  for (let j = 0; j < GH; j++) {
+    for (let i = 0; i < GW; i++) {
+      const x = BOUNDS.x0 + i * DEM_STEP;
+      const z = BOUNDS.z0 + j * DEM_STEP;
+      const c = j * GW + i;
+      const h = demAt(x, z);
+      if (!Number.isFinite(h)) continue;
+      // il bosco finisce alla sua linea: sopra, prato e ghiaia anche se OSM ha disegnato «wood»
+      if (cover[c] === 1 && h > treeLine) {
+        cover[c] = 0;
+        opened++;
+      }
+      if (cover[c] === 6 || cover[c] === 8 || cover[c] === 9) continue;
+      const gx = (demAt(x + DEM_STEP, z) - demAt(x - DEM_STEP, z)) / (2 * DEM_STEP);
+      const gz = (demAt(x, z + DEM_STEP) - demAt(x, z - DEM_STEP)) / (2 * DEM_STEP);
+      if (Number.isFinite(gx) && Number.isFinite(gz) && Math.hypot(gx, gz) > tanRock && coverPri[c] < 6) {
+        if (cover[c] !== 5) rock++;
+        cover[c] = 5;
+      }
+    }
+  }
+  // le pareti disegnate (natural=cliff): roccia per 30 m di qua e di là dalla linea
+  const cliffs = read<OsmWay>('cliffs');
+  for (const w of cliffs) brush(w.geometry.map((g) => toLocal(g.lat, g.lon)), 30, 5, (cur) => cur !== 6 && cur !== 8);
+  // le piste da sci: radure nel bosco, per S2 anche una fascia da disegnare chiara
+  const pisteRaw = read<OsmWay | (OsmArea & { members?: unknown })>('pistes');
+  for (const p of pisteRaw) {
+    if (p.type === 'way') {
+      const xz = (p as OsmWay).geometry.map((g) => toLocal(g.lat, g.lon));
+      if (polyLen(xz) < 80) continue;
+      const w = parseFloat(((p as OsmWay).tags.width ?? '').replace(',', '.'));
+      const hw = Number.isFinite(w) && w > 4 ? Math.min(60, w / 2) : (p as OsmWay).tags['piste:type'] === 'sled' ? 4 : (p as OsmWay).tags['piste:difficulty'] === 'easy' ? 22 : 18;
+      if ((p as OsmWay).tags.area === 'yes' && xz.length > 3) rasterize([xz], 9, 3, cover, coverPri);
+      else brush(xz, hw, 9, (cur) => cur === 1 || cur === 0);
+      pistes.push({ name: (p as OsmWay).tags.name ?? '', hw, xz: densify(simplify(xz, 3), 30) });
+    } else if (p.type === 'area') {
+      rasterize([...(p as OsmArea).outer, ...((p as OsmArea).inner ?? [])].map(ringLocal), 9, 3, cover, coverPri);
+    }
+  }
+  log(`montagna: ${rock} celle di roccia per pendenza > ${ALPINO.rockSlope}°, ${opened} di bosco sopra i ${treeLine} m, ${cliffs.length} pareti, ${pistes.length} piste`);
+}
+
 // ---------- mattonelle del terreno ----------
 
 {
@@ -1249,7 +1339,7 @@ const riverOut = rivers.map((r) => {
 }
 
 // i monumenti (scripts/world/monumenti.ts): il loro modello prende il posto dell'edificio generico
-const monumenti = buildMonumenti({ toLocal, demAt, graph, osmDir: OSM, outDir: OUT, log });
+const monumenti = buildMonumenti({ world: WORLD.id, lang: WORLD.lang, toLocal, demAt, graph, osmDir: OSM, outDir: OUT, log });
 {
   // Sotto le porte delle Mura la strada passa nel fornice: OSM lo segna come galleria, ma la volta
   // è quella del modello della porta, non un tubo col portale di cemento (a Porta Sant'Agostino si
@@ -1420,7 +1510,7 @@ const lakes = read<OsmArea | OsmWay>('water')
 
 // ---------- percorsi e luoghi ----------
 
-const ctx = { graph, toLocal, toGeo, demAt, peaks, places, pois: poisRaw, rivers: riverOut.map(({ r, ys }) => ({ ...r, ys })), named, log };
+const ctx = { world: WORLD.id, graph, toLocal, toGeo, demAt, peaks, places, localities, monumenti: monumenti.file.monumenti, pois: poisRaw, rivers: riverOut.map(({ r, ys }) => ({ ...r, ys })), named, log };
 const { rides, landmarks, limits } = buildRides(ctx);
 log(`monumenti: ${monumenti.alza(landmarks)} cartelli dei luoghi alzati sopra il tetto`);
 
@@ -1556,6 +1646,13 @@ log(`punti: ${signals.length} semafori (${signals.filter((s) => s.node >= 0).len
 log(`luoghi da passare: ${poiList.length} — ${[...poiCount].map(([k, n]) => `${k} ${n}`).join(', ')}`);
 
 const majorPeaks = peaks.filter((p) => p.ele > 900 || p.pass);
+// piloni e stazioni degli impianti (solo nei mondi che li scaricano): S2 li disegna
+const lifts = read<OsmNode>('lifts')
+  .map((n) => {
+    const [x, z] = toLocal(n.lat, n.lon);
+    return { k: n.tags.aerialway, n: n.tags.name ?? '', x, z, y: demAt(x, z) };
+  })
+  .filter((l) => l.x > BOUNDS.x0 && l.x < BOUNDS.x1 && l.z > BOUNDS.z0 && l.z < BOUNDS.z1 && Number.isFinite(l.y));
 const features = {
   rivers: riverOut.map(({ r, ys }) => ({ n: r.name, k: r.kind, hw: r.hw, p: delta3(r.xz, ys) })),
   lakes: lakes.map((l) => ({ n: l.name, y: r1(l.level), r: delta2(l.ring) })),
@@ -1568,20 +1665,24 @@ const features = {
   pois: poiList.map((p) => [p.id, p.kind, p.name, r1(p.x), r1(p.z), Math.round(demAt(p.x, p.z)), p.edge, r1(p.s), r1(p.off), p.building ? 1 : 0]),
   signals: signals.map((g) => [g.node, g.edge, r1(g.s), r1(g.x), r1(g.z), r1(g.y)]),
   marks: { c: crossingFlat, y: yieldFlat, m: miniNodes },
+  // solo quando ci sono: il features.json di Bergamo resta com'era
+  ...(lifts.length ? { lifts: lifts.map((l) => [l.k, l.n, r1(l.x), r1(l.z), r1(l.y)]) } : {}),
+  ...(pistes.length ? { pistes: pistes.map((p) => ({ n: p.name, hw: r1(p.hw), p: delta3(p.xz, p.xz.map(([x, z]) => demAt(x, z))) })) } : {}),
 };
 writeFileSync(join(OUT, 'features.json'), JSON.stringify(features));
 writeFileSync(join(OUT, 'rides.json'), JSON.stringify(rides));
-log(`features.json ${(JSON.stringify(features).length / 1e6).toFixed(2)} MB: ${rivers.length} fiumi, ${lakes.length} laghi, ${majorPeaks.length} cime, ${places.length} località, ${walls.length} mura, ${rails.length} binari, ${cables.length} funi`);
+log(`features.json ${(JSON.stringify(features).length / 1e6).toFixed(2)} MB: ${rivers.length} fiumi, ${lakes.length} laghi, ${majorPeaks.length} cime, ${places.length} località, ${walls.length} mura, ${rails.length} binari, ${cables.length} funi, ${lifts.length} piloni e stazioni, ${pistes.length} piste`);
 log(`rides.json: ${rides.length} percorsi, ${landmarks.length} luoghi`);
 
-const limitsTs = `// GENERATO da scripts/world/build-world.ts: non modificare a mano.
+const limitsTs = `// GENERATO da scripts/world/build-world.ts (WORLD=${WORLD.id}): non modificare a mano.
 // Per ogni percorso del mondo: lunghezza del tratto cronometrato e tempo minimo credibile
-// (un professionista a 6,8 W/kg, con il 15% di margine). Li usa il server della classifica.
+// (un professionista a 6,8 W/kg, con il 15% di margine). Li usa il server della classifica,
+// attraverso world-rides.ts che mette insieme i mondi.
 
-export const WORLD_ID = 'bergamo';
+export const WORLD_ID = '${WORLD.id}';
 export const WORLD_EDGES = ${graph.edges.length};
 export const WORLD_RIDES: Record<string, { timedM: number; minSec: number }> = ${JSON.stringify(limits, null, 2)};
 `;
-writeFileSync(join(ROOT, 'src', 'multiplayer', 'world-rides.ts'), limitsTs);
+writeFileSync(join(ROOT, 'src', 'multiplayer', `world-rides-${WORLD.id}.ts`), limitsTs);
 log('fatto');
 if (!existsSync(join(OUT, 'graph.json'))) process.exit(1);

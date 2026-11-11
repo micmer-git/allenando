@@ -10,6 +10,7 @@ import { loadWorld, type RideDef } from '@/open/world';
 import { worldStorage } from '@/open/offline';
 import { fetchManifest, worldInfo } from '@/open/worlds';
 import { cn } from '@/lib/cn';
+import { WORLD_IDS } from '@/multiplayer/world-rides';
 
 /**
  * Si può entrare in una stanza di quel mondo adesso? Sì con la rete; senza rete solo se il mondo
@@ -81,8 +82,9 @@ export function SessionsPage() {
   useEffect(() => {
     const t = window.setInterval(() => setNow(Date.now()), 1000);
     let alive = true;
-    void loadWorld()
-      .then((d) => alive && setRides(d.rides))
+    // le sessioni stanno su percorsi di tutti i mondi: si leggono i percorsi di ognuno
+    void Promise.all(WORLD_IDS.map((id) => loadWorld(id).then((d) => d.rides).catch(() => [] as RideDef[])))
+      .then((lists) => alive && setRides(lists.flat()))
       .catch(() => undefined);
     return () => {
       alive = false;
