@@ -49,7 +49,9 @@ const scatta = async (p, nome, full = false) => {
     check(a.overflow <= 0, `${radice} ${w}×${h}: niente overflow orizzontale`, a.overflow > 0 ? `${a.overflow}px` : '');
   }
   await p.s('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
-  await sleep(900);
+  // di nuovo il telefono: si aspetta che la pagina lo sappia (la colonna del computer se ne va)
+  await p.waitFor(`innerWidth === 390 && !document.querySelector('[data-testid=pedala-colonna]')`, 10000);
+  await sleep(1200);
 };
 /** Misure comuni: overflow, bersagli, minuscole, ellissi, «Simulatore», «XP». */
 const base390 = async (p, nome, { pieni = 1, foglio = null } = {}) => {
