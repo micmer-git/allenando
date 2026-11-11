@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import type { TrackPose } from '@/domain/track';
 import { canvasTex } from '@/world/Scene';
 import type { Terrain, WorldData } from './world';
-import { LABEL_GONE, labelFade, landmarkSub, occluded, placeLabels, volumeBlocks, type LabelCandidate, type Rect, type Volume } from './labels';
+import { LABEL_GONE, labelFade, landmarkSub, occluded, peakSub, placeLabels, volumeBlocks, type LabelCandidate, type Rect, type Volume } from './labels';
 import { lookFor } from './look';
 
 /*
@@ -99,8 +99,10 @@ export function Labels({ data, playerPose, names }: { data: WorldData; playerPos
     // il nome sta 25 m sopra la vetta e si spegne dietro il terreno (Declutter, occluded)
     const peakRange = lookFor(data.graph.id).peakRange;
     for (const p of data.features.peaks) {
-      if (p.pass) out.push({ name: p.name, sub: `${p.ele} m`, x: p.x, y: p.ele + 12, z: p.z, ground: p.ele, range: 7000, peak: false });
-      else if (p.ele >= 1400) out.push({ name: p.name, sub: `${p.ele} m`, x: p.x, y: p.ele + 25, z: p.z, ground: p.ele, range: peakRange, peak: true });
+      // la quota col separatore («2.112 m»), come le altre quote dell'app (F.13); il cartello del passo no
+      const ele = peakSub(p.ele);
+      if (p.pass) out.push({ name: p.name, sub: ele, x: p.x, y: p.ele + 12, z: p.z, ground: p.ele, range: 7000, peak: false });
+      else if (p.ele >= 1400) out.push({ name: p.name, sub: ele, x: p.x, y: p.ele + 25, z: p.z, ground: p.ele, range: peakRange, peak: true });
     }
     for (const p of data.features.places) {
       const range = p.kind === 'city' ? 30000 : p.kind === 'town' ? 9000 : p.kind === 'village' ? 4500 : p.kind === 'suburb' || p.kind === 'quarter' ? 1500 : 1200;

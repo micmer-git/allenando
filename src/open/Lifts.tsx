@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { TrackPose } from '@/domain/track';
 import { buildLifts, STATION, type LiftBuild } from './impianti';
 import { Mesh } from './tiles';
@@ -19,28 +20,42 @@ const LIFT_MOVE = 1500;
 
 const CABIN_TINTS = ['#c8362e', '#e9e5dc', '#2d5fa8', '#d9a52a', '#e9e5dc'];
 
-/** Il traliccio: tronco di piramide alto 1 (si scala), base 1,4 m, cima 0,8 m, aperto sotto e sopra. */
-function towerGeometry(): THREE.BufferGeometry {
-  const pos: number[] = [];
-  const idx: number[] = [];
+/**
+ * Il traliccio: quattro montanti sottili che si stringono verso l'alto (base 1,4 m, cima 0,8), tre
+ * ordini di traverse e una diagonale per campo su ogni faccia; alto 1, si scala. Si vede il cielo
+ * attraverso, come nelle foto (passo-sella-55150019); un'istanza sola per tutti i piloni.
+ */
+export function towerGeometry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
   const b = 0.7;
   const t = 0.4;
-  const corner = (k: number, y: number) => {
-    const r = y > 0.5 ? t : b;
+  const corner = (k: number, y: number): THREE.Vector3 => {
+    const r = b + (t - b) * y;
     const sx = k === 0 || k === 3 ? -1 : 1;
     const sz = k < 2 ? -1 : 1;
-    return [sx * r, y, sz * r];
+    return new THREE.Vector3(sx * r, y, sz * r);
   };
-  for (let k = 0; k < 4; k++) {
-    const base = pos.length / 3;
-    pos.push(...corner(k, 0), ...corner((k + 1) % 4, 0), ...corner((k + 1) % 4, 1), ...corner(k, 1));
-    idx.push(base, base + 2, base + 1, base, base + 3, base + 2);
+  const up = new THREE.Vector3(0, 1, 0);
+  const bar = (a: THREE.Vector3, c: THREE.Vector3, w: number) => {
+    const d = c.clone().sub(a);
+    // un prisma a tre facce senza tappi (6 triangoli, una scatola ne ha 12): a mille piloni per
+    // mondo il traliccio costa così 168 triangoli l'uno
+    const g = new THREE.CylinderGeometry(w * 0.62, w * 0.62, d.length(), 3, 1, true);
+    g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(up, d.clone().normalize()));
+    g.translate((a.x + c.x) / 2, (a.y + c.y) / 2, (a.z + c.z) / 2);
+    parts.push(g);
+  };
+  for (let k = 0; k < 4; k++) bar(corner(k, 0), corner(k, 1), 0.11);
+  const levels = [0.34, 0.67, 1];
+  for (const y of levels) for (let k = 0; k < 4; k++) bar(corner(k, y), corner((k + 1) % 4, y), 0.07);
+  let y0 = 0;
+  for (const y1 of levels) {
+    for (let k = 0; k < 4; k++) bar(corner(k, y0), corner((k + 1) % 4, y1), 0.05);
+    y0 = y1;
   }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setIndex(idx);
-  g.computeVertexNormals();
-  return g;
+  const out = mergeGeometries(parts, false)!;
+  parts.forEach((g) => g.dispose());
+  return out;
 }
 
 export function Lifts({ data, terrain, playerPose }: { data: WorldData; terrain: Terrain; playerPose: () => TrackPose }) {

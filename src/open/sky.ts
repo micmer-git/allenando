@@ -103,8 +103,14 @@ const smooth = (a: number, b: number, x: number) => {
   return t * t * (3 - 2 * t);
 };
 
-/** Il cielo d'alta quota: lo zenit blu scuro e saturo, l'aria più tersa (meno foschia). */
-const HIGH = { zenith: '#1f4f94', mid: '#7fa9d6' };
+/**
+ * Il cielo d'alta quota: lo zenit blu scuro e saturo, l'aria più tersa (meno foschia). I colori
+ * sono scelti attraverso il tone mapping ACES della scena, che schiarisce e spegne: a 1 900 m, a
+ * 15° sull'orizzonte, il pixel deve restare sotto 0,45 di luminanza e sopra 0,45 di saturazione
+ * (R5 del PM; misura `SKY=1` di scripts/world-shot.mjs), come il blu sopra le creste nelle foto
+ * (passo-sella-53922638, passo-pordoi-81859236).
+ */
+export const HIGH_SKY = { zenith: '#06297e', mid: '#0a3eb0', horizon: '#9fbcdb' };
 
 /**
  * Colori e luci del cielo per l'altezza del sole, il meteo e la quota di chi guarda (`alt`,
@@ -114,14 +120,17 @@ export function atmosphere(sun: SunPos, w: WeatherLook, alt = 300): Atmosphere {
   const el = sun.elevation / RAD;
   const kDay = smooth(4, 22, el);
   const kGold = smooth(-4, 3, el);
-  const kAlt = smooth(700, 2300, alt);
+  // da 600 m in su, pieno a 2000 (San Marco, i passi del Sella)
+  const kAlt = smooth(600, 2000, alt);
   const mix = (key: 'zenith' | 'mid' | 'horizon' | 'glow' | 'sun') => new THREE.Color(BLUE[key]).lerp(new THREE.Color(GOLD[key]), kGold).lerp(new THREE.Color(DAY[key]), kDay);
   const zenith = mix('zenith');
   const mid = mix('mid');
   const horizon = mix('horizon');
-  // in quota, di giorno: lo zenit si scurisce e si satura, il cielo medio resta azzurro
-  zenith.lerp(new THREE.Color(HIGH.zenith), kAlt * kDay * 0.75);
-  mid.lerp(new THREE.Color(HIGH.mid), kAlt * kDay * 0.5);
+  // in quota, di giorno: lo zenit si scurisce e si satura, e con lui il cielo medio (quello che si
+  // vede dal sellino: la cupola è fatta quasi solo di mid e horizon), l'orizzonte appena
+  zenith.lerp(new THREE.Color(HIGH_SKY.zenith), kAlt * kDay);
+  mid.lerp(new THREE.Color(HIGH_SKY.mid), kAlt * kDay);
+  horizon.lerp(new THREE.Color(HIGH_SKY.horizon), kAlt * kDay * 0.4);
   const glow = mix('glow');
   const sunColor = mix('sun');
   const cloud = Math.min(1, Math.max(0, w.cloud));
@@ -136,12 +145,16 @@ export function atmosphere(sun: SunPos, w: WeatherLook, alt = 300): Atmosphere {
   // anche col cielo coperto si capisce da che parte sta il sole
   glow.lerp(horizon, cloud * 0.6);
   // col coperto il sole sparisce ma la luce diffusa resta forte: la si sposta sul cielo
-  const sunIntensity = (0.35 + 1.5 * smooth(-3, 25, el)) * (1 - 0.6 * cloud) * (1 - 0.3 * wet);
-  const hemiIntensity = (0.42 + 0.3 * smooth(-4, 20, el)) * (1 + 0.85 * cloud);
+  // in quota l'aria è tersa: il sole diretto più forte, la luce diffusa più debole, e le pareti in
+  // ombra si staccano da quelle al sole (al Sella col sereno tutto era lo stesso bianco)
+  const terso = kAlt * kDay * (1 - cloud);
+  const sunIntensity = (0.35 + 1.5 * smooth(-3, 25, el)) * (1 - 0.6 * cloud) * (1 - 0.3 * wet) * (1 + 0.12 * terso);
+  const hemiIntensity = (0.42 + 0.3 * smooth(-4, 20, el)) * (1 + 0.85 * cloud) * (1 - 0.3 * terso);
   const hemiSky = new THREE.Color('#e6f0fb').lerp(zenith, 0.35);
   const hemiGround = new THREE.Color('#4f5a3c').multiplyScalar(0.6 + 0.4 * light);
   // l'aria d'alta quota è più tersa: la foschia si tiene nelle valli lontane
-  const fogFar = Math.max(0.18, Math.min(1, (1 - 0.45 * cloud - 0.3 * wet) * Math.min(1, w.visibility / 30000) * (1 + 0.3 * kAlt)));
+  // (in quota la foschia può finire oltre la distanza di prima: fino a +25%, entro la camera)
+  const fogFar = Math.max(0.18, Math.min(1 + 0.25 * kAlt, (1 - 0.45 * cloud - 0.3 * wet) * Math.min(1, w.visibility / 30000) * (1 + 0.3 * kAlt)));
   const fogNear = 350 * fogFar * (1 + 1.2 * kAlt);
   const exposure = 1.05 + 0.25 * (1 - kDay) + 0.12 * cloud;
   return { zenith, mid, horizon, glow, sunColor, sunIntensity, hemiSky, hemiGround, hemiIntensity, fogNear, fogFar, exposure };

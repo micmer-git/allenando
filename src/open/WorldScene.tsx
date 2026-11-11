@@ -22,7 +22,7 @@ import { atmosphere, CLEAR, sunFor, sunVector, type Daytime } from './sky';
 import type { WeatherNow } from './weather';
 import { loadBuildings, type Building, type RideDef, type Terrain, type WorldData } from './world';
 import { WorldPath } from './path';
-import { createFarMask, patchFarShader, updateFarMask, type FarMask } from './farMask';
+import { createFarMask, farSinks, patchFarShader, updateFarMask, type FarMask } from './farMask';
 import { createTunnelCut, patchTerrainShader, updateTunnelCut, type TunnelCut } from './tunnels';
 import type { ArchSpec } from '@/game/arches';
 import { Arches } from '@/world/Arches';
@@ -72,11 +72,11 @@ export function npcCount(quality: Quality): number {
 /**
  * La qualità per questo mondo: nei mondi di montagna (look.ringExtra) un anello di mattonelle in
  * più, perché le pareti si vedono da 5 km e devono entrare prima; e il terreno lontano non si
- * dimezza (look.farFine), perché l'orizzonte è il punto.
+ * dimezza (look.farFine), perché l'orizzonte è il punto; e si vede più lontano (look.farExtra).
  */
 export function qualityFor(quality: Quality, look: WorldLook): (typeof QUALITY)[Quality] {
   const q = QUALITY[quality];
-  return { ...q, ring: q.ring + look.ringExtra, farStride: look.farFine ? 1 : q.farStride };
+  return { ...q, ring: q.ring + look.ringExtra, farStride: look.farFine ? 1 : q.farStride, far: q.far + look.farExtra };
 }
 
 const HAZE = '#cfdbe5';
@@ -646,7 +646,10 @@ function FarTerrain({ terrain, stride, material, ctx }: { terrain: Terrain; stri
       geo.rotateX(-Math.PI / 2);
       geo.translate(f.x0 + ((nx - 1) * f.step * stride) / 2, 0, f.z0 + ((nz - 1) * f.step * stride) / 2);
       const pos = geo.attributes.position as THREE.BufferAttribute;
-      for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) pos.setY(j * nx + i, h[j * stride * f.nx + i * stride] - 1.5);
+      // il lontano sta sotto il vicino, di più dove il posto è ruvido: a passo grosso la retta fra
+      // due creste passa sopra la valle e, bianca di neve, faceva una lastra sulla cresta (R1)
+      const sink = farSinks(h, f.nx, f.nz, stride);
+      for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) pos.setY(j * nx + i, h[j * stride * f.nx + i * stride] - sink[j * nx + i]);
       geo.computeVertexNormals();
       const nrm = geo.attributes.normal as THREE.BufferAttribute;
       const col = new Float32Array(pos.count * 3);
@@ -1783,16 +1786,19 @@ function WorldCam({ engine, path, field, playerPose }: WorldSceneProps) {
     const e = path.graph.edges[at.edge];
     const covered = (e.flags & FLAG.tunnel) !== 0;
     const raised = (e.flags & FLAG.bridge) !== 0;
-    // collaudo: scripts/world-shot.mjs con CAM="indietro,su[,lato[,gradi]]" guarda la strada da un
+    // collaudo: scripts/world-shot.mjs con CAM="indietro,su[,lato[,gradi[,inclinazione]]]" guarda la strada da un
     // altro punto; i gradi girano lo sguardo (negativi a sinistra), per guardare una parete di lato
     const dbg = (globalThis as { __orobiaCam?: number[] }).__orobiaCam;
     if (dbg) {
-      const [b0, up, side = 0, yawDeg = 0] = dbg;
+      const [b0, up, side = 0, yawDeg = 0, pitchDeg] = dbg;
       const yaw = pose.heading - (yawDeg * Math.PI) / 180;
       camera.position.set(pose.x - Math.sin(h) * b0 + Math.cos(h) * side, pose.y + up, pose.z - Math.cos(h) * b0 - Math.sin(h) * side);
-      // con lo sguardo girato si guarda lontano, un filo verso l'alto: le pareti e le cime, non il ciglio
-      const reach = yawDeg ? 300 : 7;
-      look.current.set(pose.x + Math.sin(yaw) * reach, yawDeg ? pose.y + up + 20 : pose.y + 1.2, pose.z + Math.cos(yaw) * reach);
+      // con lo sguardo girato si guarda lontano, un filo verso l'alto: le pareti e le cime, non il
+      // ciglio; il quinto campo dà l'inclinazione in gradi (positivi in su), per guardare una cima
+      const far = yawDeg || pitchDeg != null;
+      const reach = far ? 300 : 7;
+      const lift = pitchDeg != null ? Math.tan((pitchDeg * Math.PI) / 180) * reach : 20;
+      look.current.set(pose.x + Math.sin(yaw) * reach, far ? pose.y + up + lift : pose.y + 1.2, pose.z + Math.cos(yaw) * reach);
       camera.lookAt(look.current);
       return;
     }
