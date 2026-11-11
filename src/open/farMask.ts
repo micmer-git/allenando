@@ -93,3 +93,39 @@ bool farReady(ivec2 c) {
   }`,
     );
 }
+
+/**
+ * Di quanto si abbassa ogni vertice del terreno lontano. Fra due punti a 120-250 m la retta passa
+ * sopra le valli strette che il DEM fine (25 m) vede: alla frontiera delle mattonelle pronte il
+ * lontano sporgeva così fino a 60 m sopra il terreno vicino, e con la neve di novembre era una
+ * lastra bianca piatta sulla cresta (R1 del PM, Foppolo `at=20200`). L'abbassamento cresce con la
+ * ruvidezza del posto (12% del dislivello fra i 3×3 vicini, da 1,5 a 45 m per passo di griglia):
+ * intorno a Foppolo il lontano sta sopra il fine nel 3% dei punti invece del 50%, al Sella nello
+ * 0,5%; le cime lontane scendono di 20-40 m, a 5 km meno di mezzo grado. La gonna delle mattonelle
+ * (SKIRT_M in tiles.ts) è più profonda del massimo, così fra i due terreni non si apre una fessura.
+ *
+ * `h`: le quote del lontano (nx × nz); `stride`: il passo con cui il lontano si disegna.
+ */
+export const FAR_SINK = { k: 0.12, min: 1.5, max: 45 };
+
+export function farSinks(h: Float32Array, nx: number, nz: number, stride: number): Float32Array {
+  const mx = Math.floor((nx - 1) / stride) + 1;
+  const mz = Math.floor((nz - 1) / stride) + 1;
+  const out = new Float32Array(mx * mz);
+  const at = (i: number, j: number) => h[Math.min(mz - 1, Math.max(0, j)) * stride * nx + Math.min(mx - 1, Math.max(0, i)) * stride];
+  for (let j = 0; j < mz; j++) {
+    for (let i = 0; i < mx; i++) {
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (let dj = -1; dj <= 1; dj++) {
+        for (let di = -1; di <= 1; di++) {
+          const v = at(i + di, j + dj);
+          if (v < lo) lo = v;
+          if (v > hi) hi = v;
+        }
+      }
+      out[j * mx + i] = Math.min(FAR_SINK.max * stride, Math.max(FAR_SINK.min, FAR_SINK.k * (hi - lo)));
+    }
+  }
+  return out;
+}

@@ -4,7 +4,7 @@ import { CLS, FLAG, type Edge, type EdgePose, type WorldGraph } from './graph';
 import type { WorldField } from './field';
 import { BUILDING_KIND, COVER, type Building, type Place, type WorldFeatures } from './world';
 import { addBuilding, BLANK_UV, earcut, ringArea, Tris } from './buildings';
-import { groundLook, lookContext, treeDensity, treeSpecies, type LookCtx } from './look';
+import { bandsWeight, groundLook, lookContext, treeDensity, treeSpecies, type LookCtx } from './look';
 import { ringAt, ringBranch, ringsIn, smoothRingOf, type Pt, type RingGeo } from './rings';
 import { portalClear, tunnelGeometry } from './tunnels';
 import { pavedWeight } from './urban';
@@ -161,7 +161,7 @@ const COVER_COLOR: Record<number, THREE.Color> = {
 const PAVED = ['#a6a197', '#9d988e', '#aca69b'].map((h) => new THREE.Color(h));
 
 /**
- * Il terreno della mattonella, con un bordo che scende di 25 m per chiudere le fessure col terreno
+ * Il terreno della mattonella, con un bordo che scende di SKIRT_M per chiudere le fessure col terreno
  * lontano. `urban` (densità delle case intorno, urban.ts) pavimenta il suolo aperto delle città.
  * Il colore viene da look.ts (quota, pendenza, esposizione, stagione, uso del suolo); l'attributo
  * `rock` dice allo shader dove disegnare le bande della roccia (rockShader.ts).
@@ -211,7 +211,8 @@ export function* terrainJob(field: WorldField, spec: TileSpec, urban?: (x: numbe
     skirtStart.push(v);
     for (const k of line) {
       pos[v * 3] = pos[k * 3];
-      pos[v * 3 + 1] = pos[k * 3 + 1] - 25;
+      // la gonna scende SKIRT_M: deve coprire il terreno lontano, che sta sotto anche di 100 m (farSinks)
+      pos[v * 3 + 1] = pos[k * 3 + 1] - SKIRT_M;
       pos[v * 3 + 2] = pos[k * 3 + 2];
       uv[v * 2] = pos[k * 3] / DETAIL_M;
       uv[v * 2 + 1] = pos[k * 3 + 2] / DETAIL_M;
@@ -232,7 +233,6 @@ export function* terrainJob(field: WorldField, spec: TileSpec, urban?: (x: numbe
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setIndex(idx);
   geo.computeVertexNormals();
-  const nrm = geo.attributes.normal as THREE.BufferAttribute;
   const c = new THREE.Color();
   for (let k = 0; k < side * side; k++) {
     const x = pos[k * 3];
@@ -245,13 +245,22 @@ export function* terrainJob(field: WorldField, spec: TileSpec, urban?: (x: numbe
     let cov = field.terrain.cover(x, z);
     // sopra la linea del bosco il bosco dei dati non c'è: prato alpino, ghiaia, roccia
     if (cov === COVER.forest && y > ctx.look.treeLine - 40) cov = COVER.open;
-    const g = groundLook(c, ctx.look, ctx.season, y, nrm.getY(k), nrm.getZ(k), noise, cov);
-    rock[k] = g.rock;
+    // la pendenza che decide roccia, ghiaione e prato è quella del DEM, non quella del terreno
+    // raccordato: il taglio di una strada (2-5 m a 1:1) non è una parete, e non deve avere né il
+    // colore né le bande della roccia (R2 del PM: a San Marco e alla Ganda i tagli erano a righe)
+    const dd = spec.spacing;
+    const gx = (field.terrain.height(x + dd, z) - field.terrain.height(x - dd, z)) / (2 * dd);
+    const gz = (field.terrain.height(x, z + dd) - field.terrain.height(x, z - dd)) / (2 * dd);
+    const gl = Math.sqrt(1 + gx * gx + gz * gz);
+    const g = groundLook(c, ctx.look, ctx.season, y, 1 / gl, -gz / gl, noise, cov);
+    // le bande solo dove c'è una parete: non sui versanti che i dati dicono bosco
+    const rk = g.rock * bandsWeight(ctx.look, cov, y);
+    rock[k] = rk;
     // i paesi, i campi a mosaico, i parchi, il bosco: sopra il colore della quota, ma non sopra
     // la neve né la roccia; il mosaico dei prati finisce dove finisce il bosco pieno
     const mosaic = cov === COVER.farmland || (cov === COVER.open && y < ctx.look.forestFull);
     const cc = mosaic ? parcelColor(x, z, cov) : COVER_COLOR[cov];
-    if (cc && cov !== COVER.water) c.lerp(tmpC.copy(cc).offsetHSL(0, 0, (noise - 0.5) * 0.06), (cov === COVER.open ? 0.45 : 0.72) * (1 - g.snow) * (1 - g.rock));
+    if (cc && cov !== COVER.water) c.lerp(tmpC.copy(cc).offsetHSL(0, 0, (noise - 0.5) * 0.06), (cov === COVER.open ? 0.45 : 0.72) * (1 - g.snow) * (1 - rk));
     // in città il suolo aperto è una piazza o un cortile, non un prato (i parchi restano verdi)
     if (urban && (cov === COVER.open || URBAN.has(cov))) {
       const pv = pavedWeight(urban(x, z), dist[k]);
@@ -269,10 +278,11 @@ export function* terrainJob(field: WorldField, spec: TileSpec, urban?: (x: numbe
     for (let i = 0; i < line.length; i++) {
       const src = line[i] * 3;
       const dst = (skirtStart[s] + i) * 3;
+      // la gonna è il colore del bordo, più scuro, e senza le bande della roccia
       col[dst] = col[src] * 0.8;
       col[dst + 1] = col[src + 1] * 0.8;
       col[dst + 2] = col[src + 2] * 0.8;
-      rock[skirtStart[s] + i] = rock[line[i]];
+      rock[skirtStart[s] + i] = 0;
     }
   }
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
@@ -284,6 +294,11 @@ export function* terrainJob(field: WorldField, spec: TileSpec, urban?: (x: numbe
 
 /** La grana del suolo si ripete ogni 12 m. */
 const DETAIL_M = 12;
+/**
+ * Quanto scende la gonna di una mattonella: chiude la fessura col terreno lontano, che ora sta
+ * sotto il DEM anche di 100 m nelle valli strette (farSinks in farMask.ts, R1 del PM).
+ */
+export const SKIRT_M = 120;
 
 /**
  * Campi a mosaico: appezzamenti di 70 × 45 m (orientati come la centuriazione della pianura) con colture
