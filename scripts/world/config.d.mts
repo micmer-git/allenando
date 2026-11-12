@@ -19,6 +19,8 @@ export interface World {
   osmDir: string;
   lang?: string;
   alpino?: { treeLine: number; rockSlope: number };
+  /** il terreno fine delle province (scripts/world/dtm.mjs) */
+  fine?: { sources: string[]; step: number; margin?: number; feather: number; steep: number };
 }
 
 export interface WorldWithOrigin extends World {

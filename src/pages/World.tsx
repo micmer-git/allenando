@@ -6,6 +6,7 @@ import { cap, formatAlt, formatAltText, formatDuration, formatGainText, formatKm
 import { OfflineCard, useWorldManifests, WorldChooser } from '@/components/WorldPicker';
 import { rideClimbs, rideSense, SENSE_LABEL, siblingRide } from '@/game/passes';
 import { rememberWorld, worldFromParams, worldInfo } from '@/open/worlds';
+import { worldInfo as worldTable } from '@/open/world-table';
 import { worldCount } from '@/multiplayer/world-client';
 import type { BoardRow, XpRow } from '@/multiplayer/world-protocol';
 import type { Leg } from '@/open/graph';
@@ -32,6 +33,10 @@ function areasOf(worldId: string, rides: RideDef[]): { id: string; label: string
 
 /** La riga delle fonti sotto il percorso (F.14): strade e quote; il confronto in rete solo dove qualcuno ha confrontato davvero. */
 export const SOURCES_LINE = 'Strade OSM · Quote EU-DEM';
+/** La stessa riga per un mondo: nel Sellaronda le quote vengono dal LiDAR delle province (pista S3). */
+export function sourcesLineFor(worldId: string): string {
+  return `Strade OSM · ${worldTable(worldId).quote}`;
+}
 export const PENDENZE_URL = 'https://github.com/micmer-git/allenando/blob/main/docs/pendenze-2026-11.md';
 /**
  * I percorsi la cui salita sta nella tabella di docs/pendenze-2026-11.md (pista M.5) con una scheda
@@ -161,7 +166,7 @@ export function WorldPage() {
       {tab === 'anello' ? <LoopTab data={data} far={far} /> : null}
       {tab === 'ab' ? <AbTab data={data} far={far} /> : null}
       {tab === 'classifiche' ? <BoardsTab /> : null}
-      <p className="mt-8 text-xs leading-relaxed text-muted">{`© OpenStreetMap contributors (ODbL), dati del ${data.graph.builtAt} · Quote EU-DEM © Copernicus.`}</p>
+      <p className="mt-8 text-xs leading-relaxed text-muted">{`© OpenStreetMap contributors (ODbL), dati del ${data.graph.builtAt} · ${worldTable(data.graph.id).quoteCredits}`}</p>
     </main>
   );
 }
@@ -376,7 +381,7 @@ function RideCard({ data, ride, progress, onClose, onRide, onPick, startRef }: {
       </div>
       <BoardList board={board} />
       <p className="mt-4 text-xs leading-relaxed text-muted" data-testid="world-ride-sources" data-confronto={isConfrontata(ride.id) ? 'si' : 'no'}>
-        {SOURCES_LINE}
+        {sourcesLineFor(data.graph.id)}
         {isConfrontata(ride.id) ? (
           <>
             {' · '}

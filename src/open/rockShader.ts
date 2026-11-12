@@ -10,10 +10,31 @@
 
 export const ROCK_LAYER_M = 3.5;
 
-export function patchRockShader(shader: { vertexShader: string; fragmentShader: string }, bands: number): void {
+/** La grana del suolo si ripete ogni 12 m (DETAIL_M in tiles.ts): la proiezione triplanare usa lo stesso passo. */
+export const TRIPLANAR_M = 12;
+
+/**
+ * `triplanar` (i mondi con le pareti vere, look.triplanar): la grana del suolo (la `map` del terreno
+ * vicino) non si stira più sulle facce quasi verticali. Si proietta dall'alto, da est e da sud e si
+ * pesa con la normale (alla quarta: sul prato resta la proiezione dall'alto, identica alle UV di
+ * prima; sulla parete quella di lato).
+ */
+export function patchRockShader(shader: { vertexShader: string; fragmentShader: string }, bands: number, triplanar = false): void {
   shader.vertexShader = shader.vertexShader
-    .replace('#include <common>', '#include <common>\nattribute float rock;\nvarying float vRock;\nvarying vec3 vRockP;')
+    .replace('#include <common>', `#include <common>\nattribute float rock;\nvarying float vRock;\nvarying vec3 vRockP;${triplanar ? '\nvarying vec3 vRockN;' : ''}`)
     .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRock = rock;\nvRockP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+  if (triplanar) {
+    shader.vertexShader = shader.vertexShader.replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nvRockN = normalize(mat3(modelMatrix) * objectNormal);');
+    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vRockN;').replace(
+      '#include <map_fragment>',
+      `#ifdef USE_MAP
+  vec3 tpw = pow(abs(normalize(vRockN)), vec3(4.0));
+  tpw /= max(1e-4, tpw.x + tpw.y + tpw.z);
+  vec4 sampledDiffuseColor = texture2D(map, vRockP.xz / ${TRIPLANAR_M.toFixed(1)}) * tpw.y + texture2D(map, vRockP.zy / ${TRIPLANAR_M.toFixed(1)}) * tpw.x + texture2D(map, vRockP.xy / ${TRIPLANAR_M.toFixed(1)}) * tpw.z;
+  diffuseColor *= sampledDiffuseColor;
+#endif`,
+    );
+  }
   shader.fragmentShader = shader.fragmentShader
     .replace('#include <common>', '#include <common>\nvarying float vRock;\nvarying vec3 vRockP;\nfloat rockHash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }\nfloat rockNoise(vec2 p) { vec2 i = floor(p); vec2 f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f); return mix(mix(rockHash(i), rockHash(i + vec2(1.0, 0.0)), u.x), mix(rockHash(i + vec2(0.0, 1.0)), rockHash(i + vec2(1.0, 1.0)), u.x), u.y); }')
     .replace(

@@ -23,6 +23,7 @@ import type { WeatherNow } from './weather';
 import { loadBuildings, type Building, type RideDef, type Terrain, type WorldData } from './world';
 import { WorldPath } from './path';
 import { createFarMask, farSinks, patchFarShader, updateFarMask, type FarMask } from './farMask';
+import { createMidMask, midGeometry, midSpacing, patchMidShader, setMidMask, tileRectDist, type MidMask } from './midTerrain';
 import { createTunnelCut, patchTerrainShader, updateTunnelCut, type TunnelCut } from './tunnels';
 import type { ArchSpec } from '@/game/arches';
 import { Arches } from '@/world/Arches';
@@ -74,9 +75,11 @@ export function npcCount(quality: Quality): number {
  * più, perché le pareti si vedono da 5 km e devono entrare prima; e il terreno lontano non si
  * dimezza (look.farFine), perché l'orizzonte è il punto; e si vede più lontano (look.farExtra).
  */
-export function qualityFor(quality: Quality, look: WorldLook): (typeof QUALITY)[Quality] {
+export function qualityFor(quality: Quality, look: WorldLook): (typeof QUALITY)[Quality] & { mid: number } {
   const q = QUALITY[quality];
-  return { ...q, ring: q.ring + look.ringExtra, farStride: look.farFine ? 1 : q.farStride, far: q.far + look.farExtra };
+  // la fascia di mezzo (midTerrain.ts) si accorcia con la qualità: 9 km in alta, 7,2 in media, 5,4 in bassa
+  const mid = look.midRange * (quality === 'high' ? 1 : quality === 'medium' ? 0.8 : 0.6);
+  return { ...q, ring: q.ring + look.ringExtra, farStride: look.farFine ? 1 : q.farStride, far: q.far + look.farExtra, mid };
 }
 
 const HAZE = '#cfdbe5';
@@ -229,9 +232,17 @@ function WorldContent(props: WorldSceneProps & { counts: TileCounts; status: Loa
   // le mattonelle vicine possono essere fino a ring + 1 dal centro: tante per lato nella maschera
   const farMask = useMemo(() => createFarMask(2 * q.ring + 3), [q.ring]);
   useEffect(() => () => farMask.uReady.value.dispose(), [farMask]);
+  // la fascia di mezzo (midTerrain.ts), solo nei mondi che la chiedono: una trama con un texel per mattonella del DEM
+  const midMask = useMemo(() => {
+    if (!q.mid) return null;
+    const g = data.graph;
+    const n = Math.max(Math.ceil((g.bounds.x1 - g.bounds.x0) / g.tile), Math.ceil((g.bounds.z1 - g.bounds.z0) / g.tile));
+    return createMidMask(n, g.bounds.x0, g.bounds.z0, g.tile);
+  }, [q.mid, data]);
+  useEffect(() => () => midMask?.uMid.value.dispose(), [midMask]);
   // il terreno che entra nelle gallerie vicine non si disegna (tunnels.ts)
   const cut = useMemo(() => createTunnelCut(), []);
-  const mats = useMaterials(farMask, cut, ctx.look);
+  const mats = useMaterials(farMask, cut, ctx.look, midMask);
   const names = useMemo(() => new Set<THREE.Sprite>(), []);
   const { counts } = props;
   // le case e i monumenti intorno al ciclista: coprono i nomi (WorldLabels)
@@ -243,6 +254,7 @@ function WorldContent(props: WorldSceneProps & { counts: TileCounts; status: Loa
       <Atmosphere weather={props.weather} daytime={props.daytime} data={data} far={q.far} mats={mats} />
       {props.weather && props.weather.rain >= 0.1 ? <Rain mmh={props.weather.rain} weather={props.weather} /> : null}
       <FarTerrain terrain={terrain} stride={q.farStride} material={mats.far} ctx={ctx} />
+      {midMask ? <MidTerrain terrain={terrain} material={mats.mid} ctx={ctx} mask={midMask} range={q.mid} nearCover={(q.ring - 0.5) * q.tile} playerPose={props.playerPose} status={props.status} /> : null}
       <NearTiles {...props} mats={mats} mask={farMask} cut={cut} occluders={occluders} ctx={ctx} />
       <Lakes data={data} />
       <Walls data={data} field={field} />
@@ -272,7 +284,7 @@ function WorldContent(props: WorldSceneProps & { counts: TileCounts; status: Loa
 
 // ---------- materiali condivisi ----------
 
-function useMaterials(mask: FarMask, cut: TunnelCut, look: WorldLook) {
+function useMaterials(mask: FarMask, cut: TunnelCut, look: WorldLook, midMask: MidMask | null) {
   const mats = useMemo(() => {
     const asphaltTex = asphaltTexture();
     const stoneTex = settTexture();
@@ -283,11 +295,20 @@ function useMaterials(mask: FarMask, cut: TunnelCut, look: WorldLook) {
     const far = new THREE.MeshLambertMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: 3, polygonOffsetUnits: 6 });
     far.onBeforeCompile = (shader) => {
       patchFarShader(shader, mask);
+      // e sotto la fascia di mezzo pronta (midTerrain.ts)
+      if (midMask) patchMidShader(shader, midMask);
+      patchRockShader(shader, look.rock.bands);
+    };
+    // la fascia di mezzo: come il lontano, ma si scarta solo sotto le mattonelle vicine pronte
+    const mid = new THREE.MeshLambertMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: 1.5, polygonOffsetUnits: 3 });
+    mid.onBeforeCompile = (shader) => {
+      patchFarShader(shader, mask);
       patchRockShader(shader, look.rock.bands);
     };
     return {
       far,
-      terrain: terrainMaterial(groundTex, cut, look.rock.bands),
+      mid,
+      terrain: terrainMaterial(groundTex, cut, look.rock.bands, look.triplanar),
       asphalt: new THREE.MeshLambertMaterial({ map: asphaltTex, color: '#c9cbd0', polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
       stone: new THREE.MeshLambertMaterial({ map: stoneTex, color: '#d8cfc2', polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
       cycle: new THREE.MeshLambertMaterial({ map: asphaltTex, color: '#c98f7d', polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
@@ -321,7 +342,7 @@ function useMaterials(mask: FarMask, cut: TunnelCut, look: WorldLook) {
       /** cartelli d'inizio paese, uno per nome */
       signs: new Map<string, THREE.MeshLambertMaterial>(),
     };
-  }, [mask, cut, look]);
+  }, [mask, cut, look, midMask]);
   useEffect(
     () => () => {
       for (const [k, v] of Object.entries(mats)) {
@@ -343,12 +364,14 @@ function useMaterials(mask: FarMask, cut: TunnelCut, look: WorldLook) {
 }
 
 /** Il terreno vicino: colori di vertice, la grana, il taglio dentro le gallerie, le bande della roccia. */
-function terrainMaterial(map: THREE.Texture, cut: TunnelCut, bands: number): THREE.MeshLambertMaterial {
+function terrainMaterial(map: THREE.Texture, cut: TunnelCut, bands: number, triplanar: boolean): THREE.MeshLambertMaterial {
   const m = new THREE.MeshLambertMaterial({ vertexColors: true, map });
   m.onBeforeCompile = (shader) => {
     patchTerrainShader(shader, cut);
-    patchRockShader(shader, bands);
+    patchRockShader(shader, bands, triplanar);
   };
+  // i due mondi hanno due programmi: three li distingue da questa chiave (la closure è la stessa)
+  if (triplanar) m.customProgramCacheKey = () => 'terreno-triplanare';
   return m;
 }
 
@@ -675,6 +698,99 @@ function FarTerrain({ terrain, stride, material, ctx }: { terrain: Terrain; stri
   return <mesh ref={mesh} material={material} frustumCulled={false} />;
 }
 
+// ---------- fascia di mezzo ----------
+
+interface MidEntry {
+  tx: number;
+  tz: number;
+  mesh: THREE.Mesh | null;
+  spacing: number;
+}
+
+/**
+ * La fascia di mezzo (midTerrain.ts): le mattonelle del DEM fra il vicino e `range`, senza strade
+ * né case, a 25 m fino a 4 km e a 50 m oltre. Una mattonella tutta dentro il quadrato delle
+ * mattonelle vicine non si disegna (`nearCover`, metri dal ciclista per lato). Si costruisce una
+ * mattonella per fotogramma, la più vicina che manca; il DEM si chiede tre mattonelle alla volta,
+ * dopo quelle del vicino.
+ */
+function MidTerrain({ terrain, material, ctx, mask, range, nearCover, playerPose, status }: { terrain: Terrain; material: THREE.Material; ctx: LookCtx; mask: MidMask; range: number; nearCover: number; playerPose: () => TrackPose; status: LoadStatus }) {
+  const root = useRef<THREE.Group>(null);
+  const tiles = useRef(new Map<string, MidEntry>());
+  const loading = useRef(0);
+  const g = terrain.graph;
+  const T = g.tile;
+  const b = g.bounds;
+  useEffect(() => {
+    const map = tiles.current;
+    return () => {
+      for (const t of map.values()) t.mesh?.geometry.dispose();
+      map.clear();
+    };
+  }, [terrain, ctx]);
+  useFrame(() => {
+    // prima il vicino: finché la corsa non è pronta la fascia di mezzo non chiede e non costruisce
+    // niente (il «pronto» aspetta le mattonelle vicine, non queste; dietro il velo c'è il lontano)
+    if (!status.ready) return;
+    const pose = playerPose();
+    const nx = Math.ceil((b.x1 - b.x0) / T);
+    const nz = Math.ceil((b.z1 - b.z0) / T);
+    let job: { tx: number; tz: number; spacing: number; d: number } | null = null;
+    const want = new Set<string>();
+    for (let tz = 0; tz < nz; tz++) {
+      for (let tx = 0; tx < nx; tx++) {
+        const x0 = b.x0 + tx * T;
+        const z0 = b.z0 + tz * T;
+        const d = tileRectDist(pose.x, pose.z, x0, z0, T);
+        if (d > range) continue;
+        // tutta dentro il vicino: la coprono le mattonelle da 500 m
+        if (x0 >= pose.x - nearCover && x0 + T <= pose.x + nearCover && z0 >= pose.z - nearCover && z0 + T <= pose.z + nearCover) continue;
+        const key = `${tx}_${tz}`;
+        want.add(key);
+        const spacing = midSpacing(d);
+        const have = tiles.current.get(key);
+        if (have && have.spacing === spacing) continue;
+        if (!terrain.has(tx, tz)) {
+          if (loading.current < 3) {
+            loading.current++;
+            void terrain.load(tx, tz).finally(() => loading.current--);
+          }
+          continue;
+        }
+        if (!job || d < job.d) job = { tx, tz, spacing, d };
+      }
+    }
+    if (job) {
+      const key = `${job.tx}_${job.tz}`;
+      const geo = midGeometry(terrain, job.tx, job.tz, job.spacing, ctx);
+      let e = tiles.current.get(key);
+      if (!e) {
+        e = { tx: job.tx, tz: job.tz, mesh: null, spacing: job.spacing };
+        tiles.current.set(key, e);
+      }
+      if (e.mesh) {
+        e.mesh.geometry.dispose();
+        e.mesh.geometry = geo;
+      } else {
+        e.mesh = new THREE.Mesh(geo, material);
+        e.mesh.frustumCulled = true;
+        root.current?.add(e.mesh);
+      }
+      e.spacing = job.spacing;
+    }
+    for (const [key, e] of tiles.current) {
+      if (want.has(key)) continue;
+      if (e.mesh) {
+        root.current?.remove(e.mesh);
+        e.mesh.geometry.dispose();
+      }
+      tiles.current.delete(key);
+    }
+    setMidMask(mask, (tx, tz) => !!tiles.current.get(`${tx}_${tz}`)?.mesh);
+  });
+  return <group ref={root} />;
+}
+
 // ---------- mattonelle vicine ----------
 
 interface TileEntry {
@@ -943,7 +1059,8 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
       // e le case, che il suolo delle mattonelle aspetta: si chiedono subito, tutte insieme
       buildingsAround(pose.x - READY_RADIUS - URBAN_R, pose.z - READY_RADIUS - URBAN_R, pose.x + READY_RADIUS + URBAN_R, pose.z + READY_RADIUS + URBAN_R);
       buildingsAround(b.x0 + (cx - q.ring) * T - URBAN_R, b.z0 + (cz - q.ring) * T - URBAN_R, b.x0 + (cx + q.ring + 1) * T + URBAN_R, b.z0 + (cz + q.ring + 1) * T + URBAN_R);
-      terrain.prune(pose.x, pose.z, (q.ring + 3) * T);
+      // la fascia di mezzo usa le mattonelle del DEM fino a q.mid: non si buttano
+      terrain.prune(pose.x, pose.z, Math.max((q.ring + 3) * T, q.mid));
     }
     // un lavoro alla volta, il più vicino, per non più di 6 ms a fotogramma; mentre si carica
     // il velo copre la scena e un fotogramma lento non si vede: 24 ms

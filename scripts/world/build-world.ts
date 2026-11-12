@@ -16,6 +16,8 @@ import { fileURLToPath } from 'node:url';
 import { deflateSync } from 'node:zlib';
 import { CITY, DEM_STEP, FAR_STEP, HORIZON, ORIGIN, REGION, TILE, WORLD } from './config.mjs';
 import { loadDem } from './dem.mjs';
+import { fineBlender, FONTI, loadFine } from './dtm.mjs';
+import { fromUtm } from './utm.mjs';
 import { CLS, FLAG, MinHeap, WorldGraph, type WorldGraphFile } from '../../src/open/graph';
 import { crossingClearance, lowerWaterAt, planCrossings, WATER_UNDER_DECK, WATER_UNDER_ROAD, type WaterCrossing } from '../../src/open/crossings';
 import { deeperProbe, fitRingToRoads, junctionProbe, type FitAction, type JunctionShape, type RoadProbe } from '../../src/open/footprints';
@@ -90,14 +92,45 @@ const log = (...a: unknown[]) => console.log(`[${((Date.now() - t0) / 1000).toFi
 
 // ---------- quota ----------
 
-const dem13 = await loadDem(13, { s: REGION.s - 0.03, w: REGION.w - 0.03, n: REGION.n + 0.03, e: REGION.e + 0.03 });
+// i mondi col terreno fine delle province (WORLD.fine) leggono EU-DEM a z13 anche per l'orizzonte:
+// è da lì che si vedono le creste lontane, e a z11 (un pixel ogni 52 m) la Civetta era una gobba
+const dem13 = await loadDem(13, WORLD.fine ? HORIZON : { s: REGION.s - 0.03, w: REGION.w - 0.03, n: REGION.n + 0.03, e: REGION.e + 0.03 });
 const dem11 = await loadDem(11, HORIZON);
-const demAt = (x: number, z: number): number => {
-  const g = toGeo(x, z);
-  const v = dem13.sample(g.lat, g.lon);
-  return Number.isFinite(v) ? v : dem11.sample(g.lat, g.lon);
+const coarseAt = (lat: number, lon: number): number => {
+  const v = dem13.sample(lat, lon);
+  return Number.isFinite(v) ? v : dem11.sample(lat, lon);
 };
 log(`DEM: ${dem13.tiles} mattonelle a z13, ${dem11.tiles} a z11`);
+
+// ---------- il terreno fine delle province (scripts/world/dtm.mjs) ----------
+
+const FINE = WORLD.fine ?? null;
+const fine = FINE ? loadFine(WORLD) : null;
+if (FINE && !fine) log(`ATTENZIONE: il terreno fine di ${WORLD.id} non è in cache (WORLD=${WORLD.id} node scripts/world/dtm.mjs): resta EU-DEM`);
+// il terreno unito: il LiDAR fino al suo bordo, EU-DEM fuori, lo scarto fra i due che si spegne
+// in `feather` metri fuori dal bordo (fineBlender in dtm.mjs): niente gradini, e le cime sul confine
+// provinciale (Punta Penia) restano alla loro quota
+const blender = (() => {
+  if (!fine || !FINE) return null;
+  const fineLocal = (x: number, z: number) => {
+    const g = toGeo(x, z);
+    return fine.sample(g.lat, g.lon);
+  };
+  const coarseLocal = (x: number, z: number) => {
+    const g = toGeo(x, z);
+    return coarseAt(g.lat, g.lon);
+  };
+  return fineBlender(fineLocal, coarseLocal, { x0: BOUNDS.x0 - 1000, z0: BOUNDS.z0 - 1000, x1: BOUNDS.x1 + 1000, z1: BOUNDS.z1 + 1000 }, 25, 60, FINE.feather);
+})();
+/** quanto conta il dato fine in un punto (0 fuori o sul bordo, 1 dentro) */
+const fineWeight = blender ? blender.inner : null;
+
+const demAt = (x: number, z: number): number => {
+  if (blender) return blender.height(x, z);
+  const g = toGeo(x, z);
+  return coarseAt(g.lat, g.lon);
+};
+if (fine) log(`terreno fine: ${fine.sources.join(', ')}; ${fine.summits.length} cime e torri dal dato nativo`);
 
 // ---------- strade ----------
 
@@ -1129,7 +1162,7 @@ function graphFileOf(list: BuiltEdge[]): WorldGraphFile {
   demStep: DEM_STEP,
   far: FAR,
   builtAt: new Date().toISOString().slice(0, 10),
-  attribution: '© OpenStreetMap contributors, ODbL 1.0 · EU-DEM © Copernicus Land Monitoring Service (Terrain Tiles, AWS Open Data)',
+  attribution: ['© OpenStreetMap contributors, ODbL 1.0 · EU-DEM © Copernicus Land Monitoring Service (Terrain Tiles, AWS Open Data)', ...(fine ? fine.sources.map((s: string) => FONTI[s as keyof typeof FONTI].attribuzione) : [])].join(' · '),
   names,
   nodes: nodeXZ.flatMap(([x, z], i) => [dm(x), dm(z), dm(nodeEle[i])]),
   edges: list.map((e) => {
@@ -1446,35 +1479,152 @@ if (ALPINO) {
 
 // ---------- mattonelle del terreno ----------
 
-{
+/**
+ * Le mattonelle che hanno il passo fine (WORLD.fine.step): dove le province danno il rilievo LiDAR
+ * e la montagna è ripida (almeno `steep` dei punti sopra i 35°). Prati, paesi e boschi restano a 25 m.
+ */
+const fineTiles = new Set<string>();
+const FINE_STEP = FINE?.step ?? DEM_STEP;
+if (fine && fineWeight && FINE) {
   const n = Math.round(TILE / DEM_STEP);
-  const side = n + 1;
-  let bytes = 0;
+  const tan35 = Math.tan((35 * Math.PI) / 180);
   for (let tx = 0; tx < TX; tx++) {
     for (let tz = 0; tz < TZ; tz++) {
+      let steep = 0;
+      let total = 0;
+      for (let j = 0; j <= n; j += 1) {
+        for (let i = 0; i <= n; i += 1) {
+          const x = BOUNDS.x0 + tx * TILE + i * DEM_STEP;
+          const z = BOUNDS.z0 + tz * TILE + j * DEM_STEP;
+          total++;
+          if (fineWeight(x, z) < 0.5) continue;
+          const gx = (demAt(x + DEM_STEP / 2, z) - demAt(x - DEM_STEP / 2, z)) / DEM_STEP;
+          const gz = (demAt(x, z + DEM_STEP / 2) - demAt(x, z - DEM_STEP / 2)) / DEM_STEP;
+          if (Math.hypot(gx, gz) > tan35) steep++;
+        }
+      }
+      if (steep / total >= FINE.steep) fineTiles.add(`${tx}_${tz}`);
+    }
+  }
+  log(`terreno fine: ${fineTiles.size} mattonelle su ${TX * TZ} a ${FINE_STEP} m`);
+}
+
+/**
+ * Le cime e le torri: il punto più alto del dato nativo (2,5 m in Alto Adige, 1 m in Trentino) va
+ * sul nodo più vicino della mattonella, se è più alto di quello che il ricampionamento ha messo lì.
+ * Senza, la media a 5 m e poi il passo di 12,5 m abbassavano le punte di 5-20 m. Solo dentro le
+ * mattonelle, non sui bordi: due mattonelle vicine devono avere lo stesso nodo di confine.
+ */
+const summitAt = new Map<string, number>();
+if (fine && fineWeight) {
+  for (const s of fine.summits) {
+    const g = fromUtm(s.E, s.N);
+    const [x, z] = toLocal(g.lat, g.lon);
+    if (fineWeight(x, z) < 0.99) continue;
+    const gi = Math.round((x - BOUNDS.x0) / FINE_STEP);
+    const gj = Math.round((z - BOUNDS.z0) / FINE_STEP);
+    const key = `${gi}_${gj}`;
+    summitAt.set(key, Math.max(summitAt.get(key) ?? -Infinity, s.h));
+  }
+}
+
+{
+  const n25 = Math.round(TILE / DEM_STEP);
+  const nF = Math.round(TILE / FINE_STEP);
+  const r = Math.round(DEM_STEP / FINE_STEP);
+  let bytes = 0;
+  let bytesFine = 0;
+  /** il nodo di una mattonella a 25 m: anche il bordo che una mattonella fine divide con questa */
+  const coarseNode = (gi: number, gj: number) => demAt(BOUNDS.x0 + gi * DEM_STEP, BOUNDS.z0 + gj * DEM_STEP);
+  const isFine = (tx: number, tz: number) => fineTiles.has(`${tx}_${tz}`);
+  const inside = (tx: number, tz: number) => tx >= 0 && tz >= 0 && tx < TX && tz < TZ;
+  for (let tx = 0; tx < TX; tx++) {
+    for (let tz = 0; tz < TZ; tz++) {
+      const fineHere = isFine(tx, tz);
+      const n = fineHere ? nF : n25;
+      const step = TILE / n;
+      const side = n + 1;
+      const hs = new Float64Array(side * side);
+      if (!fineHere) {
+        for (let j = 0; j < side; j++) for (let i = 0; i < side; i++) hs[j * side + i] = coarseNode(tx * n25 + i, tz * n25 + j);
+      } else {
+        // vicino a una mattonella a 25 m (anche in diagonale) il bordo è quello della vicina (i suoi
+        // nodi e la retta fra due nodi), e verso l'interno si torna al dato fine in BLEND nodi. La
+        // distanza è dalla mattonella grossa più vicina, in metri del mondo: due mattonelle fini
+        // vicine calcolano lo stesso numero sul loro lato in comune, e niente gradini
+        const BLEND = 4;
+        const coarseNear: [number, number][] = [];
+        for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) if ((dx || dz) && inside(tx + dx, tz + dz) && !isFine(tx + dx, tz + dz)) coarseNear.push([tx + dx, tz + dz]);
+        const blendAt = (i: number, j: number) => {
+          let t = 0;
+          for (const [cx, cz] of coarseNear) {
+            // la distanza del nodo dal rettangolo della mattonella grossa, in nodi
+            const gx = tx * nF + i;
+            const gz = tz * nF + j;
+            const ddx = Math.max(cx * nF - gx, 0, gx - (cx + 1) * nF);
+            const ddz = Math.max(cz * nF - gz, 0, gz - (cz + 1) * nF);
+            t = Math.max(t, 1 - Math.hypot(ddx, ddz) / BLEND);
+          }
+          return t;
+        };
+        // la superficie della mattonella grossa sotto questa, bilineare sui nodi a 25 m
+        const coarseHere = (i: number, j: number) => {
+          const ci = Math.floor(i / r);
+          const cj = Math.floor(j / r);
+          const u = (i - ci * r) / r;
+          const v = (j - cj * r) / r;
+          const gi = tx * n25 + ci;
+          const gj = tz * n25 + cj;
+          const a = coarseNode(gi, gj);
+          const bq = u > 0 ? coarseNode(gi + 1, gj) : a;
+          const c = v > 0 ? coarseNode(gi, gj + 1) : a;
+          const d = u > 0 && v > 0 ? coarseNode(gi + 1, gj + 1) : u > 0 ? bq : c;
+          return a * (1 - u) * (1 - v) + bq * u * (1 - v) + c * (1 - u) * v + d * u * v;
+        };
+        for (let j = 0; j < side; j++) {
+          for (let i = 0; i < side; i++) {
+            const x = BOUNDS.x0 + tx * TILE + i * step;
+            const z = BOUNDS.z0 + tz * TILE + j * step;
+            let v = demAt(x, z);
+            if (i > 0 && j > 0 && i < n && j < n) {
+              const s = summitAt.get(`${tx * nF + i}_${tz * nF + j}`);
+              if (s !== undefined && s > v) v = s;
+            }
+            const t = coarseNear.length ? blendAt(i, j) : 0;
+            if (t > 0) v += (coarseHere(i, j) - v) * Math.min(1, t);
+            hs[j * side + i] = v;
+          }
+        }
+      }
       const buf = Buffer.alloc(side * side * 3);
       let prevRow = 0;
       for (let j = 0; j < side; j++) {
         let prev = 0;
         for (let i = 0; i < side; i++) {
-          const x = BOUNDS.x0 + tx * TILE + i * DEM_STEP;
-          const z = BOUNDS.z0 + tz * TILE + j * DEM_STEP;
-          const v = Math.max(-3000, Math.min(32000, Math.round(demAt(x, z) * 10)));
+          // decimetri, in differenze: il valore assoluto non ha tetto (prima si fermava a 3200 m e
+          // la Marmolada, 3343, era tagliata in piano), basta che ogni differenza stia in un Int16
+          const v = Math.max(-3000, Math.round(hs[j * side + i] * 10));
           const d = i === 0 ? v - prevRow : v - prev;
           if (i === 0) prevRow = v;
           prev = v;
-          buf.writeInt16LE(Math.max(-32768, Math.min(32767, d)), (j * side + i) * 2);
-          const gi = tx * n + i;
-          const gj = tz * n + j;
-          buf[side * side * 2 + j * side + i] = gi < GW && gj < GH ? cover[gj * GW + gi] : 0;
+          if (d > 32767 || d < -32768) throw new Error(`mattonella ${tx}_${tz}: salto di ${d / 10} m fra due nodi, non sta in Int16`);
+          buf.writeInt16LE(d, (j * side + i) * 2);
+          // l'uso del suolo resta sulla griglia a 25 m: nelle mattonelle fini il nodo più vicino, e
+          // il bosco finisce alla sua linea anche fra due nodi della griglia (le quote fini salgono)
+          const gi = tx * n25 + Math.round(i / (n / n25));
+          const gj = tz * n25 + Math.round(j / (n / n25));
+          let cv = gi < GW && gj < GH ? cover[gj * GW + gi] : 0;
+          if (ALPINO && cv === 1 && hs[j * side + i] > ALPINO.treeLine) cv = 0;
+          buf[side * side * 2 + j * side + i] = cv;
         }
       }
       const z = deflateSync(buf, { level: 9 });
       bytes += z.length;
+      if (fineHere) bytesFine += z.length;
       writeFileSync(join(OUT, 'dem', `${tx}_${tz}.bin`), z);
     }
   }
-  log(`terreno: ${TX}×${TZ} mattonelle da ${TILE} m, ${(bytes / 1e6).toFixed(1)} MB`);
+  log(`terreno: ${TX}×${TZ} mattonelle da ${TILE} m, ${(bytes / 1e6).toFixed(1)} MB${fineTiles.size ? ` (le ${fineTiles.size} fini ${(bytesFine / 1e6).toFixed(1)} MB)` : ''}`);
 }
 
 // ---------- terreno lontano ----------
@@ -1487,8 +1637,27 @@ if (ALPINO) {
     for (let i = 0; i < FAR.nx; i++) {
       const x = FAR.x0 + i * FAR.step;
       const z = FAR.z0 + j * FAR.step;
-      const g = toGeo(x, z);
-      let v = dem11.sample(g.lat, g.lon);
+      let v: number;
+      if (FINE) {
+        // nei mondi di montagna il lontano viene dal terreno unito (LiDAR delle province, EU-DEM a
+        // z13 altrove), mediato sulla sua cella: preso in un punto solo, un dato a 5 m dà creste a
+        // caso. Un terzo del massimo della cella, perché le cime non si abbassino (formato invariato)
+        let sum = 0;
+        let mx = -Infinity;
+        let cnt = 0;
+        for (let dj = -1; dj <= 1; dj++)
+          for (let di = -1; di <= 1; di++) {
+            const h = demAt(x + (di * FAR.step) / 3, z + (dj * FAR.step) / 3);
+            if (!Number.isFinite(h)) continue;
+            sum += h;
+            cnt++;
+            if (h > mx) mx = h;
+          }
+        v = cnt ? (sum / cnt) * 0.67 + mx * 0.33 : NaN;
+      } else {
+        const g = toGeo(x, z);
+        v = dem11.sample(g.lat, g.lon);
+      }
       if (!Number.isFinite(v)) v = prev;
       const iv = Math.round(v);
       const d = i === 0 ? iv - prevRow : iv - prev;
