@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { WorldField } from './field';
-import { footprintGround, type TileSpec } from './tiles';
+import type { TileSpec } from './tiles';
 import { worldBase, type Building } from './world';
 
 /**
@@ -41,31 +41,67 @@ function frontElevation(field: Pick<WorldField, 'height'>, spec: TileSpec) {
  * convert to height above the ground plane buildingsJob computes for the footprint. */
 export function fitRoncalliRoof(world: string, field: Pick<WorldField, 'height'>, spec: TileSpec, buildings: Building[]): Building[] {
   if (world !== 'bergamo' || !containsPalazzoTile(spec)) return buildings;
-  const {eave} = frontElevation(field, spec);
-  return buildings.map(building => {
-    if (!hasFacade(building)) return building;
-    const ring = building.ring;
-    let cx = 0, cz = 0;
-    for (let i = 0; i < ring.length; i += 2) { cx += ring[i]; cz += ring[i + 1]; }
-    const {low, high} = footprintGround(field, ring, spec.spacing, cx / (ring.length / 2), cz / (ring.length / 2));
-    const ground = Math.max(low - 0.6, Math.min(high - 1, low + 12));
-    return {...building, h: Math.max(building.minH + 2.6, eave - ground)};
+  const upper = buildings.find(hasFacade);
+  if (!upper) return buildings;
+  const groundY = frontElevation(field, spec).eave - facadeHeight;
+  return buildings.map(b => {
+    if (b === upper) return {...b, groundY, h: facadeHeight};
+    if (b.upperRing === upper.ring) return {...b, groundY};
+    return b;
   });
 }
 
 export function roncalliGeometry(field: Pick<WorldField, 'height'>, spec: TileSpec, buildings: Building[]): THREE.BufferGeometry | null {
-  if (!containsPalazzoTile(spec) || !buildings.some(hasFacade)) return null;
+  if (!containsPalazzoTile(spec)) return null;
+  const upper = buildings.find(hasFacade);
+  if (!upper) return null;
+  const base = buildings.find(b => b.upperRing === upper.ring);
   const {lowerLeft, lowerRight, eave} = frontElevation(field, spec);
   const top = eave - 0.04;
   if (top <= Math.max(lowerLeft, lowerRight) + 1) return null;
+  const streetY = eave - facadeHeight;
+  const baseTop = streetY + upper.minH;
 
+  const pos: number[] = [];
+  const uv: number[] = [];
+  const indices: number[] = [];
+  const quad = (a: typeof left, b: typeof left, ya: number, yb: number, ceiling: number, ua: number, ub: number, va: number, vb: number, upperV: number) => {
+    const i = pos.length / 3;
+    pos.push(a.x, ya, a.z, b.x, yb, b.z, a.x, ceiling, a.z, b.x, ceiling, b.z);
+    uv.push(ua, va, ub, vb, ua, upperV, ub, upperV);
+    indices.push(i, i+1, i+2, i+1, i+3, i+2);
+  };
+  const seam = base ? upper.minH / facadeHeight : 0;
+  quad(left, right, base ? baseTop : lowerLeft, base ? baseTop : lowerRight, top, 0, 1, seam, seam, 1);
+  if (base) {
+    // Project the door and ground-floor windows onto the recessed frontage. The normalized
+    // along-wall distance keeps the photo aligned horizontally with the uncut upper stories.
+    const dx = right.x - left.x, dz = right.z - left.z;
+    const length = Math.hypot(dx, dz);
+    const project = (x: number, z: number) => ({
+      x, z, u: ((x - left.x) * dx + (z - left.z) * dz) / (length * length),
+      setback: ((x - left.x) * dz - (z - left.z) * dx) / length,
+    });
+    for (let i = 0; i < base.ring.length; i += 2) {
+      const j = (i + 2) % base.ring.length;
+      const a = project(base.ring[i], base.ring[i+1]);
+      const b = project(base.ring[j], base.ring[j+1]);
+      if (a.u >= b.u || b.u <= 0 || a.u >= 1 || Math.min(a.setback,b.setback) < 0 || Math.max(a.setback,b.setback) > 5.5) continue;
+      const clip = (u: number) => {
+        const t = (u - a.u) / (b.u - a.u);
+        return {x: a.x + (b.x-a.x)*t, z: a.z + (b.z-a.z)*t};
+      };
+      const u0 = Math.max(0, a.u), u1 = Math.min(1, b.u);
+      const p = clip(u0), q = clip(u1);
+      const y0 = field.height(p.x, p.z, spec.spacing) - 0.15;
+      const y1 = field.height(q.x, q.z, spec.spacing) - 0.15;
+      quad(p, q, y0, y1, baseTop, u0, u1, 0, 0, seam);
+    }
+  }
   const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute([
-    left.x, lowerLeft, left.z, right.x, lowerRight, right.z,
-    left.x, top, left.z, right.x, top, right.z,
-  ], 3));
-  geo.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, 1, 1, 1], 2));
-  geo.setIndex([0, 1, 2, 1, 3, 2]);
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.setIndex(indices);
   geo.computeVertexNormals();
   geo.computeBoundingSphere();
   return geo;

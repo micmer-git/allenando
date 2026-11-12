@@ -965,7 +965,7 @@ export function* buildingsJob(field: WorldField, list: Building[], spec: TileSpe
   const ladino = ctx.look.case === 'ladino';
   let count = 0;
   for (const b of list) {
-    const r = b.ring;
+    const r = b.upperRing ?? b.ring;
     let cx = 0;
     let cz = 0;
     const m = r.length / 2;
@@ -981,7 +981,7 @@ export function* buildingsJob(field: WorldField, list: Building[], spec: TileSpe
     // sepolta a monte: scende con lo zoccolo a valle, come le case vere)
     const { low, high } = footprintGround(field, r, spec.spacing, cx, cz);
     const plinth = low - 0.6;
-    const ground = Math.max(plinth, Math.min(high - 1, low + 12));
+    const ground = b.groundY ?? Math.max(plinth, Math.min(high - 1, low + 12));
     const seed = hash2(Math.floor(cx), Math.floor(cz));
     const stone = b.kind === BUILDING_KIND.church || b.kind === BUILDING_KIND.tower || b.kind === BUILDING_KIND.castle;
     const civil = !stone && b.kind !== BUILDING_KIND.industrial;

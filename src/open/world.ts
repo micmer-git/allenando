@@ -659,6 +659,11 @@ export interface Building {
   /** quota minima dal suolo (portici, piani sospesi), metri */
   minH: number;
   roof: number;
+  /** Piano terra arretrato, calcolato sul medesimo terreno del corpo superiore. */
+  upperRing?: Float32Array;
+  recessedGround?: boolean;
+  /** Quota documentata del piano terra, se ricavata dalla piazza antistante. */
+  groundY?: number;
   /** anello x, z in metri assoluti */
   ring: Float32Array;
 }
@@ -677,10 +682,10 @@ export async function loadBuildings(graph: WorldGraph, tx: number, tz: number, b
   try {
     const res = await fetch(`${base}b/${tx}_${tz}.json`);
     if (!res.ok) return [];
-    const [json, hints, colours] = await Promise.all([res.json() as Promise<{ o: [number, number]; b: number[][] }>, loadArchitecture(graph.id), loadRoofColours(base)]);
+    const [json, hints, colours] = await Promise.all([res.json() as Promise<{ o: [number, number]; b: number[][]; supports?: [number, number][] }>, loadArchitecture(graph.id), loadRoofColours(base)]);
     const [ox, oz] = json.o;
     const surveyed = gandaSurvey(graph)?.file.heights[`${tx}_${tz}`];
-    return json.b.map((r) => {
+    const buildings: Building[] = json.b.map((r) => {
       const [kind, h, minH, roof, ...coords] = r;
       const ring = new Float32Array(coords.length);
       let x = 0;
@@ -694,6 +699,11 @@ export async function loadBuildings(graph: WorldGraph, tx: number, tz: number, b
       const key = footprintKey(ring);
       return { kind, h: (surveyed?.[r.join(',')]?.[0] ?? h) / 10, minH: minH / 10, roof, ring, architecture: hints[key], sampledRoof: colours.get(Number(key)) };
     });
+    for (const [base, upper] of json.supports ?? []) {
+      buildings[base].upperRing = buildings[upper].ring;
+      buildings[upper].recessedGround = true;
+    }
+    return buildings;
   } catch {
     return [];
   }
