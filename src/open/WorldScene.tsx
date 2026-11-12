@@ -31,6 +31,8 @@ import { createMidMask, midGeometry, midSpacing, patchMidShader, setMidMask, til
 import { createTunnelCut, patchTerrainShader, updateTunnelCut, type TunnelCut } from './tunnels';
 import type { ArchSpec } from '@/game/arches';
 import { Arches } from '@/world/Arches';
+import { CartelliSelvino } from './CartelliSelvino';
+import { campioni } from './campioni';
 import { HairpinSigns, hairpinSigns } from '@/world/HairpinSigns';
 import { findHairpins } from '@/domain/geo';
 import {
@@ -283,6 +285,7 @@ function WorldContent(props: WorldSceneProps & { counts: TileCounts; status: Loa
       <Walls data={data} field={field} />
       <Lifts data={data} terrain={terrain} playerPose={props.playerPose} />
       <Passi data={data} field={field} playerPose={props.playerPose} />
+      {data.graph.id === 'bergamo' && <CartelliSelvino data={data} field={field} playerPose={props.playerPose} />}
       <Monumenti world={data.graph.id} playerPose={props.playerPose} />
       <Labels data={data} playerPose={props.playerPose} names={names} />
       <Landmarks data={data} playerPose={props.playerPose} names={names} />
@@ -1768,7 +1771,9 @@ function RideSigns({ data, ride }: { data: WorldData; ride: RideDef }) {
     // il giro di una rotatoria non Ã¨ un tornante
     const nearRing = (d: number) => [-40, -20, 0, 20, 40].some((o) => g.isRing(path.edgeAt(Math.min(path.length, Math.max(0, d + o))).edge));
     const bends = climb ? findHairpins(pts.map((p) => p.distance), pts.map((p) => p.heading)).filter((h) => h.distance > from + 20 && h.distance < to - 20 && !nearRing(h.distance)) : [];
-    const hairpins = hairpinSigns(bends, (d) => path.poseAt(d), (d) => g.edges[path.edgeAt(d).edge].hw);
+    const surveyed = campioni(data);
+    const unposted = bends.filter(bend => { const p=path.poseAt(bend.distance); return !surveyed.some(s=>Math.hypot(p.x-s.x,p.z-s.z)<100); });
+    const hairpins = hairpinSigns(unposted, (d) => path.poseAt(d), (d) => g.edges[path.edgeAt(d).edge].hw);
     return {
       hairpins,
       start: { pose: path.poseAt(Math.min(path.length, from + 4)), tex: startTex, hw: g.edges[path.edgeAt(from + 4).edge].hw },
