@@ -1,3 +1,4 @@
+import { BUILT_SURFACE, intersectsGanda, LandSurvey } from './suoloGanda';
 import { loadRoofColours } from './tetti';
 import { footprintKey, loadArchitecture, type Architecture } from './architettura';
 import { indexRoadPoints, type RoadPoint } from './puntiStrada';
@@ -462,6 +463,8 @@ export class Terrain {
   private tiles = new Map<string, DemTile>();
   private pending = new Map<string, Promise<DemTile | null>>();
   private farH: Float32Array | null = null;
+  private land: LandSurvey | null = null;
+  private landPending?: Promise<void>;
   /** mattonelle del DEM che non sono arrivate (404, rete giù): un errore, non un caricamento lento */
   private failed = new Set<string>();
   /** il terreno lontano non è arrivato */
@@ -494,6 +497,20 @@ export class Terrain {
     return this.tiles.get(`${tx}_${tz}`);
   }
 
+  private loadLand(tx: number, tz: number): Promise<void> | undefined {
+    const g = this.graph;
+    if (g.id !== 'bergamo' || this.land || !intersectsGanda(g.bounds.x0+tx*g.tile,g.bounds.z0+tz*g.tile,g.tile)) return;
+    this.landPending ??= fetch(this.base + 'suolo-ganda-v1.bin').then(async res => {
+      if (res.ok) this.land = LandSurvey.decode(await res.arrayBuffer());
+    }).catch(() => { this.landPending = undefined; });
+    return this.landPending;
+  }
+
+  /** Classe DBGT alla posizione effettiva di un oggetto. Zero fuori dal rilievo certo. */
+  surveyedCover(x: number, z: number): number {
+    return this.land?.at(x,z) ?? 0;
+  }
+
   load(tx: number, tz: number): Promise<DemTile | null> {
     const key = `${tx}_${tz}`;
     const have = this.tiles.get(key);
@@ -501,8 +518,8 @@ export class Terrain {
     if (!this.inBounds(tx, tz) || this.light) return Promise.resolve(null);
     let p = this.pending.get(key);
     if (!p) {
-      p = fetch(`${this.base}dem/${key}.bin`)
-        .then(async (res) => {
+      p = Promise.all([fetch(`${this.base}dem/${key}.bin`), this.loadLand(tx,tz)])
+        .then(async ([res]) => {
           if (!res.ok) {
             this.failed.add(key);
             return null;
@@ -615,6 +632,8 @@ export class Terrain {
 
   /** Uso del suolo della cella più vicina (COVER.open se la mattonella non c'è). */
   cover(x: number, z: number): number {
+    const surveyed = this.surveyedCover(x,z);
+    if (surveyed && surveyed !== BUILT_SURFACE) return surveyed;
     const b = this.graph.bounds;
     const T = this.graph.tile;
     const tx = Math.floor((x - b.x0) / T);

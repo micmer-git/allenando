@@ -1,3 +1,4 @@
+import { BUILT_SURFACE } from './suoloGanda';
 import type { indexRoadPoints } from './puntiStrada';
 import * as THREE from 'three';
 import { ASPHALT_REPEAT_M, hash2, smoothNoise } from '@/world/builders';
@@ -1098,6 +1099,9 @@ export function* treesJob(field: WorldField, spec: TileSpec, seed = 0, forestOnl
         const rz = hash2(cz + t * 3.3, cx + t * 5.9 - seed * 2.3);
         const x = cx + (rx - 0.5) * cell;
         const z = cz + (rz - 0.5) * cell;
+        // Un albero estratto in una cella di 25 m può cadere su un edificio o oltre il margine del bosco.
+        const actual = field.terrain.surveyedCover?.(x,z);
+        if (actual === BUILT_SURFACE || actual === COVER.water || (actual && cov === COVER.forest && actual !== COVER.forest)) continue;
         const y = field.height(x, z, spec.spacing);
         // né sull'asfalto, né nell'acqua, né dentro una galleria, né sotto un ponte (la chioma bucava l'impalcato)
         if (field.lastRoadDist() < 4 || field.lastWater() || field.inTube(x, z, y) || field.nearBridge(x, z)) continue;
