@@ -39,13 +39,13 @@ export default function Confronto() {
         {current.rides.map(r => <option key={r.id} value={r.id}>{r.name} · {r.side}</option>)}
       </select>}
     </header>
-    {current && ride ? <Survey key={world.id} data={current} ride={ride} station={Number(params.get('punto'))}
-      select={n => { const q=new URLSearchParams(params); q.set('world',world.id); q.set('ride',ride.id); q.set('punto',String(n)); set(q,{replace:true}); }} /> :
+    {current && ride ? <Survey key={world.id+'-'+ride.id} data={current} ride={ride} place={params.get('luogo')} station={Number(params.get('punto'))}
+      select={(n,place) => { const q=new URLSearchParams(params); if(place) q.set('luogo',place); else q.delete('luogo'); q.set('world',world.id); q.set('ride',ride.id); q.set('punto',String(n)); set(q,{replace:true}); }} /> :
       <p role="status" className="p-4">{error ? 'Il mondo non è disponibile. Riprova con la rete attiva.' : 'Carico il percorso…'}</p>}
   </main>;
 }
 
-function Survey({data, ride, station, select}: {data: WorldData; ride: RideDef; station: number; select: (n: number) => void}) {
+function Survey({data, ride, place, station, select}: {data: WorldData; ride: RideDef; place:string|null; station: number; select: (n: number, place?:string) => void}) {
   const path = useMemo(() => {
     const [[edge, dir], ...rest] = ride.legs;
     const path = new WorldPath(data.graph, {edge, dir, s:dir === 1 ? 0 : data.graph.edges[edge].length});
@@ -56,25 +56,27 @@ function Survey({data, ride, station, select}: {data: WorldData; ride: RideDef; 
   const field = useMemo(() => createWorldField(data.graph, terrain, data.features), [data, terrain]);
   const crowd = useMemo(() => new NpcCrowd(data.graph, 0), [data]);
   const max = Math.ceil(path.length / 100);
-  const index = Number.isFinite(station) ? Math.min(max, Math.max(0, Math.round(station))) : 0;
-  const distance = Math.min(path.length, index * 100);
+  const stops = useMemo(() => luoghiPercorso(data,ride,path),[ride,data,path]);
+  const landmark=stops.find(s=>s.id===place);
+  const index = landmark?.station ?? (Number.isFinite(station) ? Math.min(max, Math.max(0, Math.round(station))) : 0);
+  const distance = landmark?.viewAt ?? Math.min(path.length, index * 100);
   const pose = path.poseAt(distance), geo = data.toGeo(pose.x, pose.z);
   const orientation = useRef<SurveyAngles>(FORWARD);
   const [angles,setAngles] = useState<SurveyAngles>(FORWARD);
   const direction = sightLine(pose,angles);
   const url = streetViewUrl(geo,headingToBearing(direction.heading),direction.pitch * 180 / Math.PI);
-  const stops = useMemo(() => luoghiPercorso(data,ride,path),[ride,data,path]);
-  const [selectedId,setSelectedId] = useState('');
   const here = stops.filter(s=>s.station===index);
-  const stop = here.find(s=>s.id===selectedId) ?? here.find(s=>s.kind==='Arte lungo la strada') ?? here[0];
+  const stop = landmark ?? here.find(s=>s.kind==='Arte lungo la strada') ?? here[0];
   const groups:SurveyStop['kind'][]=['Arte lungo la strada','Luoghi','Tornanti dei campioni'];
-  const visit = (s:SurveyStop) => {
-    const p=path.poseAt(s.station*100);
-    const dir=s.target && Math.hypot(s.target.x-p.x,s.target.z-p.z)>1
-      ? Math.atan2(s.target.x-p.x,s.target.z-p.z) : p.heading;
+  useEffect(()=>{
+    if(!landmark) return;
+    const p=path.poseAt(landmark.viewAt ?? landmark.station*100);
+    const target=landmark.target;
+    const dir=target && Math.hypot(target.x-p.x,target.z-p.z)>1
+      ? Math.atan2(target.x-p.x,target.z-p.z) : p.heading;
     orientation.current = {yaw:wrapYaw((p.heading-dir)*180/Math.PI),pitch:0};
-    setAngles({...orientation.current}); setSelectedId(s.id); select(s.station);
-  };
+    setAngles({...orientation.current});
+  },[path,landmark]);
   const changed = () => setAngles({...orientation.current});
   const reset = () => { orientation.current=FORWARD; changed(); };
   const [ready, setReady] = useState(false);
@@ -101,7 +103,7 @@ function Survey({data, ride, station, select}: {data: WorldData; ride: RideDef; 
       {stops.length > 0 && <label className="flex flex-wrap items-center gap-2 text-sm text-muted">
         Vai a un luogo
         <select className={control} aria-label="Luogo lungo il percorso" value={stop?.id ?? ''} onChange={e=>{
-          const selected=stops.find(s=>s.id===e.target.value); if(selected) visit(selected);
+          const selected=stops.find(s=>s.id===e.target.value); if(selected) select(selected.station,selected.id);
         }}>
           <option value="">Scegli lungo la strada…</option>
           {groups.map(group=>stops.some(s=>s.kind===group) && <optgroup key={group} label={group}>{stops.filter(s=>s.kind===group).map(s=><option key={s.id} value={s.id}>{s.name} · {(s.station/10).toLocaleString('it-IT')} km</option>)}</optgroup>)}

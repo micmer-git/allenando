@@ -60,7 +60,7 @@ export function FotoSopralluogo({data, path, distance, selectStation}: Props) {
   const atlas = catalog?.base === base ? catalog.atlas : null;
   const stations = useMemo(() => surveyStations(path, data.toGeo), [path, data]);
   const photos = useMemo(() => atlas ? matchSurveyPhotos(atlas, stations) : [], [atlas, stations]);
-  const index = Math.min(stations.length - 1, Math.ceil(distance / 100));
+  const index = Math.min(stations.length - 1, distance >= path.length ? stations.length - 1 : Math.round(distance / 100));
   const matches = photos[index]?.matches;
   const nearest = useMemo(() => matches?.length || !photos.length ? undefined : nearestPhotoStation(photos, index), [photos, index, matches]);
   if (!atlas) {
