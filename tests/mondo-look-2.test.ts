@@ -9,7 +9,7 @@ import { Mesh, SKIRT_M, terrainJob, type TileSpec } from '../src/open/tiles';
 import { WALL_COURSE, wallAlong } from '../src/open/streets';
 import { towerGeometry } from '../src/open/Lifts';
 import { peakSub } from '../src/open/labels';
-import { RILIEVO, sharpenRelief } from '../src/open/rilievo';
+import { RILIEVO, S2_RILIEVO, sharpenRelief } from '../src/open/rilievo';
 import { WorldGraph, type WorldGraphFile } from '../src/open/graph';
 import { WorldPath } from '../src/open/path';
 import { COVER, Terrain, type RideDef } from '../src/open/world';
@@ -344,7 +344,7 @@ describe('il rilievo delle pareti: il contrasto che il DEM a 25 m ha perso', () 
   it('un prato a 15° e una strada restano come sono', () => {
     const h = grid((i) => 2000 + i * step * Math.tan((15 * Math.PI) / 180));
     const before = h.slice();
-    expect(sharpenRelief(h, side, step, RILIEVO.sellaronda)).toBe(0);
+    expect(sharpenRelief(h, side, step, S2_RILIEVO)).toBe(0);
     expect([...h]).toEqual([...before]);
   });
   it('una torre sale, la forcella accanto scende, il bordo della mattonella non si muove', () => {
@@ -352,7 +352,7 @@ describe('il rilievo delle pareti: il contrasto che il DEM a 25 m ha perso', () 
     const cone = (i: number, j: number, ci: number, cj: number) => Math.max(0, 500 - Math.hypot(i - ci, j - cj) * step * Math.tan((60 * Math.PI) / 180));
     const h = grid((i, j) => 2200 + Math.max(cone(i, j, 16, 20), cone(i, j, 24, 20)));
     const before = h.slice();
-    sharpenRelief(h, side, step, RILIEVO.sellaronda);
+    sharpenRelief(h, side, step, S2_RILIEVO);
     const at = (i: number, j: number) => j * side + i;
     expect(h[at(16, 20)]).toBeGreaterThan(before[at(16, 20)] + 20);
     expect(h[at(20, 20)]).toBeLessThan(before[at(20, 20)]);
@@ -361,7 +361,8 @@ describe('il rilievo delle pareti: il contrasto che il DEM a 25 m ha perso', () 
       expect(h[at(0, i)]).toBe(before[at(0, i)]);
       expect(h[at(side - 1, i)]).toBe(before[at(side - 1, i)]);
     }
-    // Bergamo non si tocca
+    // Bergamo non si tocca, e il Sellaronda col LiDAR non ne ha più bisogno (pista S3)
     expect(RILIEVO.bergamo).toBeUndefined();
+    expect(RILIEVO.sellaronda).toBeUndefined();
   });
 });

@@ -14,6 +14,7 @@ import { EMPTY_PROGRESS, loadProgress, type WorldProgress } from '@/open/progres
 import { startTowns, townPoint } from '@/open/starts';
 import { loadWorld, Terrain, type RideDef, type WorldData } from '@/open/world';
 import { rememberWorld, worldInfo } from '@/open/worlds';
+import { worldInfo as worldTable } from '@/open/world-table';
 import type { Dove } from '@/ride/contract';
 import { useApp } from '@/store/useApp';
 import { cn } from '@/lib/cn';
@@ -357,7 +358,7 @@ export function DoveContenuto({ mondo, setWorld, strumento, setStrumento, filtro
             ) : null}
           </Gruppo>
         ) : null}
-        {data ? <p className="mt-6 text-xs leading-relaxed text-muted">{`© OpenStreetMap contributors (ODbL), dati del ${data.graph.builtAt} · Quote EU-DEM © Copernicus.`}</p> : null}
+        {data ? <p className="mt-6 text-xs leading-relaxed text-muted" data-testid="dove-fonti">{`© OpenStreetMap contributors (ODbL), dati del ${data.graph.builtAt} · ${worldTable(data.graph.id).quoteCredits}`}</p> : null}
       </div>
     </div>
   );

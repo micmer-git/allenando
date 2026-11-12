@@ -11,7 +11,9 @@ import { isWorld, WORLD_ID, type RideArea } from './world-table';
  * - rides.json     i percorsi scelti, con i luoghi da riconoscere lungo la strada
  * - features.json  fiumi, laghi, cime, paesi, mura, ferrovie, funivie, e (facoltativi, dal
  *                  03/11/2026) semafori, segnaletica orizzontale e luoghi da passare in bici
- * - dem/x_z.bin    terreno a 25 m in mattonelle da 2 km (quota in dm + uso del suolo)
+ * - dem/x_z.bin    terreno in mattonelle da 2 km (quota in dm + uso del suolo): a 25 m, e nei mondi
+ *                  col LiDAR delle province (il Sellaronda) a 12,5 m dove la montagna è ripida; il
+ *                  passo di ogni mattonella si legge dalla sua lunghezza ((n+1)² × 3 byte)
  * - b/x_z.json     edifici della mattonella
  * - far.bin        terreno lontano a 250 m, oltre i bordi del mondo pedalabile
  *
@@ -385,9 +387,15 @@ export interface DemTile {
   n: number;
 }
 
-/** Decodifica una mattonella: zlib di [Int16 dm in delta per riga][Uint8 uso del suolo]. */
+/**
+ * Decodifica una mattonella: zlib di [Int16 dm in delta per riga][Uint8 uso del suolo]. Il lato si
+ * legge dalla lunghezza: `n` è quello di partenza del mondo (25 m), una mattonella fine (12,5 m)
+ * ne ha il doppio.
+ */
 export function decodeDemTile(buf: Uint8Array, n: number, tx: number, tz: number): DemTile {
   const raw = unzlibSync(buf);
+  const guess = Math.round(Math.sqrt(raw.byteLength / 3));
+  if (guess * guess * 3 === raw.byteLength) n = guess - 1;
   const side = n + 1;
   const count = side * side;
   const view = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
@@ -485,9 +493,9 @@ export class Terrain {
             return null;
           }
           const tile = decodeDemTile(new Uint8Array(await res.arrayBuffer()), this.n, tx, tz);
-          // le pareti delle Dolomiti: il contrasto che il DEM a 25 m ha perso (rilievo.ts)
+          // il contrasto che un DEM a 25 m ha perso (rilievo.ts); i mondi col LiDAR non ne hanno bisogno
           const rv = RILIEVO[this.graph.id];
-          if (rv) sharpenRelief(tile.h, this.n + 1, this.graph.demStep, rv);
+          if (rv) sharpenRelief(tile.h, tile.n + 1, this.graph.tile / tile.n, rv);
           this.tiles.set(key, tile);
           return tile;
         })
@@ -568,16 +576,16 @@ export class Terrain {
     return h[k] * (1 - u) * (1 - v) + h[k + 1] * u * (1 - v) + h[k + f.nx] * (1 - u) * v + h[k + f.nx + 1] * u * v;
   }
 
-  /** Quota DEM a 25 m, bilineare; se la mattonella non c'è ancora, quella lontana. */
+  /** Quota del DEM (25 m, o 12,5 nelle mattonelle fini), bilineare; se la mattonella non c'è ancora, quella lontana. */
   height(x: number, z: number): number {
     const b = this.graph.bounds;
     const T = this.graph.tile;
-    const step = this.graph.demStep;
     const tx = Math.floor((x - b.x0) / T);
     const tz = Math.floor((z - b.z0) / T);
     const tile = this.tiles.get(`${tx}_${tz}`);
     if (!tile) return this.farHeight(x, z);
     const n = tile.n;
+    const step = T / n;
     const fx = Math.min(n - 0.0001, Math.max(0, (x - b.x0 - tx * T) / step));
     const fz = Math.min(n - 0.0001, Math.max(0, (z - b.z0 - tz * T) / step));
     const i = Math.floor(fx);
@@ -594,11 +602,11 @@ export class Terrain {
   cover(x: number, z: number): number {
     const b = this.graph.bounds;
     const T = this.graph.tile;
-    const step = this.graph.demStep;
     const tx = Math.floor((x - b.x0) / T);
     const tz = Math.floor((z - b.z0) / T);
     const tile = this.tiles.get(`${tx}_${tz}`);
     if (!tile) return COVER.open;
+    const step = T / tile.n;
     const i = Math.min(tile.n, Math.max(0, Math.round((x - b.x0 - tx * T) / step)));
     const j = Math.min(tile.n, Math.max(0, Math.round((z - b.z0 - tz * T) / step)));
     return tile.cover[j * (tile.n + 1) + i];

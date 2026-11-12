@@ -922,13 +922,17 @@ export interface BuildingMeshes {
 }
 
 /**
- * Le case ladine (Selva, Corvara, Arabba): intonaco chiaro, legno scuro, tetto a due falde poco
- * inclinato (14°, non 21°) con la gronda larga, in scandole o lamiera scura; gli hotel grandi
- * restano col tetto a falde fino a 4-5 piani. È l'archetipo del mondo (look.case), non globale.
+ * Le case ladine (Selva, Corvara, Arabba, Canazei): intonaco bianco o chiaro, tetto a due falde a
+ * 24° con la gronda larga 1,3 m, in scandole, lamiera scura o coppi bruno-rossi, il timpano di
+ * legno; gli hotel di 4-5 piani hanno il tetto a falde anche loro, e i balconi di legno in rilievo
+ * a ogni piano (km0-49680937, corvara-79922438, km30-59775148; prima erano scatole col tetto piano
+ * e i balconi solo dipinti). È l'archetipo del mondo (look.case), non globale.
  */
-const LADIN_WALLS = ['#efe8da', '#f1ece0', '#e9dfcc', '#e4d6bd', '#d8c3a0', '#f3efe6', '#c9a97e', '#e6dccb'];
-const LADIN_ROOFS = ['#5a5048', '#6b5b4b', '#4f4a46', '#7a6a58', '#5f5a55'];
-const LADIN_PITCH = Math.tan((14 * Math.PI) / 180);
+const LADIN_WALLS = ['#f4f1ea', '#f1ece0', '#ece4d4', '#e8dcc6', '#f6f4ef', '#efe6d6', '#e2d3b8', '#f2efe8'];
+const LADIN_ROOFS = ['#4f4842', '#5f5248', '#45413e', '#6e5a4a', '#7a4a38', '#86533f', '#565049'];
+const LADIN_WOOD = ['#a06a3a', '#8f5d33', '#b07848', '#966236'];
+const LADIN_PITCH = Math.tan((24 * Math.PI) / 180);
+const tmpW = new THREE.Color();
 
 export function* buildingsJob(field: WorldField, list: Building[], spec: TileSpec, ctx: LookCtx = lookContext(field.terrain?.graph?.id ?? 'bergamo')): Generator<void, BuildingMeshes, void> {
   const walls = new Tris();
@@ -967,8 +971,9 @@ export function* buildingsJob(field: WorldField, list: Building[], spec: TileSpe
     else wall.set(WALLS[Math.floor(seed * WALLS.length) % WALLS.length]);
     const roofSet = ladino && civil ? LADIN_ROOFS : (ROOFS[b.roof] ?? ROOFS[0]);
     roof.set(roofSet[Math.floor(seed * 7) % roofSet.length]).offsetHSL(0, 0, (hash2(cz, cx) - 0.5) * 0.06);
-    // il piano terra: più scuro; nelle case ladine è il legno dei balconi e della stalla
-    base.copy(wall).multiplyScalar(ladino && civil ? 0.62 : 0.84);
+    // il piano terra: più scuro (nelle case ladine appena: il basamento è intonaco come il resto)
+    base.copy(wall).multiplyScalar(ladino && civil ? 0.9 : 0.84);
+    const wood = ladino && civil ? tmpW.set(LADIN_WOOD[Math.floor(hash2(cz * 1.3, cx) * LADIN_WOOD.length) % LADIN_WOOD.length]) : null;
     // i tetti in coppi sono quasi tutti rossi: il grigio dei dati OSM resta ai tetti piani
     const pitchedRoof = ladino && civil ? roof : b.roof === 0 || b.kind === BUILDING_KIND.house ? roof : tmpC.set(ROOFS[0][Math.floor(seed * 4) % 4]);
     const { top, shape } = addBuilding(
@@ -976,7 +981,19 @@ export function* buildingsJob(field: WorldField, list: Building[], spec: TileSpe
       roofs,
       b,
       ground,
-      { wall, base, roof, tiles: pitchedRoof, blind: stone || b.kind === BUILDING_KIND.industrial, ribbon: b.kind === BUILDING_KIND.industrial ? RIBBON : undefined, pitch: ladino && civil ? LADIN_PITCH : undefined, eaves: ladino && civil ? 1.1 : undefined },
+      {
+        wall,
+        base,
+        roof,
+        tiles: pitchedRoof,
+        blind: stone || b.kind === BUILDING_KIND.industrial,
+        ribbon: b.kind === BUILDING_KIND.industrial ? RIBBON : undefined,
+        pitch: ladino && civil ? LADIN_PITCH : undefined,
+        eaves: ladino && civil ? 1.3 : undefined,
+        wide: ladino && civil ? true : undefined,
+        // i balconi in rilievo solo nelle mattonelle vicine: più in là sono meno di un pixel
+        alpine: wood ? { wood, balconies: spec.ring <= 2 } : undefined,
+      },
       plinth,
     );
     if (b.kind === BUILDING_KIND.tower && m <= 8 && shape === 'flat') {

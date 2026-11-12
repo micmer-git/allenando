@@ -21,10 +21,14 @@ export interface Rilievo {
   r: number;
 }
 
-/** Per mondo: solo le Dolomiti. Bergamo resta il DEM com'è. */
-export const RILIEVO: Record<string, Rilievo> = {
-  sellaronda: { k: 1.2, r: 3 },
-};
+/**
+ * Per mondo. Spento dal 11/11/2026 anche per il Sellaronda (pista S3): il terreno ora viene dal
+ * LiDAR delle province (12,5 m nelle mattonelle ripide) e le torri hanno le loro quote vere; il
+ * ritocco sopra il dato vero gonfiava le creste e scavava i canaloni. Resta per un mondo di
+ * montagna che avesse solo EU-DEM: S2_RILIEVO è il valore che usava il Sellaronda.
+ */
+export const S2_RILIEVO: Rilievo = { k: 1.2, r: 3 };
+export const RILIEVO: Record<string, Rilievo> = {};
 
 const smooth01 = (a: number, b: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));

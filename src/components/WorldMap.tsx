@@ -193,7 +193,7 @@ export function WorldMap({
           −
         </button>
       </div>
-      <p className="pointer-events-none absolute bottom-1 left-2 text-[10px] text-black/55">© OpenStreetMap · EU-DEM Copernicus</p>
+      <p className="pointer-events-none absolute bottom-1 left-2 text-[10px] text-black/55">{data.graph.id === 'sellaronda' ? '© OpenStreetMap · LiDAR Alto Adige, Trentino · EU-DEM Copernicus' : '© OpenStreetMap · EU-DEM Copernicus'}</p>
     </div>
   );
 }

@@ -37,9 +37,11 @@ function cell(x: number, z: number): { h: number; cover: number } | null {
   const tz = Math.floor((z - b.z0) / file.tile);
   const t = tiles.get(`${tx}_${tz}`);
   if (!t) return null;
-  const i = Math.min(n, Math.max(0, Math.round((x - b.x0 - tx * file.tile) / file.demStep)));
-  const j = Math.min(n, Math.max(0, Math.round((z - b.z0 - tz * file.tile) / file.demStep)));
-  const k = j * (n + 1) + i;
+  // il passo della mattonella: 25 m, o 12,5 dove il rilievo LiDAR è fine (pista S3)
+  const s = file.tile / t.n;
+  const i = Math.min(t.n, Math.max(0, Math.round((x - b.x0 - tx * file.tile) / s)));
+  const j = Math.min(t.n, Math.max(0, Math.round((z - b.z0 - tz * file.tile) / s)));
+  const k = j * (t.n + 1) + i;
   return { h: t.h[k], cover: t.cover[k] };
 }
 function heightAt(x: number, z: number): number {
@@ -48,13 +50,14 @@ function heightAt(x: number, z: number): number {
   const tz = Math.floor((z - b.z0) / file.tile);
   const t = tiles.get(`${tx}_${tz}`);
   if (!t) return NaN;
-  const fx = Math.min(n - 0.0001, Math.max(0, (x - b.x0 - tx * file.tile) / file.demStep));
-  const fz = Math.min(n - 0.0001, Math.max(0, (z - b.z0 - tz * file.tile) / file.demStep));
+  const s = file.tile / t.n;
+  const fx = Math.min(t.n - 0.0001, Math.max(0, (x - b.x0 - tx * file.tile) / s));
+  const fz = Math.min(t.n - 0.0001, Math.max(0, (z - b.z0 - tz * file.tile) / s));
   const i = Math.floor(fx);
   const j = Math.floor(fz);
   const u = fx - i;
   const v = fz - j;
-  const side = n + 1;
+  const side = t.n + 1;
   const k = j * side + i;
   return t.h[k] * (1 - u) * (1 - v) + t.h[k + 1] * u * (1 - v) + t.h[k + side] * (1 - u) * v + t.h[k + side + 1] * u * v;
 }
