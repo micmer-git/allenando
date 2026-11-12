@@ -1185,7 +1185,8 @@ function graphFileOf(list: BuiltEdge[]): WorldGraphFile {
 }
 
 const graphFile = graphFileOf(built);
-rmSync(OUT, { recursive: true, force: true });
+// Elimina solo le mattonelle generate qui: sopralluogo, ortofoto e arredi hanno un'altra pipeline.
+for (const owned of ['dem', 'b']) rmSync(join(OUT, owned), { recursive: true, force: true });
 mkdirSync(join(OUT, 'dem'), { recursive: true });
 mkdirSync(join(OUT, 'b'), { recursive: true });
 writeFileSync(join(OUT, 'graph.json'), JSON.stringify(graphFile));

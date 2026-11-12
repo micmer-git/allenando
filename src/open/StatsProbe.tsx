@@ -28,6 +28,7 @@ export interface TileCounts {
   /** alberi con le geometrie piene e con quelle povere */
   treesNear?: number;
   treesFar?: number;
+  orthoSheets?: number;
 }
 
 export interface OrobiaStats {

@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { fileURLToPath, URL } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
@@ -7,6 +7,7 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   base: '/allenando/',
+  server: { fs: { allow: [fileURLToPath(new URL('.', import.meta.url)), realpathSync(fileURLToPath(new URL('./node_modules', import.meta.url)))] } },
   define: {
     // il link «Confronto climbfinder» sotto un percorso va in onda solo se la tabella della pista M c'è (F.14)
     __PENDENZE_PRONTE__: JSON.stringify(existsSync(fileURLToPath(new URL('./docs/pendenze-2026-11.md', import.meta.url)))),
@@ -64,7 +65,7 @@ export default defineConfig({
             handler: 'CacheFirst',
             options: {
               cacheName: 'allenando-world-v1',
-              expiration: { maxEntries: 1500, maxAgeSeconds: 60 * 60 * 24 * 60 },
+              expiration: { maxEntries: 3000, maxAgeSeconds: 60 * 60 * 24 * 60 },
               cacheableResponse: { statuses: [0, 200] },
             },
           },

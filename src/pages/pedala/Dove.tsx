@@ -359,8 +359,8 @@ export function DoveContenuto({ mondo, setWorld, strumento, setStrumento, filtro
             ) : null}
           </Gruppo>
         ) : null}
-        {data && <Link to={'/confronto?world=' + encodeURIComponent(data.graph.id)} className="mt-4 inline-flex min-h-11 items-center text-sm font-semibold text-accent">Esplora il percorso ogni 100 m ↗</Link>}
-        {data ? <p className="mt-6 text-xs leading-relaxed text-muted" data-testid="dove-fonti">{`© OpenStreetMap contributors (ODbL), dati del ${data.graph.builtAt} · ${worldTable(data.graph.id).quoteCredits} · Colori del terreno: ESA WorldCover, dati Copernicus Sentinel-2 modificati (2021), CC BY 4.0.`}</p> : null}
+        {data && <Link to={'/confronto?world=' + encodeURIComponent(data.graph.id) + '&ride=' + encodeURIComponent(data.rides.find(r => r.id === (evidenza ?? scelto))?.id ?? (data.graph.id === 'bergamo' ? 'ganda' : 'sellaronda'))} className="mt-4 inline-flex min-h-11 items-center text-sm font-semibold text-accent">Esplora il percorso ogni 100 m ↗</Link>}
+        {data ? <p className="mt-6 text-xs leading-relaxed text-muted" data-testid="dove-fonti">{`© OpenStreetMap contributors (ODbL), dati del ${data.graph.builtAt} · ${worldTable(data.graph.id).quoteCredits} · Colori del terreno: ortofoto © AGEA (voli 2023–2024) e ESA WorldCover, dati Copernicus Sentinel-2 modificati (2021), CC BY 4.0.`}</p> : null}
       </div>
     </div>
   );

@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { headingToBearing, streetViewUrl } from '@/domain/routes';
 import { createWorldField } from '@/open/field';
 import { NpcCrowd } from '@/open/npc';
 import { WorldPath } from '@/open/path';
 import { loadWorld, Terrain, WORLDS, type RideDef, type WorldData } from '@/open/world';
+import { FORWARD, sightLine, surveyStops, type SurveyAngles } from '@/open/sopralluogo';
+import { SurveyViewport } from './SurveyViewport';
 import { WorldScene } from '@/open/WorldScene';
 
 const none = () => null;
@@ -35,7 +37,7 @@ export default function Confronto() {
       </select>}
     </header>
     {current && ride ? <Survey key={world.id} data={current} ride={ride} station={Number(params.get('punto'))}
-      select={n => set({world:world.id,ride:ride.id,punto:String(n)}, {replace:true})} /> :
+      select={n => { const q=new URLSearchParams(params); q.set('world',world.id); q.set('ride',ride.id); q.set('punto',String(n)); set(q,{replace:true}); }} /> :
       <p role="status" className="p-4">{error ? 'Il mondo non è disponibile. Riprova con la rete attiva.' : 'Carico il percorso…'}</p>}
   </main>;
 }
@@ -54,20 +56,28 @@ function Survey({data, ride, station, select}: {data: WorldData; ride: RideDef; 
   const index = Number.isFinite(station) ? Math.min(max, Math.max(0, Math.round(station))) : 0;
   const distance = Math.min(path.length, index * 100);
   const pose = path.poseAt(distance), geo = data.toGeo(pose.x, pose.z);
-  const url = streetViewUrl(geo, headingToBearing(pose.heading));
+  const orientation = useRef<SurveyAngles>(FORWARD);
+  const [angles,setAngles] = useState<SurveyAngles>(FORWARD);
+  const direction = sightLine(pose,angles);
+  const url = streetViewUrl(geo,headingToBearing(direction.heading),direction.pitch * 180 / Math.PI);
+  const stops = useMemo(() => surveyStops(ride,data),[ride,data]);
+  const stop = stops.find(s => s.station === index);
+  const changed = () => setAngles({...orientation.current});
+  const reset = () => { orientation.current=FORWARD; changed(); };
   const [ready, setReady] = useState(false);
   return <>
     <div className="relative h-[56dvh] min-h-64 flex-1" style={{flexBasis:'56dvh'}}>
-      <div className="absolute inset-0">
-        <WorldScene preview data={data} terrain={terrain} field={field} path={path} quality="medium"
+      <SurveyViewport orientation={orientation} changed={changed}>
+        <WorldScene preview={() => orientation.current} data={data} terrain={terrain} field={field} path={path} quality="medium"
           engine={{distance, speed:0, cadence:0, power:0}} crowd={crowd} remote={[]} nextTurn={none}
           playerPose={() => pose} onReady={() => setReady(true)} weather={null} daytime="mezzogiorno" ride={null} />
-      </div>
+      </SurveyViewport>
+      {(angles.yaw !== 0 || angles.pitch !== 0) && <button className="absolute right-3 top-3 min-h-11 rounded-xl bg-black/75 px-3 text-sm text-white" onClick={reset}>Guarda la strada</button>}
       {!ready && <span className="pointer-events-none absolute left-4 top-4 rounded bg-black/70 px-2 py-1 text-sm text-white" role="status">Carico il paesaggio…</span>}
     </div>
     <div className="mx-auto grid w-full max-w-4xl gap-2 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <strong className="num">{(distance/1000).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})} km · {Math.round(pose.y)} m s.l.m.</strong>
+        <strong className="num">{stop && stop.name + ' · '}{(distance/1000).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})} km · {Math.round(pose.y)} m s.l.m.</strong>
         <a className="inline-flex min-h-11 items-center font-semibold text-accent" href={url} target="_blank" rel="noreferrer">Apri Street View ↗</a>
       </div>
       <div className="flex items-center gap-3">
@@ -75,7 +85,16 @@ function Survey({data, ride, station, select}: {data: WorldData; ride: RideDef; 
         <input className="min-w-0 flex-1 accent-yellow-400" aria-label="Punto sul percorso" type="range" min={0} max={max} value={index} onChange={e => select(Number(e.target.value))} />
         <button className={control+' shrink-0 disabled:opacity-40'} disabled={index===max} onClick={() => select(index+1)}>+100 m</button>
       </div>
-      <p className="text-xs text-muted">Street View apre il panorama disponibile più vicino. Terreno: ESA WorldCover / Copernicus Sentinel-2 (2021), colori rielaborati · <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Strade e arredi: © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>.</p>
+      {stops.length > 0 && <label className="flex flex-wrap items-center gap-2 text-sm text-muted">
+        Vai a un luogo
+        <select className={control} aria-label="Luogo lungo il percorso" value={stop?.id ?? ''} onChange={e=>{
+          const selected=stops.find(s=>s.id===e.target.value); if(selected) { reset(); select(selected.station); }
+        }}>
+          <option value="">Scegli lungo la strada…</option>
+          {stops.map(s=><option key={s.id} value={s.id}>{s.name} · {(s.station/10).toLocaleString('it-IT')} km</option>)}
+        </select>
+      </label>}
+      <p className="text-xs text-muted">Street View apre il panorama disponibile più vicino. Terreno: ortofoto © AGEA (voli 2023–2024) e ESA WorldCover / Copernicus Sentinel-2 (2021), colori rielaborati · <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Strade e arredi: © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>.</p>
     </div>
   </>;
 }

@@ -85,11 +85,13 @@ export function Monumenti({ playerPose, world }: { world: string; playerPose: ()
       }
       if (!e.lo && budget > 0) {
         e.lo = new THREE.Mesh(monumentoGeometry(m, 'bassa'), material);
+        e.lo.castShadow = e.lo.receiveShadow = true;
         e.obj.add(e.lo);
         budget--;
       }
       if (d < LOD_NEAR + 120 && !e.hi && budget > 0) {
         e.hi = new THREE.Mesh(monumentoGeometry(m, 'alta'), material);
+        e.hi.castShadow = e.hi.receiveShadow = true;
         e.obj.add(e.hi);
         budget--;
       } else if (d > KEEP_HI && e.hi) {

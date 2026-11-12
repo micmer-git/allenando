@@ -7,6 +7,9 @@ import type { Quality } from '@/domain/types';
 import type { RideEngine } from '@/sim/engine';
 import { asphaltTexture, smoothNoise } from '@/world/builders';
 import { groundLook, LARCH_PALETTE, lookContext, lookFor, type LookCtx, type WorldLook } from './look';
+import { sightLine, type SurveyAngles } from './sopralluogo';
+import { localShadow, makeSkyDome } from './luceStrada';
+import { OrthoWindow } from './ortofoto';
 import { landscapeUniforms, patchLandscape } from './paesaggio';
 import { patchRockShader } from './rockShader';
 import { Lifts } from './Lifts';
@@ -95,7 +98,7 @@ export interface RemoteWorldRider {
 
 export interface WorldSceneProps {
   engine: Pick<RideEngine, 'distance' | 'speed' | 'power' | 'cadence'>;
-  preview?: boolean;
+  preview?: () => SurveyAngles;
   data: WorldData;
   path: WorldPath;
   field: WorldField;
@@ -153,6 +156,7 @@ export function WorldScene(props: WorldSceneProps) {
   return (
     <Canvas
       dpr={q.dpr}
+      shadows={props.quality !== 'low' && !props.data.leggero ? 'percentage' : false}
       gl={{ antialias: props.quality !== 'low', alpha: false, stencil: false, powerPreference: 'high-performance' }}
       camera={{ fov: 55, near: 0.3, far: q.far + 2000, position: [0, 4, -10] }}
       onCreated={({ gl }) => {
@@ -249,7 +253,19 @@ function WorldContent(props: WorldSceneProps & { counts: TileCounts; status: Loa
   useEffect(() => () => midMask?.uMid.value.dispose(), [midMask]);
   // il terreno che entra nelle gallerie vicine non si disegna (tunnels.ts)
   const cut = useMemo(() => createTunnelCut(), []);
-  const mats = useMaterials(farMask, cut, ctx.look, midMask, data.graph, !data.leggero);
+  const landscape = useMemo(() => landscapeUniforms(data.graph.far), [data.graph]);
+  const ortho = useRef<OrthoWindow | null>(null);
+  useEffect(() => {
+    if (data.leggero || typeof createImageBitmap !== 'function') return;
+    const active = new OrthoWindow(worldBase(data.graph.id) + 'ortofoto-v1/', quality === 'low' ? 256 : 512, landscape);
+    ortho.current = active;
+    return () => { active.dispose(); ortho.current = null; };
+  }, [data.graph, data.leggero, quality, landscape]);
+  useFrame(() => {
+    const p = props.playerPose();
+    ortho.current?.tick(p.x,p.z,performance.now());
+  });
+  const mats = useMaterials(farMask, cut, ctx.look, midMask, data.graph, !data.leggero, landscape);
   const names = useMemo(() => new Set<THREE.Sprite>(), []);
   const { counts } = props;
   // le case e i monumenti intorno al ciclista: coprono i nomi (WorldLabels)
@@ -257,8 +273,8 @@ function WorldContent(props: WorldSceneProps & { counts: TileCounts; status: Loa
   const stats = useMemo(() => statsWanted(), []);
   return (
     <group>
-      {stats ? <StatsProbe tiles={() => ({ ...counts, treesNear: treeCount.near, treesFar: treeCount.far })} /> : null}
-      <Atmosphere weather={props.weather} daytime={props.daytime} data={data} far={q.far} mats={mats} />
+      {stats ? <StatsProbe tiles={() => ({ ...counts, orthoSheets: ortho.current?.sheets ?? 0, treesNear: treeCount.near, treesFar: treeCount.far })} /> : null}
+      <Atmosphere weather={props.weather} daytime={props.daytime} data={data} far={q.far} mats={mats} counts={counts} quality={quality} />
       {props.weather && props.weather.rain >= 0.1 ? <Rain mmh={props.weather.rain} weather={props.weather} /> : null}
       <FarTerrain terrain={terrain} stride={q.farStride} material={mats.far} ctx={ctx} />
       {midMask ? <MidTerrain terrain={terrain} material={mats.mid} ctx={ctx} mask={midMask} range={q.mid} nearCover={(q.ring - 0.5) * q.tile} playerPose={props.playerPose} status={props.status} /> : null}
@@ -291,8 +307,7 @@ function WorldContent(props: WorldSceneProps & { counts: TileCounts; status: Loa
 
 // ---------- materiali condivisi ----------
 
-function useMaterials(mask: FarMask, cut: TunnelCut, look: WorldLook, midMask: MidMask | null, graph: WorldData['graph'], detailed: boolean) {
-  const satellite = useMemo(() => landscapeUniforms(graph.far), [graph]);
+function useMaterials(mask: FarMask, cut: TunnelCut, look: WorldLook, midMask: MidMask | null, graph: WorldData['graph'], detailed: boolean, satellite: ReturnType<typeof landscapeUniforms>) {
   useEffect(() => {
     if (!detailed) return;
     let active = true;
@@ -482,29 +497,31 @@ function settTexture(): THREE.CanvasTexture {
  * Il cielo di Bergamo adesso (o all'ora scelta): sole nella posizione vera, colori del cielo e della
  * luce, foschia che si chiude con le nuvole e la pioggia, strade bagnate. Si ricalcola ogni 30 s.
  */
-function Atmosphere({ weather, daytime, data, far, mats }: { weather: WeatherNow | null; daytime: Daytime; data: WorldData; far: number; mats: Mats }) {
+function Atmosphere({ weather, daytime, data, far, mats, counts, quality }: { weather: WeatherNow | null; daytime: Daytime; data: WorldData; far: number; mats: Mats; counts: TileCounts; quality: Quality }) {
   const { scene, gl, camera } = useThree();
   const hemi = useRef<THREE.HemisphereLight>(null);
   const sun = useRef<THREE.DirectionalLight>(null);
   const dome = useRef<THREE.Mesh>(null);
   const clouds = useRef<THREE.Mesh>(null);
   const clock = useRef(0);
-  const geo = useMemo(() => {
-    const g = new THREE.SphereGeometry(1000, 40, 24);
-    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 3), 3));
-    return g;
-  }, []);
+  const geo = useMemo(() => new THREE.SphereGeometry(1000, 32, 16), []);
+  const sky = useMemo(makeSkyDome, []);
+  const direction = useMemo(() => new THREE.Vector3(), []);
+  const updateShadow = useMemo(localShadow, []);
+  const shaded = quality !== 'low' && !data.leggero;
+  const extent = quality === 'high' ? 105 : 76;
   const cloudGeo = useMemo(() => new THREE.SphereGeometry(940, 48, 16, 0, Math.PI * 2, 0, Math.PI * 0.47), []);
   const cloudTex = useMemo(() => cloudTexture(), []);
   const cloudMat = useMemo(() => new THREE.MeshBasicMaterial({ map: cloudTex, transparent: true, depthWrite: false, fog: false, side: THREE.BackSide, opacity: 0 }), [cloudTex]);
   useEffect(
     () => () => {
       geo.dispose();
+      sky.dispose();
       cloudGeo.dispose();
       cloudTex.dispose();
       cloudMat.dispose();
     },
-    [geo, cloudGeo, cloudTex, cloudMat],
+    [geo, sky, cloudGeo, cloudTex, cloudMat],
   );
   const appliedAlt = useRef(0);
   const apply = () => {
@@ -514,20 +531,14 @@ function Atmosphere({ weather, daytime, data, far, mats }: { weather: WeatherNow
     appliedAlt.current = camera.position.y;
     const a = atmosphere(s, look, camera.position.y);
     const dir = sunVector(s);
-    const pos = geo.attributes.position as THREE.BufferAttribute;
-    const col = geo.attributes.color as THREE.BufferAttribute;
-    const c = new THREE.Color();
-    const v = new THREE.Vector3();
-    for (let i = 0; i < pos.count; i++) {
-      const y = pos.getY(i) / 1000;
-      if (y > 0.08) c.copy(a.mid).lerp(a.zenith, Math.min(1, (y - 0.08) / 0.7));
-      else c.copy(a.horizon).lerp(a.mid, Math.max(0, (y + 0.1) / 0.18));
-      v.set(pos.getX(i), pos.getY(i), pos.getZ(i)).normalize();
-      const k = Math.max(0, v.dot(dir));
-      c.lerp(a.glow, Math.pow(k, 24) * 0.85 + Math.pow(k, 4) * 0.16);
-      col.setXYZ(i, c.r, c.g, c.b);
-    }
-    col.needsUpdate = true;
+    const u = sky.uniforms;
+    u.skyHorizon.value.copy(a.horizon);
+    u.skyMid.value.copy(a.mid);
+    u.skyZenith.value.copy(a.zenith);
+    u.skyGlow.value.copy(a.glow);
+    u.solarDirection.value.copy(dir);
+    u.solarVisibility.value = Math.max(0, Math.min(1, (dir.y+0.03)*18)) * (1-look.cloud*0.9);
+    direction.copy(dir);
     if (scene.background instanceof THREE.Color) scene.background.copy(a.horizon);
     if (scene.fog instanceof THREE.Fog) {
       scene.fog.color.copy(a.horizon);
@@ -535,7 +546,9 @@ function Atmosphere({ weather, daytime, data, far, mats }: { weather: WeatherNow
       scene.fog.far = far * 0.92 * a.fogFar;
     }
     if (sun.current) {
-      sun.current.position.copy(dir).multiplyScalar(1000);
+      if (shaded) updateShadow(sun.current,camera.position,dir,counts.ready*4096+counts.detail,performance.now(),true);
+      else sun.current.position.copy(dir).multiplyScalar(200);
+      sun.current.shadow.intensity = 0.78 * Math.max(0, Math.min(1,dir.y*10)) * (1-look.cloud*0.87);
       sun.current.color.copy(a.sunColor);
       sun.current.intensity = a.sunIntensity;
     }
@@ -561,6 +574,7 @@ function Atmosphere({ weather, daytime, data, far, mats }: { weather: WeatherNow
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weather, daytime]);
   useFrame((_, dt) => {
+    if (shaded && sun.current) updateShadow(sun.current,camera.position,direction,counts.ready*4096+counts.detail,performance.now());
     if (dome.current) dome.current.position.copy(camera.position);
     if (clouds.current) {
       clouds.current.position.copy(camera.position);
@@ -578,10 +592,12 @@ function Atmosphere({ weather, daytime, data, far, mats }: { weather: WeatherNow
   return (
     <>
       <hemisphereLight ref={hemi} args={['#e6f0fb', '#4f5a3c', 0.62]} />
-      <directionalLight ref={sun} position={[-700, 760, 520]} intensity={1.85} color="#fff0d6" />
-      <mesh ref={dome} geometry={geo} frustumCulled={false} renderOrder={-100}>
-        <meshBasicMaterial vertexColors side={THREE.BackSide} depthWrite={false} fog={false} />
-      </mesh>
+      <directionalLight ref={sun} position={[-700, 760, 520]} intensity={1.85} color="#fff0d6"
+        castShadow={shaded} shadow-autoUpdate={false} shadow-mapSize-width={quality === 'high' ? 1024 : 512}
+        shadow-mapSize-height={quality === 'high' ? 1024 : 512} shadow-camera-left={-extent} shadow-camera-right={extent}
+        shadow-camera-top={extent} shadow-camera-bottom={-extent} shadow-camera-near={5} shadow-camera-far={410}
+        shadow-normalBias={0.17} shadow-bias={-0.00018} />
+      <mesh ref={dome} geometry={geo} material={sky} frustumCulled={false} renderOrder={-100} />
       <mesh ref={clouds} geometry={cloudGeo} material={cloudMat} frustumCulled={false} renderOrder={-99} />
     </>
   );
@@ -952,7 +968,11 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
     const rails = railsGeometry(field, data.features, spec);
     const g = new THREE.Group();
     const add = (geo: THREE.BufferGeometry | null, mat: THREE.Material) => {
-      if (geo) g.add(new THREE.Mesh(geo, mat));
+      if (!geo) return;
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.castShadow = mat === mats.buildings || mat === mats.roofs;
+      mesh.receiveShadow = mat !== mats.tunnel && mat !== mats.tunnelRoad && mat !== mats.water;
+      g.add(mesh);
     };
     add(terrainGeo, mats.terrain);
     add(roads.asphalt, mats.asphalt);
@@ -1507,6 +1527,7 @@ function Forest({ handle, mats, larch }: { handle: React.MutableRefObject<Forest
           const items = by.get(key) ?? [];
           if (items.length === 0) return;
           const m = new THREE.InstancedMesh(geo, mat, items.length);
+          m.castShadow = key.endsWith(':n') || key === 'trunk';
           const rock = key.startsWith('rock');
           const cone = key === 'conifer:f';
           items.forEach((it, i) => {
@@ -1937,8 +1958,9 @@ function WorldCam({ engine, path, field, playerPose, preview }: WorldSceneProps)
   const place = (dt: number) => {
     const pose = playerPose();
     if (preview) {
+      const {heading: h, pitch} = sightLine(pose,preview());
       camera.position.set(pose.x, pose.y + 1.65, pose.z);
-      camera.lookAt(pose.x + 20 * Math.sin(pose.heading), pose.y + 1.65 + 20 * pose.grade, pose.z + 20 * Math.cos(pose.heading));
+      camera.lookAt(pose.x + 20 * Math.sin(h), pose.y + 1.65 + 20 * Math.tan(pitch), pose.z + 20 * Math.cos(h));
       return;
     }
     if (heading.current == null) heading.current = pose.heading;
