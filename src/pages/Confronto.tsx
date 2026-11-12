@@ -5,7 +5,9 @@ import { createWorldField } from '@/open/field';
 import { NpcCrowd } from '@/open/npc';
 import { WorldPath } from '@/open/path';
 import { loadWorld, Terrain, WORLDS, type RideDef, type WorldData } from '@/open/world';
-import { FORWARD, sightLine, surveyStops, type SurveyAngles } from '@/open/sopralluogo';
+import { FORWARD, sightLine, wrapYaw, type SurveyAngles } from '@/open/sopralluogo';
+import { FotoSopralluogo } from '@/components/FotoSopralluogo';
+import { luoghiPercorso, type SurveyStop } from '@/open/luoghiPercorso';
 import { SurveyViewport } from './SurveyViewport';
 import { WorldScene } from '@/open/WorldScene';
 
@@ -60,8 +62,18 @@ function Survey({data, ride, station, select}: {data: WorldData; ride: RideDef; 
   const [angles,setAngles] = useState<SurveyAngles>(FORWARD);
   const direction = sightLine(pose,angles);
   const url = streetViewUrl(geo,headingToBearing(direction.heading),direction.pitch * 180 / Math.PI);
-  const stops = useMemo(() => surveyStops(ride,data),[ride,data]);
-  const stop = stops.find(s => s.station === index);
+  const stops = useMemo(() => luoghiPercorso(data,ride,path),[ride,data,path]);
+  const [selectedId,setSelectedId] = useState('');
+  const here = stops.filter(s=>s.station===index);
+  const stop = here.find(s=>s.id===selectedId) ?? here.find(s=>s.kind==='Arte lungo la strada') ?? here[0];
+  const groups:SurveyStop['kind'][]=['Arte lungo la strada','Luoghi','Tornanti dei campioni'];
+  const visit = (s:SurveyStop) => {
+    const p=path.poseAt(s.station*100);
+    const dir=s.target && Math.hypot(s.target.x-p.x,s.target.z-p.z)>1
+      ? Math.atan2(s.target.x-p.x,s.target.z-p.z) : p.heading;
+    orientation.current = {yaw:wrapYaw((p.heading-dir)*180/Math.PI),pitch:0};
+    setAngles({...orientation.current}); setSelectedId(s.id); select(s.station);
+  };
   const changed = () => setAngles({...orientation.current});
   const reset = () => { orientation.current=FORWARD; changed(); };
   const [ready, setReady] = useState(false);
@@ -88,13 +100,15 @@ function Survey({data, ride, station, select}: {data: WorldData; ride: RideDef; 
       {stops.length > 0 && <label className="flex flex-wrap items-center gap-2 text-sm text-muted">
         Vai a un luogo
         <select className={control} aria-label="Luogo lungo il percorso" value={stop?.id ?? ''} onChange={e=>{
-          const selected=stops.find(s=>s.id===e.target.value); if(selected) { reset(); select(selected.station); }
+          const selected=stops.find(s=>s.id===e.target.value); if(selected) visit(selected);
         }}>
           <option value="">Scegli lungo la strada…</option>
-          {stops.map(s=><option key={s.id} value={s.id}>{s.name} · {(s.station/10).toLocaleString('it-IT')} km</option>)}
+          {groups.map(group=>stops.some(s=>s.kind===group) && <optgroup key={group} label={group}>{stops.filter(s=>s.kind===group).map(s=><option key={s.id} value={s.id}>{s.name} · {(s.station/10).toLocaleString('it-IT')} km</option>)}</optgroup>)}
         </select>
       </label>}
-      <p className="text-xs text-muted">Street View apre il panorama disponibile più vicino. Terreno: ortofoto © AGEA (voli 2023–2024) e ESA WorldCover / Copernicus Sentinel-2 (2021), colori rielaborati · <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Strade e arredi: © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>.</p>
+      {stop?.note && <p className="text-sm">{stop.note} {stop.source && <a className="font-semibold text-accent underline" href={stop.source} target="_blank" rel="noreferrer">Vedi l’originale ↗</a>}</p>}
+      <FotoSopralluogo data={data} path={path} distance={distance} selectStation={select} />
+      <p className="text-xs text-muted">Street View apre il panorama disponibile più vicino. Terreno: ortofoto © AGEA (voli 2023–2024) e ESA WorldCover / Copernicus Sentinel-2 (2021), colori rielaborati · <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Targhe di Selvino: foto © Amadvance, ritaglio e prospettiva · <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a>. Strade e arredi: © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>.</p>
     </div>
   </>;
 }
