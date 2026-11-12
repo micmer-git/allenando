@@ -135,7 +135,9 @@ try {
       await p.evaluate(`(() => { history.pushState({}, '', ${JSON.stringify(basePath + path)}); dispatchEvent(new PopStateEvent('popstate')); })()`);
       await sleep(600);
     };
-    const ergNear = `(() => { const m = /Fra ([0-9]+) m/.exec(document.querySelector('[data-testid=erg-ahead]')?.textContent ?? ''); return !!m && +m[1] <= 38; })()`;
+    // l'arco si ferma a 50 m e aspetta la ruota: ≤ 60 m vuol dire che l'HUD conta i metri all'arco
+    // fermo. Con ≤ 38 la finestra a 4× era di un secondo, e sotto carico la lettura la perdeva
+    const ergNear = `(() => { const m = /Fra ([0-9]+) m/.exec(document.querySelector('[data-testid=erg-ahead]')?.textContent ?? ''); return !!m && +m[1] <= 60; })()`;
     const ready = (ms = 180000) => p.waitFor(`document.querySelector('[data-testid=world-ready]')?.dataset.ready === 'yes'`, ms);
     const arches = async () =>
       (await p.evaluate(`document.querySelector('[data-testid=ride-arches]')?.dataset.list ?? ''`))
@@ -306,10 +308,10 @@ try {
     check(await p.waitFor(`!!document.querySelector('[data-testid=session-grid]')`, 120000), 'sessione: griglia col conto alla rovescia');
     await sleep(2500);
     await p.shot('g10-sessione-griglia');
-    // fine giro: il riepilogo coi premi
+    // fine giro: il riepilogo. Qui si corre in prova (piano U, A11): «Prova», niente oro né traguardi
     // «Termina» si tiene premuto (pista 2): col dito, 1,1 s
     await holdFinish(p);
-    check(await p.waitFor(`!!document.querySelector('[data-testid=rewards]')`, 15000), 'fine: riepilogo con oro e traguardi');
+    check(await p.waitFor(`!!document.querySelector('[data-testid=summary-prova]')`, 15000) && !(await p.evaluate(`!!document.querySelector('[data-testid=rewards]')`)), 'fine: riepilogo di prova, niente oro né traguardi');
     await sleep(800);
     await p.shot('g11-premi', true);
   }
