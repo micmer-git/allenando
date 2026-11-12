@@ -33,17 +33,17 @@ export function CartelliSelvino({data,field,playerPose}:{data:WorldData;field:Wo
     if(!near || !texture || !terrainVersion) return null;
     const panels: THREE.BufferGeometry[] = [], posts: THREE.BufferGeometry[] = [];
     catalogue.forEach(s=>{
-      const y=field.terrain.has(...field.terrain.tileOf(s.x,s.z)) ? field.height(s.x,s.z,4) : s.y;
+      const y=field.terrain.has(...field.terrain.tileOf(s.x,s.z)) ? Math.max(s.y-0.1,field.height(s.x,s.z,4)) : s.y;
       const plate=new THREE.PlaneGeometry(0.8,1.12);
       const uv=plate.getAttribute('uv');
       const i=s.n-1;
       for(let v=0;v<uv.count;v++) uv.setXY(v,(i%5 + 0.008 + 0.984*uv.getX(v))/5,(3-Math.floor(i/5)+0.008+0.984*uv.getY(v))/4);
-      plate.rotateY(s.heading+Math.PI);
+      plate.rotateY(s.facing+Math.PI);
       plate.translate(s.x,y+1.92,s.z);
       panels.push(plate);
       const back=new THREE.BoxGeometry(0.8,1.12,0.045);
-      back.rotateY(s.heading);
-      back.translate(s.x+Math.sin(s.heading)*0.03,y+1.92,s.z+Math.cos(s.heading)*0.03);
+      back.rotateY(s.facing);
+      back.translate(s.x+Math.sin(s.facing)*0.03,y+1.92,s.z+Math.cos(s.facing)*0.03);
       posts.push(back);
       const post=new THREE.CylinderGeometry(0.035,0.035,2.05,7);
       post.translate(s.x,y+1.0,s.z);

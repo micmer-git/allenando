@@ -929,7 +929,6 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
     if (Array.isArray(have)) return have;
     if (!have) {
       const p = loadBuildings(data.graph, dx0, dz0).then((list) => {
-        list = fitRoncalliRoof(data.graph.id, dx0, dz0, list);
         buildings.current.set(key, list);
         return list;
       });
@@ -966,7 +965,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
     for (;;) {
       const list = buildingsFor(spec);
       if (list) {
-        bGeo = yield* buildingsJob(field, list, spec, ctx);
+        bGeo = yield* buildingsJob(field, fitRoncalliRoof(data.graph.id, field, spec, list), spec, ctx);
         break;
       }
       yield;

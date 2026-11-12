@@ -78,14 +78,14 @@ export function addRoncalliFacade(group: THREE.Group, world: string, field: Worl
   if (world !== 'bergamo' || !containsPalazzoTile(spec)) return;
   const geo = roncalliGeometry(field, spec, buildings);
   if (!geo) return;
-  const mat = new THREE.MeshLambertMaterial({polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2});
+  const mat = new THREE.MeshLambertMaterial({emissive:0xffffff, emissiveIntensity:0.25, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2});
   mat.visible = false;
   let active = true;
   const map = new THREE.TextureLoader().load(worldBase(world) + 'foto/roncalli-facciata.webp', texture => {
     if (!active) return;
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.anisotropy = 4;
-    mat.map = texture;
+    mat.map = mat.emissiveMap = texture;
     mat.needsUpdate = true;
     mat.visible = true;
   }, undefined, () => { /* the building material remains visible */ });

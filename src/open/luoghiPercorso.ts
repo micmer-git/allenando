@@ -6,7 +6,7 @@ import { surveyStops } from './sopralluogo';
 
 export interface SurveyStop {
   id:string; name:string; station:number; kind:'Luoghi'|'Arte lungo la strada'|'Tornanti dei campioni';
-  note?:string; source?:string; target?:{x:number;z:number}; viewAt?:number;
+  note?:string; source?:string; target?:{x:number;z:number}; viewAt?:number; heightOffset?:number; plate?:number;
 }
 function along(path:WorldPath, target:{x:number;z:number}, reach:number) {
   let distance: number | undefined;
@@ -36,12 +36,12 @@ export function luoghiPercorso(data:WorldData, ride:RideDef, path:WorldPath): Su
     const at=leg.from+(s.s-leg.s0)*leg.dir;
     const approaching=Math.cos(path.poseAt(at).heading-s.heading)>=0;
     const viewAt=Math.max(0,Math.min(path.length,at+(approaching?-8:8)));
-    stops.push({viewAt,id:'cartello-'+s.n,name:'Tornante '+s.n+' · '+s.name,station:Math.round(at/100),kind:'Tornanti dei campioni',
+    stops.push({viewAt,heightOffset:0.30,plate:s.n,id:'cartello-'+s.n,name:'Tornante '+s.n+' · '+s.name,station:Math.round(at/100),kind:'Tornanti dei campioni',
       note:'Targa della Nembro–Selvino a '+s.alt+' m s.l.m. Fotografia di Amadvance, CC BY-SA 4.0, ritagliata e raddrizzata.',source:commonsFile(s.image),target:s});
   }
   for(const a of arteStrada(data)) {
     const at=along(path,a,a.id==='palazzo-roncalli'?65:35);
-    if(at!==undefined) stops.push({viewAt:at,id:a.id,name:a.name,station:Math.round(at/100),kind:'Arte lungo la strada',note:a.note,source:a.source,target:a});
+    if(at!==undefined) stops.push({viewAt:at,heightOffset:a.id==='palazzo-roncalli'?6:undefined,id:a.id,name:a.name,station:Math.round(at/100),kind:'Arte lungo la strada',note:a.note,source:a.source,target:a});
   }
   return stops.sort((a,b)=>a.station-b.station);
 }

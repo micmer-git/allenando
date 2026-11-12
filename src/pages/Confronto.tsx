@@ -4,7 +4,7 @@ import { headingToBearing, streetViewUrl } from '@/domain/routes';
 import { createWorldField } from '@/open/field';
 import { NpcCrowd } from '@/open/npc';
 import { WorldPath } from '@/open/path';
-import { loadWorld, Terrain, WORLDS, type RideDef, type WorldData } from '@/open/world';
+import { loadWorld, Terrain, worldBase, WORLDS, type RideDef, type WorldData } from '@/open/world';
 import { FORWARD, sightLine, wrapYaw, type SurveyAngles } from '@/open/sopralluogo';
 import { FotoSopralluogo } from '@/components/FotoSopralluogo';
 import { luoghiPercorso, type SurveyStop } from '@/open/luoghiPercorso';
@@ -74,7 +74,10 @@ function Survey({data, ride, place, station, select}: {data: WorldData; ride: Ri
     const target=landmark.target;
     const dir=target && Math.hypot(target.x-p.x,target.z-p.z)>1
       ? Math.atan2(target.x-p.x,target.z-p.z) : p.heading;
-    orientation.current = {yaw:wrapYaw((p.heading-dir)*180/Math.PI),pitch:0};
+    const range=target?Math.hypot(target.x-p.x,target.z-p.z):0;
+    const pitch=landmark.heightOffset!=null && range>1
+      ? (Math.atan2(landmark.heightOffset,range)-Math.atan(p.grade))*180/Math.PI : 0;
+    orientation.current = {yaw:wrapYaw((p.heading-dir)*180/Math.PI),pitch};
     setAngles({...orientation.current});
   },[path,landmark]);
   const changed = () => setAngles({...orientation.current});
@@ -109,8 +112,13 @@ function Survey({data, ride, place, station, select}: {data: WorldData; ride: Ri
           {groups.map(group=>stops.some(s=>s.kind===group) && <optgroup key={group} label={group}>{stops.filter(s=>s.kind===group).map(s=><option key={s.id} value={s.id}>{s.name} · {(s.station/10).toLocaleString('it-IT')} km</option>)}</optgroup>)}
         </select>
       </label>}
+      {stop?.plate && <div role="img" aria-label={stop.name} className="h-[126px] w-[90px] rounded-sm" style={{
+        backgroundImage:'url('+worldBase('bergamo')+'campioni-v1/targhe.webp)',backgroundSize:'500% 400%',
+        backgroundPosition:((stop.plate-1)%5)*25+'% '+Math.floor((stop.plate-1)/5)*100/3+'%'
+      }} />}
       {stop?.note && <p className="text-sm">{stop.note} {stop.source && <a className="font-semibold text-accent underline" href={stop.source} target="_blank" rel="noreferrer">Vedi l’originale ↗</a>}</p>}
       <TerrenoPercorso terrain={terrain} pose={pose} edge={data.graph.edges[path.edgeAt(distance).edge]} />
+      {stop?.id==='palazzo-roncalli' && <p className="text-xs text-muted">Facciata fotografata da <a href="https://commons.wikimedia.org/?curid=43474545" className="underline">Sailko</a>, ritagliata e raddrizzata · <a href="https://creativecommons.org/licenses/by/3.0/" className="underline">CC BY 3.0</a>.</p>}
       <FotoSopralluogo data={data} path={path} distance={distance} selectStation={select} />
       <p className="text-xs text-muted">Street View apre il panorama disponibile più vicino. Terreno: ortofoto © AGEA (voli 2023–2024) e ESA WorldCover / Copernicus Sentinel-2 (2021), colori rielaborati · <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Targhe di Selvino: foto © Amadvance, ritaglio e prospettiva · <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a>. Strade e arredi: © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>.</p>
     </div>
