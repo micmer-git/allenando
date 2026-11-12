@@ -34,6 +34,7 @@ import { createMidMask, midGeometry, midSpacing, patchMidShader, setMidMask, til
 import { createTunnelCut, patchTerrainShader, updateTunnelCut, type TunnelCut } from './tunnels';
 import type { ArchSpec } from '@/game/arches';
 import { Arches } from '@/world/Arches';
+import { aggregatoTexture, cemento } from './materialiBordo';
 import { CartelliSelvino } from './CartelliSelvino';
 import { campioni } from './campioni';
 import { HairpinSigns, hairpinSigns } from '@/world/HairpinSigns';
@@ -335,6 +336,7 @@ function useMaterials(mask: FarMask, cut: TunnelCut, look: WorldLook, midMask: M
     const facadeTex = facadeTexture(look.case);
     const tilesTex = roofTilesTexture(look.case);
     const groundTex = groundDetailTexture();
+    const chips = aggregatoTexture();
     const far = new THREE.MeshLambertMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: 3, polygonOffsetUnits: 6 });
     far.onBeforeCompile = (shader) => {
       patchFarShader(shader, mask);
@@ -358,8 +360,8 @@ function useMaterials(mask: FarMask, cut: TunnelCut, look: WorldLook, midMask: M
       stone: new THREE.MeshLambertMaterial({ map: stoneTex, color: '#d8cfc2', polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
       gravel: new THREE.MeshLambertMaterial({ map: gravelTex, color: '#ede6d8', polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
       paint: new THREE.MeshLambertMaterial({ color: '#efeee6', polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }),
-      verge: new THREE.MeshLambertMaterial({ color: '#8f8574', side: THREE.DoubleSide }),
-      concrete: new THREE.MeshLambertMaterial({ color: '#b3b1aa', side: THREE.DoubleSide }),
+      verge: cemento(new THREE.MeshLambertMaterial({ color: '#8f8574', side: THREE.DoubleSide }), chips),
+      concrete: cemento(new THREE.MeshLambertMaterial({ color: '#b3b1aa', side: THREE.DoubleSide }), chips),
       /** dentro le gallerie la luce è cotta nei colori (tunnels.ts): niente sole sotto il monte */
       tunnel: new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }),
       tunnelRoad: new THREE.MeshBasicMaterial({ map: asphaltTex, color: '#b9bbc0', vertexColors: true, side: THREE.DoubleSide }),
@@ -379,12 +381,12 @@ function useMaterials(mask: FarMask, cut: TunnelCut, look: WorldLook, midMask: M
         trunk: new THREE.MeshLambertMaterial({ color: '#5a4331' }),
       },
       /** cordoli, marciapiedi e aiuole delle rotatorie: colori di vertice, visti anche da sotto */
-      kerb: new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }),
+      kerb: cemento(new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }), chips),
       /** l'arredo stradale: lamiera zincata, cartelli, semafori, catadiottri */
       road: roadsideMaterials(),
       lamp: new THREE.MeshLambertMaterial({ color: '#3b3f45' }),
       lampHead: new THREE.MeshLambertMaterial({ color: '#d9d6cc', emissive: '#000000' }),
-      textures: [asphaltTex, stoneTex, gravelTex, facadeTex, tilesTex, groundTex],
+      textures: [asphaltTex, stoneTex, gravelTex, facadeTex, tilesTex, groundTex, chips],
       geos: furnitureGeometries(),
       /** cartelli d'inizio paese, uno per nome */
       signs: new Map<string, THREE.MeshLambertMaterial>(),
