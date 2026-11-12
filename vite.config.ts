@@ -51,8 +51,8 @@ export default defineConfig({
         globIgnores: ['**/world/**', '**/prima-dopo/**'],
         runtimeCaching: [
           {
-            // il manifesto del mondo dice cosa c'è da scaricare: dalla rete se c'è, dalla cache senza
-            urlPattern: ({ url }) => url.pathname.includes('/world/') && url.pathname.endsWith('/manifest.json'),
+            // Anche la vecchia mattonella della Cittadella deve aggiornarsi sui telefoni che l'hanno già scaricata.
+            urlPattern: ({ url }) => (url.pathname.includes('/world/') && url.pathname.endsWith('/manifest.json')) || url.pathname.endsWith('/world/bergamo/b/6_20.json'),
             handler: 'NetworkFirst',
             options: {
               cacheName: 'allenando-world-v1',
