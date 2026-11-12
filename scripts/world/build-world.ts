@@ -20,6 +20,7 @@ import { fineBlender, FONTI, loadFine } from './dtm.mjs';
 import { fromUtm } from './utm.mjs';
 import { CLS, FLAG, MinHeap, WorldGraph, type WorldGraphFile } from '../../src/open/graph';
 import { crossingClearance, lowerWaterAt, planCrossings, WATER_UNDER_DECK, WATER_UNDER_ROAD, type WaterCrossing } from '../../src/open/crossings';
+import { fitPiazzaMascheroni } from './piazza-mascheroni';
 import { deeperProbe, fitRingToRoads, junctionProbe, type FitAction, type JunctionShape, type RoadProbe } from '../../src/open/footprints';
 import { junctionAt } from '../../src/open/junctions';
 import { buildRides, resolveWaypoints } from './rides';
@@ -1840,7 +1841,8 @@ const roadProbe: RoadProbe = deeperProbe(centerProbe, junctionProbe(junctionShap
   let bytes = 0;
   for (const [key, list] of perTile) {
     const [tx, tz] = key.split('_').map(Number);
-    const s = JSON.stringify({ o: [BOUNDS.x0 + tx * TILE, BOUNDS.z0 + tz * TILE], b: list });
+    const b = WORLD.id === 'bergamo' && key === '6_20' ? fitPiazzaMascheroni(list) : list;
+    const s = JSON.stringify({ o: [BOUNDS.x0 + tx * TILE, BOUNDS.z0 + tz * TILE], b });
     bytes += s.length;
     writeFileSync(join(OUT, 'b', `${key}.json`), s);
   }
