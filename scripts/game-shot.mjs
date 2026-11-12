@@ -526,6 +526,8 @@ try {
     await nav('/');
     await p.waitFor(`!!document.querySelector('[data-testid=pedala-come-allenamento]')`, 10000);
     await p.click('[data-testid=pedala-come-allenamento]');
+    // con un allenamento già scelto (quello del programma, N4) il foglio si apre dalla sua carta
+    if (!(await p.waitFor(`!!document.querySelector('[data-testid=allenamento-foglio]')`, 2000))) await p.click('[data-testid=pedala-allenamento]');
     check(await p.waitFor(`!!document.querySelector('[data-testid="allenamento-riga-${zid}"]')`, 8000), 'zwo: nel foglio Allenamento di Pedala');
     await p.click(`[data-testid="allenamento-riga-${zid}"]`);
     await sleep(600);
