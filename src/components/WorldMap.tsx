@@ -114,7 +114,7 @@ export function WorldMap({
   }, [data, relief, view, width, height, overlays, markers, monumenti]);
 
   // trascinare, rotella, pizzico
-  const drag = useRef<{ x: number; y: number; moved: boolean; pts: Map<number, { x: number; y: number }>; dist0: number; mpp0: number } | null>(null);
+  const drag = useRef<{ x: number; y: number; startX: number; startY: number; moved: boolean; pts: Map<number, { x: number; y: number }>; dist0: number; mpp0: number } | null>(null);
   const toWorld = (px: number, py: number, v = view) => ({ x: v.cx + (px - width / 2) * v.mpp, z: v.cz + (py - height / 2) * v.mpp });
 
   return (
@@ -123,14 +123,15 @@ export function WorldMap({
         ref={canvas}
         style={{ width, height, touchAction: 'none' }}
         className="block cursor-grab active:cursor-grabbing"
-        aria-label="Carta del mondo: Bergamo, Val Brembana e Val Seriana"
+        aria-label={`Carta del mondo: ${data.graph.name}`}
         role="img"
         onPointerDown={(e) => {
           (e.target as HTMLElement).setPointerCapture(e.pointerId);
-          const d = drag.current ?? { x: e.clientX, y: e.clientY, moved: false, pts: new Map(), dist0: 0, mpp0: view.mpp };
+          const d = drag.current ?? { x: e.clientX, y: e.clientY, startX: e.clientX, startY: e.clientY, moved: false, pts: new Map(), dist0: 0, mpp0: view.mpp };
           d.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
           if (d.pts.size === 2) {
             const [p, q] = [...d.pts.values()];
+            d.moved = true;
             d.dist0 = Math.hypot(p.x - q.x, p.y - q.y);
             d.mpp0 = view.mpp;
           }
@@ -151,7 +152,7 @@ export function WorldMap({
           }
           const dx = e.clientX - d.x;
           const dy = e.clientY - d.y;
-          if (Math.abs(dx) + Math.abs(dy) > 3) d.moved = true;
+          if (Math.hypot(e.clientX - d.startX, e.clientY - d.startY) > 5) d.moved = true;
           d.x = e.clientX;
           d.y = e.clientY;
           setView((v) => ({ ...v, cx: v.cx - dx * v.mpp, cz: v.cz - dy * v.mpp }));
@@ -167,6 +168,10 @@ export function WorldMap({
               onPick(w.x, w.z, view.mpp);
             }
             drag.current = null;
+          } else if (d.pts.size === 1) {
+            const [remaining] = d.pts.values();
+            d.x = remaining.x;
+            d.y = remaining.y;
           }
         }}
         onPointerCancel={() => (drag.current = null)}

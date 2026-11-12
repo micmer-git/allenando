@@ -12,7 +12,9 @@ export type Dove =
 export interface Intento {
   dove: Dove;
   tipo: Tipo;
-  /** 'fissa': 50–1000 W, passi di 5 */
+  /** Potenza immessa a mano, sempre una pedalata virtuale. */
+  manuale?: boolean;
+  /** ERG: 50–1000 W. Manuale: 0–1000 W. */
   watt?: number;
   /** 'allenamento': id */
   workout?: string;

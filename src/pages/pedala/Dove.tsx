@@ -12,6 +12,7 @@ import { pickRoute } from '@/open/pick';
 import { chiuso } from '@/open/passaggi';
 import { savePlan } from '@/open/plan';
 import { EMPTY_PROGRESS, loadProgress, type WorldProgress } from '@/open/progress';
+import { GANDA_LINK, GANDA_NAME, roadStart } from '@/open/partenze';
 import { startTowns, townPoint } from '@/open/starts';
 import { loadWorld, Terrain, type RideDef, type WorldData } from '@/open/world';
 import { rememberWorld, worldInfo } from '@/open/worlds';
@@ -205,8 +206,8 @@ export function DoveContenuto({ mondo, setWorld, strumento, setStrumento, filtro
       setStrumento('libero');
       return;
     }
-    const e = data.graph.edges[hit.edge];
-    scegliLibero({ edge: hit.edge, s: Math.round(Math.min(e.length - 1, hit.s)), dir: data.graph.allowed(hit.edge, 1) ? 1 : -1, paese });
+    const start = roadStart(data.graph, hit.edge, hit.s);
+    if (start) scegliLibero({ ...start, paese });
   };
   const scegliSalita = (m: RouteMeta) => {
     const v = grandi[m.id];
@@ -258,9 +259,13 @@ export function DoveContenuto({ mondo, setWorld, strumento, setStrumento, filtro
       ) : (
         <Caricamento mondo={mondo} offline={offline} />
       )}
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+        <button type="button" disabled={!data} className="min-h-11 text-left font-semibold text-accent disabled:opacity-50" onClick={() => setStrumento('libero')} data-testid="dove-libero-mappa">Giro libero sulla mappa</button>
+        {mondo.id === 'bergamo' && <Link to={GANDA_LINK} className="inline-flex min-h-11 items-center text-left font-semibold text-accent" data-testid="dove-ganda-salita">{GANDA_NAME}</Link>}
+      </div>
       <div className="mt-2 grid grid-cols-3 gap-1.5">
         <Strumentino onClick={liberoSubito} disabled={!data} testId="dove-libero">
-          Giro libero
+          {`Libero da ${info.home}`}
         </Strumentino>
         <Strumentino onClick={() => setStrumento('anello')} disabled={!data} testId="dove-anello">
           Crea un anello

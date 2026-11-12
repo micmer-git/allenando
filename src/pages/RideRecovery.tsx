@@ -35,9 +35,10 @@ export function RideRecovery() {
   if (!cp || !onboarded || away) return null;
   // senza un sensore di potenza (né la prova) la corsa torna a Pedala, e la domanda tornava uguale:
   // «Riprendi» collega prima il rullo; dove il Bluetooth non c'è, si salva o si scarta
-  const resumeLabel = riprendiCome(r);
+  const manuale = new URLSearchParams(cp.search).get('manuale') === '1';
+  const resumeLabel = riprendiCome(r, manuale);
   const onResume = async () => {
-    if (!puoPedalare(rulloAdesso())) {
+    if (!manuale && !puoPedalare(rulloAdesso())) {
       await (r.ricordato ? rullo.ricollega() : rullo.collega());
       if (!puoPedalare(rulloAdesso())) return;
     }
@@ -61,8 +62,8 @@ export function RideRecovery() {
  * Il tasto per riprendere un giro a metà: «Riprendi» se si può pedalare; se no prima il rullo
  * («Collega», o «Ricollega» quello di prima); senza Web Bluetooth né prova nessun tasto (A4).
  */
-export function riprendiCome(r: Rullo): string | null {
-  if (puoPedalare(r)) return 'Riprendi';
+export function riprendiCome(r: Rullo, manuale = false): string | null {
+  if (manuale || puoPedalare(r)) return 'Riprendi';
   if (r.supporto !== 'si') return null;
   return r.ricordato ? 'Ricollega e riprendi' : 'Collega e riprendi';
 }
@@ -71,6 +72,15 @@ export function riprendiCome(r: Rullo): string | null {
 export function RecoveryCard({ cp, onResume, onDone, saveLabel = 'Salva com’è', resumeLabel = 'Riprendi' }: { cp: RideCheckpoint; onResume: () => void; onDone: () => void; saveLabel?: string; resumeLabel?: string | null }) {
   const saveRide = useApp((s) => s.saveRide);
   const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const complete = (action: Promise<unknown>) => {
+    setBusy(true);
+    setFailed(false);
+    void action.then(onDone, () => {
+      setBusy(false);
+      setFailed(true);
+    });
+  };
   const [ask, setAsk] = useState(false);
   const e = cp.engine;
   return (
@@ -89,10 +99,7 @@ export function RecoveryCard({ cp, onResume, onDone, saveLabel = 'Salva com’è
             variant="danger"
             data-testid="recovery-discard-yes"
             disabled={busy}
-            onClick={() => {
-              setBusy(true);
-              void clearCheckpoint().finally(onDone);
-            }}
+            onClick={() => complete(clearCheckpoint())}
           >
             Scarta il giro
           </Button>
@@ -103,7 +110,7 @@ export function RecoveryCard({ cp, onResume, onDone, saveLabel = 'Salva com’è
       ) : (
         <div className="mt-4 flex flex-col gap-2">
           {resumeLabel ? (
-            <Button data-testid="recovery-resume" className="h-14 text-lg" onClick={onResume}>
+            <Button data-testid="recovery-resume" className="h-14 text-lg" disabled={busy} onClick={onResume}>
               {resumeLabel}
             </Button>
           ) : null}
@@ -112,20 +119,16 @@ export function RecoveryCard({ cp, onResume, onDone, saveLabel = 'Salva com’è
             className={resumeLabel ? undefined : 'h-14 text-lg'}
             data-testid="recovery-save"
             disabled={busy}
-            onClick={() => {
-              setBusy(true);
-              void saveRide(rideFromCheckpoint(cp))
-                .then(() => clearCheckpoint())
-                .finally(onDone);
-            }}
+            onClick={() => complete(saveRide(rideFromCheckpoint(cp)).then(() => clearCheckpoint()))}
           >
             {saveLabel}
           </Button>
-          <button type="button" className="h-11 text-sm font-semibold text-muted" data-testid="recovery-discard" onClick={() => setAsk(true)}>
+          <button type="button" disabled={busy} className="h-11 text-sm font-semibold text-muted" data-testid="recovery-discard" onClick={() => setAsk(true)}>
             Scarta
           </button>
         </div>
       )}
+      {failed && <p role="alert" className="mt-3 text-sm text-warn">Operazione non riuscita. Il punto di ripresa è ancora disponibile. Riprova.</p>}
     </div>
   );
 }

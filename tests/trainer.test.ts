@@ -4,6 +4,7 @@ import type { SourceUpdate } from '../src/sim/source';
 import { STANDARD_AIR } from '../src/domain/physics';
 import { getTrack } from '../src/domain/track';
 import { builtinById } from '../src/domain/workouts';
+import { RideClock } from '../src/sim/clock';
 import { RideEngine } from '../src/sim/engine';
 
 /**
@@ -133,6 +134,43 @@ describe('BluetoothTrainer con un rullo finto', () => {
     trainer.update(erg(200));
     expect(trainer.power).toBe(0);
     expect(trainer.cadence).toBe(0);
+  });
+
+  it('pacchetti di sola potenza non rinnovano una cadenza ormai vecchia', async () => {
+    const { trainer,bike } = await connected();
+    bike.notify([0x45,0x00,0xb4,0x00,0xfa,0x00]);
+    for (let i=0; i<4; i++) {
+      now+=1000;
+      bike.notify([0x41,0x00,0,0]);
+      trainer.update(erg(200));
+    }
+    expect(trainer.power).toBe(0);
+    expect(trainer.cadence).toBe(0);
+  });
+
+  it('una notifica in background completa il tratto precedente e non riempie un lungo buco di segnale', async () => {
+    const { trainer,bike,device } = await connected();
+    const engine = engineOn(trainer,{autoPause:true});
+    const clock = new RideClock(now,(dt,at) => engine.tick(dt,at),() => engine.phase !== 'riding');
+    trainer.beforeReading(() => clock.pulse(now));
+    const write = (watts: number) => bike.notify([0x41,0x00,watts,0]);
+    write(140);
+    for (let i=0; i<20; i++) { now+=1000; write(140); }
+    expect(engine.elapsed).toBeCloseTo(20,7);
+    now+=60000; write(220);
+    expect(engine.phase).toBe('paused');
+    expect(engine.elapsed).toBeCloseTo(26,1);
+    expect(engine.samples.slice(0,20).every(s => s.power===140)).toBe(true);
+    expect(engine.samples.at(-1)?.power).toBe(0);
+    now+=1000; write(220);
+    expect(engine.phase).toBe('riding');
+    expect(engine.samples.at(-1)?.power).toBe(220);
+    now+=400; device.dispatchEvent(new Event('gattserverdisconnected'));
+    const end=engine.odometer, elapsed=engine.elapsed;
+    now+=60000; clock.pulse(now);
+    expect(engine.phase).toBe('paused');
+    expect(engine.odometer).toBe(end);
+    expect(engine.elapsed).toBe(elapsed);
   });
 
   it('se il rullo revoca il controllo, lo richiede', async () => {

@@ -2,6 +2,8 @@ export type TrainerMode = 'simulator' | 'bluetooth';
 
 export interface SourceUpdate {
   dt: number;
+  /** Istante monotono del passo, per la scadenza dei campioni Bluetooth. */
+  atMs?: number;
   grade: number;
   /** Watt obiettivo ERG, oppure null in pedalata libera. */
   targetPower: number | null;
@@ -41,11 +43,15 @@ export interface TrainerSnapshot {
  */
 export interface TelemetrySource {
   readonly mode: TrainerMode;
+  /** Il collegamento fisico si è interrotto. */
+  readonly disconnected?: boolean;
   power: number;
   hr: number;
   cadence: number;
   snapshot(): TrainerSnapshot;
   subscribe(listener: () => void): () => void;
+  /** Completa il tratto al valore precedente prima della notifica di un sensore. */
+  beforeReading?(listener: () => void): () => void;
   update(input: SourceUpdate): void;
   /** Sforzo del ciclista virtuale, 0–1.6 della FTP. Solo simulatore. */
   setEffort?(effort: number): void;

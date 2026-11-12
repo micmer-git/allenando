@@ -124,13 +124,14 @@ export async function commitProgress(input: CommitInput, deps: Partial<CommitDep
   if (input.engine.prova) return commitProva(input, d);
   const { engine, game, session, workout, profile, sim } = input;
   const c = input.committed;
-  const climbId = !session && input.routeId && engine.arrived && !input.replay && !workout ? input.routeId : undefined;
+  const whole = !(engine.startDistance > 0);
+  const climbId = whole && !session && input.routeId && engine.arrived && !input.replay && !workout ? input.routeId : undefined;
   // un allenamento più lungo del percorso prosegue libero: il percorso è fatto quando si passa la sua fine
   const routeFinished = !!session && (engine.arrived || session.giriFatti.length > 0 || (session.routeEnd != null && engine.distance >= session.routeEnd));
   // con più passaggi il tempo del percorso è quello del passaggio migliore (sull'aperto, l'andata);
   // se nessun passaggio ha un tempo (una ripresa a metà), il giro non va in classifica
   const routeSec = session && session.giri > 1 ? session.tempoPercorso() : engine.elapsed;
-  const completed = session ? routeFinished && session.rankable && routeSec != null : !!climbId;
+  const completed = session ? (whole || session.giri > 1) && routeFinished && session.rankable && routeSec != null : !!climbId;
   const sec = routeSec ?? engine.elapsed;
   // dislivello: il mondo lo conta da sé; sulle salite e nei replay dai campioni
   const fresh = engine.samples.slice(c.sample);
@@ -154,7 +155,8 @@ export async function commitProgress(input: CommitInput, deps: Partial<CommitDep
   const total = out.lines.reduce((a, l) => a + l.xp, 0);
   let rank: string | null = null;
   let rankNote: string | undefined;
-  if (session?.ride && workout) rankNote = 'Con un allenamento il tempo non va in classifica.';
+  if (session?.ride && !whole && !completed) rankNote = 'Partenza a percorso iniziato: contano i tratti pedalati per intero.';
+  else if (session?.ride && workout) rankNote = 'Con un allenamento il tempo non va in classifica.';
   else if (session && completed && session.ride && profile.name) {
     const avg = engine.samples.length ? engine.samples.reduce((a, x) => a + x.power, 0) / engine.samples.length : engine.power3s;
     const wkg = profile.weightKg > 0 ? avg / profile.weightKg : 0;
@@ -192,7 +194,7 @@ export async function commitProgress(input: CommitInput, deps: Partial<CommitDep
     discovered: Object.keys(out.next.visited).length,
     rain: input.rain,
     night: !!origin && sunFor(input.daytime, d.now(), origin.lat, origin.lon).night,
-    session: game.sessionDef ? { id: game.sessionDef.id, kind: game.sessionDef.kind, finished: game.stage === 'arrivo', withPack: game.pack ? game.withPack : 1 } : undefined,
+    session: game.sessionDef ? { id: game.sessionDef.id, kind: game.sessionDef.kind, finished: whole && game.stage === 'arrivo', withPack: game.pack ? game.withPack : 1 } : undefined,
     workoutDone: engine.workoutDone,
     together: input.together,
     level: levelOf(out.next.xp).level,

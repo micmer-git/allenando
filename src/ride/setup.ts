@@ -1,3 +1,4 @@
+import { gandaClimb, GANDA_NAME, GANDA_PLAN, roadStart } from '@/open/partenze';
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { geoPointsFromSamples, hasAltitude, hasGps, profileFromSamples, sliceSection, type ReplayMode } from '@/domain/replay';
@@ -9,12 +10,12 @@ import { loadPlan } from '@/open/plan';
 import { WorldSession } from '@/open/session';
 import { loadWorld, type WorldData } from '@/open/world';
 import { npcCount } from '@/open/WorldScene';
-import type { Dir } from '@/open/graph';
 import { worldInfo } from '@/open/worlds';
 import { decodeSection } from '@/pages/ReplaySetup';
 import { rulloAdesso } from '@/sim/rullo';
 import { useApp } from '@/store/useApp';
 import type { Intento, PaccoMondo } from './contract';
+import { rideKey } from './activeRide';
 import { intentoDaSearch } from './intento';
 
 /**
@@ -77,11 +78,7 @@ export function useRideSetup(): { setup: RideSetup | null; error: string | null 
   const quality = useApp((s) => s.settings.quality);
   const [state, setState] = useState<{ setup: RideSetup | null; error: string | null }>({ setup: null, error: null });
   // entrare o uscire da una stanza cambia ?room=, non la strada: non si ricarica niente
-  const key = useMemo(() => {
-    const p = new URLSearchParams(params);
-    p.delete('room');
-    return p.toString();
-  }, [params]);
+  const key = useMemo(() => rideKey(params.toString()), [params]);
   useEffect(() => {
     let alive = true;
     const done = (setup: RideSetup | null, error: string | null = null) => {
@@ -93,7 +90,7 @@ export function useRideSetup(): { setup: RideSetup | null; error: string | null 
       return;
     }
     // la prova vale per tutta la corsa: decisa qui, alla partenza
-    const prova = rulloAdesso().prova;
+    const prova = !!intento.manuale || rulloAdesso().prova;
     const base: { intento: Intento; prova: boolean; pacco: PaccoMondo } = { intento, prova, pacco: 'intero' };
     const dove = intento.dove;
     if (dove.kind === 'percorso' || dove.kind === 'piano' || dove.kind === 'libero') {
@@ -117,17 +114,16 @@ export function useRideSetup(): { setup: RideSetup | null; error: string | null 
             title = ride.name;
             subtitle = ride.side;
           } else if (dove.kind === 'piano') {
-            const plan = loadPlan(dove.plan);
+            const plan = dove.plan === GANDA_PLAN ? { name: GANDA_NAME, legs: gandaClimb(data) } : loadPlan(dove.plan);
             if (!plan || plan.legs.length === 0) throw new Error('Anello non più disponibile: rifallo da Pedala.');
             session = new WorldSession(data, { legs: plan.legs, name: plan.name }, n, { giri: intento.giri });
             title = plan.name;
-            subtitle = 'Anello suggerito';
+            subtitle = session.chiuso ? 'Anello suggerito' : 'Percorso da punto a punto';
           } else {
-            const e = data.graph.edges[dove.edge];
-            if (!e) throw new Error('Punto di partenza fuori dal mondo.');
-            const dir = dove.dir as Dir;
-            const s0 = Math.min(e.length, Math.max(0, dove.s));
-            session = new WorldSession(data, { edge: dove.edge, dir: data.graph.allowed(dove.edge, dir) ? dir : ((-dir) as Dir), s: s0 }, n);
+            const start = roadStart(data.graph, dove.edge, dove.s, dove.dir);
+            if (!start) throw new Error('Punto di partenza fuori dal mondo.');
+            const e = data.graph.edges[start.edge];
+            session = new WorldSession(data, start, n);
             title = 'Giro libero';
             subtitle = e.name || e.ref || worldInfo(data.graph.id).name;
           }

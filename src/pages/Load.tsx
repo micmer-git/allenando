@@ -8,7 +8,7 @@ import { useApp } from '@/store/useApp';
 
 export function LoadPage() {
   const { t } = useI18n();
-  const rides = useApp((s) => s.rides);
+  const rides = useApp((s) => s.rides).filter((ride) => !ride.prova);
   const days = trainingLoad(rides.map((ride) => ({ date: localDateKey(new Date(ride.startTime)), tss: ride.tss ?? 0 })));
   const today = days[days.length - 1];
   const has = rides.some((ride) => (ride.tss ?? 0) > 0);

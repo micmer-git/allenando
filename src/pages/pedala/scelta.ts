@@ -5,6 +5,7 @@ import { chiuso } from '@/open/passaggi';
 import type { LoadedRoute, RouteMeta } from '@/domain/routes';
 import type { Profile, Ride, Workout } from '@/domain/types';
 import { workoutDuration } from '@/domain/workouts';
+import { gandaClimb, GANDA_NAME, GANDA_PLAN } from '@/open/partenze';
 import type { Leg } from '@/open/graph';
 import { loadPlan, savePlan } from '@/open/plan';
 import type { RideDef, WorldData } from '@/open/world';
@@ -46,6 +47,8 @@ export interface Scelta {
   tipo: Tipo;
   /** l'ultimo valore di Potenza fissa; null = la prima volta, dal 75 % dell'FTP */
   watt: number | null;
+  manuale?: boolean;
+  wattManuali?: number;
   workout: string | null;
   giri: number;
   fantasma: boolean;
@@ -189,6 +192,14 @@ export function vistaPiano(data: WorldData, legs: readonly Leg[], titolo: string
   };
 }
 
+/** Un piano geografico condivisibile: chi apre il link ricava i tratti dal proprio mondo. */
+export function sceltaGanda(data: WorldData): { dove: Dove; vista: VistaDove; piano: null } | null {
+  const legs = gandaClimb(data);
+  if (!legs.length) return null;
+  const vista = vistaPiano(data, legs, GANDA_NAME, 'Via Marconi · Orezzo · Passo di Ganda', 'Gazzaniga');
+  return { dove: { kind: 'piano', world: data.graph.id, plan: GANDA_PLAN }, vista: { ...vista, gettone: 'Salita' }, piano: null };
+}
+
 export function vistaLibero(paese: string): VistaDove {
   return { titolo: 'Giro libero', sotto: `Da ${paese}`, lunghezzaM: null, dislivelloM: null, gettone: 'Giro libero', anello: false, traccia: [], profilo: [], partenza: paese };
 }
@@ -269,7 +280,10 @@ export function intentoDi(s: Scelta, tipi: readonly Tipo[], conGiri = false): In
   if (!s.dove) return null;
   const tipo = tipi.includes(s.tipo) ? s.tipo : tipi[0] ?? 'libera';
   const i: Intento = { dove: s.dove, tipo };
-  if (tipo === 'fissa') i.watt = s.watt ?? undefined;
+  if (s.manuale) {
+    i.manuale = true;
+    i.watt = s.wattManuali;
+  } else if (tipo === 'fissa') i.watt = s.watt ?? undefined;
   if (tipo === 'allenamento' && s.workout) i.workout = s.workout;
   if (tipo === 'allenamento' && !s.workout) i.tipo = 'libera';
   if (conGiri || s.giri > 1) i.giri = Math.max(1, s.giri);

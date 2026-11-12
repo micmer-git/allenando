@@ -105,6 +105,8 @@ export interface Ride {
   world?: string;
   /** Giro di prova (simulatore): nel Diario col gettone, mai in classifica, oro, punti o esportazione. */
   prova?: true;
+  /** Sforzo virtuale scelto da Pedala (a mano o dai blocchi). */
+  manuale?: true;
   /** Come si è pedalato: Libera, Potenza fissa, Allenamento, Watt di allora. */
   tipo?: 'libera' | 'fissa' | 'allenamento' | 'allora';
   /** Passaggi scelti: giri su un anello, tratte su un percorso aperto. */

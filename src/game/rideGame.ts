@@ -240,7 +240,7 @@ export class RideGame {
     // arrivo della sessione: tempo nella classifica della sessione
     if (def && this.stage === 'corsa' && e.arrived) {
       this.stage = 'arrivo';
-      if (!this.sessionPosted && this.opts.nick && !this.opts.prova) {
+      if (!this.sessionPosted && this.opts.nick && !this.opts.prova && !(e.startDistance > 0)) {
         this.sessionPosted = true;
         const avg = e.samples.length ? e.samples.reduce((s, x) => s + x.power, 0) / e.samples.length : e.power3s;
         void postResult({ nick: this.opts.nick, ride: sessionBoardId(def), sec: e.elapsed, wkg: this.opts.weightKg > 0 ? avg / this.opts.weightKg : 0, sim: this.opts.sim() }).then((r) => {
@@ -340,12 +340,12 @@ export class RideGame {
  * (il 3D carica le mattonelle intorno a lui): il tempo non corre, i tratti non partono, i punti
  * caldi non suonano. Poi motore, mondo e gioco, in quest'ordine.
  */
-export function rideFrame(engine: RideEngine, world: { session: WorldSession } | null | undefined, game: RideGame, dt: number, ready: boolean): void {
+export function rideFrame(engine: RideEngine, world: { session: WorldSession } | null | undefined, game: RideGame, dt: number, ready: boolean, atMs?: number): void {
   if (!ready) {
     if (world) world.session.pose = world.session.playerPose(engine.distance);
     return;
   }
-  engine.tick(dt);
+  engine.tick(dt,atMs);
   world?.session.step(engine, dt);
   game.tick(dt);
 }

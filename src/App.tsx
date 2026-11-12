@@ -1,5 +1,8 @@
-import { lazy, Suspense, useEffect } from 'react';
-import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
+import { lazy, Suspense, useEffect, useReducer, useState } from 'react';
+import { Link, Navigate, Outlet, Route, Routes, useLocation, useMatch } from 'react-router-dom';
+import { RideView, rideKey, type ActiveRide } from '@/ride/activeRide';
+import { RideRecovery } from '@/pages/RideRecovery';
+import { formatDuration, formatKm } from '@/domain/format';
 import { BottomNav, SideNav } from '@/components/Nav';
 import { useI18n } from '@/i18n';
 import { OnboardingPage } from '@/pages/Onboarding';
@@ -29,6 +32,12 @@ const PlansPage = lazy(() => import('@/pages/Plans').then((mod) => ({ default: m
 export function App() {
   const hydrate = useApp((s) => s.hydrate);
   const hydrated = useApp((s) => s.hydrated);
+  const onboarded = useApp((s) => s.profile.onboarded);
+  const location = useLocation();
+  const [active, setActive] = useState<ActiveRide | null>(null);
+  const inRide = useMatch('/ride') !== null;
+  const switching = inRide && active !== null && rideKey(location.search) !== rideKey(active.search);
+  const rideLocation = inRide && !switching ? location : active ? { pathname: '/ride', search: active.search } : null;
   useEffect(() => {
     void hydrate();
   }, [hydrate]);
@@ -36,12 +45,21 @@ export function App() {
   return (
     <>
       <ThemeSync />
+      {onboarded && rideLocation ? (
+        <RideView.Provider value={{ visible: inRide && !switching, setActive }}>
+          <Routes location={rideLocation}>
+            <Route path="/ride" element={<Suspense fallback={inRide ? <Splash /> : null}><RidePage key={rideKey(rideLocation.search)} /></Suspense>} />
+          </Routes>
+        </RideView.Provider>
+      ) : null}
+      {active && !inRide ? <BackToRide ride={active} /> : null}
+      {switching && <SwitchRide ride={active} onSaved={() => setActive(null)} />}
       <Routes>
         <Route path="/confronto" element={<Suspense fallback={<Splash />}><SurveyPage /></Suspense>} />
         <Route element={<Shell />}>
           <Route path="/start" element={<OnboardingPage />} />
           <Route path="/" element={<PedalaPage />} />
-          <Route path="/ride" element={<Suspense fallback={<Splash />}><RidePage /></Suspense>} />
+          <Route path="/ride" element={null} />
           <Route path="/workouts" element={<WorkoutsPage />} />
           <Route path="/workouts/edit/:id" element={<WorkoutEditorPage />} />
           <Route path="/history" element={<HistoryPage />} />
@@ -63,7 +81,43 @@ export function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
+      {!active ? <RideRecovery /> : null}
     </>
+  );
+}
+
+function BackToRide({ ride }: { ride: ActiveRide }) {
+  const [, redraw] = useReducer((n: number) => n + 1, 0);
+  const { engine } = ride;
+  useEffect(() => engine.subscribe(redraw), [engine]);
+  return (
+    <Link to={{ pathname: '/ride', search: ride.search }} data-testid="back-to-live-ride"
+      className="sticky top-0 z-40 flex min-h-12 items-center justify-between gap-3 bg-accent px-4 py-2 text-sm text-accent-ink">
+      <span className="min-w-0 truncate"><strong>{ride.title}</strong> · {engine.phase === 'paused' ? 'In pausa' : formatDuration(engine.elapsed)} · {formatKm(engine.odometer)} km</span>
+      <strong className="shrink-0">{engine.phase === 'finished' ? 'Vedi riepilogo' : 'Torna al giro'} →</strong>
+    </Link>
+  );
+}
+
+function SwitchRide({ ride, onSaved }: { ride: ActiveRide; onSaved: () => void }) {
+  const [saving, setSaving] = useState(false);
+  const [failed, setFailed] = useState(false);
+  return (
+    <main className="mx-auto grid min-h-dvh max-w-md content-center gap-4 px-6">
+      <h1 className="font-display text-3xl">Cambiare giro?</h1>
+      <p>Stai pedalando su {ride.title}. Puoi salvare questo giro e partire con quello appena scelto.</p>
+      <button disabled={saving} className="min-h-12 rounded-full bg-accent font-semibold text-accent-ink"
+        onClick={async () => {
+          setSaving(true);
+          setFailed(false);
+          try { await ride.finish(); onSaved(); }
+          catch { setSaving(false); setFailed(true); }
+        }}>
+        {saving ? 'Salvataggio…' : 'Salva e cambia giro'}
+      </button>
+      {failed && <p role="alert">Salvataggio non riuscito. Torna al giro per verificare il riepilogo.</p>}
+      <Link to={{ pathname: '/ride', search: ride.search }} className="grid min-h-12 place-items-center font-semibold">Torna al giro</Link>
+    </main>
   );
 }
 
