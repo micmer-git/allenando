@@ -17,6 +17,7 @@ import { patchRockShader } from './rockShader';
 import { Lifts } from './Lifts';
 import { Passi } from './Passi';
 import { Gate, Rider, bannerTexture, canvasTex } from '@/world/Scene';
+import { gravelTexture } from './ghiaia';
 import { FLAG, type Dir } from './graph';
 import type { WorldField } from './field';
 import type { NpcCrowd } from './npc';
@@ -329,6 +330,7 @@ function useMaterials(mask: FarMask, cut: TunnelCut, look: WorldLook, midMask: M
     // Gli incroci usano UV in metri locali (anche fuori da 0..1): il clamp stirava il bordo in righe.
     asphaltTex.wrapS = THREE.RepeatWrapping;
     const stoneTex = settTexture();
+    const gravelTex = gravelTexture();
     // le facciate: persiane verdi e balconcini in Lombardia, legno e balconi a tutta facciata nei paesi ladini
     const facadeTex = facadeTexture(look.case);
     const tilesTex = roofTilesTexture(look.case);
@@ -354,13 +356,15 @@ function useMaterials(mask: FarMask, cut: TunnelCut, look: WorldLook, midMask: M
       terrain: terrainMaterial(groundTex, cut, look.rock.bands, look.triplanar, satellite),
       asphalt: new THREE.MeshLambertMaterial({ map: asphaltTex, color: '#c9cbd0', polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
       stone: new THREE.MeshLambertMaterial({ map: stoneTex, color: '#d8cfc2', polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
-      cycle: new THREE.MeshLambertMaterial({ map: asphaltTex, color: '#c98f7d', polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
+      gravel: new THREE.MeshLambertMaterial({ map: gravelTex, color: '#ede6d8', polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
       paint: new THREE.MeshLambertMaterial({ color: '#efeee6', polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }),
       verge: new THREE.MeshLambertMaterial({ color: '#8f8574', side: THREE.DoubleSide }),
       concrete: new THREE.MeshLambertMaterial({ color: '#b3b1aa', side: THREE.DoubleSide }),
       /** dentro le gallerie la luce è cotta nei colori (tunnels.ts): niente sole sotto il monte */
       tunnel: new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }),
       tunnelRoad: new THREE.MeshBasicMaterial({ map: asphaltTex, color: '#b9bbc0', vertexColors: true, side: THREE.DoubleSide }),
+      tunnelStone: new THREE.MeshBasicMaterial({ map: stoneTex, vertexColors: true, side: THREE.DoubleSide }),
+      tunnelGravel: new THREE.MeshBasicMaterial({ map: gravelTex, vertexColors: true, side: THREE.DoubleSide }),
       rails: new THREE.MeshLambertMaterial({ color: '#7d756b' }),
       buildings: new THREE.MeshLambertMaterial({ vertexColors: true, map: facadeTex }),
       roofs: new THREE.MeshLambertMaterial({ vertexColors: true, map: tilesTex }),
@@ -380,7 +384,7 @@ function useMaterials(mask: FarMask, cut: TunnelCut, look: WorldLook, midMask: M
       road: roadsideMaterials(),
       lamp: new THREE.MeshLambertMaterial({ color: '#3b3f45' }),
       lampHead: new THREE.MeshLambertMaterial({ color: '#d9d6cc', emissive: '#000000' }),
-      textures: [asphaltTex, stoneTex, facadeTex, tilesTex, groundTex],
+      textures: [asphaltTex, stoneTex, gravelTex, facadeTex, tilesTex, groundTex],
       geos: furnitureGeometries(),
       /** cartelli d'inizio paese, uno per nome */
       signs: new Map<string, THREE.MeshLambertMaterial>(),
@@ -573,6 +577,7 @@ function Atmosphere({ weather, daytime, data, far, mats, counts, quality }: { we
     const wet = look.rain >= 0.1;
     mats.asphalt.color.set(wet ? '#7f8186' : '#c9cbd0');
     mats.stone.color.set(wet ? '#a39a8e' : '#d8cfc2');
+    mats.gravel.color.set(wet ? '#aa9d84' : '#ede6d8');
   };
   useEffect(() => {
     apply();
@@ -983,13 +988,15 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
     add(terrainGeo, mats.terrain);
     add(roads.asphalt, mats.asphalt);
     add(roads.stone, mats.stone);
-    add(roads.cycle, mats.cycle);
+    add(roads.gravel, mats.gravel);
     add(roads.paint, mats.paint);
     add(roads.verge, mats.verge);
     add(roads.concrete, mats.concrete);
     add(roads.kerb, mats.kerb);
     add(roads.tunnel, mats.tunnel);
     add(roads.tunnelRoad, mats.tunnelRoad);
+    add(roads.tunnelStone, mats.tunnelStone);
+    add(roads.tunnelGravel, mats.tunnelGravel);
     add(bGeo.walls, mats.buildings);
     add(bGeo.roofs, mats.roofs);
     add(water, mats.water);

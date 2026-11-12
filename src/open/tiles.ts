@@ -37,7 +37,7 @@ export interface TileMeshes {
   terrain: THREE.BufferGeometry;
   asphalt: THREE.BufferGeometry | null;
   stone: THREE.BufferGeometry | null;
-  cycle: THREE.BufferGeometry | null;
+  gravel: THREE.BufferGeometry | null;
   paint: THREE.BufferGeometry | null;
   verge: THREE.BufferGeometry | null;
   concrete: THREE.BufferGeometry | null;
@@ -47,6 +47,8 @@ export interface TileMeshes {
   /** gallerie: dentro (colori di vertice, luce cotta) e la carreggiata in galleria */
   tunnel: THREE.BufferGeometry | null;
   tunnelRoad: THREE.BufferGeometry | null;
+  tunnelStone: THREE.BufferGeometry | null;
+  tunnelGravel: THREE.BufferGeometry | null;
   buildings: BuildingMeshes;
   water: THREE.BufferGeometry | null;
   trees: { kind: TreeKind; x: number; y: number; z: number; s: number; r: number; tint: number }[];
@@ -503,13 +505,15 @@ function walkStrips(kerb: Mesh, pts: P[], hw: number, lift: number, top: number,
 export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec): Generator<void, Omit<TileMeshes, 'terrain' | 'buildings' | 'trees' | 'water' | 'rails'>, void> {
   const asphalt = new Mesh();
   const stone = new Mesh();
-  const cycle = new Mesh();
+  const gravel = new Mesh();
   const paint = new Mesh();
   const verge = new Mesh();
   const concrete = new Mesh();
   const kerb = new Mesh();
   const tunnel = new Mesh();
   const tunnelRoad = new Mesh();
+  const tunnelStone = new Mesh();
+  const tunnelGravel = new Mesh();
   const x0 = spec.x0;
   const z0 = spec.z0;
   const x1 = spec.x0 + spec.size;
@@ -532,7 +536,7 @@ export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec):
     const ring = (e.flags & FLAG.roundabout) !== 0;
     const hw = e.hw;
     const lift = roadLift(e.cls);
-    const surface = e.flags & FLAG.cobbles || e.cls === CLS.pedestrian ? stone : e.cls === CLS.cycleway ? cycle : asphalt;
+    const surface = e.flags & FLAG.unpaved ? gravel : e.flags & FLAG.cobbles ? stone : asphalt;
     // l'innesto dell'incrocio (junctions.ts): da lì in poi il nastro ha i suoi bordi
     const jA = junctionCut(graph, e.a, id);
     const jB = junctionCut(graph, e.b, id);
@@ -548,12 +552,12 @@ export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec):
     const endB = Math.max(junctionClear(graph, e.b, id), ringB, portalClear(graph, id, false));
     if (tun) {
       // la galleria: tubo, luce, portali (tunnels.ts), campionata fitta per le pozze di luce
-      tunnelGeometry(graph, (x, z) => field.terrain.height(x, z), e, runsInside(graph, e, x0, z0, x1, z1, 1.5), { x0, z0, x1, z1 }, lift, { road: tunnelRoad, inner: tunnel, shell: concrete });
+      tunnelGeometry(graph, (x, z) => field.terrain.height(x, z), e, runsInside(graph, e, x0, z0, x1, z1, 1.5), { x0, z0, x1, z1 }, lift, { road: surface === gravel ? tunnelGravel : surface === stone ? tunnelStone : tunnelRoad, inner: tunnel, shell: concrete });
       if (++count % 40 === 0) yield;
       continue;
     }
     // marciapiede: nei paesi, sulle strade da provinciale in giù, lontano dagli incroci
-    const walkable = !bridge && !tun && !ring && e.cls >= CLS.secondary && e.cls <= CLS.residential && !(e.flags & FLAG.cobbles);
+    const walkable = !bridge && !tun && !ring && e.cls >= CLS.secondary && e.cls <= CLS.residential && surface === asphalt;
     // dopo un raccordo di rotatoria il marciapiede riparte subito, dove finisce il cordolo del raccordo
     const walkA = ringA ? Math.max(ringA, junctionClear(graph, e.a, id) + 1) : endA + 1;
     const walkB = ringB ? Math.max(ringB, junctionClear(graph, e.b, id) + 1) : endB + 1;
@@ -568,15 +572,15 @@ export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec):
       // un punto esatto sul taglio dell'innesto: banchine e cordoli finiscono dove comincia il raccordo
       const pts = withCuts(graph, e, raw, [jA, e.length - jB]);
       const past = (p: P) => p.d >= jA - 1e-6 && p.d <= e.length - jB + 1e-6;
-      strip(surface, pts, hw, lift, -hw, lift, surface === stone ? 4 : surface === asphalt ? ASPHALT_REPEAT_M : 10);
-      if (e.cls <= CLS.unclassified && !tun) {
+      strip(surface, pts, hw, lift, -hw, lift, surface === stone ? 4 : surface === asphalt ? ASPHALT_REPEAT_M : 5);
+      if (e.cls <= CLS.unclassified && !tun && surface !== gravel) {
         // le linee di margine si fermano dove passano sull'asfalto di un'altra strada (due sensi
         // unici che confluiscono, una via che si affianca): prima si incrociavano a X
         const lineAt = (side: number) => (p: P) => nearEnd(p) && offOthers(p, side * (hw - 0.2));
         strip(paint, pts, hw - 0.12, lift + 0.012, hw - 0.12 - lineW, lift + 0.012, 8, lineAt(1));
         strip(paint, pts, -hw + 0.12 + lineW, lift + 0.012, -hw + 0.12, lift + 0.012, 8, lineAt(-1));
       }
-      if (e.cls <= CLS.tertiary && hw >= 2.7 && !ring && !(e.flags & (FLAG.oneway | FLAG.onewayRev))) {
+      if (surface !== gravel && e.cls <= CLS.tertiary && hw >= 2.7 && !ring && !(e.flags & (FLAG.oneway | FLAG.onewayRev))) {
         centerLine(paint, graph, field, e, pts[0].d, pts[pts.length - 1].d, lift + 0.014, endA, endB, (p, s) => offOthers({ x: p.x, y: p.y, z: p.z, h: p.heading, d: s }, 0));
       }
       if (bridge) {
@@ -615,19 +619,21 @@ export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec):
     if (++count % 40 === 0) yield;
   }
   // le rotatorie lisce: ognuna nella mattonella che ne ha il centro
-  for (const g of ringsIn(graph, x0, z0, x1, z1)) if (g.smooth) drawRing(g, graph, field, { surface: g.cobbles ? stone : asphalt, paint, kerb });
+  for (const g of ringsIn(graph, x0, z0, x1, z1)) if (g.smooth) drawRing(g, graph, field, { surface: g.edges.every(id => graph.edges[id].flags & FLAG.unpaved) ? gravel : g.cobbles ? stone : asphalt, paint, kerb });
   // gli innesti degli incroci: ognuno nella mattonella che ne ha il nodo
-  for (const g of junctionsIn(graph, ids, x0, z0, x1, z1)) drawJunction(g, field, { surface: g.stone ? stone : asphalt, kerb });
+  for (const g of junctionsIn(graph, ids, x0, z0, x1, z1)) drawJunction(g, field, { surface: g.gravel ? gravel : g.stone ? stone : asphalt, kerb });
   return {
     asphalt: asphalt.build(),
     stone: stone.build(),
-    cycle: cycle.build(),
+    gravel: gravel.build(),
     paint: paint.build(),
     verge: verge.build(),
     concrete: concrete.build(),
     kerb: kerb.build(),
     tunnel: tunnel.build(false),
     tunnelRoad: tunnelRoad.build(false),
+    tunnelStone: tunnelStone.build(false),
+    tunnelGravel: tunnelGravel.build(false),
   };
 }
 

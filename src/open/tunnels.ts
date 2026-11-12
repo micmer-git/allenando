@@ -347,6 +347,7 @@ export function tunnelGeometry(
   const db = ix.dist.get(e.b) ?? 0;
   const inside = (p: { x: number; z: number }) => p.x >= rect.x0 && p.x < rect.x1 && p.z >= rect.z0 && p.z < rect.z1;
   const oneway = (e.flags & (FLAG.oneway | FLAG.onewayRev)) !== 0;
+  const repeat = e.flags & FLAG.unpaved ? 5 : e.flags & FLAG.cobbles ? 4 : ASPHALT_REPEAT_M;
   for (const run of runs) {
     if (run.length < 2) continue;
     const pts: TP[] = run.map((p) => ({ ...p, y: p.y + lift, depth: Math.min(da + p.d, db + e.length - p.d), phase: da + p.d }));
@@ -356,13 +357,13 @@ export function tunnelGeometry(
       const lx = Math.cos(p.h);
       const lz = -Math.sin(p.h);
       const c = lit(C_ROAD, p);
-      const i = m.road.vertex(p.x + lx * e.hw, p.y, p.z + lz * e.hw, 0, p.d / ASPHALT_REPEAT_M, c);
-      m.road.vertex(p.x - lx * e.hw, p.y, p.z - lz * e.hw, 1, p.d / ASPHALT_REPEAT_M, c);
+      const i = m.road.vertex(p.x + lx * e.hw, p.y, p.z + lz * e.hw, 0, p.d / repeat, c);
+      m.road.vertex(p.x - lx * e.hw, p.y, p.z - lz * e.hw, 1, p.d / repeat, c);
       if (prev >= 0) m.road.idx.push(prev, prev + 1, i, prev + 1, i + 1, i);
       prev = i;
     }
     // i segni: margini e, nei doppi sensi, la continua (in galleria non si sorpassa)
-    if (e.hw >= 1.6) {
+    if (e.hw >= 1.6 && !(e.flags & FLAG.unpaved)) {
       band(m.inner, pts, e.hw - 0.2, 0.012, e.hw - 0.32, 0.012, C_LINE);
       band(m.inner, pts, -e.hw + 0.32, 0.012, -e.hw + 0.2, 0.012, C_LINE);
       if (!oneway && e.hw >= 2.7) band(m.inner, pts, 0.06, 0.014, -0.06, 0.014, C_LINE);
