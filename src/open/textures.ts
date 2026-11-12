@@ -23,7 +23,7 @@ export function facadeTexture(style: 'lombardo' | 'ladino' = 'lombardo'): THREE.
   return t;
 }
 
-/** Coppi lombardi: canali che scendono la falda, file sovrapposte, qualche coppo piÃ¹ scuro. 2 m Ã— 2 m. */
+/** Coppi lombardi: canali che scendono la falda, file sovrapposte, qualche coppo più scuro. 2 m × 2 m. */
 export function roofTilesTexture(style: 'lombardo' | 'ladino' = 'lombardo'): THREE.CanvasTexture {
   seed = 23;
   const S = 256;
@@ -57,7 +57,7 @@ export function roofTilesTexture(style: 'lombardo' | 'ladino' = 'lombardo'): THR
         const x = c * cw;
         const y = r * rh + (c % 2) * rh * 0.5;
         const l = 0.82 + rnd() * 0.2 - (rnd() < 0.08 ? 0.18 : 0);
-        // coppo: cilindro, piÃ¹ chiaro al centro
+        // coppo: cilindro, più chiaro al centro
         const grd = g.createLinearGradient(x, 0, x + cw, 0);
         grd.addColorStop(0, `rgba(${Math.round(150 * l)},${Math.round(145 * l)},${Math.round(140 * l)},1)`);
         grd.addColorStop(0.5, `rgba(${Math.round(255 * l)},${Math.round(250 * l)},${Math.round(244 * l)},1)`);
@@ -91,7 +91,7 @@ export function groundDetailTexture(): THREE.CanvasTexture {
       g.fillStyle = dark ? `rgba(40,45,20,${0.05 + rnd() * 0.12})` : `rgba(255,255,230,${0.05 + rnd() * 0.1})`;
       const w = 1 + rnd() * 3;
       const h = 2 + rnd() * 7;
-      // anche sui bordi opposti, cosÃ¬ la ripetizione non si vede
+      // anche sui bordi opposti, così la ripetizione non si vede
       for (const dx of [0, -S, S]) for (const dy of [0, -S, S]) g.fillRect(x + dx, y + dy, w, h);
     }
     for (let i = 0; i < 40; i++) {

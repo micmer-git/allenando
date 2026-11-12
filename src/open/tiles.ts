@@ -13,11 +13,11 @@ import { junctionCut, junctionsIn, mitreAt, type JunctionGeo } from './junctions
 
 /*
  * Le mattonelle del mondo vicino al ciclista: terreno raccordato alle strade, nastri d'asfalto
- * (ponti e gallerie compresi), edifici estrusi dalle impronte OSM, alberi dove il suolo Ã¨ bosco,
+ * (ponti e gallerie compresi), edifici estrusi dalle impronte OSM, alberi dove il suolo è bosco,
  * fiumi e binari. Tutto si calcola a fette (generatori) per non bloccare i fotogrammi.
  *
  * Convenzione dei nastri come in world/builders.ts: per una direzione h il vettore laterale
- * L = (cos h, 0, âˆ’sin h) punta a SINISTRA di chi va nel verso dell'arco.
+ * L = (cos h, 0, −sin h) punta a SINISTRA di chi va nel verso dell'arco.
  */
 
 export interface TileSpec {
@@ -115,8 +115,8 @@ export function strip(m: Mesh, pts: P[], a: number, liftA: number, b: number, li
 
 /**
  * Le corse dell'arco dentro il rettangolo, campionate ogni `step` metri nel verso dell'arco.
- * In testa e in coda, ai nodi con due sole strade, la sezione Ã¨ tagliata sulla bisettrice con
- * l'altra strada (junctions.ts): i due nastri combaciano, senza cuneo scoperto nÃ© sovrapposizione.
+ * In testa e in coda, ai nodi con due sole strade, la sezione è tagliata sulla bisettrice con
+ * l'altra strada (junctions.ts): i due nastri combaciano, senza cuneo scoperto né sovrapposizione.
  */
 export function runsInside(graph: WorldGraph, e: Edge, x0: number, z0: number, x1: number, z1: number, step: number): P[][] {
   const out: P[][] = [];
@@ -158,12 +158,12 @@ const COVER_COLOR: Record<number, THREE.Color> = {
   [COVER.farmland]: new THREE.Color('#93a356'),
 };
 
-/** Il suolo pavimentato delle cittÃ : piazze, piazzali, cortili (urban.ts). */
+/** Il suolo pavimentato delle città: piazze, piazzali, cortili (urban.ts). */
 const PAVED = ['#a6a197', '#9d988e', '#aca69b'].map((h) => new THREE.Color(h));
 
 /**
  * Il terreno della mattonella, con un bordo che scende di SKIRT_M per chiudere le fessure col terreno
- * lontano. `urban` (densitÃ  delle case intorno, urban.ts) pavimenta il suolo aperto delle cittÃ .
+ * lontano. `urban` (densità delle case intorno, urban.ts) pavimenta il suolo aperto delle città.
  * Il colore viene da look.ts (quota, pendenza, esposizione, stagione, uso del suolo); l'attributo
  * `rock` dice allo shader dove disegnare le bande della roccia (rockShader.ts).
  */
@@ -244,25 +244,25 @@ export function* terrainJob(field: WorldField, spec: TileSpec, urban?: (x: numbe
     uv[k * 2] = x / DETAIL_M;
     uv[k * 2 + 1] = z / DETAIL_M;
     let cov = field.terrain.cover(x, z);
-    // sopra la linea del bosco il bosco dei dati non c'Ã¨: prato alpino, ghiaia, roccia
+    // sopra la linea del bosco il bosco dei dati non c'è: prato alpino, ghiaia, roccia
     if (cov === COVER.forest && y > ctx.look.treeLine - 40) cov = COVER.open;
-    // la pendenza che decide roccia, ghiaione e prato Ã¨ quella del DEM, non quella del terreno
-    // raccordato: il taglio di una strada (2-5 m a 1:1) non Ã¨ una parete, e non deve avere nÃ© il
-    // colore nÃ© le bande della roccia (R2 del PM: a San Marco e alla Ganda i tagli erano a righe)
+    // la pendenza che decide roccia, ghiaione e prato è quella del DEM, non quella del terreno
+    // raccordato: il taglio di una strada (2-5 m a 1:1) non è una parete, e non deve avere né il
+    // colore né le bande della roccia (R2 del PM: a San Marco e alla Ganda i tagli erano a righe)
     const dd = spec.spacing;
     const gx = (field.terrain.height(x + dd, z) - field.terrain.height(x - dd, z)) / (2 * dd);
     const gz = (field.terrain.height(x, z + dd) - field.terrain.height(x, z - dd)) / (2 * dd);
     const gl = Math.sqrt(1 + gx * gx + gz * gz);
     const g = groundLook(c, ctx.look, ctx.season, y, 1 / gl, -gz / gl, noise, cov);
-    // le bande solo dove c'Ã¨ una parete: non sui versanti che i dati dicono bosco
+    // le bande solo dove c'è una parete: non sui versanti che i dati dicono bosco
     const rk = g.rock * bandsWeight(ctx.look, cov, y);
     rock[k] = rk;
     // i paesi, i campi a mosaico, i parchi, il bosco: sopra il colore della quota, ma non sopra
-    // la neve nÃ© la roccia; il mosaico dei prati finisce dove finisce il bosco pieno
+    // la neve né la roccia; il mosaico dei prati finisce dove finisce il bosco pieno
     const mosaic = cov === COVER.farmland || (cov === COVER.open && y < ctx.look.forestFull);
     const cc = mosaic ? parcelColor(x, z, cov) : COVER_COLOR[cov];
     if (cc && cov !== COVER.water) c.lerp(tmpC.copy(cc).offsetHSL(0, 0, (noise - 0.5) * 0.06), (cov === COVER.open ? 0.45 : 0.72) * (1 - g.snow) * (1 - rk));
-    // in cittÃ  il suolo aperto Ã¨ una piazza o un cortile, non un prato (i parchi restano verdi)
+    // in città il suolo aperto è una piazza o un cortile, non un prato (i parchi restano verdi)
     if (urban && (cov === COVER.open || URBAN.has(cov))) {
       const pv = pavedWeight(urban(x, z), dist[k]);
       if (pv > 0.01) c.lerp(tmpC.copy(PAVED[Math.floor(noise * 7) % 3]), pv * 0.92);
@@ -279,7 +279,7 @@ export function* terrainJob(field: WorldField, spec: TileSpec, urban?: (x: numbe
     for (let i = 0; i < line.length; i++) {
       const src = line[i] * 3;
       const dst = (skirtStart[s] + i) * 3;
-      // la gonna Ã¨ il colore del bordo, piÃ¹ scuro, e senza le bande della roccia
+      // la gonna è il colore del bordo, più scuro, e senza le bande della roccia
       col[dst] = col[src] * 0.8;
       col[dst + 1] = col[src + 1] * 0.8;
       col[dst + 2] = col[src + 2] * 0.8;
@@ -302,8 +302,8 @@ const DETAIL_M = 12;
 export const SKIRT_M = 120;
 
 /**
- * Campi a mosaico: appezzamenti di 70 Ã— 45 m (orientati come la centuriazione della pianura) con colture
- * diverse â€” mais, grano, arato, erba medica. I prati di montagna variano poco, tra sfalcio e pascolo.
+ * Campi a mosaico: appezzamenti di 70 × 45 m (orientati come la centuriazione della pianura) con colture
+ * diverse — mais, grano, arato, erba medica. I prati di montagna variano poco, tra sfalcio e pascolo.
  */
 const FIELDS = ['#8ea24f', '#a9a85a', '#c2b26a', '#7f9a46', '#9a8a66', '#6f9440', '#b4b46c'].map((h) => new THREE.Color(h));
 const MEADOWS = ['#7f9c4a', '#8aa652', '#76944a', '#93a95b'].map((h) => new THREE.Color(h));
@@ -320,17 +320,17 @@ export function parcelColor(x: number, z: number, cov: number): THREE.Color {
 /** Le strade importanti stanno sopra le minori agli incroci, di un centimetro e mezzo per classe. */
 export const roadLift = (cls: number): number => 0.03 + (7 - cls) * 0.015;
 
-/** Il suolo dei paesi: lÃ¬ ci sono marciapiedi e lampioni, e la mezzeria ha il passo urbano. */
+/** Il suolo dei paesi: lì ci sono marciapiedi e lampioni, e la mezzeria ha il passo urbano. */
 export const URBAN = new Set<number>([COVER.residential, COVER.industrial]);
 
 /**
  * Quanto stare lontani da un incrocio prima di disegnare marciapiedi, guardrail, segni: la
- * semilarghezza piÃ¹ grande fra le altre strade del nodo, piÃ¹ un metro e mezzo. 0 se il nodo Ã¨
+ * semilarghezza più grande fra le altre strade del nodo, più un metro e mezzo. 0 se il nodo è
  * solo la continuazione della stessa strada.
  */
 export function junctionClear(graph: WorldGraph, node: number, self: number): number {
   if (graph.adjStart[node + 1] - graph.adjStart[node] < 3) return 0;
-  // dove c'Ã¨ l'innesto (junctions.ts) vale il suo taglio: il nastro riprende i bordi oltre i raccordi
+  // dove c'è l'innesto (junctions.ts) vale il suo taglio: il nastro riprende i bordi oltre i raccordi
   const cut = junctionCut(graph, node, self);
   if (cut > 0) return cut;
   let w = 0;
@@ -410,10 +410,10 @@ function centerLine(paint: Mesh, graph: WorldGraph, field: WorldField, e: Edge, 
 export const WALK_RAMP = 4;
 
 /**
- * Quanto Ã¨ alto il marciapiede in ogni punto, da 0 (alla quota della strada) a 1 (cordolo pieno):
- * dove il marciapiede comincia o finisce davvero (il punto prima o dopo Ã¨ senza), scende in
+ * Quanto è alto il marciapiede in ogni punto, da 0 (alla quota della strada) a 1 (cordolo pieno):
+ * dove il marciapiede comincia o finisce davvero (il punto prima o dopo è senza), scende in
  * WALK_RAMP metri invece di finire con un gradino. Dove la corsa finisce al bordo della mattonella
- * il marciapiede continua nella vicina: lÃ¬ niente scivolo.
+ * il marciapiede continua nella vicina: lì niente scivolo.
  */
 export function walkHeights(pts: { d: number }[], on: boolean[]): Float32Array {
   const n = pts.length;
@@ -431,18 +431,18 @@ export function walkHeights(pts: { d: number }[], on: boolean[]): Float32Array {
   const out = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     if (!on[i]) continue;
-    // il primo punto col marciapiede sta a un passo (2,5-3 m) da quello senza: lÃ¬ comincia a salire
+    // il primo punto col marciapiede sta a un passo (2,5-3 m) da quello senza: lì comincia a salire
     const t = Math.min(1, Math.max(0, (gap[i] - 3) / WALK_RAMP));
     out[i] = t * t * (3 - 2 * t);
   }
   return out;
 }
 
-/** Un marciapiede piÃ¹ corto di cosÃ¬ (fra due punti senza) non si fa: sarebbe un gradino isolato. */
+/** Un marciapiede più corto di così (fra due punti senza) non si fa: sarebbe un gradino isolato. */
 export const WALK_MIN = 15;
 
 /**
- * Toglie i pezzi di marciapiede piÃ¹ corti di `min` metri che cominciano e finiscono dentro la corsa.
+ * Toglie i pezzi di marciapiede più corti di `min` metri che cominciano e finiscono dentro la corsa.
  * Quelli che toccano il bordo della corsa restano: continuano nella mattonella vicina.
  */
 export function trimWalk(pts: { d: number }[], on: boolean[], min = WALK_MIN): boolean[] {
@@ -533,12 +533,12 @@ export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec):
     const hw = e.hw;
     const lift = roadLift(e.cls);
     const surface = e.flags & FLAG.cobbles || e.cls === CLS.pedestrian ? stone : e.cls === CLS.cycleway ? cycle : asphalt;
-    // l'innesto dell'incrocio (junctions.ts): da lÃ¬ in poi il nastro ha i suoi bordi
+    // l'innesto dell'incrocio (junctions.ts): da lì in poi il nastro ha i suoi bordi
     const jA = junctionCut(graph, e.a, id);
     const jB = junctionCut(graph, e.b, id);
     const nearEnd = (p: P) => p.d > Math.max(10, jA) && p.d < e.length - Math.max(10, jB);
     /** il punto a `off` di lato (sinistra positiva) non cade sulla carreggiata di un'altra strada */
-    // (le strade si sovrappongono vicino ai nodi: a metÃ  arco non si chiede, costa)
+    // (le strade si sovrappongono vicino ai nodi: a metà arco non si chiede, costa)
     const offOthers = (p: P, off: number) => (p.d > 60 && p.d < e.length - 60) || graph.asphaltMargin(p.x + Math.cos(p.h) * off, p.z - Math.sin(p.h) * off, p.y, 1.5, id) < -0.05;
     // ai rami delle rotatorie i cordoli ripartono dopo il raccordo (o dopo l'isola spartitraffico)
     // e dentro la galleria artificiale davanti a un imbocco (tunnels.ts) niente marciapiedi
@@ -552,7 +552,7 @@ export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec):
       if (++count % 40 === 0) yield;
       continue;
     }
-    // marciapiede: nei paesi, sulle strade da provinciale in giÃ¹, lontano dagli incroci
+    // marciapiede: nei paesi, sulle strade da provinciale in giù, lontano dagli incroci
     const walkable = !bridge && !tun && !ring && e.cls >= CLS.secondary && e.cls <= CLS.residential && !(e.flags & FLAG.cobbles);
     // dopo un raccordo di rotatoria il marciapiede riparte subito, dove finisce il cordolo del raccordo
     const walkA = ringA ? Math.max(ringA, junctionClear(graph, e.a, id) + 1) : endA + 1;
@@ -594,8 +594,8 @@ export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec):
           pier(concrete, p, Math.max(1.2, hw * 0.45), p.y - 1.6, ground - 2);
         }
       } else {
-        // dove c'Ã¨ il marciapiede, lato per lato; i pezzi piÃ¹ corti di WALK_MIN non si fanno (erano
-        // i gradini isolati del punto M5), e lÃ¬ resta la banchina
+        // dove c'è il marciapiede, lato per lato; i pezzi più corti di WALK_MIN non si fanno (erano
+        // i gradini isolati del punto M5), e lì resta la banchina
         const sides = walkable ? [1, -1].map((side) => trimWalk(pts, pts.map(walkSide(side)))) : null;
         const onWalk = sides ? sides.map((on) => new Set(pts.filter((_, i) => on[i]))) : null;
         const bank = (i: number) => (p: P) => past(p) && (!onWalk || !onWalk[i].has(p));
@@ -648,7 +648,7 @@ function withCuts(graph: WorldGraph, e: Edge, pts: P[], cuts: number[]): P[] {
 
 /**
  * L'innesto di un incrocio (junctions.ts): un ventaglio dal nodo al bordo del poligono, con un
- * anello intermedio a metÃ  raggio cosÃ¬ la superficie segue il dosso della strada; sta due
+ * anello intermedio a metà raggio così la superficie segue il dosso della strada; sta due
  * centimetri sopra i nastri, le cui teste squadrate finiscono sotto. Il cordolo (o la banchina)
  * segue il bordo fra un taglio e l'altro.
  */
@@ -704,7 +704,7 @@ const ISLE_GRASS = new THREE.Color('#5f8f3e');
 const ISLE_STONE = new THREE.Color('#aaa59a');
 const ISLE_FACE = new THREE.Color('#bdb8ae');
 
-/** Un punto del cordolo: dove sta, la quota dell'asfalto lÃ¬, e da che parte sta il fuori. */
+/** Un punto del cordolo: dove sta, la quota dell'asfalto lì, e da che parte sta il fuori. */
 interface CurbPt {
   x: number;
   y: number;
@@ -715,7 +715,7 @@ interface CurbPt {
 
 /**
  * Il cordolo lungo una linea: fianco di 14 cm, testa di 22 cm, poi nei paesi il marciapiede e il
- * fianco che scende nel terreno, fuori la banchina che scende. Ãˆ la sezione dei marciapiedi delle
+ * fianco che scende nel terreno, fuori la banchina che scende. È la sezione dei marciapiedi delle
  * strade (roadsJob): il cordolo dell'anello continua in quello del ramo.
  */
 function curbAlong(kerb: Mesh, line: CurbPt[], urban: boolean, walk: THREE.Color): void {
@@ -808,7 +808,7 @@ function drawRing(g: RingGeo, graph: WorldGraph, field: WorldField, m: { surface
   };
   line(-Math.PI, Math.PI, -g.hw + 0.25, -g.hw + 0.37);
   for (const [a, b] of g.curbs) if ((b - a) * g.meanR > 1.4) line(a + 0.4 / g.meanR, b - 0.4 / g.meanR, g.hw - 0.37, g.hw - 0.25);
-  // il cordolo esterno fra le bocche: il fuori Ã¨ lontano dal centro
+  // il cordolo esterno fra le bocche: il fuori è lontano dal centro
   for (const [a, b] of g.curbs) {
     const pts: CurbPt[] = [];
     const steps = Math.max(1, Math.ceil(((b - a) * (g.meanR + g.hw)) / 1.5));
@@ -851,7 +851,7 @@ function drawRing(g: RingGeo, graph: WorldGraph, field: WorldField, m: { surface
   for (const isle of g.splitters) islandTop(m.kerb, isle, lift);
 }
 
-/** Un'isola rialzata di 15 cm sull'anello di punti (x, z, quota dell'asfalto): prato se c'Ã¨ posto. */
+/** Un'isola rialzata di 15 cm sull'anello di punti (x, z, quota dell'asfalto): prato se c'è posto. */
 function islandTop(kerb: Mesh, ring: Pt[], lift: number): void {
   const flat = new Float32Array(ring.length * 2);
   ring.forEach((p, i) => {
@@ -924,10 +924,10 @@ export interface BuildingMeshes {
 
 /**
  * Le case ladine (Selva, Corvara, Arabba, Canazei): intonaco bianco o chiaro, tetto a due falde a
- * 24Â° con la gronda larga 1,3 m, in scandole, lamiera scura o coppi bruno-rossi, il timpano di
+ * 24° con la gronda larga 1,3 m, in scandole, lamiera scura o coppi bruno-rossi, il timpano di
  * legno; gli hotel di 4-5 piani hanno il tetto a falde anche loro, e i balconi di legno in rilievo
  * a ogni piano (km0-49680937, corvara-79922438, km30-59775148; prima erano scatole col tetto piano
- * e i balconi solo dipinti). Ãˆ l'archetipo del mondo (look.case), non globale.
+ * e i balconi solo dipinti). È l'archetipo del mondo (look.case), non globale.
  */
 const LADIN_WALLS = ['#f4f1ea', '#f1ece0', '#ece4d4', '#e8dcc6', '#f6f4ef', '#efe6d6', '#e2d3b8', '#f2efe8'];
 const LADIN_ROOFS = ['#4f4842', '#5f5248', '#45413e', '#6e5a4a', '#7a4a38', '#86533f', '#565049'];
@@ -957,8 +957,8 @@ export function* buildingsJob(field: WorldField, list: Building[], spec: TileSpe
     cx /= m;
     cz /= m;
     if (cx < spec.x0 || cx >= x1 || cz < spec.z0 || cz >= z1) continue;
-    // il terreno sotto l'impronta, ai vertici e lungo i lati: il punto piÃ¹ basso fa da zoccolo
-    // (nessun angolo galleggia), quello piÃ¹ alto da piano terra (sul pendio la casa non resta mezza
+    // il terreno sotto l'impronta, ai vertici e lungo i lati: il punto più basso fa da zoccolo
+    // (nessun angolo galleggia), quello più alto da piano terra (sul pendio la casa non resta mezza
     // sepolta a monte: scende con lo zoccolo a valle, come le case vere)
     const { low, high } = footprintGround(field, r, spec.spacing, cx, cz);
     const plinth = low - 0.6;
@@ -972,11 +972,14 @@ export function* buildingsJob(field: WorldField, list: Building[], spec: TileSpe
     else wall.set(WALLS[Math.floor(seed * WALLS.length) % WALLS.length]);
     const roofSet = ladino && civil ? LADIN_ROOFS : (ROOFS[b.roof] ?? ROOFS[0]);
     roof.set(roofSet[Math.floor(seed * 7) % roofSet.length]).offsetHSL(0, 0, (hash2(cz, cx) - 0.5) * 0.06);
-    // il piano terra: piÃ¹ scuro (nelle case ladine appena: il basamento Ã¨ intonaco come il resto)
+    if (b.architecture?.wallColour) wall.set(b.architecture.wallColour);
+    if (b.architecture?.roofColour) roof.set(b.architecture.roofColour);
+    else if (b.sampledRoof !== undefined) roof.setHex(b.sampledRoof);
+    // il piano terra: più scuro (nelle case ladine appena: il basamento è intonaco come il resto)
     base.copy(wall).multiplyScalar(ladino && civil ? 0.9 : 0.84);
     const wood = ladino && civil ? tmpW.set(LADIN_WOOD[Math.floor(hash2(cz * 1.3, cx) * LADIN_WOOD.length) % LADIN_WOOD.length]) : null;
     // i tetti in coppi sono quasi tutti rossi: il grigio dei dati OSM resta ai tetti piani
-    const pitchedRoof = b.architecture?.roofColour || (ladino && civil) ? roof : b.roof === 0 || b.kind === BUILDING_KIND.house ? roof : tmpC.set(ROOFS[0][Math.floor(seed * 4) % 4]);
+    const pitchedRoof = b.architecture?.roofColour || b.sampledRoof !== undefined || (ladino && civil) ? roof : b.roof === 0 || b.kind === BUILDING_KIND.house ? roof : tmpC.set(ROOFS[0][Math.floor(seed * 4) % 4]);
     const { top, shape } = addBuilding(
       walls,
       roofs,
@@ -993,7 +996,7 @@ export function* buildingsJob(field: WorldField, list: Building[], spec: TileSpe
         pitch: ladino && civil ? LADIN_PITCH : undefined,
         eaves: ladino && civil ? 1.3 : undefined,
         wide: ladino && civil ? true : undefined,
-        // i balconi in rilievo solo nelle mattonelle vicine: piÃ¹ in lÃ  sono meno di un pixel
+        // i balconi in rilievo solo nelle mattonelle vicine: più in là sono meno di un pixel
         alpine: wood ? { wood, balconies: spec.ring <= 2 } : undefined,
       },
       plinth,
@@ -1021,8 +1024,8 @@ export function* buildingsJob(field: WorldField, list: Building[], spec: TileSpe
 }
 
 /**
- * La quota piÃ¹ bassa e piÃ¹ alta del terreno sotto un'impronta: vertici, punti lungo i lati ogni
- * 6 m e il centro. Lo stesso `field.height` della mattonella, cosÃ¬ vale quello che si vede.
+ * La quota più bassa e più alta del terreno sotto un'impronta: vertici, punti lungo i lati ogni
+ * 6 m e il centro. Lo stesso `field.height` della mattonella, così vale quello che si vede.
  */
 export function footprintGround(field: Pick<WorldField, 'height'>, r: ArrayLike<number>, spacing: number, cx: number, cz: number): { low: number; high: number } {
   let low = Infinity;
@@ -1061,9 +1064,9 @@ function trisGeometry(t: Tris): THREE.BufferGeometry | null {
 
 /**
  * Gli alberi della mattonella, per cella di 25 m secondo l'uso del suolo. `forestOnly` (con un
- * `seed` diverso da 0) fa il bosco fitto delle mattonelle vicine: solo dove il suolo Ã¨ bosco, in
- * altri punti della cella, e senza ripetere i sassi. Le specie e la linea del bosco le dÃ 
- * look.ts: il bosco si dirada verso la linea e sopra non c'Ã¨ un albero; le piste da sci sono
+ * `seed` diverso da 0) fa il bosco fitto delle mattonelle vicine: solo dove il suolo è bosco, in
+ * altri punti della cella, e senza ripetere i sassi. Le specie e la linea del bosco le dà
+ * look.ts: il bosco si dirada verso la linea e sopra non c'è un albero; le piste da sci sono
  * radure.
  */
 export function* treesJob(field: WorldField, spec: TileSpec, seed = 0, forestOnly = false, ctx: LookCtx = lookContext(field.terrain?.graph?.id ?? 'bergamo'), roadPoints?: ReturnType<typeof indexRoadPoints>): Generator<void, TileMeshes['trees'], void> {
@@ -1090,11 +1093,11 @@ export function* treesJob(field: WorldField, spec: TileSpec, seed = 0, forestOnl
         const x = cx + (rx - 0.5) * cell;
         const z = cz + (rz - 0.5) * cell;
         const y = field.height(x, z, spec.spacing);
-        // nÃ© sull'asfalto, nÃ© nell'acqua, nÃ© dentro una galleria, nÃ© sotto un ponte (la chioma bucava l'impalcato)
+        // né sull'asfalto, né nell'acqua, né dentro una galleria, né sotto un ponte (la chioma bucava l'impalcato)
         if (field.lastRoadDist() < 4 || field.lastWater() || field.inTube(x, z, y) || field.nearBridge(x, z)) continue;
         const kind = cov === COVER.rock ? 'rock' : treeSpecies(look, y, hash2(x * 1.7, z * 2.3));
         if (!kind) continue;
-        // pendenza dal terreno: sulle pareti non cresce un bosco (sui versanti ripidi sÃ¬)
+        // pendenza dal terreno: sulle pareti non cresce un bosco (sui versanti ripidi sì)
         const sx = field.height(x + 4, z, spec.spacing) - y;
         const sz = field.height(x, z + 4, spec.spacing) - y;
         if (kind !== 'rock' && Math.hypot(sx, sz) / 4 > (cov === COVER.forest ? 1.7 : 1.15)) continue;
@@ -1181,13 +1184,13 @@ export function railsGeometry(field: WorldField, features: WorldFeatures, spec: 
 export interface Furniture {
   /** lampioni: posizione al piede, rotazione del braccio verso la strada */
   lamps: { x: number; y: number; z: number; h: number; scaleY?: number }[];
-  /** cartelli bianchi col nome del paese; h Ã¨ la direzione di chi entra */
+  /** cartelli bianchi col nome del paese; h è la direzione di chi entra */
   towns: { x: number; y: number; z: number; h: number; name: string }[];
 }
 
 /**
  * Lampioni ogni 30 m sulle strade dei paesi (un lato, alternato), e il cartello col nome dove una
- * strada entra nell'abitato. Il nome Ã¨ quello del paese piÃ¹ vicino nei dati OSM, entro 1,5 km.
+ * strada entra nell'abitato. Il nome è quello del paese più vicino nei dati OSM, entro 1,5 km.
  */
 export function* furnitureJob(graph: WorldGraph, field: WorldField, places: Place[], spec: TileSpec, roadPoints?: ReturnType<typeof indexRoadPoints>): Generator<void, Furniture, void> {
   const lamps: Furniture['lamps'] = [];
@@ -1231,7 +1234,7 @@ export function* furnitureJob(graph: WorldGraph, field: WorldField, places: Plac
       const p = graph.pose(e.id, (e.length * k) / n, 1);
       urban.push(URBAN.has(field.terrain.cover(p.x, p.z)));
     }
-    // lampioni nei tratti urbani, lontano dalle estremitÃ  (gli incroci li hanno giÃ )
+    // lampioni nei tratti urbani, lontano dalle estremità (gli incroci li hanno già)
     if (!(e.flags & FLAG.bridge)) {
       const pa = portalClear(graph, e.id, true);
       const pb = portalClear(graph, e.id, false);

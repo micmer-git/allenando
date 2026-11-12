@@ -1,3 +1,4 @@
+import { loadRoofColours } from './tetti';
 import { footprintKey, loadArchitecture, type Architecture } from './architettura';
 import { indexRoadPoints, type RoadPoint } from './puntiStrada';
 import { gandaSurvey, registerGandaSurvey, type GandaFile } from './rilievoGanda';
@@ -631,6 +632,8 @@ export class Terrain {
 
 export interface Building {
   architecture?: Architecture;
+  /** Colore sRGB della copertura campionato sull'ortofoto AGEA. */
+  sampledRoof?: number;
   kind: number;
   /** altezza del tetto sopra il suolo, metri */
   h: number;
@@ -655,7 +658,7 @@ export async function loadBuildings(graph: WorldGraph, tx: number, tz: number, b
   try {
     const res = await fetch(`${base}b/${tx}_${tz}.json`);
     if (!res.ok) return [];
-    const [json, hints] = await Promise.all([res.json() as Promise<{ o: [number, number]; b: number[][] }>, loadArchitecture(graph.id)]);
+    const [json, hints, colours] = await Promise.all([res.json() as Promise<{ o: [number, number]; b: number[][] }>, loadArchitecture(graph.id), loadRoofColours(base)]);
     const [ox, oz] = json.o;
     const surveyed = gandaSurvey(graph)?.file.heights[`${tx}_${tz}`];
     return json.b.map((r) => {
@@ -669,7 +672,8 @@ export async function loadBuildings(graph: WorldGraph, tx: number, tz: number, b
         ring[i] = ox + x / 10;
         ring[i + 1] = oz + z / 10;
       }
-      return { kind, h: (surveyed?.[r.join(',')]?.[0] ?? h) / 10, minH: minH / 10, roof, ring, architecture: hints[footprintKey(ring)] };
+      const key = footprintKey(ring);
+      return { kind, h: (surveyed?.[r.join(',')]?.[0] ?? h) / 10, minH: minH / 10, roof, ring, architecture: hints[key], sampledRoof: colours.get(Number(key)) };
     });
   } catch {
     return [];
