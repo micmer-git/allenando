@@ -88,16 +88,14 @@ export function stepSpeed(
   if (dt <= 0) return Math.max(0, speedMs);
   const v = Math.max(0, speedMs);
   const theta = Math.atan(grade);
-  const roll = p.crr * p.massKg * p.g * Math.cos(theta);
-  const aero = aeroForce(v, p);
-  const grav = p.massKg * p.g * Math.sin(theta);
-  const vForce = Math.max(v, 0.35);
-  const eta = p.eta > 0 ? p.eta : 1;
-  let drive = (eta * Math.max(0, powerW)) / vForce;
-  const maxDrive = p.massKg * 5;
-  if (drive > maxDrive) drive = maxDrive;
+  const ground = p.massKg * p.g * (p.crr * Math.cos(theta) + Math.sin(theta));
+  const wheelPower = Math.max(0, powerW) * (p.eta > 0 ? p.eta : 1);
   const inertia = p.massKg * (p.rotatingFactor > 0 ? p.rotatingFactor : 1);
-  const a = (drive - roll - aero - grav) / inertia;
-  const next = v + a * dt;
-  return next > 0 ? next : 0;
+  const acceleration = (velocity: number) => {
+    const drive = Math.min(p.massKg * 5, wheelPower / Math.max(velocity, 0.35));
+    return (drive - ground - aeroForce(velocity, p)) / inertia;
+  };
+  // Punto medio: la forza alla ruota cambia già durante il passo, soprattutto alla partenza.
+  const mid = Math.max(0, v + 0.5 * dt * acceleration(v));
+  return Math.max(0, v + dt * acceleration(mid));
 }

@@ -4,6 +4,7 @@ import { formatDuration, formatHours, formatNumber, formatTss } from '@/domain/f
 import type { Workout } from '@/domain/types';
 import { workoutEstimate } from '@/domain/workouts';
 import type { Capacita, Tipo } from '@/ride/contract';
+import { WATT_MAX, WATT_PASSO, wattManuali } from '@/ride/intento';
 import { cn } from '@/lib/cn';
 
 /*
@@ -14,7 +15,8 @@ import { cn } from '@/lib/cn';
 
 const NOMI: Record<Tipo, string> = { libera: 'Libera', fissa: 'Potenza fissa', allenamento: 'Allenamento', allora: 'Watt di allora' };
 
-export function sottoTipo(t: Tipo, sa: Capacita, prova: boolean): string {
+export function sottoTipo(t: Tipo, sa: Capacita, prova: boolean, manuale = false): string {
+  if (manuale) return t === 'allenamento' ? 'Watt dai blocchi' : 'Watt manuali';
   const erg = sa.erg || prova;
   if (t === 'libera') return sa.pendenza || prova ? 'Pendenza' : 'Senza pendenza';
   if (t === 'fissa') return 'ERG';
@@ -22,7 +24,7 @@ export function sottoTipo(t: Tipo, sa: Capacita, prova: boolean): string {
   return erg ? 'ERG' : 'A bersaglio';
 }
 
-export function ComeSegmento({ tipi, tipo, sa, prova, onChange }: { tipi: Tipo[]; tipo: Tipo; sa: Capacita; prova: boolean; onChange: (t: Tipo) => void }) {
+export function ComeSegmento({ tipi, tipo, sa, prova, manuale = false, onChange }: { tipi: Tipo[]; tipo: Tipo; sa: Capacita; prova: boolean; manuale?: boolean; onChange: (t: Tipo) => void }) {
   return (
     <div role="radiogroup" aria-label="Come" className="grid overflow-hidden rounded-[26px] border border-line bg-elev" style={{ gridTemplateColumns: `repeat(${tipi.length}, minmax(0, 1fr))` }} data-testid="pedala-come">
       {tipi.map((t) => (
@@ -36,7 +38,7 @@ export function ComeSegmento({ tipi, tipo, sa, prova, onChange }: { tipi: Tipo[]
           data-testid={`pedala-come-${t}`}
         >
           <span className="text-[14px] font-semibold">{NOMI[t]}</span>
-          <span className="text-[11px] font-medium text-muted">{sottoTipo(t, sa, prova)}</span>
+          <span className="text-[11px] font-medium text-muted">{sottoTipo(t, sa, prova, manuale)}</span>
         </button>
       ))}
     </div>
@@ -47,6 +49,8 @@ export function ComeSegmento({ tipi, tipo, sa, prova, onChange }: { tipi: Tipo[]
 export function Passo({ segno, onStep, label, testId, disabled }: { segno: '−' | '+'; onStep: (n: number) => void; label: string; testId?: string; disabled?: boolean }) {
   const t = useRef<number | null>(null);
   const tenuto = useRef(false);
+  const step = useRef(onStep);
+  useEffect(() => { step.current = onStep; }, [onStep]);
   const ferma = () => {
     if (t.current) window.clearTimeout(t.current);
     if (t.current) window.clearInterval(t.current);
@@ -64,8 +68,8 @@ export function Passo({ segno, onStep, label, testId, disabled }: { segno: '−'
         ferma();
         t.current = window.setTimeout(() => {
           tenuto.current = true;
-          onStep(5);
-          t.current = window.setInterval(() => onStep(5), 300);
+          step.current(5);
+          t.current = window.setInterval(() => step.current(5), 300);
         }, 450);
       }}
       onPointerUp={ferma}
@@ -80,6 +84,21 @@ export function Passo({ segno, onStep, label, testId, disabled }: { segno: '−'
     >
       {segno}
     </button>
+  );
+}
+
+/** Un tocco regola di 5 W; il cursore permette di cambiare rapidamente intensità. */
+export function WattManuali({ watt, onChange, compatto = false }: { watt: number; onChange: (w: number) => void; compatto?: boolean }) {
+  const regola = (w: number) => onChange(wattManuali(w));
+  return (
+    <div className={cn('min-w-0 text-sm', compatto ? 'mb-1.5 landscape:mb-0 landscape:w-36' : 'mt-3 rounded-2xl border border-line px-3 py-2')} data-testid="watt-manuali">
+      <div className="flex items-center justify-center gap-2">
+        <Passo segno="−" label="Riduci i watt manuali" onStep={(n) => regola(watt - WATT_PASSO * n)} disabled={watt <= 0} />
+        <span className="num text-center font-semibold leading-none"><span className="block text-xs text-muted">Manuali</span><output>{watt} W</output></span>
+        <Passo segno="+" label="Aumenta i watt manuali" onStep={(n) => regola(watt + WATT_PASSO * n)} disabled={watt >= WATT_MAX} />
+      </div>
+      <input aria-label="Potenza manuale in watt" type="range" min={0} max={WATT_MAX} step={WATT_PASSO} value={watt} onChange={(event) => regola(Number(event.target.value))} className="block h-6 w-full cursor-pointer accent-[var(--accent)]" />
+    </div>
   );
 }
 

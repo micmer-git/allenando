@@ -221,7 +221,8 @@ export class WorldSession {
     const d = engine.distance;
     while (this.crossed < this.lapEnd.length && Number.isFinite(at[this.crossed]) && d >= at[this.crossed] - 0.5) {
       // il primo fotogramma (anche dopo una ripresa) non ha un tempo di partenza: quei passaggi non si cronometrano
-      if (this.lapClock) this.giriFatti.push({ sec: engine.elapsed - this.lapStart, giro: this.crossed + 1 });
+      const from = this.crossed > 0 ? at[this.crossed - 1] : 0;
+      if (this.lapClock && !(engine.startDistance > from)) this.giriFatti.push({ sec: engine.elapsed - this.lapStart, giro: this.crossed + 1 });
       this.crossed++;
       this.lapStart = engine.elapsed;
       if (this.lapClock && this.crossed < this.giri) this.toast(this.chiuso ? `Giro ${this.crossed + 1} di ${this.giri}` : this.crossed % 2 === 1 ? 'Si torna indietro' : 'Di nuovo all’andata', this.chiuso ? 'Traguardo' : `Tratta ${this.crossed + 1} di ${this.giri}`, 'info');

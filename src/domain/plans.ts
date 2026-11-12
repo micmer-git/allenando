@@ -224,7 +224,7 @@ export function syncDone(plan: TrainingPlan, state: PlanState, rides: readonly R
   const used = new Set(Object.values(state.done));
   const sorted = [...rides].sort((a, b) => (a.startTime < b.startTime ? -1 : 1));
   for (const ride of sorted) {
-    if (used.has(ride.id)) continue;
+    if (ride.prova || used.has(ride.id)) continue;
     const day = daysBetween(state.start, localDateKey(new Date(ride.startTime)));
     if (day < 0 || day >= planLength(plan)) continue;
     // prima il giorno stesso, poi i giorni prima (il recupero), il più recente per primo

@@ -48,10 +48,10 @@ export function RideDetailPage() {
         eyebrow={cap(formatDateTime(ride.startTime))}
         title={ride.name}
         size="md"
-        aside={prova ? <span className="rounded-full border border-line px-2.5 py-1 text-xs font-semibold" data-testid="ride-detail-prova">Prova</span> : undefined}
+        aside={prova ? <span className="rounded-full border border-line px-2.5 py-1 text-xs font-semibold" data-testid="ride-detail-prova">{ride.manuale ? 'Watt virtuali' : 'Prova'}</span> : undefined}
       />
       <p className="mt-2 text-sm text-muted">
-        {`${ride.source === 'indoor' ? t('history.sourceIndoor') : t('history.sourceImport')}${
+        {`${ride.manuale ? 'Pedalata virtuale' : ride.source === 'indoor' ? t('history.sourceIndoor') : t('history.sourceImport')}${
           ride.tssSource === 'power' ? ` · ${t('history.tssPower')}` : ride.tssSource === 'hr' ? ` · ${t('history.tssHr')}` : ride.tssSource === 'file' ? ` · ${t('history.tssFile')}` : ''
         }`}
       </p>

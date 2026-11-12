@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Wordmark } from '@/components/ui';
 import { usePacco, useRete } from '@/lib/rete';
 import { formatGainText, formatKmText } from '@/domain/format';
 import { loadRouteFile, routeMeta, trackFromRouteFile } from '@/domain/routes';
+import { GANDA_LINK, GANDA_NAME, GANDA_PLAN, roadStart, type FreeStart } from '@/open/partenze';
 import { lastWorld, isWorldId } from '@/open/worlds';
 import type { Rete, Tipo } from '@/ride/contract';
 import { useApp } from '@/store/useApp';
@@ -14,13 +15,13 @@ import type { PlanSession } from '@/domain/plans';
 import { DoveContenuto, DoveFoglio, idScelto, useMondo, type Filtro, type Scelto, type Strumento } from './pedala/Dove';
 import { RulloChip, RulloFoglio, RulloPannello } from './pedala/Rullo';
 import { useRullo } from '@/sim/rullo';
-import { clampWatt, fisicaDi, intentoDi, leggiScelta, salvaScelta, SCELTA_VUOTA, stimaGiro, vistaGiro, vistaPercorso, vistaSalita, wattDelTipo, wattIniziali, type Scelta, type VistaDove } from './pedala/scelta';
-import { AllenamentoCard, ComeSegmento, Fantasma, Giri, VaETorna, WattFissi } from './pedala/Come';
+import { clampWatt, fisicaDi, intentoDi, leggiScelta, salvaScelta, sceltaGanda, SCELTA_VUOTA, stimaGiro, vistaGiro, vistaLibero, vistaPercorso, vistaSalita, wattDelTipo, wattIniziali, type Scelta, type VistaDove } from './pedala/scelta';
+import { AllenamentoCard, ComeSegmento, Fantasma, Giri, VaETorna, WattFissi, WattManuali } from './pedala/Come';
 import { AllenamentoFoglio } from './pedala/Allenamento';
 import { workoutTitle } from './Workouts';
 import { findWorkout, workoutDuration } from '@/domain/workouts';
 import { giriPer } from '@/domain/stima';
-import { intentoInSearch } from '@/ride/intento';
+import { intentoDaSearch, intentoInSearch } from '@/ride/intento';
 import { useI18n } from '@/i18n';
 import { vistaPedala } from './pedala/vista';
 
@@ -58,13 +59,13 @@ function mondoDi(s: Scelta): string {
 }
 
 /**
- * Pedala, la casa (piano U, A2). Senza un sensore di potenza e senza la prova: «Collega il rullo»
- * e nient'altro (B1–B5, C5). Con la potenza: Dove · Come · Via, la scelta ricordata (A21).
+ * Pedala ricorda il Dove e il Come. Senza un misuratore si può scegliere una pedalata virtuale.
  */
 export function PedalaPage() {
   const r = useRullo();
   const rete = useReteOra();
   const navigate = useNavigate();
+  const { key: navigationKey } = useLocation();
   const [params, setParams] = useSearchParams();
   const updateSettings = useApp((s) => s.updateSettings);
   const rides = useApp((s) => s.rides);
@@ -79,7 +80,7 @@ export function PedalaPage() {
   const [dove, setDove] = useState<{ open: boolean; strumento: Strumento; filtro: Filtro; solo?: boolean; ride?: string | null }>({ open: false, strumento: 'lista', filtro: 'tutti' });
   const [worldId, setWorldId] = useState(lastWorld);
   // un Dove chiesto dall'indirizzo (un link vecchio, «Rifai» dal Diario) che aspetta il mondo
-  const [attesa, setAttesa] = useState<{ world: string; ride: string } | null>(null);
+  const [attesa, setAttesa] = useState<{ world: string; ride: string } | FreeStart | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -100,23 +101,32 @@ export function PedalaPage() {
     });
   }, []);
 
-  const v = vistaPedala(r, rete, { dove: scelta?.dove ?? null, tipo: scelta?.tipo, record: !!scelta?.vista?.record, giri: !!scelta?.vista?.anello, allora: !!scelta?.vista?.potenza });
+  const manuale = !!scelta?.manuale && !r.sa.potenza;
+  const v = vistaPedala(r, rete, { manuale, dove: scelta?.dove ?? null, tipo: scelta?.tipo, record: !!scelta?.vista?.record, giri: !!scelta?.vista?.anello, allora: !!scelta?.vista?.potenza });
   const puo = !v.pannello;
-  const mondo = useMondo(worldId, puo && (dove.open || largo || !!attesa));
+  const mondo = useMondo(worldId, !!attesa || (puo && (dove.open || largo)));
   const pacco = usePacco(scelta?.dove && 'world' in scelta.dove ? scelta.dove.world : worldId);
 
   // ?dove=… dall'indirizzo: apre il foglio, o sceglie un Dove (piano U, § 2.6)
-  const letti = useRef(false);
+  const letti = useRef('');
   useEffect(() => {
-    if (!scelta || letti.current) return;
     const d = params.get('dove');
-    if (!d) return;
-    letti.current = true;
+    if (!d) { letti.current = ''; return; }
+    const key = navigationKey;
+    if (!scelta || letti.current === key) return;
+    letti.current = key;
     const w = params.get('world');
     if (w && isWorldId(w)) setWorldId(w);
-    if (d === 'giro') {
+    if (d === 'ganda') {
+      setWorldId('bergamo');
+      setAttesa({ world: 'bergamo', ride: GANDA_PLAN });
+    } else if (d === 'giro') {
       const ride = rides.find((x) => x.id === params.get('replay'));
       if (ride) setScelta({ dove: { kind: 'giro', replay: ride.id }, vista: vistaGiro(ride), piano: null, tipo: scelta.tipo === 'allenamento' ? 'libera' : scelta.tipo });
+    } else if (d === 'libero' && params.has('edge') && w && isWorldId(w)) {
+      const point = intentoDaSearch(params)?.dove;
+      if (point?.kind === 'libero') setAttesa(point);
+      else setDove({ open: true, strumento: 'libero', filtro: 'tutti' });
     } else if (d === 'percorso' && params.get('ride')) {
       setAttesa({ world: w && isWorldId(w) ? w : lastWorld(), ride: params.get('ride')! });
     } else if (d === 'salita' && params.get('route')) {
@@ -126,19 +136,43 @@ export function PedalaPage() {
       const strumento: Strumento = d === 'libero' || d === 'anello' || d === 'ab' ? d : 'lista';
       setDove({ open: true, strumento, filtro: d === 'salite' ? 'salite' : d === 'giri' ? 'giri' : 'tutti' });
     }
-    setParams({}, { replace: true });
-  }, [scelta, params, setParams, rides, setScelta]);
+    if (d !== 'ganda') setParams({}, { replace: true });
+  }, [scelta, params, navigationKey, setParams, rides, setScelta]);
   useEffect(() => {
-    if (!attesa || !mondo.data || mondo.id !== attesa.world) return;
-    const ride = mondo.data.rides.find((x) => x.id === attesa.ride);
-    if (ride) {
-      const rec = mondo.progress.rides[ride.id];
-      setScelta({ dove: { kind: 'percorso', world: mondo.id, ride: ride.id }, vista: vistaPercorso(mondo.data, ride, rec?.bestSec ? { sec: rec.bestSec, at: rec.bestAt } : null), piano: null });
+    if (!attesa || mondo.id !== attesa.world) return;
+    if (mondo.error) {
+      setAttesa(null);
+      setScelta({ dove: null, vista: null, piano: null });
+      setDove({ open: true, strumento: 'lista', filtro: 'tutti' });
+      return;
+    }
+    if (!mondo.data) return;
+    if ('ride' in attesa && attesa.ride === GANDA_PLAN) {
+      const ganda = sceltaGanda(mondo.data);
+      if (ganda) {
+        setScelta({ ...ganda, giri: 1 });
+        setDove(d => ({ ...d, open: false }));
+      }
+    } else if ('ride' in attesa) {
+      const ride = mondo.data.rides.find((x) => x.id === attesa.ride);
+      if (ride) {
+        const rec = mondo.progress.rides[ride.id];
+        setScelta({ dove: { kind: 'percorso', world: mondo.id, ride: ride.id }, vista: vistaPercorso(mondo.data, ride, rec?.bestSec ? { sec: rec.bestSec, at: rec.bestAt } : null), piano: null });
+      }
+    } else {
+      const graph = mondo.data.graph;
+      const start = roadStart(graph, attesa.edge, attesa.s, attesa.dir);
+      if (start) {
+        const edge = graph.edges[start.edge];
+        setScelta({ dove: start, vista: vistaLibero(edge.name || edge.ref || 'Punto sulla mappa'), piano: null, giri: 1 });
+        setDove(d => ({ ...d, open: false }));
+      } else setDove({ open: true, strumento: 'libero', filtro: 'tutti' });
     }
     setAttesa(null);
   }, [attesa, mondo, setScelta]);
 
   const scegli = (s: Scelto) => {
+    if (params.get('dove') === 'ganda' && !(s.dove.kind === 'piano' && s.dove.plan === GANDA_PLAN)) setParams({}, { replace: true });
     setScelta({ dove: s.dove, vista: s.vista, piano: s.piano, giri: 1, tipo: scelta?.tipo === 'allora' && s.dove.kind !== 'giro' ? 'libera' : scelta?.tipo ?? 'libera' });
     setDove((d) => ({ ...d, open: false, strumento: 'lista', solo: false }));
   };
@@ -155,17 +189,19 @@ export function PedalaPage() {
   const tipo: Tipo = scelta && v.tipi.includes(scelta.tipo) ? scelta.tipo : v.tipi[0] ?? 'libera';
   const workout = scelta?.workout ? findWorkout(scelta.workout, workouts) ?? null : null;
   const watt = scelta?.watt ?? wattIniziali(profile.ftp);
+  const wattManuale = scelta?.wattManuali ?? wattIniziali(profile.ftp);
+  const wattStima = manuale && tipo !== 'allenamento' ? wattManuale : wattDelTipo(tipo, profile.ftp, watt, workout);
   const vistaD = scelta?.vista ?? null;
   const fisica = useMemo(() => fisicaDi(profile), [profile]);
   /** secondi per un passaggio del Dove, ai watt del tipo (A14) */
-  const giroSec = useMemo(() => (vistaD && vistaD.profilo.length > 1 ? stimaGiro(vistaD.profilo, wattDelTipo(tipo, profile.ftp, watt, workout), fisica) : null), [vistaD, tipo, profile.ftp, watt, workout, fisica]);
+  const giroSec = useMemo(() => (vistaD && vistaD.profilo.length > 1 && wattStima > 0 ? stimaGiro(vistaD.profilo, wattStima, fisica) : null), [vistaD, wattStima, fisica]);
   const durataAll = workout ? workoutDuration(workout) : null;
   const aperto = !!vistaD && !vistaD.anello && scelta?.dove?.kind !== 'libero' && scelta?.dove?.kind !== 'giro' && scelta?.dove?.kind !== 'salita';
   const giriSi = !!vistaD?.anello || (aperto && tipo === 'allenamento' && !!workout);
   const now = useNow();
   const sessione = useSessioneAperta(now);
   const programma = useProgrammaOggi();
-  const vv = vistaPedala(r, rete, { dove: scelta?.dove ?? null, tipo, record: !!vistaD?.record, giri: giriSi, allora: !!vistaD?.potenza, sessione: !!sessione, programma: !!programma });
+  const vv = vistaPedala(r, rete, { manuale, dove: scelta?.dove ?? null, tipo, record: !!vistaD?.record, giri: giriSi, allora: !!vistaD?.potenza, sessione: !!sessione, programma: !!programma });
   /** «Usa» del programma: Dove e Come dal giorno del programma (I3). */
   const usaProgramma = (ps: PlanSession) => {
     proposta.current = '';
@@ -195,8 +231,8 @@ export function PedalaPage() {
     setScelta({ tipo: t, watt: t === 'fissa' ? watt : scelta?.watt ?? null });
     if (t === 'allenamento' && !workout) setAllenamenti(true);
   };
-  const intento = scelta && scelta.dove ? intentoDi({ ...scelta, tipo, watt: tipo === 'fissa' ? watt : scelta.watt, giri: giriSi ? scelta.giri : 1 }, vv.tipi, giriSi) : null;
-  let via = intento ? `/ride?${intentoInSearch(intento)}` : null;
+  const intento = scelta && scelta.dove ? intentoDi({ ...scelta, tipo, manuale, wattManuali: wattManuale, watt: tipo === 'fissa' ? watt : scelta.watt, giri: giriSi ? scelta.giri : 1 }, vv.tipi, giriSi) : null;
+  let via = !attesa && intento && (tipo !== 'allenamento' || workout) ? `/ride?${intentoInSearch(intento)}` : null;
   // la salita col fantasma: il giro piu' veloce del diario (?route=R&ghost=ID, par. 2.2)
   if (via && intento?.dove.kind === 'salita' && intento.fantasma !== false && vistaD?.record?.ghost && tipo !== 'allenamento') via += `&ghost=${encodeURIComponent(vistaD.record.ghost)}`;
   const minutiAll = tipo === 'allenamento' && durataAll ? durataAll / 60 : undefined;
@@ -215,7 +251,7 @@ export function PedalaPage() {
     schedaRide: dove.ride ?? null,
     soloStrumento: dove.solo,
     minuti: minutiAll,
-    watt: wattDelTipo(tipo, profile.ftp, watt, workout),
+    watt: wattStima,
   };
   const apriDove = () => setDove({ open: true, strumento: 'lista', filtro: dove.filtro });
   const scheda = scelta?.dove?.kind === 'percorso' ? () => setDove({ open: true, strumento: 'scheda', filtro: dove.filtro, solo: true, ride: (scelta.dove as { ride: string }).ride }) : scelta?.dove?.kind === 'libero' ? () => setDove({ open: true, strumento: 'libero', filtro: dove.filtro, solo: true }) : scelta?.dove?.kind === 'salita' ? () => navigate(`/salite/${(scelta.dove as { route: string }).route}`) : null;
@@ -228,6 +264,11 @@ export function PedalaPage() {
       Scheda
     </button>
   ) : null;
+  const avviaManuale = (
+    <button type="button" className="mx-auto flex min-h-12 w-full max-w-sm items-center justify-center rounded-full border border-line px-4 text-sm font-semibold" onClick={() => setScelta({ manuale: true })} data-testid="pedala-manuale">
+      Pedala con watt manuali
+    </button>
+  );
   const pannelloScelta = scelta ? (
     <div className="flex flex-col" data-testid="pedala-scelta">
       {vv.blocchi.includes('sessione') || (programma && vv.blocchi.includes('programma')) ? (
@@ -260,7 +301,9 @@ export function PedalaPage() {
       ) : null}
       {fineInCima && giroSec && durataAll ? <p className="mt-2 text-sm font-semibold text-warn" data-testid="pedala-fine-in-cima">{`⚠ Finisce in cima · ${Math.round(giroSec / 60)} di ${Math.round(durataAll / 60)} min`}</p> : null}
       <Occhiello>Come</Occhiello>
-      <ComeSegmento tipi={vv.tipi} tipo={tipo} sa={r.sa} prova={r.prova} onChange={sceltaTipo} />
+      <ComeSegmento tipi={vv.tipi} tipo={tipo} sa={r.sa} prova={r.prova} manuale={manuale} onChange={sceltaTipo} />
+      {manuale && tipo !== 'allenamento' ? <WattManuali watt={wattManuale} onChange={(w) => setScelta({ wattManuali: w })} /> : null}
+      {r.prova && !r.sa.potenza && !manuale ? <div className="mt-2">{avviaManuale}</div> : null}
       {tipo === 'fissa' ? <WattFissi watt={watt} ftp={profile.ftp} durataSec={giroSec ? giroSec * (giriSi ? scelta.giri : 1) : null} onChange={(w) => setScelta({ watt: clampWatt(w) })} /> : null}
       {tipo === 'allenamento' ? <AllenamentoCard workout={workout} titolo={workout ? workoutTitle(workout, t) : ''} ftp={profile.ftp} onClick={() => setAllenamenti(true)} /> : null}
       {vv.blocchi.includes('fantasma') && vistaD?.record ? (
@@ -275,7 +318,7 @@ export function PedalaPage() {
           Via
         </button>
       )}
-      <MissioniRiga />
+      {manuale ? <p className="mt-2 text-center text-xs text-muted">Giro virtuale · fuori classifica</p> : <MissioniRiga />}
     </div>
   ) : null;
 
@@ -290,12 +333,17 @@ export function PedalaPage() {
         <h1 className="hidden font-display text-4xl uppercase leading-none wide:block">Pedala</h1>
         <span className="ml-auto flex min-w-0 items-center gap-1.5">
           {v.offline ? <ReteChip /> : null}
-          {v.chip ? <RulloChip r={r} onClick={() => setFoglio(true)} /> : null}
+          {v.chip === 'manuale' ? (
+            <button type="button" className="min-h-11 rounded-full border border-line px-3.5 text-sm font-semibold" onClick={() => { if (r.prova) spegniProva(); setScelta({ manuale: false }); }} data-testid="pedala-usa-rullo">Usa il rullo</button>
+          ) : v.chip ? <RulloChip r={r} onClick={() => setFoglio(true)} /> : null}
         </span>
       </header>
       {v.pannello ? (
         <div className="flex flex-1 flex-col justify-center">
+          {vistaD && <p className="mb-3 text-center font-semibold" data-testid="pedala-destinazione">{vistaD.titolo}{scelta?.dove?.kind === 'libero' ? ` · ${vistaD.partenza}` : ''}</p>}
           <RulloPannello r={r} pannello={v.pannello} />
+          {!vistaD && worldId === 'bergamo' && <Link to={GANDA_LINK} className="self-center py-3 font-semibold text-accent" data-testid="pedala-ganda-salita">{GANDA_NAME}</Link>}
+          {scelta ? <div className="text-center">{avviaManuale}<p className="mt-1.5 text-xs text-muted">Giro virtuale senza rullo · fuori classifica</p></div> : null}
         </div>
       ) : largo ? (
         <div className="grid flex-1 grid-cols-[minmax(0,1fr)_380px] gap-6 pb-6">

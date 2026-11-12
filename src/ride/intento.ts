@@ -23,6 +23,11 @@ export function wattFissi(w: number): number {
   return Math.min(WATT_MAX, Math.max(WATT_MIN, r));
 }
 
+/** Anche a 0 W si può proseguire per inerzia o in discesa. */
+export function wattManuali(w: number): number {
+  return Number.isFinite(w) ? Math.min(WATT_MAX, Math.max(0, Math.round(w / WATT_PASSO) * WATT_PASSO)) : 0;
+}
+
 function intero(raw: string | null): number | null {
   if (raw == null || raw.trim() === '') return null;
   const n = Number(raw);
@@ -67,7 +72,12 @@ export function intentoDaSearch(p: URLSearchParams): Intento | null {
   if (tipo === 'allora' && dove.kind !== 'giro') tipo = 'libera';
 
   const out: Intento = { dove, tipo };
-  if (tipo === 'fissa') {
+  if (p.get('manuale') === '1') {
+    out.manuale = true;
+    if (tipo !== 'allenamento') out.tipo = 'libera';
+    const w = intero(p.get('watt'));
+    if (w != null) out.watt = wattManuali(w);
+  } else if (tipo === 'fissa') {
     const w = intero(p.get('watt'));
     if (w != null) out.watt = wattFissi(w);
   }
@@ -94,7 +104,7 @@ export function intentoDaSearch(p: URLSearchParams): Intento | null {
 export function intentoInSearch(i: Intento): string {
   const q = new URLSearchParams();
   const d = i.dove;
-  const tipo: Tipo = i.tipo === 'allora' && d.kind !== 'giro' ? 'libera' : i.tipo;
+  const tipo: Tipo = (i.manuale && i.tipo !== 'allenamento') || (i.tipo === 'allora' && d.kind !== 'giro') ? 'libera' : i.tipo;
   if (tipo === 'allenamento' && i.workout) q.set('workout', i.workout);
   switch (d.kind) {
     case 'percorso':
@@ -108,7 +118,7 @@ export function intentoInSearch(i: Intento): string {
     case 'libero':
       q.set('world', d.world);
       q.set('edge', String(d.edge));
-      q.set('s', String(Math.round(d.s)));
+      q.set('s', String(Math.round(d.s * 10) / 10));
       q.set('dir', String(d.dir));
       break;
     case 'salita':
@@ -121,7 +131,10 @@ export function intentoInSearch(i: Intento): string {
   // il tipo si scrive solo se il resto del link non lo dice già
   const implicito = tipo === 'libera' || (tipo === 'allenamento' && !!i.workout) || (tipo === 'allora' && d.kind === 'giro');
   if (!implicito) q.set('tipo', tipo);
-  if (tipo === 'fissa' && i.watt != null) q.set('watt', String(wattFissi(i.watt)));
+  if (i.manuale) {
+    q.set('manuale', '1');
+    if (i.watt != null) q.set('watt', String(wattManuali(i.watt)));
+  } else if (tipo === 'fissa' && i.watt != null) q.set('watt', String(wattFissi(i.watt)));
   if (d.kind === 'giro') {
     // il modo di oggi: i watt, il fantasma o la sola pendenza del giro di allora
     if (tipo === 'allora') {

@@ -1,10 +1,14 @@
-import { Component, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
-import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import { RideClock } from '@/sim/clock';
+import { Component, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
+import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { rideKey as sessionKey, RideView } from '@/ride/activeRide';
 import { WorkoutChart } from '@/components/WorkoutChart';
 import { gradeColor, ProfileChart, RouteMap } from '@/components/RouteViz';
 import { legsBounds, WorldMap, type MapMarker, type MapOverlay } from '@/components/WorldMap';
 import { Button, Segmented, Wordmark } from '@/components/ui';
-import { BluetoothTrainer } from '@/bluetooth/trainer';
+import type { TelemetrySource } from '@/sim/source';
+import { ManualPowerSource } from '@/sim/simulator';
+import { WattManuali } from './pedala/Come';
 import { formatAlt, formatAltText, formatDuration, formatGrade, formatKm, formatKmText, formatNumber, formatTss, msToKmh, withUnit } from '@/domain/format';
 import { STANDARD_AIR, type PhysicsParams } from '@/domain/physics';
 import { gapSeconds, ghostDistanceAt, powerAtTime } from '@/domain/replay';
@@ -16,7 +20,7 @@ import { estimateLthr, powerZone } from '@/domain/zones';
 import { findWorkout, workoutAt } from '@/domain/workouts';
 import { useI18n, type Translate } from '@/i18n';
 import { RideEngine } from '@/sim/engine';
-import { CHECKPOINT_EVERY_MS, clearCheckpoint, loadCheckpoint, resumePath, rideFromCheckpoint, RideKeeper, rideSearch, sameRide, type RideCheckpoint } from '@/sim/recovery';
+import { CHECKPOINT_EVERY_MS, clearCheckpoint, loadCheckpoint, resumePath, rideFromCheckpoint, RideKeeper, rideSearch, sameRide, sameRideSearch, possibileRipresaPrecedente, type RideCheckpoint } from '@/sim/recovery';
 import { useApp } from '@/store/useApp';
 import { RideScene } from '@/world/Scene';
 import { RoomPanel, RoomSheet, useRoom } from './RideRoom';
@@ -38,7 +42,7 @@ import { type CareerOutcome, type SegmentResult } from '@/game/career';
 import { commitProgress as commitRide, NOTHING_COMMITTED, type Committed } from '@/game/commit';
 import { useRideSetup, type RideSetup } from '@/ride/setup';
 import { puoPedalare, rullo, rulloAdesso, tipiAmmessi, useRullo } from '@/sim/rullo';
-import { giriDi } from '@/ride/intento';
+import { giriDi, intentoDaSearch, wattManuali } from '@/ride/intento';
 import { RideGame, rideFrame } from '@/game/rideGame';
 import { SEGMENT_STYLE } from '@/game/arches';
 import { sessionById } from '@/game/sessions';
@@ -126,7 +130,7 @@ function useQuickTitle(params: URLSearchParams): { title?: string; subtitle?: st
 export function RidePage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  // senza un sensore di potenza (e senza la prova) la corsa non parte: si torna a Pedala (A4).
+  const manuale = !!intentoDaSearch(params)?.manuale;
   // Si decide una volta, all'entrata: un rullo perso a metà giro non chiude la corsa.
   const rulloNow = useRullo();
   const [ammesso, setAmmesso] = useState<boolean | null>(() => (rulloNow.stato === 'cerco' ? null : puoPedalare(rulloNow)));
@@ -148,11 +152,12 @@ export function RidePage() {
   const saveRide = useApp((s) => s.saveRide);
   // letto per questo link: da un giro all'altro senza uscire, la pedalata di prima si smonta (e mette
   // da parte il suo punto di ripresa) prima che si rilegga
-  const rideKey = useMemo(() => rideSearch(params, ['room']), [params]);
+  const rideKey = useMemo(() => sessionKey(params.toString()), [params]);
   const [cpState, setCpState] = useState<{ key: string; cp: RideCheckpoint | null } | null>(null);
   const cp = cpState && cpState.key === rideKey ? cpState.cp : undefined;
   const setCp = (c: RideCheckpoint | null) => setCpState({ key: rideKey, cp: c });
   const [keptNote, setKeptNote] = useState(false);
+  const [archiveFailed, setArchiveFailed] = useState(false);
   useEffect(() => {
     let alive = true;
     void loadCheckpoint()
@@ -162,26 +167,34 @@ export function RidePage() {
       alive = false;
     };
   }, [rideKey]);
-  const resuming = params.get('resume') === '1';
+  const requestedResume = params.get('resume') === '1';
+  const resumedId = useRef<string | null>(null);
   const same = !!cp && sameRide(cp, params);
+  useLayoutEffect(() => {
+    if (cp && requestedResume && sameRideSearch(cp.search, params)) resumedId.current = cp.engine.rideId;
+  }, [cp, requestedResume, params]);
+  const resuming = requestedResume || (!!cp && resumedId.current === cp.engine.rideId);
+  const incerto = !!cp && !same && possibileRipresaPrecedente(cp, params);
   useEffect(() => {
-    if (!cp || same) return;
+    if (!cp || same || incerto) return;
     let alive = true;
     void saveRide(rideFromCheckpoint(cp))
       .then(() => clearCheckpoint())
-      .catch(() => undefined)
-      .finally(() => {
+      .then(() => {
         if (!alive) return;
         setKeptNote(true);
         setCp(null);
-      });
+      }, () => { if (alive) setArchiveFailed(true); });
     return () => {
       alive = false;
     };
-  }, [cp, same, saveRide]);
+  }, [cp, same, incerto, saveRide]);
   const back = () => (window.history.length > 1 ? navigate(-1) : navigate('/'));
-  if (ammesso === false) return <Navigate to="/" replace />;
-  if (error) {
+  if (!manuale && ammesso === false) return <Navigate to="/" replace />;
+  if (cp && same && resuming && !sameRideSearch(cp.search, params)) {
+    return <Navigate to={resumePath(cp)} replace />;
+  }
+  if (error && !incerto && !archiveFailed && !(cp && same && !resuming)) {
     return (
       <div className="grid min-h-dvh place-items-center px-6 text-center">
         <div>
@@ -193,17 +206,18 @@ export function RidePage() {
       </div>
     );
   }
-  if (cp && same && !resuming) {
+  if (cp && ((same && !resuming) || incerto || archiveFailed)) {
     return (
       <LoadingVeil title={title} subtitle={subtitle} onBack={back} idle>
         <div className="mt-8 rounded-3xl bg-elev p-5" data-testid="ride-recovery-inline">
+          {archiveFailed && <p role="alert" className="mb-3 text-warn">Il giro precedente è ancora da salvare.</p>}
           <RecoveryCard cp={cp} onResume={() => navigate(resumePath(cp), { replace: true })} onDone={() => setCp(null)} saveLabel="Salvalo e riparti" />
         </div>
       </LoadingVeil>
     );
   }
   const kept = keptNote ? <p className="mt-6 text-sm text-muted" data-testid="ride-kept">Il giro di prima è nel diario</p> : null;
-  if (ammesso === null || cp === undefined || (cp && !same) || !setup || !gameReady) {
+  if ((!manuale && ammesso === null) || cp === undefined || (cp && !same) || !setup || !gameReady) {
     return (
       <LoadingVeil title={title} subtitle={subtitle} onBack={back}>
         {kept}
@@ -234,24 +248,25 @@ function RideSession({ setup, resume, kept }: { setup: RideSetup; resume: RideCh
   const custom = useApp((s) => s.workouts);
   const intento = setup.intento;
   // il tipo che quello che è collegato permette (A8): una Potenza fissa senza ERG diventa Libera
-  const [tipo] = useState(() => (tipiAmmessi(rulloAdesso()).includes(intento.tipo) ? intento.tipo : 'libera'));
+  const [tipo] = useState(() => (intento.manuale || tipiAmmessi(rulloAdesso()).includes(intento.tipo) ? intento.tipo : 'libera'));
   const workoutId = tipo === 'allenamento' ? (intento.workout ?? null) : null;
   const workout = workoutId ? findWorkout(workoutId, custom) ?? null : null;
-  const parts = useRef<{ engine: RideEngine; trainer: BluetoothTrainer; game: RideGame } | null>(null);
+  const parts = useRef<{ engine: RideEngine; trainer: TelemetrySource; game: RideGame } | null>(null);
   if (!parts.current) {
     // il rullo dell'app, già collegato da Pedala; il simulatore solo in prova (src/sim/rullo.ts)
-    const trainer = rullo.sorgente();
+    const trainer = intento.manuale ? new ManualPowerSource() : rullo.sorgente();
     const r = rulloAdesso();
     const replay = tipo === 'allora' && setup.replayMode === 'power' ? setup.replaySamples : undefined;
     const engine = new RideEngine({
       tipo,
+      manuale: intento.manuale,
       watt: intento.watt,
       // misuratore di potenza o rullo senza ERG: l'allenamento è a bersaglio, al rullo nessun comando
-      ergAlRullo: r.sa.erg || r.prova,
+      ergAlRullo: intento.manuale ? tipo === 'allenamento' : r.sa.erg || r.prova,
       track: setup.route.track,
       source: trainer,
       physics: physicsFrom(profile),
-      ftp: profile.ftp,
+      ftp: resume?.ftp ?? profile.ftp,
       maxHr: profile.maxHr,
       restHr: profile.restingHr,
       lthr: estimateLthr(profile.maxHr, profile.thresholdHr),
@@ -265,11 +280,12 @@ function RideSession({ setup, resume, kept }: { setup: RideSetup; resume: RideCh
       geoAt: geoFor(setup.route),
     });
     engine.prova = setup.prova;
+    if (intento.manuale) engine.effort = wattManuali(intento.watt ?? engine.ftp * 0.75) / Math.max(1, engine.ftp);
     engine.giri = giriDi(intento);
     // un giro ripreso torna dov'era; ?at=metri parte da un punto della salita (per riprendere un tratto)
     const at = Number(params.get('at'));
     if (resume) engine.restore(resume.engine);
-    else if (Number.isFinite(at) && at > 0) engine.distance = Math.min(at, setup.route.track.length - 1);
+    else if (Number.isFinite(at) && at > 0) engine.startAt(at);
     // la sessione vale solo sul suo percorso
     const def = sessionById(params.get('session') ?? '');
     const sessionDef = def && setup.world?.session.ride?.id === def.rideId ? def : null;
@@ -286,8 +302,8 @@ function RideSession({ setup, resume, kept }: { setup: RideSetup; resume: RideCh
       sim: () => trainer.snapshot().mode === 'simulator',
       scale: () => (trainer.snapshot().mode === 'simulator' ? engine.timeScale : 1),
       // in classifica Libera e Potenza fissa (i watt sono veri); Allenamento no; Prova mai (A10)
-      ranked: !setup.prova && !setup.replayMode && (engine.tipo === 'libera' || engine.tipo === 'fissa'),
-      prova: setup.prova,
+      ranked: !engine.prova && !setup.replayMode && (engine.tipo === 'libera' || engine.tipo === 'fissa'),
+      prova: engine.prova,
       // il fantasma: l'interruttore di Pedala, mai con un allenamento (A9)
       fantasma: intento.fantasma !== false && engine.tipo !== 'allenamento',
       // i tratti cronometrati solo dove il ritmo è tuo: con un allenamento o coi watt di allora no
@@ -310,24 +326,42 @@ function RideSession({ setup, resume, kept }: { setup: RideSetup; resume: RideCh
   const { engine, trainer, game } = parts.current;
   // il mondo pronto: prima il tempo non corre e i tratti non partono (rideFrame)
   const ready = useRef(false);
+  const clock = useRef<RideClock | null>(null);
   const markReady = useCallback(() => {
+    clock.current?.pulse(performance.now());
     ready.current = true;
   }, []);
 
   useEffect(() => {
+    const rideClock = new RideClock(performance.now(),
+      (dt, atMs) => rideFrame(engine, setup.world, game, dt, ready.current, atMs),
+      () => !ready.current || engine.phase !== 'riding');
+    clock.current = rideClock;
+    const sync = () => rideClock.pulse(performance.now());
+    engine.syncClock = sync;
+    const offReading = trainer.beforeReading?.(sync);
+    const pump = () => rideClock.pulse(performance.now(), 12);
+    const onVisibility = () => document.hidden ? sync() : pump();
     let frame = 0;
-    let last = performance.now();
-    const loop = (now: number) => {
-      const dt = Math.min(0.05, (now - last) / 1000);
-      last = now;
-      rideFrame(engine, setup.world, game, dt, ready.current);
-      frame = requestAnimationFrame(loop);
+    const render = () => {
+      pump();
+      frame = requestAnimationFrame(render);
     };
-    frame = requestAnimationFrame(loop);
+    frame = requestAnimationFrame(render);
+    const timer = window.setInterval(pump, 1000);
+    document.addEventListener('visibilitychange', onVisibility, true);
+    window.addEventListener('pagehide', sync, true);
     return () => {
       cancelAnimationFrame(frame);
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibility, true);
+      window.removeEventListener('pagehide', sync, true);
+      offReading?.();
+      sync();
+      engine.syncClock = undefined;
+      clock.current = null;
       // il rullo resta collegato per la corsa dopo: torna in piano, e il simulatore si spegne
-      rullo.riposa();
+      if (!setup.intento.manuale) rullo.riposa();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine, trainer]);
@@ -366,7 +400,7 @@ function useMedia(query: string): boolean {
  * Sul largo il pannello dei numeri galleggia sopra il 3D: quanto è alto (e quanto è largo il
  * simulatore accanto all'altimetria) lo dicono due variabili CSS sul palco, misurate dal vero.
  */
-function useStageVars(stage: RefObject<HTMLDivElement | null>, dock: RefObject<HTMLElement | null>, sim: RefObject<HTMLElement | null>, simOn: boolean) {
+function useStageVars(stage: RefObject<HTMLDivElement | null>, dock: RefObject<HTMLElement | null>, sim: RefObject<HTMLElement | null>, simOn: boolean, visible: boolean) {
   useLayoutEffect(() => {
     const st = stage.current;
     const dk = dock.current;
@@ -387,7 +421,7 @@ function useStageVars(stage: RefObject<HTMLDivElement | null>, dock: RefObject<H
       ro.disconnect();
       mq.removeEventListener('change', apply);
     };
-  }, [stage, dock, sim, simOn]);
+  }, [stage, dock, sim, simOn, visible]);
 }
 
 /** Montato finché esce: quello che entra in dissolvenza esce in dissolvenza, e intanto non si tocca. */
@@ -428,7 +462,7 @@ function RideScreen({
   kept,
 }: {
   engine: RideEngine;
-  trainer: BluetoothTrainer;
+  trainer: TelemetrySource;
   game: RideGame;
   profile: Profile;
   workout: Workout | null;
@@ -454,10 +488,20 @@ function RideScreen({
   const [webgl, setWebgl] = useState(true);
   const [effort, setEffort] = useState(() => Math.round(engine.effort * 100));
   const [summary, setSummary] = useState<Ride | null>(null);
+  const { visible, setActive } = useContext(RideView);
+  const { search } = useLocation();
+  const keepSession = ready && (!summary || !visible);
   const [saveState, setSaveState] = useState<'saving' | 'saved' | 'failed'>('saving');
   const [ftpApplied, setFtpApplied] = useState(false);
   const summaryRef = useRef<Ride | null>(null);
   const savedRef = useRef<Promise<void>>(Promise.resolve());
+  const finishRef = useRef(finish);
+  useLayoutEffect(() => { finishRef.current = finish; });
+  useLayoutEffect(() => {
+    if (!keepSession) return;
+    setActive({ search, title: setup.label, engine, finish: () => finishRef.current() });
+    return () => setActive(null);
+  }, [keepSession, search, setup.label, engine, setActive]);
   const readyRef = useRef(false);
   const stageRef = useRef<HTMLDivElement>(null);
   const dockRef = useRef<HTMLElement>(null);
@@ -488,6 +532,7 @@ function RideScreen({
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if (!visible) return;
       if (event.code !== 'Space' || event.target instanceof HTMLInputElement || !readyRef.current || summaryRef.current) return;
       event.preventDefault();
       if (engine.phase === 'riding') engine.pause();
@@ -495,7 +540,7 @@ function RideScreen({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [engine]);
+  }, [engine, visible]);
 
   const zone = powerZone(engine.power3s, engine.ftp);
   const progress = engine.workout && !engine.workoutDone ? workoutAt(engine.workout, engine.elapsed, engine.ftp) : null;
@@ -617,21 +662,23 @@ function RideScreen({
           name: () => nameRef.current,
           where: () => {
             const s = setup.world?.session;
+            const originSearch = resume ? resume.originSearch : rideSearch(paramsRef.current);
             // fuori dal percorso (o nel giro libero) si riparte dal punto di adesso: la strada fatta resta nei km
             if (s && (!s.onRoute || s.rejoined || s.routeEnd != null)) {
               const q = new URLSearchParams(rideSearch(paramsRef.current, ['ride', 'plan', 'session', 'edge', 's', 'dir']));
               const at = s.path.edgeAt(engine.distance);
               q.set('edge', String(at.edge));
-              q.set('s', String(Math.round(at.s)));
+              q.set('s', String(Math.round(at.s * 10) / 10));
               q.set('dir', String(at.dir));
-              return { search: q.toString(), rebase: true };
+              return { search: q.toString(), originSearch, rebase: true };
             }
-            return { search: rideSearch(paramsRef.current), rebase: false };
+            return { search: rideSearch(paramsRef.current), originSearch, rebase: false };
           },
-          ftp: profile.ftp,
+          ftp: engine.ftp,
           lthr: estimateLthr(profile.maxHr, profile.thresholdHr),
           workoutId: workout?.id,
           routeId: () => {
+            if (engine.startDistance > 0) return undefined;
             const s = setup.world?.session;
             if (s?.ride && s.rankable && engine.arrived) return `${setup.world!.data.graph.id}:${s.ride.id}`;
             if (setup.routeId && !workout && !setup.replayMode) return setup.routeId;
@@ -678,6 +725,7 @@ function RideScreen({
   // quanto è già stato contato: «Continua a pedalare» dopo il riepilogo non conta due volte
   const committed = useRef<Committed>({ ...NOTHING_COMMITTED });
   const [rewards, setRewards] = useState<{ outcome: CareerOutcome; results: SegmentResult[] } | null>(null);
+  const [savingProgress, setSavingProgress] = useState(false);
 
   /** Punti, livello e, se vale, il tempo del percorso in classifica. Poi oro e traguardi (src/game/commit.ts). */
   async function commitProgress(): Promise<void> {
@@ -706,11 +754,15 @@ function RideScreen({
   const bearing = headingToBearing(pose.heading);
 
   /** Fine giro: il giro va nel diario da solo, il riepilogo dice che è salvato. */
-  function finish() {
-    if (summaryRef.current) return;
+  function finish(): Promise<void> {
+    if (summaryRef.current) {
+      const ride = summaryRef.current;
+      savedRef.current = savedRef.current.catch(() => saveRide(ride).then(() => clearCheckpoint()));
+      return savedRef.current;
+    }
     const { ride, saved } = keeper.finish();
     summaryRef.current = ride;
-    savedRef.current = saved.catch(() => undefined);
+    savedRef.current = saved;
     setSummary(ride);
     setSaveState('saving');
     setRewards(null);
@@ -718,7 +770,9 @@ function RideScreen({
       () => setSaveState('saved'),
       () => setSaveState('failed'),
     );
-    void commitProgress();
+    setSavingProgress(true);
+    void commitProgress().then(() => setSavingProgress(false), () => setSavingProgress(false));
+    return saved;
   }
 
   const closeMap = useCallback(() => setMapOpen(false), []);
@@ -738,8 +792,8 @@ function RideScreen({
 
   const paused = engine.phase === 'paused' && game.stage !== 'griglia';
   const pauseFade = useFade(ready && paused && !summary, 220);
-  const simOn = sim && !summary;
-  useStageVars(stageRef, dockRef, simRef, simOn);
+  const simOn = sim && !setup.intento.manuale && !summary;
+  useStageVars(stageRef, dockRef, simRef, simOn, visible);
   const onRoute = !session || session.onRoute;
   const kmLeft = Math.max(0, track.length - engine.distance);
   // più passaggi: i km al traguardo di questo passaggio, non all'ultimo
@@ -757,6 +811,9 @@ function RideScreen({
     ? cap([session.placeName(), session.roadLabel(engine.distance), highAlt ? '' : formatAltText(engine.altitude)].filter(Boolean).join(' · '))
     : cap([modeLabel, !setup.route.verified ? 'traccia non verificata' : formatAltText(engine.altitude), track.hairpins.length > 0 ? `tornanti ${hairpinsDone}/${track.hairpins.length}` : ''].filter(Boolean).join(' · '));
 
+  // Il motore, il rullo e il salvataggio restano attivi nelle altre pagine.
+  // La scena 3D e i comandi da tastiera servono soltanto in primo piano.
+  if (!visible) return null;
   const settingsPanel = (
     <details className="group rounded-2xl border border-line bg-bg/60 text-left" data-testid="ride-settings">
       <summary className="flex h-12 cursor-pointer list-none items-center justify-between px-4 text-sm font-semibold">
@@ -914,9 +971,9 @@ function RideScreen({
                 </button>
                 <div className="min-w-0 flex-1 rounded-[1.375rem] bg-bg/70 px-3.5 py-1.5 backdrop-blur-md landscape:max-w-[40rem]" data-testid="ride-route">
                   <p className="break-words font-display text-lg uppercase leading-tight lg:text-2xl">
-                    {setup.prova ? (
+                    {engine.prova ? (
                       <span className="mr-1.5 inline-flex translate-y-[-2px] items-center rounded-full border border-accent/60 px-2 py-px align-middle font-sans text-xs font-semibold normal-case text-accent" data-testid="ride-prova">
-                        Prova
+                        {setup.intento.manuale ? 'Virtuale' : 'Prova'}
                       </span>
                     ) : null}
                     {setup.route.title}
@@ -947,7 +1004,7 @@ function RideScreen({
                     ) : null}
                   </button>
                 ) : null}
-                <RulloChip className={room.available ? undefined : 'landscape:ml-auto'} />
+                {!setup.intento.manuale ? <RulloChip className={room.available ? undefined : 'landscape:ml-auto'} /> : null}
               </div>
               <div className="mt-2 flex items-start justify-between gap-2">
                 <div
@@ -1058,6 +1115,10 @@ function RideScreen({
             onResume={() => engine.resume()}
             onFinish={finish}
           >
+            <Link to="/history" data-testid="ride-open-diary" onClick={() => engine.resume()}
+              className="grid min-h-12 place-items-center rounded-full bg-elev2 px-3 text-sm font-semibold">
+              Continua a pedalare e apri il diario
+            </Link>
             {settingsPanel}
           </PauseVeil>
         ) : null}
@@ -1079,7 +1140,7 @@ function RideScreen({
             <div className="flex items-end justify-between gap-3 landscape:shrink-0">
               <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-wide text-accent" data-testid="erg-target">
-                  {engine.aBersaglio ? 'Bersaglio' : t('ride.erg')} {formatNumber(engine.targetPower, 0)} {t('units.watt')}
+                  {setup.intento.manuale ? 'Blocco' : engine.aBersaglio ? 'Bersaglio' : t('ride.erg')} {formatNumber(engine.targetPower, 0)} {t('units.watt')}
                 </p>
                 <p className="font-display text-xl leading-none">
                   {step ? stepLabel(step, t) : ''}
@@ -1096,6 +1157,13 @@ function RideScreen({
           </div>
         ) : null}
         <div className="landscape:flex landscape:items-center landscape:gap-5">
+          {setup.intento.manuale && (!engine.workout || engine.workoutDone) ? (
+            <WattManuali compatto watt={wattManuali(engine.effort * engine.ftp)} onChange={(w) => {
+              engine.syncClock?.();
+              engine.effort = w / Math.max(1, engine.ftp);
+              bump((n) => n + 1);
+            }} />
+          ) : null}
           <Bersaglio engine={engine} onChange={() => bump((n) => n + 1)} className="mb-2 landscape:mb-0 landscape:shrink-0" />
           <dl className={cn('grid grid-cols-3 gap-2 transition-opacity duration-200 landscape:flex landscape:shrink-0 landscape:gap-6', paused && 'opacity-45')} data-testid="ride-numbers">
             <div className="min-w-0">
@@ -1120,9 +1188,11 @@ function RideScreen({
             <div className="min-w-0" data-testid="ride-km">
               <dt className="sr-only">{t('metrics.distance')}</dt>
               <dd className="num font-display text-[38px] leading-none lg:text-[48px]" data-big="">
-                {formatKm(traguardo != null ? traguardo : onRoute ? kmLeft : engine.odometer)}
+                {formatKm(engine.odometer)}
               </dd>
-              <dd className="mt-0.5 text-xs leading-tight text-muted">{traguardo != null ? 'km al traguardo' : onRoute ? 'km all’arrivo' : 'km fatti'}</dd>
+              <dd className="mt-0.5 text-xs leading-tight text-muted">km fatti
+                {traguardo != null ? ` · ${formatKm(traguardo)} km al traguardo` : onRoute ? ` · ${formatKm(kmLeft)} km all’arrivo` : ''}
+              </dd>
             </div>
           </dl>
           <p className={cn('num mt-1.5 flex flex-wrap gap-x-3.5 gap-y-0.5 text-[15px] leading-tight landscape:mt-0 landscape:grid landscape:min-w-0 landscape:flex-1 landscape:grid-cols-[auto_auto] landscape:justify-start landscape:gap-x-3 landscape:gap-y-0.5 lg:landscape:flex lg:landscape:gap-x-4', paused && 'opacity-45', engine.tipo === 'fissa' && 'landscape:hidden lg:landscape:flex')} data-testid="ride-secondary">
@@ -1136,10 +1206,10 @@ function RideScreen({
               </span>
             ) : null}
             <span>
-              <span className="font-semibold">{paused ? '–' : formatNumber(engine.cadence, 0)}</span> <span className="text-xs text-muted">{t('units.rpm')}</span>
+              <span className="font-semibold">{paused || setup.intento.manuale ? '–' : formatNumber(engine.cadence, 0)}</span> <span className="text-xs text-muted">{t('units.rpm')}</span>
             </span>
             <span>
-              <span className="text-xs text-muted">FC</span> <span className="font-semibold">{formatNumber(engine.hr, 0)}</span>
+              <span className="text-xs text-muted">FC</span> <span className="font-semibold">{setup.intento.manuale ? '–' : formatNumber(engine.hr, 0)}</span>
             </span>
             <span className="text-muted">{t(zone.nameKey)}</span>
           </p>
@@ -1161,6 +1231,7 @@ function RideScreen({
                 engine={engine}
                 effort={effort}
                 onEffort={(value) => {
+                  engine.syncClock?.();
                   setEffort(value);
                   engine.effort = value / 100;
                 }}
@@ -1205,15 +1276,17 @@ function RideScreen({
           rewards={rewards}
           ftpApplied={ftpApplied}
           onApplyFtp={() => void updateProfile({ ftp: engine.estimatedFtp() ?? profile.ftp }).then(() => setFtpApplied(true))}
-          onDone={() => void savedRef.current.then(() => navigate('/'))}
-          onHistory={() => void savedRef.current.then(() => navigate(`/history/${summary.id}`))}
+          onDone={() => void finish().then(() => navigate('/'), () => setSaveState('failed'))}
+          onHistory={() => void finish().then(() => navigate(`/history/${summary.id}`), () => setSaveState('failed'))}
           onContinue={() => {
             engine.reopen();
             summaryRef.current = null;
             setSummary(null);
           }}
+          savingProgress={savingProgress}
           onDiscard={() =>
             void savedRef.current
+              .catch(() => undefined)
               .then(() => deleteRide(summary.id))
               .then(() => clearCheckpoint())
               .then(() => navigate('/'))
@@ -1488,6 +1561,7 @@ function RideSummary({
   onDone,
   onHistory,
   onContinue,
+  savingProgress,
   onDiscard,
   t,
 }: {
@@ -1503,6 +1577,7 @@ function RideSummary({
   onDone: () => void;
   onHistory: () => void;
   onContinue: () => void;
+  savingProgress: boolean;
   onDiscard: () => void;
   t: Translate;
 }) {
@@ -1519,7 +1594,7 @@ function RideSummary({
           </p>
           {ride.prova ? (
             <p className="mt-1.5 flex flex-wrap gap-1.5" data-testid="summary-prova">
-              <span className="rounded-full border border-accent/60 px-2 py-px text-xs font-semibold text-accent">Prova</span>
+              <span className="rounded-full border border-accent/60 px-2 py-px text-xs font-semibold text-accent">{ride.manuale ? 'Watt virtuali' : 'Prova'}</span>
               <span className="rounded-full border border-line px-2 py-px text-xs font-semibold">Niente classifica né oro</span>
             </p>
           ) : null}
@@ -1599,7 +1674,7 @@ function RideSummary({
             </Button>
             {esportabile(ride) ? <CartolinaButton ride={ride} /> : null}
           </div>
-          <Button variant="soft" data-testid="ride-continue" onClick={onContinue}>
+          <Button variant="soft" data-testid="ride-continue" onClick={onContinue} disabled={savingProgress}>
             {t('ride.keepRiding')}
           </Button>
           {ask ? (

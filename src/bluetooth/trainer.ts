@@ -81,9 +81,9 @@ export class BluetoothTrainer implements TelemetrySource {
   private lastCmdAt = 0;
   private cpsCrank: CrankPoint | undefined;
   private cscCrank: CrankPoint | undefined;
-  private ftmsCadence: number | undefined;
-  private cpsCadence: number | undefined;
-  private cscCadence: number | undefined;
+  private ftmsCadence: { value: number; at: number } | undefined;
+  private cpsCadence: { value: number; at: number } | undefined;
+  private cscCadence: { value: number; at: number } | undefined;
   private simT = 0;
   private readonly allowSim: () => boolean;
   /** il rullo finto dei collaudi, se acceso */
@@ -95,7 +95,19 @@ export class BluetoothTrainer implements TelemetrySource {
     this.allowSim = opts.simulatore ?? (() => false);
   }
 
+  private beforeRead = new Set<() => void>();
+
+  beforeReading(listener: () => void): () => void {
+    this.beforeRead.add(listener);
+    return () => { this.beforeRead.delete(listener); };
+  }
+
+  private flushReading(): void {
+    for (const listener of this.beforeRead) listener();
+  }
+
   private onDisconnect = (event: Event) => {
+    this.flushReading();
     const device = event.target as BluetoothDevice | null;
     this.devices = this.devices.filter((item) => item !== device);
     if (device && device === this.controlDevice) {
@@ -115,6 +127,10 @@ export class BluetoothTrainer implements TelemetrySource {
     if (this.devices.length === 0) this.status = 'disconnected';
     this.emit();
   };
+
+  get disconnected(): boolean {
+    return this.mode === 'bluetooth' && this.status !== 'connected';
+  }
 
   snapshot(): TrainerSnapshot {
     const ftms = this.services.ftms && (this.controlChar != null || this.fake === 'rullo');
@@ -155,8 +171,11 @@ export class BluetoothTrainer implements TelemetrySource {
       return;
     }
     const now = performance.now();
-    if (this.fake && this.status === 'connected') this.advanceFake(input, now);
-    this.dropStale(now);
+    const at = input.atMs ?? now;
+    if (this.fake && this.status === 'connected') this.advanceFake(input, at);
+    this.dropStale(at);
+    // I bersagli storici servono alla registrazione. Il rullo riceve quello corrente.
+    if (now - at > 250) return;
     if (this.status !== 'connected') return;
     if (input.erg && input.targetPower != null && this.control === 'granted' && this.targetPowerSupported) {
       const watts = Math.round(input.targetPower);
@@ -299,6 +318,8 @@ export class BluetoothTrainer implements TelemetrySource {
   }
 
   disconnect(): void {
+    this.flushReading();
+    this.power = this.cadence = this.hr = 0;
     for (const device of [...this.devices]) this.forget(device);
     this.controlChar = null;
     this.controlDevice = null;
@@ -433,7 +454,7 @@ export class BluetoothTrainer implements TelemetrySource {
       this.power = Math.max(0, data.powerW);
       this.powerAt = now;
     }
-    if (data.cadenceRpm != null) this.ftmsCadence = data.cadenceRpm;
+    if (data.cadenceRpm != null) this.ftmsCadence = { value: data.cadenceRpm, at: now };
     if (!this.services.hr && data.heartRate != null) {
       this.hr = data.heartRate;
       this.hrAt = now;
@@ -451,7 +472,7 @@ export class BluetoothTrainer implements TelemetrySource {
       const next = { revs: reading.crankRevs, time: reading.crankTime };
       const rpm = cadenceFromCrank(this.cpsCrank, next);
       this.cpsCrank = next;
-      if (rpm != null) this.cpsCadence = rpm;
+      if (rpm != null) this.cpsCadence = { value: rpm, at: performance.now() };
     }
     this.pickCadence();
     this.emit();
@@ -463,16 +484,17 @@ export class BluetoothTrainer implements TelemetrySource {
     const next = { revs: reading.crankRevs, time: reading.crankTime };
     const rpm = cadenceFromCrank(this.cscCrank, next);
     this.cscCrank = next;
-    if (rpm != null) this.cscCadence = rpm;
+    if (rpm != null) this.cscCadence = { value: rpm, at: performance.now() };
     this.pickCadence();
     this.emit();
   }
 
   private pickCadence(): void {
-    const value = this.cpsCadence ?? this.cscCadence ?? this.ftmsCadence;
-    if (value != null) {
-      this.cadence = value;
-      this.cadenceAt = performance.now();
+    const now = performance.now();
+    const latest = [this.cpsCadence, this.cscCadence, this.ftmsCadence].find(p => p && now-p.at <= STALE_MS);
+    if (latest) {
+      this.cadence = latest.value;
+      this.cadenceAt = latest.at;
     }
   }
 
@@ -507,7 +529,10 @@ export class BluetoothTrainer implements TelemetrySource {
       char.addEventListener('characteristicvaluechanged', (event) => {
         const target = event.target as BluetoothRemoteGATTCharacteristic | null;
         const value = target?.value;
-        if (value) onValue(value);
+        if (value) {
+          this.flushReading();
+          onValue(value);
+        }
       });
     } catch {
       /* caratteristica assente: si continua con quelle disponibili */

@@ -27,11 +27,12 @@ export function HistoryPage() {
   const shown = filter === 'tutti' || !filters.length ? rides : rides.filter((_, i) => (filter === 'altro' ? worlds[i] === null : worlds[i] === filter));
   // la settimana nei gettoni (A3): km, ore, TSS degli ultimi 7 giorni, e la forma (TSB) che porta al Carico
   const weekAgo = Date.now() - 7 * 86400_000;
-  const week = rides.filter((r) => new Date(r.startTime).getTime() >= weekAgo);
+  const misurati = rides.filter((r) => !r.prova);
+  const week = misurati.filter((r) => new Date(r.startTime).getTime() >= weekAgo);
   const km = week.reduce((s, r) => s + r.distanceM, 0);
   const sec = week.reduce((s, r) => s + r.durationSec, 0);
   const tss = week.reduce((s, r) => s + (r.tss ?? 0), 0);
-  const load = trainingLoad(rides.map((ride) => ({ date: localDateKey(new Date(ride.startTime)), tss: ride.tss ?? 0 })));
+  const load = trainingLoad(misurati.map((ride) => ({ date: localDateKey(new Date(ride.startTime)), tss: ride.tss ?? 0 })));
   const form = load[load.length - 1];
   return (
     <main className="mx-auto w-full max-w-3xl px-4 pb-nav pt-6 md:px-8 md:pt-10" data-testid="diario">
@@ -52,7 +53,7 @@ export function HistoryPage() {
               <Gettone>{`TSS ${formatTss(tss)}`}</Gettone>
             </>
           ) : (
-            <Gettone>7 gg · Nessun giro</Gettone>
+            <Gettone>7 gg · Nessun giro misurato</Gettone>
           )}
           <Link to="/load" className="inline-flex h-11 items-center rounded-full border border-line px-3 text-xs font-semibold" data-testid="diario-forma">
             {`Forma ${form ? `${form.tsb > 0 ? '+' : ''}${formatNumber(form.tsb, 0)}` : '–'} ›`}
@@ -77,7 +78,7 @@ export function HistoryPage() {
                   <span className="min-w-0">
                     <span className="flex flex-wrap items-center gap-1.5 font-semibold leading-snug">
                       {ride.name}
-                      {ride.prova ? <span className="rounded-full border border-line px-2 py-px text-xs font-semibold" data-testid="diario-prova">Prova</span> : null}
+                      {ride.prova ? <span className="rounded-full border border-line px-2 py-px text-xs font-semibold" data-testid="diario-prova">{ride.manuale ? 'Watt virtuali' : 'Prova'}</span> : null}
                     </span>
                     <span className="block text-sm leading-snug text-muted">
                       {cap(quando(ride.startTime))}

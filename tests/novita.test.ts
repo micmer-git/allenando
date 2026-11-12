@@ -533,6 +533,7 @@ describe('N4 · i programmi a settimane', () => {
       ride('r2', '2026-11-08', 'agilita'), // l'agilità del giorno 2, recuperata il giorno 4
       ride('r26', '2026-11-30', undefined, 'bergamo:selvino'), // la prova
     ];
+    expect(syncDone(p, st, list.map((r) => ({ ...r, prova: true, manuale: true })))).toBe(st);
     const synced = syncDone(p, st, list);
     expect(synced.done).toEqual({ 0: 'r0', 2: 'r2', 26: 'r26' });
     expect(syncDone(p, synced, list)).toBe(synced);

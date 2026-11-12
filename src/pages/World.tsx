@@ -16,6 +16,7 @@ import { useGame } from '@/game/useGame';
 import type { RideDef, WorldData } from '@/open/world';
 import { kindLabel } from '@/open/labels';
 import { planAB, type AbRoute } from '@/open/ab';
+import { pickRoad, roadStart, type FreeStart } from '@/open/partenze';
 import { startTowns, townPoint } from '@/open/starts';
 
 /** La riga delle fonti sotto il percorso (F.14): strade e quote; il confronto in rete solo dove qualcuno ha confrontato davvero. */
@@ -241,40 +242,42 @@ export interface PuntoLibero {
 
 /** Il giro libero: un paese o un punto sulla carta. Un tocco su un paese sceglie e chiude. */
 export function FreeTab({ data, far, onScegli }: { data: WorldData; far: Float32Array | null; onScegli: (p: PuntoLibero) => void }) {
-  const [point, setPoint] = useState<{ x: number; z: number; label: string } | null>(null);
-  const starts = useMemo(() => startTowns(data).map((n) => ({ name: n, p: startPoint(data, n) })).filter((s) => s.p), [data]);
-  function go(x: number, z: number, label: string, town = false) {
-    // una strada vera, non l'anellino di una pista attorno a un'aiuola (a Nembro girava a vuoto)
-    const hit = data.graph.freeStart(x, z, 400, town);
-    if (!hit) return;
-    const e = data.graph.edges[hit.edge];
-    onScegli({ edge: hit.edge, s: Math.round(Math.min(e.length - 1, hit.s)), dir: data.graph.allowed(hit.edge, 1) ? 1 : -1, paese: label });
-  }
+  const [point, setPoint] = useState<FreeStart | null>(null);
+  const [missed, setMissed] = useState(false);
+  const starts = useMemo(() => startTowns(data).map((name) => ({ name, p: startPoint(data, name) })).filter(s => s.p), [data]);
+  const chosen = point?.world === data.graph.id ? point : null;
+  const edge = chosen ? data.graph.edges[chosen.edge] : null;
+  const label = edge?.name || edge?.ref || 'Punto sulla mappa';
+  const pose = chosen && data.graph.pose(chosen.edge, chosen.s, chosen.dir);
+  const reverse = chosen?.dir === 1 ? -1 : 1;
+  const go = (x: number, z: number, name: string) => {
+    const hit = data.graph.freeStart(x, z, 400, true);
+    const start = hit && roadStart(data.graph, hit.edge, hit.s);
+    if (start) onScegli({ ...start, paese: name });
+  };
   return (
     <section className="mt-3" data-testid="dove-libero-vista">
-      <WorldMap
-        data={data}
-        far={far}
-        height={240}
-        markers={point ? [{ x: point.x, z: point.z, color: '#ffc814', label: point.label, ring: true }] : []}
-        onPick={(x, z) => {
-          const hit = data.graph.freeStart(x, z, 600);
-          if (!hit) return;
-          const p = data.graph.pose(hit.edge, hit.s);
-          const e = data.graph.edges[hit.edge];
-          setPoint({ x: p.x, z: p.z, label: e.name || e.ref || 'Qui' });
+      <p className="mb-2 text-sm text-muted">Tocca una strada per scegliere il punto di partenza. Puoi ingrandire la mappa o scegliere un paese.</p>
+      <WorldMap data={data} far={far} height={300}
+        markers={pose ? [{ x: pose.x, z: pose.z, heading: pose.heading, color: '#ffc814', label }] : []}
+        onPick={(x, z, mpp) => {
+          const start = pickRoad(data.graph, x, z, mpp);
+          setPoint(start);
+          setMissed(!start);
         }}
       />
-      {point ? (
-        <button type="button" className="mt-3 flex h-12 w-full items-center justify-between rounded-2xl border border-accent/60 px-4 font-semibold" onClick={() => go(point.x, point.z, point.label)} data-testid="world-free-start">
-          {`Parti da ${point.label}`}
-          <span aria-hidden="true">›</span>
-        </button>
-      ) : null}
+      {missed && <p role="status" className="mt-2 text-sm text-muted">Nessuna strada qui. Ingrandisci la mappa e tocca la carreggiata.</p>}
+      {chosen && pose && <div className="mt-3 grid gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="font-semibold">{label} · {formatAltText(pose.y)}</span>
+          {data.graph.allowed(chosen.edge, reverse) && <button type="button" className="min-h-11 rounded-xl border border-line px-3 text-sm" onClick={() => setPoint({ ...chosen, dir: reverse })}>Inverti direzione</button>}
+        </div>
+        <button type="button" className="flex h-12 w-full items-center justify-center rounded-2xl border border-accent/60 px-4 font-semibold" onClick={() => onScegli({ ...chosen, paese: label })} data-testid="world-free-start">Parti da qui</button>
+      </div>}
       <ul className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
         {starts.map((s) => (
           <li key={s.name}>
-            <button type="button" className="h-12 w-full rounded-2xl border border-line bg-elev2/50 px-3 text-left text-sm font-semibold" onClick={() => go(s.p!.x, s.p!.z, s.name, true)} data-testid={`dove-paese-${s.name}`}>
+            <button type="button" className="h-12 w-full rounded-2xl border border-line bg-elev2/50 px-3 text-left text-sm font-semibold" onClick={() => go(s.p!.x, s.p!.z, s.name)} data-testid={`dove-paese-${s.name}`}>
               {s.name}
             </button>
           </li>

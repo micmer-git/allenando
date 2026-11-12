@@ -26,6 +26,8 @@ export interface EngineCheckpoint {
   distance: number;
   /** metri fatti prima che il percorso ricominciasse da 0 (giro libero ripreso) */
   base: number;
+  /** Punto di partenza sul percorso corrente, in metri (link ?at). */
+  startDistance?: number;
   samples: RideSample[];
   workoutDone: boolean;
   effort: number;
@@ -39,6 +41,7 @@ export interface EngineCheckpoint {
 }
 
 export interface EngineOptions {
+  manuale?: boolean;
   track: Track;
   source: TelemetrySource;
   physics: PhysicsParams;
@@ -80,6 +83,8 @@ export interface EngineOptions {
 }
 
 export class RideEngine {
+  /** Registra fino all'istante di una pausa, di un cambio di bersaglio o di un salvataggio. */
+  syncClock?: () => void;
   phase: RidePhase = 'riding';
   elapsed = 0;
   distance = 0;
@@ -110,6 +115,7 @@ export class RideEngine {
   rideId = `ride-${crypto.randomUUID()}`;
   /** Metri fatti prima che il percorso ricominciasse da 0 (un giro libero ripreso dopo un crash). */
   base = 0;
+  startDistance = 0;
   /** La pausa l'ha messa il motore (rullo fermo): riparte da sola alla prima pedalata. */
   autoPaused = false;
   startedAt: Date;
@@ -123,6 +129,7 @@ export class RideEngine {
   readonly aBersaglio: boolean;
   /** giro di prova (simulatore): nel Diario col gettone, fuori da classifiche, oro ed esportazione */
   prova = false;
+  readonly manuale: boolean;
   /** passaggi scelti (giri su un anello, tratte su un percorso aperto) */
   giri = 1;
 
@@ -142,13 +149,15 @@ export class RideEngine {
   /** secondi di fila a 0 W e 0 rpm */
   private idle = 0;
   private sampleAcc = 0;
-  private powerBuf: { t: number; p: number }[] = [];
+  private powerBuf: { t: number; p: number; dt: number }[] = [];
   private listeners = new Set<() => void>();
   private sinceEmit = 0;
   /** finish() aggiunge l'ultimo campione: se si riprende a pedalare, va tolto. */
   private closingSample = false;
 
   constructor(opts: EngineOptions) {
+    this.manuale = !!opts.manuale;
+    this.prova = this.manuale;
     this.track = opts.track;
     this.source = opts.source;
     this.physics = opts.physics;
@@ -201,10 +210,21 @@ export class RideEngine {
 
   /** Il contachilometri del giro: i metri sul percorso più quelli di prima di una ripresa. */
   get odometer(): number {
-    return this.base + this.distance;
+    return Math.max(0, this.base + this.distance - this.startDistance);
+  }
+
+  /** Posizione iniziale di un giro nuovo. I metri prima del punto scelto non sono stati pedalati. */
+  startAt(metres: number): void {
+    if (!Number.isFinite(metres) || this.elapsed > 0) return;
+    this.startDistance = Math.max(0, Math.min(metres, this.track.length - 1));
+    this.distance = this.startDistance;
+    const pose = this.pose();
+    this.grade = pose.grade;
+    this.altitude = pose.altitude;
   }
 
   pause(): void {
+    this.syncClock?.();
     if (this.phase === 'riding') {
       this.phase = 'paused';
       this.autoPaused = false;
@@ -213,6 +233,7 @@ export class RideEngine {
   }
 
   resume(): void {
+    this.syncClock?.();
     if (this.phase === 'paused') {
       this.phase = 'riding';
       this.autoPaused = false;
@@ -226,6 +247,7 @@ export class RideEngine {
    * fotogramma: il bersaglio cambia, e il comando parte subito.
    */
   setWattFissi(w: number): void {
+    this.syncClock?.();
     if (this.tipo !== 'fissa') return;
     const next = wattFissi(w);
     if (next === this.wattFissi) return;
@@ -237,12 +259,14 @@ export class RideEngine {
 
   /** Lo stato da mettere da parte ogni 15 s: con questo il giro riprende dove era. */
   checkpoint(): EngineCheckpoint {
+    this.syncClock?.();
     return {
       rideId: this.rideId,
       startedAt: this.startedAt.toISOString(),
       elapsed: this.elapsed,
       distance: this.distance,
       base: this.base,
+      startDistance: this.startDistance,
       samples: this.samples.slice(),
       workoutDone: this.workoutDone,
       effort: this.effort,
@@ -262,11 +286,13 @@ export class RideEngine {
     this.elapsed = Math.max(0, cp.elapsed);
     this.base = Math.max(0, cp.base);
     this.distance = Math.max(0, this.track.closed ? cp.distance : Math.min(cp.distance, this.track.length - 1));
+    this.startDistance = Math.max(0, Math.min(cp.startDistance ?? 0, this.distance));
     this.samples = cp.samples.slice();
     this.workoutDone = cp.workoutDone;
     this.effort = cp.effort;
+    this.prova ||= !!cp.prova;
     this.speed = Math.max(0, cp.speed);
-    this.sampleAcc = 0;
+    this.sampleAcc = Math.max(0, this.elapsed - Math.floor(this.elapsed + 1e-8));
     this.powerBuf = [];
     this.closingSample = false;
     this.arrived = false;
@@ -276,20 +302,26 @@ export class RideEngine {
     if (this.tipo === 'fissa' && cp.wattFissi != null) {
       this.wattFissi = wattFissi(cp.wattFissi);
       this.targetPower = this.wattFissi;
-    } else if (this.workout && !this.workoutDone) this.targetPower = workoutAt(this.workout, this.elapsed, this.ftp).targetPower;
+    } else if (this.workout) {
+      this.mode = this.workoutDone ? 'free' : 'erg';
+      this.targetPower = this.workoutDone ? 0 : workoutAt(this.workout, this.elapsed, this.ftp).targetPower;
+    }
     this.emit();
   }
 
   finish(): void {
+    this.syncClock?.();
     if (this.phase === 'finished') return;
-    this.closingSample = this.sampleAcc > 0 || this.samples.length === 0;
-    if (this.closingSample) this.pushSample();
+    const last = this.samples.at(-1);
+    this.closingSample = !last || this.elapsed-last.t > 1e-7;
+    if (this.closingSample) this.samples.push(this.currentSample());
     this.phase = 'finished';
     this.emit();
   }
 
   /** Annulla un «Termina» toccato per sbaglio: il giro continua da dove era. */
   reopen(): void {
+    this.syncClock?.();
     if (this.phase !== 'finished') return;
     if (this.closingSample) this.samples.pop();
     this.closingSample = false;
@@ -298,16 +330,31 @@ export class RideEngine {
   }
 
   /** Avanza di `dt` secondi di orologio. timeScale vale solo per il simulatore. */
-  tick(dt: number): void {
-    if (this.phase === 'paused' && this.autoPaused) {
-      this.watchPedals(dt);
+  tick(dt: number, atMs?: number): void {
+    if (!Number.isFinite(dt) || dt <= 0) return;
+    if (this.source.disconnected) {
+      if (this.phase === 'riding') {
+        this.phase = 'paused';
+        this.autoPaused = true;
+        this.speed = this.power = this.power3s = this.cadence = this.hr = this.idle = 0;
+        this.powerBuf = [];
+        this.emit();
+      }
       return;
     }
+    if (this.phase === 'paused' && this.autoPaused) {
+      this.watchPedals(0, atMs === undefined ? undefined : atMs-dt*1000);
+    }
     if (this.phase !== 'riding') return;
-    const scaled = dt * (this.source.mode === 'simulator' ? this.timeScale : 1);
-    const steps = Math.max(1, Math.ceil(scaled / 0.05));
-    const h = scaled / steps;
-    for (let i = 0; i < steps && this.phase === 'riding'; i++) this.step(h);
+    const scale = this.source.mode === 'simulator' ? this.timeScale : 1;
+    if (!Number.isFinite(scale) || scale <= 0) return;
+    let remaining = dt * scale;
+    // I passi terminano anche al secondo esatto del campionatore, indipendentemente dagli FPS.
+    while (remaining > 1e-10 && this.phase === 'riding') {
+      const h = Math.min(0.05, 1-this.sampleAcc, remaining);
+      remaining -= h;
+      this.step(h, atMs === undefined ? undefined : atMs-1000*remaining/scale);
+    }
     this.sinceEmit += dt;
     if (this.sinceEmit >= 0.2) {
       this.sinceEmit = 0;
@@ -321,7 +368,7 @@ export class RideEngine {
   }
 
   estimatedFtp(): number | null {
-    if (!this.workout?.ftpTest) return null;
+    if (this.prova || !this.workout?.ftpTest) return null;
     const powers = this.samples.map((s) => s.power);
     if (this.samples.length === 0) powers.push(this.power);
     const ftp = estimateFtpFromRamp(powers);
@@ -348,14 +395,15 @@ export class RideEngine {
     ride.tipo = this.tipo;
     if (this.giri > 1) ride.giri = this.giri;
     if (this.prova) ride.prova = true;
+    if (this.manuale) ride.manuale = true;
     return ride;
   }
 
   /** Cosa va al rullo: il bersaglio ERG, se si comanda; altrimenti la pendenza (o niente). */
-  private sourceInput(dt: number) {
+  private sourceInput(dt: number, atMs?: number) {
     const erg = this.mode === 'erg' && !this.aBersaglio;
     return {
-      dt,
+      dt, atMs,
       grade: this.grade,
       targetPower: erg ? this.targetPower : null,
       effort: this.effort,
@@ -369,7 +417,7 @@ export class RideEngine {
     };
   }
 
-  private step(dt: number): void {
+  private step(dt: number, atMs?: number): void {
     this.elapsed += dt;
     if (this.tipo === 'fissa') {
       this.mode = 'erg';
@@ -393,21 +441,13 @@ export class RideEngine {
       this.targetPower = 0;
     }
 
-    this.source.update(this.sourceInput(dt));
+    this.source.update(this.sourceInput(dt, atMs));
     this.power = Math.max(0, this.source.power);
     this.hr = Math.max(0, this.source.hr);
     this.cadence = Math.max(0, this.source.cadence);
     // il rullo fermo (0 W e 0 rpm per 3 s) mette in pausa: il tempo non corre mentre si beve
     if (this.autoPause && this.source.mode !== 'simulator') {
       this.idle = this.power <= 0 && this.cadence <= 0 ? this.idle + dt : 0;
-      if (this.idle >= AUTO_PAUSE_SEC) {
-        this.idle = 0;
-        this.phase = 'paused';
-        this.autoPaused = true;
-        this.speed = 0;
-        this.emit();
-        return;
-      }
     }
 
     const pose = this.track.poseAt(this.distance);
@@ -415,31 +455,45 @@ export class RideEngine {
     this.altitude = pose.altitude;
     const physics =
       this.aero === 1 && this.rolling === 1 && this.wind === 0 ? this.physics : { ...this.physics, cda: this.physics.cda * this.aero, crr: this.physics.crr * this.rolling, wind: this.wind };
-    this.speed = stepSpeed(this.power, this.speed, this.grade, dt, physics);
-    this.distance += this.speed * dt;
+    const previousSpeed = this.speed;
+    this.speed = stepSpeed(this.power, previousSpeed, this.grade, dt, physics);
+    this.distance += (previousSpeed + this.speed) * .5 * dt;
     if (!this.track.closed && this.distance >= this.track.length) {
       this.distance = this.track.length;
       this.arrived = true;
     }
 
-    this.powerBuf.push({ t: this.elapsed, p: this.power });
+    this.powerBuf.push({ t: this.elapsed, p: this.power, dt });
     const cutoff = this.elapsed - 3;
-    while (this.powerBuf.length && this.powerBuf[0].t < cutoff) this.powerBuf.shift();
-    let sum = 0;
-    for (const item of this.powerBuf) sum += item.p;
-    this.power3s = this.powerBuf.length ? sum / this.powerBuf.length : this.power;
-
+    while (this.powerBuf.length && this.powerBuf[0].t <= cutoff) this.powerBuf.shift();
+    let joules = 0;
+    let seconds = 0;
+    for (const item of this.powerBuf) {
+      const duration = Math.min(item.dt, item.t - cutoff);
+      joules += item.p * duration;
+      seconds += duration;
+    }
+    this.power3s = seconds > 0 ? joules / seconds : this.power;
     this.sampleAcc += dt;
-    while (this.sampleAcc >= 1) {
-      this.sampleAcc -= 1;
-      this.pushSample();
+    if (this.sampleAcc >= 1-1e-8) {
+      this.sampleAcc = 0;
+      const s = this.currentSample();
+      s.t = Math.round(this.elapsed);
+      if (!this.samples.length || s.t > this.samples[this.samples.length-1].t) this.samples.push(s);
     }
     if (this.arrived) this.finish();
+    else if (this.autoPause && this.idle >= AUTO_PAUSE_SEC-1e-8) {
+      this.idle = 0;
+      this.phase = 'paused';
+      this.autoPaused = true;
+      this.speed = 0;
+      this.emit();
+    }
   }
 
   /** In pausa automatica: si ascolta il rullo, e alla prima pedalata si riparte. */
-  private watchPedals(dt: number): void {
-    this.source.update(this.sourceInput(dt));
+  private watchPedals(dt: number, atMs?: number): void {
+    this.source.update(this.sourceInput(dt, atMs));
     if (this.source.mode === 'simulator' || this.source.power > 0 || this.source.cadence > 0) {
       this.autoPaused = false;
       this.idle = 0;
@@ -466,16 +520,6 @@ export class RideEngine {
       sample.lon = Math.round(geo.lon * 1e7) / 1e7;
     }
     return sample;
-  }
-
-  private pushSample(): void {
-    const sample = this.currentSample();
-    sample.t = this.samples.length === 0 ? Math.max(1, Math.round(this.elapsed)) : this.samples.length + 1;
-    if (this.samples.length > 0) {
-      const prev = this.samples[this.samples.length - 1];
-      if (sample.t <= prev.t) sample.t = prev.t + 1;
-    }
-    this.samples.push(sample);
   }
 
   private emit(): void {

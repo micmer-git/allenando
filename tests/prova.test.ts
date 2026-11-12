@@ -45,7 +45,7 @@ class Sim implements TelemetrySource {
 }
 
 /** La Città Alta pedalata tutta, fino al traguardo. */
-function giroFatto(prova: boolean) {
+function giroFatto(prova: boolean, at = 0) {
   const session = new WorldSession(world, { ride: rides.find((r) => r.id === 'citta-alta')! }, 0);
   const engine = new RideEngine({
     track: session.path,
@@ -61,6 +61,7 @@ function giroFatto(prova: boolean) {
     cw: 0.37,
     autoPause: false,
   });
+  engine.startAt(at);
   engine.prova = prova;
   engine.timeScale = 10;
   const game = new RideGame({ engine, track: session.path, world: { data: world, session }, nick: 'Michele', weightKg: 72, pbs: {}, sim: () => true, scale: () => 10, ranked: !prova, prova });
@@ -125,6 +126,18 @@ describe('Modalità prova (A11)', () => {
     const ride = engine.toRide('Città Alta');
     expect(ride.prova).toBeUndefined();
     expect(esportabile(ride)).toBe(true);
+  }, 60_000);
+
+  it('il tempo da una partenza intermedia non entra nella classifica del percorso completo', async () => {
+    const { session, engine, game } = giroFatto(false,1000);
+    const { d } = deps();
+    expect(engine.arrived).toBe(true);
+    expect(engine.odometer).toBeCloseTo(engine.track.length-1000,5);
+    await commitProgress(
+      { engine,game,session,replay:false,workout:null,profile:{name:'M',weightKg:72,ftp:280},
+        sim:false,rain:false,daytime:'vera',together:false,committed:{...NOTHING_COMMITTED} },d);
+    expect(d.postResult).not.toHaveBeenCalled();
+    expect(d.setCareer).toHaveBeenCalled();
   }, 60_000);
 
   it('il punto di ripresa di un giro di prova torna nel Diario come prova', () => {

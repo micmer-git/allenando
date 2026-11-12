@@ -6,6 +6,8 @@ const q = (s: string) => new URLSearchParams(s);
 
 describe('intento: il link della corsa nei due versi', () => {
   const casi: Intento[] = [
+    { dove: { kind: 'libero', world: 'bergamo', edge: 42, dir: -1, s: 120 }, tipo: 'libera', manuale: true, watt: 0 },
+    { dove: { kind: 'libero', world: 'bergamo', edge: 42, dir: -1, s: 120 }, tipo: 'allenamento', workout: 'ramp', manuale: true, watt: 185 },
     { dove: { kind: 'percorso', world: 'bergamo', ride: 'ganda' }, tipo: 'libera' },
     { dove: { kind: 'percorso', world: 'bergamo', ride: 'ganda' }, tipo: 'fissa', watt: 165, giri: 2, fantasma: false },
     { dove: { kind: 'piano', world: 'bergamo', plan: 'p-123' }, tipo: 'allenamento', workout: 'sweet-spot-3x8', giri: 3 },

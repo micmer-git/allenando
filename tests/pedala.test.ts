@@ -47,6 +47,15 @@ describe('Pedala, prova spenta', () => {
       }
     });
   }
+  it('la scelta esplicita dei watt manuali apre il giro libero anche senza Bluetooth, con il piano opzionale', () => {
+    const dove = { kind: 'libero', world: 'bergamo', edge: 8, dir: 1, s: 125 } as const;
+    const v = vistaPedala(STATI.ios, 'offline', { manuale: true, dove });
+    expect(v.pannello).toBeNull();
+    expect(v.chip).toBe('manuale');
+    expect(v.tipi).toEqual(['libera', 'allenamento']);
+    expect(intentoDi({ ...SCELTA_VUOTA, dove, manuale: true, wattManuali: 0 }, v.tipi)).toEqual({ dove, tipo: 'libera', manuale: true, watt: 0 });
+    expect(vistaPedala(STATI.rullo, 'online', { dove }).tipi).toEqual(['libera', 'fissa', 'allenamento']);
+  });
   it('i tipi decisi da cosa è collegato (A8)', () => {
     expect(vistaPedala(STATI.rullo, 'online').tipi).toEqual(['libera', 'fissa', 'allenamento']);
     expect(vistaPedala(STATI.potenza, 'online').tipi).toEqual(['libera', 'allenamento']);
@@ -140,6 +149,7 @@ describe('Il giro a metà dopo un riavvio (collaudo U d’integrazione)', () => 
   it('«Riprendi» solo se si può pedalare; se no prima il rullo; senza Bluetooth né prova nessun tasto', async () => {
     const { riprendiCome } = await import('../src/pages/RideRecovery');
     expect(riprendiCome(STATI.rullo)).toBe('Riprendi');
+    expect(riprendiCome({ ...base, supporto: 'ios' }, true)).toBe('Riprendi');
     expect(riprendiCome({ ...base, prova: true })).toBe('Riprendi');
     expect(riprendiCome(STATI.mai)).toBe('Collega e riprendi');
     expect(riprendiCome(STATI.ricordato)).toBe('Ricollega e riprendi');

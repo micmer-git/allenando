@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { headingToBearing, streetViewUrl } from '@/domain/routes';
 import { createWorldField } from '@/open/field';
 import { NpcCrowd } from '@/open/npc';
+import { pedalaFromPoint } from '@/open/partenze';
 import { WorldPath } from '@/open/path';
 import { loadWorld, Terrain, worldBase, WORLDS, type RideDef, type WorldData } from '@/open/world';
 import { FORWARD, sightLine, wrapYaw, type SurveyAngles } from '@/open/sopralluogo';
@@ -60,6 +61,7 @@ function Survey({data, ride, place, station, select}: {data: WorldData; ride: Ri
   const landmark=stops.find(s=>s.id===place);
   const index = landmark?.station ?? (Number.isFinite(station) ? Math.min(max, Math.max(0, Math.round(station))) : 0);
   const distance = landmark?.viewAt ?? Math.min(path.length, index * 100);
+  const start = path.edgeAt(distance);
   const pose = path.poseAt(distance), geo = data.toGeo(pose.x, pose.z);
   const orientation = useRef<SurveyAngles>(FORWARD);
   const [angles,setAngles] = useState<SurveyAngles>(FORWARD);
@@ -96,6 +98,7 @@ function Survey({data, ride, place, station, select}: {data: WorldData; ride: Ri
     <div className="mx-auto grid w-full max-w-4xl gap-2 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <strong className="num">{stop && stop.name + ' · '}{(distance/1000).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})} km · {Math.round(pose.y)} m s.l.m.</strong>
+        <Link to={pedalaFromPoint({ kind: 'libero', world: data.graph.id, edge: start.edge, s: start.s, dir: start.dir })} className="inline-flex min-h-11 items-center rounded-full bg-accent px-4 font-semibold text-accent-ink" data-testid="sopralluogo-pedala">Pedala da qui</Link>
         <a className="inline-flex min-h-11 items-center font-semibold text-accent" href={url} target="_blank" rel="noreferrer">Apri Street View ↗</a>
       </div>
       <div className="flex items-center gap-3">

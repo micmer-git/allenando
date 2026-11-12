@@ -1,3 +1,4 @@
+import { wattManuali } from '@/ride/intento';
 import type { SourceUpdate, TelemetrySource, TrainerSnapshot } from './source';
 
 /** Fisiologia finta: la potenza insegue il target, FC e cadenza hanno inerzia. */
@@ -60,5 +61,14 @@ export class SimulatorSource implements TelemetrySource {
 
   disconnect(): void {
     /* il simulatore non ha una periferica */
+  }
+}
+
+/** Potenza virtuale impostata a mano o dal blocco dell’allenamento, senza valori fisiologici simulati. */
+export class ManualPowerSource extends SimulatorSource {
+  override hr = 0;
+
+  override update(input: SourceUpdate): void {
+    this.power = input.erg && input.targetPower != null ? Math.max(0, Math.round(input.targetPower)) : wattManuali(input.effort * input.ftp);
   }
 }
