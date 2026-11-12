@@ -8,6 +8,7 @@ import { loadWorld, Terrain, WORLDS, type RideDef, type WorldData } from '@/open
 import { FORWARD, sightLine, wrapYaw, type SurveyAngles } from '@/open/sopralluogo';
 import { FotoSopralluogo } from '@/components/FotoSopralluogo';
 import { luoghiPercorso, type SurveyStop } from '@/open/luoghiPercorso';
+import { TerrenoPercorso } from './TerrenoPercorso';
 import { SurveyViewport } from './SurveyViewport';
 import { WorldScene } from '@/open/WorldScene';
 
@@ -107,6 +108,7 @@ function Survey({data, ride, station, select}: {data: WorldData; ride: RideDef; 
         </select>
       </label>}
       {stop?.note && <p className="text-sm">{stop.note} {stop.source && <a className="font-semibold text-accent underline" href={stop.source} target="_blank" rel="noreferrer">Vedi l’originale ↗</a>}</p>}
+      <TerrenoPercorso terrain={terrain} pose={pose} edge={data.graph.edges[path.edgeAt(distance).edge]} />
       <FotoSopralluogo data={data} path={path} distance={distance} selectStation={select} />
       <p className="text-xs text-muted">Street View apre il panorama disponibile più vicino. Terreno: ortofoto © AGEA (voli 2023–2024) e ESA WorldCover / Copernicus Sentinel-2 (2021), colori rielaborati · <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Targhe di Selvino: foto © Amadvance, ritaglio e prospettiva · <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a>. Strade e arredi: © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>.</p>
     </div>
