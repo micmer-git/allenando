@@ -23,7 +23,7 @@ interface Entry {
   hi: THREE.Mesh | null;
 }
 
-export function Monumenti({ playerPose }: { playerPose: () => TrackPose }) {
+export function Monumenti({ playerPose, world }: { world: string; playerPose: () => TrackPose }) {
   const [list, setList] = useState<Monumento[]>([]);
   const root = useRef<THREE.Group>(null);
   const entries = useRef(new Map<string, Entry>());
@@ -34,11 +34,11 @@ export function Monumenti({ playerPose }: { playerPose: () => TrackPose }) {
     let on = true;
     // ?monumenti=0 nell'indirizzo: il mondo senza monumenti, per il collaudo a confronto
     if (typeof location !== 'undefined' && new URLSearchParams(location.search).get('monumenti') === '0') return;
-    void loadMonumenti().then((l) => on && setList(l));
+    void loadMonumenti(world).then((l) => on && setList(l));
     return () => {
       on = false;
     };
-  }, []);
+  }, [world]);
 
   useEffect(() => {
     const map = entries.current;

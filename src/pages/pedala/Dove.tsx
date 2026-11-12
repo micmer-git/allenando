@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { WorldMap, legsBounds, type MapOverlay } from '@/components/WorldMap';
 import { useWorldManifests, WorldChooser } from '@/components/WorldPicker';
@@ -358,7 +359,8 @@ export function DoveContenuto({ mondo, setWorld, strumento, setStrumento, filtro
             ) : null}
           </Gruppo>
         ) : null}
-        {data ? <p className="mt-6 text-xs leading-relaxed text-muted" data-testid="dove-fonti">{`© OpenStreetMap contributors (ODbL), dati del ${data.graph.builtAt} · ${worldTable(data.graph.id).quoteCredits}`}</p> : null}
+        {data && <Link to={'/confronto?world=' + encodeURIComponent(data.graph.id)} className="mt-4 inline-flex min-h-11 items-center text-sm font-semibold text-accent">Esplora il percorso ogni 100 m ↗</Link>}
+        {data ? <p className="mt-6 text-xs leading-relaxed text-muted" data-testid="dove-fonti">{`© OpenStreetMap contributors (ODbL), dati del ${data.graph.builtAt} · ${worldTable(data.graph.id).quoteCredits} · Colori del terreno: ESA WorldCover, dati Copernicus Sentinel-2 modificati (2021), CC BY 4.0.`}</p> : null}
       </div>
     </div>
   );

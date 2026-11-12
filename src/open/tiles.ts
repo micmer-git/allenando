@@ -1,3 +1,4 @@
+import type { indexRoadPoints } from './puntiStrada';
 import * as THREE from 'three';
 import { ASPHALT_REPEAT_M, hash2, smoothNoise } from '@/world/builders';
 import { CLS, FLAG, type Edge, type EdgePose, type WorldGraph } from './graph';
@@ -1064,7 +1065,7 @@ function trisGeometry(t: Tris): THREE.BufferGeometry | null {
  * look.ts: il bosco si dirada verso la linea e sopra non c'è un albero; le piste da sci sono
  * radure.
  */
-export function* treesJob(field: WorldField, spec: TileSpec, seed = 0, forestOnly = false, ctx: LookCtx = lookContext(field.terrain?.graph?.id ?? 'bergamo')): Generator<void, TileMeshes['trees'], void> {
+export function* treesJob(field: WorldField, spec: TileSpec, seed = 0, forestOnly = false, ctx: LookCtx = lookContext(field.terrain?.graph?.id ?? 'bergamo'), roadPoints?: ReturnType<typeof indexRoadPoints>): Generator<void, TileMeshes['trees'], void> {
   const out: TileMeshes['trees'] = [];
   const cell = 25;
   const n = Math.round(spec.size / cell);
@@ -1096,6 +1097,7 @@ export function* treesJob(field: WorldField, spec: TileSpec, seed = 0, forestOnl
         const sx = field.height(x + 4, z, spec.spacing) - y;
         const sz = field.height(x, z + 4, spec.spacing) - y;
         if (kind !== 'rock' && Math.hypot(sx, sz) / 4 > (cov === COVER.forest ? 1.7 : 1.15)) continue;
+        if (kind !== 'rock' && roadPoints?.(x - 4, z - 4, 8).some(p => p[2] !== 'lamp' && (x-p[0])**2 + (z-p[1])**2 < 16)) continue;
         const r = hash2(x * 3.1, z * 0.7);
         out.push({ kind, x, y: y - 0.15, z, s: kind === 'rock' ? 0.6 + r * 1.6 : 0.62 + r * 0.9, r: r * Math.PI * 2, tint: hash2(z, x) });
       }
@@ -1177,7 +1179,7 @@ export function railsGeometry(field: WorldField, features: WorldFeatures, spec: 
 
 export interface Furniture {
   /** lampioni: posizione al piede, rotazione del braccio verso la strada */
-  lamps: { x: number; y: number; z: number; h: number }[];
+  lamps: { x: number; y: number; z: number; h: number; scaleY?: number }[];
   /** cartelli bianchi col nome del paese; h è la direzione di chi entra */
   towns: { x: number; y: number; z: number; h: number; name: string }[];
 }
@@ -1186,7 +1188,7 @@ export interface Furniture {
  * Lampioni ogni 30 m sulle strade dei paesi (un lato, alternato), e il cartello col nome dove una
  * strada entra nell'abitato. Il nome è quello del paese più vicino nei dati OSM, entro 1,5 km.
  */
-export function* furnitureJob(graph: WorldGraph, field: WorldField, places: Place[], spec: TileSpec): Generator<void, Furniture, void> {
+export function* furnitureJob(graph: WorldGraph, field: WorldField, places: Place[], spec: TileSpec, roadPoints?: ReturnType<typeof indexRoadPoints>): Generator<void, Furniture, void> {
   const lamps: Furniture['lamps'] = [];
   const towns: Furniture['towns'] = [];
   const x0 = spec.x0;
@@ -1195,6 +1197,14 @@ export function* furnitureJob(graph: WorldGraph, field: WorldField, places: Plac
   const z1 = spec.z0 + spec.size;
   const ids = new Set<number>();
   for (let x = x0 - 50; x <= x1 + 50; x += 90) for (let z = z0 - 50; z <= z1 + 50; z += 90) collectEdges(graph, x, z, ids);
+  const surveyed = (roadPoints?.(x0, z0, spec.size, 45) ?? []).filter(p => p[2] === 'lamp');
+  for (const [x, z, , height] of surveyed) {
+    if (x < x0 || x >= x1 || z < z0 || z >= z1) continue;
+    const hit = graph.nearest(x, z, 23, edge => !(edge.flags & FLAG.tunnel));
+    if (!hit) continue;
+    const p = graph.pose(hit.edge, hit.s, 1);
+    lamps.push({ x, z, y: field.height(x, z, spec.spacing), h: Math.atan2(p.x-x, p.z-z), scaleY: height ? height / 6.6 : 1 });
+  }
   const named = places.filter((p) => p.kind === 'city' || p.kind === 'town' || p.kind === 'village' || p.kind === 'hamlet');
   const nearestTown = (x: number, z: number): string | null => {
     let best: Place | null = null;
@@ -1234,6 +1244,7 @@ export function* furnitureJob(graph: WorldGraph, field: WorldField, places: Plac
         const off = e.hw + 0.9;
         const lx = p.x + Math.cos(p.heading) * off * side;
         const lz = p.z - Math.sin(p.heading) * off * side;
+        if (surveyed.some(([x, z]) => Math.hypot(x-lx, z-lz) < 40)) continue;
         // mai in mezzo a un'altra strada (due sensi unici che confluiscono, una via accanto)
         if (graph.asphaltMargin(lx, lz, p.y, 1.5, e.id) > -0.3) continue;
         // h: rotazione che porta il braccio (+z del modello) verso il centro della strada

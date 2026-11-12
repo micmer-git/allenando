@@ -7,6 +7,7 @@ import type { Quality } from '@/domain/types';
 import type { RideEngine } from '@/sim/engine';
 import { asphaltTexture, smoothNoise } from '@/world/builders';
 import { groundLook, LARCH_PALETTE, lookContext, lookFor, type LookCtx, type WorldLook } from './look';
+import { landscapeUniforms, patchLandscape } from './paesaggio';
 import { patchRockShader } from './rockShader';
 import { Lifts } from './Lifts';
 import { Passi } from './Passi';
@@ -20,7 +21,7 @@ import { buildingsJob, furnitureJob, railsGeometry, roadsJob, terrainJob, treesJ
 import { facadeTexture, groundDetailTexture, roofTilesTexture } from './textures';
 import { atmosphere, CLEAR, sunFor, sunVector, type Daytime } from './sky';
 import type { WeatherNow } from './weather';
-import { loadBuildings, type Building, type RideDef, type Terrain, type WorldData } from './world';
+import { worldBase, loadBuildings, type Building, type RideDef, type Terrain, type WorldData } from './world';
 import { WorldPath } from './path';
 import { createFarMask, farSinks, patchFarShader, updateFarMask, type FarMask } from './farMask';
 import { createMidMask, midGeometry, midSpacing, patchMidShader, setMidMask, tileRectDist, type MidMask } from './midTerrain';
@@ -93,7 +94,8 @@ export interface RemoteWorldRider {
 }
 
 export interface WorldSceneProps {
-  engine: RideEngine;
+  engine: Pick<RideEngine, 'distance' | 'speed' | 'power' | 'cadence'>;
+  preview?: boolean;
   data: WorldData;
   path: WorldPath;
   field: WorldField;
@@ -247,7 +249,7 @@ function WorldContent(props: WorldSceneProps & { counts: TileCounts; status: Loa
   useEffect(() => () => midMask?.uMid.value.dispose(), [midMask]);
   // il terreno che entra nelle gallerie vicine non si disegna (tunnels.ts)
   const cut = useMemo(() => createTunnelCut(), []);
-  const mats = useMaterials(farMask, cut, ctx.look, midMask);
+  const mats = useMaterials(farMask, cut, ctx.look, midMask, data.graph, !data.leggero);
   const names = useMemo(() => new Set<THREE.Sprite>(), []);
   const { counts } = props;
   // le case e i monumenti intorno al ciclista: coprono i nomi (WorldLabels)
@@ -265,13 +267,13 @@ function WorldContent(props: WorldSceneProps & { counts: TileCounts; status: Loa
       <Walls data={data} field={field} />
       <Lifts data={data} terrain={terrain} playerPose={props.playerPose} />
       <Passi data={data} field={field} playerPose={props.playerPose} />
-      <Monumenti playerPose={props.playerPose} />
+      <Monumenti world={data.graph.id} playerPose={props.playerPose} />
       <Labels data={data} playerPose={props.playerPose} names={names} />
       <Landmarks data={data} playerPose={props.playerPose} names={names} />
       <Declutter names={names} terrain={terrain} playerPose={props.playerPose} occluders={occluders} />
       {props.ride ? <RideSigns data={data} ride={props.ride} /> : null}
-      <PlayerRider {...props} />
-      <ContactShadow playerPose={props.playerPose} />
+      {!props.preview && <PlayerRider {...props} />}
+      {!props.preview && <ContactShadow playerPose={props.playerPose} />}
       {props.extraRiders?.map((r) => (
         <ExtraRider key={r.id} rider={r} />
       ))}
@@ -289,9 +291,23 @@ function WorldContent(props: WorldSceneProps & { counts: TileCounts; status: Loa
 
 // ---------- materiali condivisi ----------
 
-function useMaterials(mask: FarMask, cut: TunnelCut, look: WorldLook, midMask: MidMask | null) {
+function useMaterials(mask: FarMask, cut: TunnelCut, look: WorldLook, midMask: MidMask | null, graph: WorldData['graph'], detailed: boolean) {
+  const satellite = useMemo(() => landscapeUniforms(graph.far), [graph]);
+  useEffect(() => {
+    if (!detailed) return;
+    let active = true;
+    const tex = new THREE.TextureLoader().load(worldBase(graph.id) + 'paesaggio-2021.webp', image => {
+      if (!active) return;
+      image.colorSpace = THREE.SRGBColorSpace;
+      satellite.uLandscape.value = image;
+      satellite.uLandscapeReady.value = 1;
+    }, undefined, () => { /* una copia offline vecchia mantiene i colori procedurali */ });
+    return () => { active = false; satellite.uLandscapeReady.value = 0; satellite.uLandscape.value = null; tex.dispose(); };
+  }, [graph, satellite, detailed]);
   const mats = useMemo(() => {
     const asphaltTex = asphaltTexture();
+    // Gli incroci usano UV in metri locali (anche fuori da 0..1): il clamp stirava il bordo in righe.
+    asphaltTex.wrapS = THREE.RepeatWrapping;
     const stoneTex = settTexture();
     // le facciate: persiane verdi e balconcini in Lombardia, legno e balconi a tutta facciata nei paesi ladini
     const facadeTex = facadeTexture(look.case);
@@ -303,17 +319,19 @@ function useMaterials(mask: FarMask, cut: TunnelCut, look: WorldLook, midMask: M
       // e sotto la fascia di mezzo pronta (midTerrain.ts)
       if (midMask) patchMidShader(shader, midMask);
       patchRockShader(shader, look.rock.bands);
+      patchLandscape(shader, satellite);
     };
     // la fascia di mezzo: come il lontano, ma si scarta solo sotto le mattonelle vicine pronte
     const mid = new THREE.MeshLambertMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: 1.5, polygonOffsetUnits: 3 });
     mid.onBeforeCompile = (shader) => {
       patchFarShader(shader, mask);
       patchRockShader(shader, look.rock.bands);
+      patchLandscape(shader, satellite);
     };
     return {
       far,
       mid,
-      terrain: terrainMaterial(groundTex, cut, look.rock.bands, look.triplanar),
+      terrain: terrainMaterial(groundTex, cut, look.rock.bands, look.triplanar, satellite),
       asphalt: new THREE.MeshLambertMaterial({ map: asphaltTex, color: '#c9cbd0', polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
       stone: new THREE.MeshLambertMaterial({ map: stoneTex, color: '#d8cfc2', polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
       cycle: new THREE.MeshLambertMaterial({ map: asphaltTex, color: '#c98f7d', polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
@@ -347,7 +365,7 @@ function useMaterials(mask: FarMask, cut: TunnelCut, look: WorldLook, midMask: M
       /** cartelli d'inizio paese, uno per nome */
       signs: new Map<string, THREE.MeshLambertMaterial>(),
     };
-  }, [mask, cut, look, midMask]);
+  }, [mask, cut, look, midMask, satellite]);
   useEffect(
     () => () => {
       for (const [k, v] of Object.entries(mats)) {
@@ -369,11 +387,12 @@ function useMaterials(mask: FarMask, cut: TunnelCut, look: WorldLook, midMask: M
 }
 
 /** Il terreno vicino: colori di vertice, la grana, il taglio dentro le gallerie, le bande della roccia. */
-function terrainMaterial(map: THREE.Texture, cut: TunnelCut, bands: number, triplanar: boolean): THREE.MeshLambertMaterial {
+function terrainMaterial(map: THREE.Texture, cut: TunnelCut, bands: number, triplanar: boolean, satellite: ReturnType<typeof landscapeUniforms>): THREE.MeshLambertMaterial {
   const m = new THREE.MeshLambertMaterial({ vertexColors: true, map });
   m.onBeforeCompile = (shader) => {
     patchTerrainShader(shader, cut);
     patchRockShader(shader, bands, triplanar);
+    patchLandscape(shader, satellite);
   };
   // i due mondi hanno due programmi: three li distingue da questa chiave (la closure è la stessa)
   if (triplanar) m.customProgramCacheKey = () => 'terreno-triplanare';
@@ -921,7 +940,14 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
       }
       yield;
     }
-    const trees = yield* treesJob(field, spec, 0, false, ctx);
+    const trees = yield* treesJob(field, spec, 0, false, ctx, data.roadPoints);
+    for (const [x, z, kind, h] of data.roadPoints?.(spec.x0, spec.z0, spec.size) ?? []) {
+      if (kind === 'lamp') continue;
+      const tint = Math.abs(Math.sin(x * 0.4 + z));
+      trees.push({ x, z, y: field.height(x, z, spec.spacing) - 0.15, kind,
+        s: h ? Math.max(0.3, Math.min(3, h / (kind === 'spruce' ? 10.85 : 9))) : 0.78 + 0.42 * tint,
+        r: tint * Math.PI * 2, tint });
+    }
     const water = waterGeometry(data.features, spec);
     const rails = railsGeometry(field, data.features, spec);
     const g = new THREE.Group();
@@ -977,7 +1003,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
       g.add(stone);
     }
     // arredo dei paesi: lampioni e il cartello col nome all'ingresso
-    const furn = yield* furnitureJob(data.graph, field, data.features.places, spec);
+    const furn = yield* furnitureJob(data.graph, field, data.features.places, spec, data.roadPoints);
     const d = new THREE.Object3D();
     if (furn.lamps.length) {
       const poles = new THREE.InstancedMesh(mats.geos.lamp, mats.lamp, furn.lamps.length);
@@ -985,6 +1011,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
       furn.lamps.forEach((l, i) => {
         d.position.set(l.x, l.y - 0.2, l.z);
         d.rotation.set(0, l.h, 0);
+        d.scale.set(1, l.scaleY ?? 1, 1);
         d.updateMatrix();
         poles.setMatrixAt(i, d.matrix);
         heads.setMatrixAt(i, d.matrix);
@@ -992,6 +1019,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
       poles.computeBoundingSphere();
       heads.computeBoundingSphere();
       g.add(poles, heads);
+      d.scale.set(1, 1, 1);
     }
     for (const t of furn.towns) {
       let mat = mats.signs.get(t.name);
@@ -1134,7 +1162,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
       if (!job) break;
       if (kind === 'dense') {
         if (job.dense === 'none') {
-          job.xjob = treesJob(field, { ...specOf(job.ix, job.iz, 0), trees: q.trees * DENSE_EXTRA }, 7.3, true, ctx);
+          job.xjob = treesJob(field, { ...specOf(job.ix, job.iz, 0), trees: q.trees * DENSE_EXTRA }, 7.3, true, ctx, data.roadPoints);
           job.dense = 'build';
         }
         const r = job.xjob!.next();
@@ -1604,7 +1632,7 @@ function Roadside({ handle, mats }: { handle: React.MutableRefObject<RoadsideHan
  * tipo (traguardi, cassonetto, km, ultimo km, ERG) per vederli senza il gioco (non esiste nella
  * build pubblicata).
  */
-function WorldArches({ arches, path, engine }: { arches?: ArchSpec[]; path: WorldPath; engine: RideEngine }) {
+function WorldArches({ arches, path, engine }: { arches?: ArchSpec[]; path: WorldPath; engine: WorldSceneProps['engine'] }) {
   const lab = useMemo<ArchSpec[] | null>(() => {
     if (!import.meta.env.DEV || typeof location === 'undefined' || !new URLSearchParams(location.search).has('archlab')) return null;
     const at = (d: number) => path.poseAt(Math.min(path.length - 1, engine.distance + d));
@@ -1901,13 +1929,18 @@ function TurnArrow({ nextTurn }: { nextTurn: WorldSceneProps['nextTurn'] }) {
 // ---------- camera ----------
 
 /** Camera alle spalle. Fuori resta sopra il terreno; in galleria resta sotto la volta. */
-function WorldCam({ engine, path, field, playerPose }: WorldSceneProps) {
+function WorldCam({ engine, path, field, playerPose, preview }: WorldSceneProps) {
   const { camera } = useThree();
   const look = useRef(new THREE.Vector3());
   const desired = useRef(new THREE.Vector3());
   const heading = useRef<number | null>(null);
   const place = (dt: number) => {
     const pose = playerPose();
+    if (preview) {
+      camera.position.set(pose.x, pose.y + 1.65, pose.z);
+      camera.lookAt(pose.x + 20 * Math.sin(pose.heading), pose.y + 1.65 + 20 * pose.grade, pose.z + 20 * Math.cos(pose.heading));
+      return;
+    }
     if (heading.current == null) heading.current = pose.heading;
     let dh = pose.heading - heading.current;
     while (dh > Math.PI) dh -= Math.PI * 2;

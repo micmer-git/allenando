@@ -1,3 +1,4 @@
+import { indexRoadPoints, type RoadPoint } from './puntiStrada';
 import { unzlibSync } from 'fflate';
 import { projector, type LatLon } from '@/domain/geo';
 import { WorldGraph, type WorldGraphFile } from './graph';
@@ -275,6 +276,7 @@ export interface WorldData {
    * sul telefono: il terreno lontano vale anche vicino e la strada lo spiana sotto di sé.
    */
   leggero?: boolean;
+  roadPoints?: ReturnType<typeof indexRoadPoints>;
 }
 
 export interface FeaturesFile {
@@ -341,8 +343,8 @@ export function decodeFeatures(f: FeaturesFile): WorldFeatures {
 /** Una cache per mondo: si scarica una volta, e il mondo cambia senza perdere l'altro. */
 const cached = new Map<string, Promise<WorldData>>();
 
-async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(url);
+async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
+  const res = await fetch(url, { signal });
   if (!res.ok) throw new Error(`${url}: ${res.status}`);
   return (await res.json()) as T;
 }
@@ -352,10 +354,10 @@ export function loadWorld(id: string | null | undefined = WORLD_ID): Promise<Wor
   let p = cached.get(wid);
   if (!p) {
     const base = worldBase(wid);
-    p = Promise.all([getJson<WorldGraphFile>(`${base}graph.json`), getJson<RideDef[]>(`${base}rides.json`), getJson<FeaturesFile>(`${base}features.json`)]).then(([g, rides, f]) => {
+    p = Promise.all([getJson<WorldGraphFile>(`${base}graph.json`), getJson<RideDef[]>(`${base}rides.json`), getJson<FeaturesFile>(`${base}features.json`), getJson<RoadPoint[]>(`${base}punti-strada-v1.json`, AbortSignal.timeout?.(5000)).catch(() => [])]).then(([g, rides, f, points]) => {
       const graph = new WorldGraph(g);
       const proj = projector(graph.origin);
-      return { graph, rides, features: decodeFeatures(f), proj, toGeo: (x: number, z: number) => proj.toGeo(x, z) };
+      return { graph, rides, roadPoints: indexRoadPoints(points), features: decodeFeatures(f), proj, toGeo: (x: number, z: number) => proj.toGeo(x, z) };
     });
     cached.set(wid, p);
     p.catch(() => {
