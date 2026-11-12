@@ -35,6 +35,7 @@ import { createTunnelCut, patchTerrainShader, updateTunnelCut, type TunnelCut } 
 import type { ArchSpec } from '@/game/arches';
 import { Arches } from '@/world/Arches';
 import { aggregatoTexture, cemento } from './materialiBordo';
+import { fitRoncalliRoof, addRoncalliFacade } from './palazzoRoncalli';
 import { CartelliSelvino } from './CartelliSelvino';
 import { campioni } from './campioni';
 import { HairpinSigns, hairpinSigns } from '@/world/HairpinSigns';
@@ -928,6 +929,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
     if (Array.isArray(have)) return have;
     if (!have) {
       const p = loadBuildings(data.graph, dx0, dz0).then((list) => {
+        list = fitRoncalliRoof(data.graph.id, dx0, dz0, list);
         buildings.current.set(key, list);
         return list;
       });
@@ -1000,6 +1002,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
     add(roads.tunnelStone, mats.tunnelStone);
     add(roads.tunnelGravel, mats.tunnelGravel);
     add(bGeo.walls, mats.buildings);
+    addRoncalliFacade(g, data.graph.id, field, spec, buildingsFor(spec) ?? []);
     add(bGeo.roofs, mats.roofs);
     add(water, mats.water);
     add(rails, mats.rails);

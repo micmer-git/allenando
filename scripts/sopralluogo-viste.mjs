@@ -14,14 +14,18 @@ try {
     try {
       await p.s('Page.addScriptToEvaluateOnNewDocument', {source:`window.__orobiaIssues=[]; const c=console.error; console.error=(...a)=>{window.__orobiaIssues.push(a.map(String).join(' '));c.apply(console,a)}`});
       const t = Date.now();
-      await p.go('/confronto?world='+world+'&ride='+ride+'&punto='+index+'&stats=1');
+      const query=new URLSearchParams({world,ride,stats:'1'});
+      query.set(/^\d+$/.test(index)?'punto':'luogo',index);
+      await p.go('/confronto?'+query);
       const ok = await p.waitFor("window.__orobiaStats?.tiles?.near>0 && window.__orobiaStats.tiles.nearReady===window.__orobiaStats.tiles.near",120000);
       assert.ok(ok,'caricamento '+arg);
       const readyMs=Date.now()-t;
       await p.evaluate("window.__orobiaStatsReset?.()");
-      await sleep(3000);
+      await p.waitFor('window.__orobiaStats?.frames >= 5',20000);
+      await sleep(350);
       const measurements=await p.evaluate("({stats:window.__orobiaStats, errors:window.__orobiaIssues, resources:performance.getEntriesByType('resource').filter(r=>r.name.includes('/ortofoto-v1/')||r.name.includes('/ganda-')).map(r=>new URL(r.name).pathname)})");
       assert.deepEqual([...p.errors,...measurements.errors],[]);
+      if (!/^\d+$/.test(index)) assert.equal(await p.evaluate(`document.querySelector('select[aria-label="Luogo lungo il percorso"]').value`),index);
       const name = world+'-'+ride+'-'+index;
       await p.shot(name);
       writeFileSync(join(out,name+'.json'),JSON.stringify({readyMs,...measurements},null,2));
