@@ -108,8 +108,18 @@ try {
   await sleep(1200);
   await p.shot('g08-salita', true);
 
-  // pista 1: tutte le pagine (minuscole, bersagli, overflow, ellissi, «XP») e i «fatto» del piano
+  // pista 1: tutte le pagine (minuscole, bersagli, overflow, ellissi, «XP») e i «fatto» del piano.
+  // Il giro controlla Pedala senza rullo e la prova spenta di serie (A3, A4): la prova accesa
+  // all'inizio di questo collaudo si spegne per il giro e si riaccende dopo
+  const prova = async (acceso) => {
+    await p.go('/impostazioni');
+    await p.waitFor(`!!document.querySelector('[data-testid=impostazioni-prova]')`, 8000);
+    if (await p.evaluate(`document.querySelector('[data-testid=impostazioni-prova]')?.getAttribute('aria-checked') === '${acceso ? 'false' : 'true'}'`)) await p.click('[data-testid=impostazioni-prova]');
+    await sleep(300);
+  };
+  await prova(false);
   await giroPagine(p, check, { shot: !!process.env.P1_SHOTS });
+  await prova(true);
   // PASSO=1: la corsa sulla Ganda a 3 km dal passo, per la pillola del prossimo passo (F.4)
   if (process.env.PASSO) await pillolaPasso(p, check, { shot: !!process.env.P1_SHOTS });
 
