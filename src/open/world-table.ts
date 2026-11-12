@@ -49,7 +49,7 @@ export const WORLDS: readonly WorldInfo[] = [
     away: 'Selvino',
     mb: 22,
     quote: 'Quote EU-DEM',
-    quoteCredits: 'Quote EU-DEM © Copernicus.',
+    quoteCredits: 'Quote EU-DEM © Copernicus. Ganda: rilievi DBGT rielaborati © Regione Lombardia (CC BY 4.0), Gazzaniga 2007 e Aviatico 2011.',
   },
   {
     id: 'sellaronda',
