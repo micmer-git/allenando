@@ -170,6 +170,10 @@ export function WorldMap({
           }
         }}
         onPointerCancel={() => (drag.current = null)}
+        // la carta vive di pointer: il clic che il browser genera dopo un tocco cadrebbe su quello che
+        // c'è sotto il dito DOPO il tocco. In Dove la riga del percorso toccato scorre lì sotto e il clic
+        // fantasma la sceglieva e chiudeva il foglio (collaudo U d'integrazione, 12/11/2026)
+        onTouchEnd={(e) => e.preventDefault()}
         onWheel={(e) => {
           const r = (e.target as HTMLElement).getBoundingClientRect();
           const px = e.clientX - r.left;
