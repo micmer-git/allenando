@@ -116,4 +116,3 @@ export function paintFacade(g: Brush, alpine: boolean, rnd: Rand) {
   });
   g.restore();
 }
-

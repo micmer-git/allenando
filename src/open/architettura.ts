@@ -30,4 +30,3 @@ export function loadArchitecture(id: string): Promise<Hints> {
   worlds.set(id, pending);
   return pending;
 }
-

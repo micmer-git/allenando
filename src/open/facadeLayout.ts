@@ -9,4 +9,3 @@ const FINISH: Record<WallFinish, number> = { pietra: 0, assi: 1, porta: 2, serra
 export function finishUV(finish: WallFinish, u: number, v: number): [number, number] {
   return [(FINISH[finish] + 0.025 + 0.95 * u) / 4, (0.025 + 0.95 * v) / 4];
 }
-

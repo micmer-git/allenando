@@ -35,7 +35,9 @@ def sample(poly, raster, cell):
         return None
     r,g,b,a = pixels.T
     light = .299*r+.587*g+.114*b
-    clean = (a>=250) & (light>49) & (light<230) & ~((g>r*1.06) & (g>b*1.08))
+    vegetation = (g*1.045 >= r) & (g>b+18)
+    blue_shadow = (light<100) & (b>r+10) & (g>r+5)
+    clean = (a>=250) & (light>49) & (light<230) & ~vegetation & ~blue_shadow
     # Reject patches dominated by shadows, trees, glare or multiple incompatible materials.
     if clean.sum() < max(6,.70*len(pixels)):
         return None
