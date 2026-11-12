@@ -4,11 +4,11 @@
 // Uso: node scripts/ui-shot.mjs <base> <outdir>   (es. http://127.0.0.1:4199/allenando shots)
 // ONLY_RIDE=1 salta Pedala (per una macchina con poca memoria: il 3D è la parte pesante)
 // Esce con 1 se un controllo fallisce o la pagina lancia errori.
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { launch, sleep } from './cdp.mjs';
 import { largo, MINUSCOLE, minuscoleSu } from './pagine-check.mjs';
-import { collaudoCorsa, collaudoLargo } from './corsa-checks.mjs';
+import { collaudoCorsa, collaudoGiri, collaudoLargo } from './corsa-checks.mjs';
 import { misuraTocchi } from './flusso-lib.mjs';
 
 const [base = 'http://127.0.0.1:4199/allenando', out = 'shots'] = process.argv.slice(2);
@@ -117,6 +117,10 @@ try {
     const tabs = await collaudoCorsa({ b, base, check });
     for (const t of tabs) check(t.errors.length === 0, 'corsa: nessun errore di pagina', t.errors.slice(0, 5).join(' | '));
     await collaudoLargo({ b, base, check });
+    // i giri (§ 5 del piano U): «Giro 1 di 2» → «Giro 2 di 2», e il riepilogo con le due tratte
+    const rides = JSON.parse(readFileSync(new URL('../public/world/bergamo/rides.json', import.meta.url), 'utf8'));
+    const len = (id) => rides.find((r) => r.id === id).lengthM;
+    await collaudoGiri({ b, base, check, lunghezze: { ganda: len('ganda'), citta: len('citta-alta') } });
   }
   // i tocchi da app aperta a «sto pedalando», col rullo finto (una scheda isolata, chiusa alla fine)
   if (!process.env.NO_TOCCHI) await misuraTocchi(b, base, check, out);
