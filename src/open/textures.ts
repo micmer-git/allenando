@@ -1,3 +1,4 @@
+import { paintFacade } from './facadePaint';
 import * as THREE from 'three';
 import { canvasTex } from '@/world/Scene';
 
@@ -12,84 +13,10 @@ const rnd = () => {
   return seed / 2147483647;
 };
 
-/**
- * Facciate: 4 campate × 2 piani (256 px per casella). Finestre con le persiane verdi o marroni,
- * aperte, accostate o chiuse, qualche balcone con la ringhiera. L'angolo in basso a sinistra di ogni
- * casella resta intonaco: lì cadono le uv dei muri ciechi.
- */
+/** Intonaco, finestre e materiali di finitura condividono una sola trama per mondo. */
 export function facadeTexture(style: 'lombardo' | 'ladino' = 'lombardo'): THREE.CanvasTexture {
   seed = style === 'ladino' ? 13 : 11;
-  const ladino = style === 'ladino';
-  const C = 256;
-  const t = canvasTex(C * 4, C * 2, (g) => {
-    g.fillStyle = '#ffffff';
-    g.fillRect(0, 0, C * 4, C * 2);
-    // intonaco: macchie leggere e una fascia più scura in basso (umidità)
-    for (let i = 0; i < 900; i++) {
-      g.fillStyle = `rgba(90,80,60,${0.015 + rnd() * 0.03})`;
-      g.fillRect(rnd() * C * 4, rnd() * C * 2, 6 + rnd() * 30, 4 + rnd() * 18);
-    }
-    for (let row = 0; row < 2; row++) {
-      for (let col = 0; col < 4; col++) {
-        const x0 = col * C;
-        const y0 = row * C;
-        const kind = rnd();
-        // le case ladine: persiane e cornici di legno (km0-49680937, corvara-79922438)
-        const shutter = ladino ? (rnd() < 0.5 ? '#6b4a2e' : '#8a6238') : rnd() < 0.62 ? '#58744b' : '#7a5636';
-        const wx = x0 + C * 0.34;
-        const ww = C * 0.32;
-        const wy = y0 + C * 0.2;
-        const wh = C * 0.52;
-        // davanzale e cornice in pietra chiara
-        g.fillStyle = '#f2ede2';
-        g.fillRect(wx - 10, wy - 8, ww + 20, wh + 20);
-        g.fillStyle = 'rgba(0,0,0,0.18)';
-        g.fillRect(wx - 12, wy + wh + 10, ww + 24, 5);
-        // vetro: scuro con un riflesso del cielo in alto
-        const grd = g.createLinearGradient(0, wy, 0, wy + wh);
-        grd.addColorStop(0, '#76889a');
-        grd.addColorStop(0.45, '#39434d');
-        grd.addColorStop(1, '#262c33');
-        g.fillStyle = grd;
-        g.fillRect(wx, wy, ww, wh);
-        g.fillStyle = '#e9e4da';
-        g.fillRect(wx + ww / 2 - 3, wy, 6, wh);
-        g.fillRect(wx, wy + wh * 0.38, ww, 5);
-        const slats = (x: number, w: number) => {
-          g.fillStyle = shutter;
-          g.fillRect(x, wy - 2, w, wh + 4);
-          g.fillStyle = 'rgba(0,0,0,0.22)';
-          for (let y = wy + 4; y < wy + wh; y += 9) g.fillRect(x + 3, y, w - 6, 3);
-        };
-        if (kind < 0.18) {
-          // persiane chiuse
-          slats(wx, ww / 2 - 1);
-          slats(wx + ww / 2 + 1, ww / 2 - 1);
-        } else if (kind < 0.32) {
-          // accostate: metà
-          slats(wx, ww / 2 - 1);
-          slats(wx + ww + 4, ww / 2 - 2);
-        } else {
-          slats(wx - ww / 2 - 6, ww / 2);
-          slats(wx + ww + 6, ww / 2);
-        }
-        // le case ladine non hanno il balcone dipinto (pista S3): quelle vicine (due anelli) lo hanno in
-        // rilievo all'altezza del piano (buildings.ts); dipinto stava a metà finestra e la facciata ne
-        // mostrava due per piano. Oltre i due anelli un balcone è meno di un pixel
-        if (!ladino && row === 1 && rnd() < 0.4) {
-          // balcone: soletta e ringhiera
-          g.fillStyle = '#d9d3c6';
-          g.fillRect(wx - 26, wy + wh + 2, ww + 52, 12);
-          g.fillStyle = '#2a2b2c';
-          g.fillRect(wx - 26, wy + wh * 0.62, ww + 52, 4);
-          for (let x = wx - 24; x < wx + ww + 26; x += 9) g.fillRect(x, wy + wh * 0.62, 3, wh * 0.38 + 4);
-        }
-        // marcapiano sottile fra i piani
-        g.fillStyle = 'rgba(0,0,0,0.07)';
-        g.fillRect(x0, y0 + C - 6, C, 6);
-      }
-    }
-  });
+  const t = canvasTex(1024, 512, (g) => paintFacade(g, style === 'ladino', rnd));
   t.wrapS = THREE.RepeatWrapping;
   t.wrapT = THREE.RepeatWrapping;
   t.anisotropy = 4;
@@ -97,7 +24,7 @@ export function facadeTexture(style: 'lombardo' | 'ladino' = 'lombardo'): THREE.
 }
 
 /** Coppi lombardi: canali che scendono la falda, file sovrapposte, qualche coppo più scuro. 2 m × 2 m. */
-export function roofTilesTexture(): THREE.CanvasTexture {
+export function roofTilesTexture(style: 'lombardo' | 'ladino' = 'lombardo'): THREE.CanvasTexture {
   seed = 23;
   const S = 256;
   const cols = 13;
@@ -105,6 +32,24 @@ export function roofTilesTexture(): THREE.CanvasTexture {
   const t = canvasTex(S, S, (g) => {
     g.fillStyle = '#c9c4bd';
     g.fillRect(0, 0, S, S);
+    if (style === 'ladino') {
+      // Scandole e lastre a giunti sfalsati. Il colore misurato o scelto per l'edificio resta nei vertici.
+      const w = 32, h = 32;
+      for (let row = 0; row < S / h; row++) {
+        const offset = (row % 2) * w / 2;
+        for (let c = 0; c < S / w; c++) {
+          const light = Math.round(205 + rnd() * 40);
+          const x = c * w + offset;
+          for (const at of [x, x - S]) {
+            g.fillStyle = `rgb(${light},${light - 2},${light - 4})`;
+            g.fillRect(at, row*h, w-1, h-2);
+            g.fillStyle = 'rgba(56,50,42,.25)';
+            g.fillRect(at, row*h, w, 3);
+          }
+        }
+      }
+      return;
+    }
     const cw = S / cols;
     const rh = S / rows;
     for (let r = 0; r < rows; r++) {

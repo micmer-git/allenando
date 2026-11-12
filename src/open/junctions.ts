@@ -66,8 +66,9 @@ export interface JunctionGeo {
   cy: number;
   /** classe più importante fra le strade del nodo */
   cls: number;
-  /** tutte le strade del nodo sono in pietra o pedonali */
+  /** tutti i rami hanno la stessa pavimentazione mappata */
   stone: boolean;
+  gravel: boolean;
   arms: JunctionArm[];
   /** il bordo del poligono, in ordine intorno al nodo (chiuso: l'ultimo si ricongiunge al primo) */
   ring: JunctionVertex[];
@@ -162,6 +163,7 @@ function buildJunction(graph: WorldGraph, node: number): JunctionGeo | null {
   const arms: Arm[] = [];
   let cls = 7;
   let stone = true;
+  let gravel = true;
   for (const id of ids) {
     const e = graph.edges[id];
     if (e.flags & (FLAG.tunnel | FLAG.roundabout) || e.a === e.b || e.length < 1) return null;
@@ -172,7 +174,8 @@ function buildJunction(graph: WorldGraph, node: number): JunctionGeo | null {
     const uz = Math.cos(h);
     arms.push({ edge: id, atA, ux, uz, hw: e.hw, cls: e.cls, cut: 0, th: Math.atan2(uz, ux), lx: Math.cos(h), lz: -Math.sin(h), tanL: 0, tanR: 0 });
     cls = Math.min(cls, e.cls);
-    if (!(e.flags & FLAG.cobbles) && e.cls !== CLS.pedestrian && e.cls !== CLS.cycleway) stone = false;
+    if (!(e.flags & FLAG.cobbles)) stone = false;
+    if (!(e.flags & FLAG.unpaved)) gravel = false;
   }
   arms.sort((p, q) => p.th - q.th);
   const cx = graph.nodeX[node];
@@ -329,7 +332,7 @@ function buildJunction(graph: WorldGraph, node: number): JunctionGeo | null {
     }
     curbs.push(curb);
   }
-  const out: JunctionGeo = { node, cx, cz, cy, cls, stone, arms: arms.map(({ edge, atA, ux, uz, hw, cls: c, cut }) => ({ edge, atA, ux, uz, hw, cls: c, cut })), ring, curbs };
+  const out: JunctionGeo = { node, cx, cz, cy, cls, stone, gravel, arms: arms.map(({ edge, atA, ux, uz, hw, cls: c, cut }) => ({ edge, atA, ux, uz, hw, cls: c, cut })), ring, curbs };
   return out;
 }
 

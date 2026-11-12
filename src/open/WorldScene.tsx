@@ -7,10 +7,17 @@ import type { Quality } from '@/domain/types';
 import type { RideEngine } from '@/sim/engine';
 import { asphaltTexture, smoothNoise } from '@/world/builders';
 import { groundLook, LARCH_PALETTE, lookContext, lookFor, type LookCtx, type WorldLook } from './look';
+import { sightLine, type SurveyAngles } from './sopralluogo';
+import { localShadow, makeSkyDome } from './luceStrada';
+import { OrthoWindow } from './ortofoto';
+import { landscapeUniforms, patchLandscape } from './paesaggio';
+import { canopyNames, photoCrown } from './chiome';
+import photoUrl from './chiome.webp?url';
 import { patchRockShader } from './rockShader';
 import { Lifts } from './Lifts';
 import { Passi } from './Passi';
 import { Gate, Rider, bannerTexture, canvasTex } from '@/world/Scene';
+import { gravelTexture } from './ghiaia';
 import { FLAG, type Dir } from './graph';
 import type { WorldField } from './field';
 import type { NpcCrowd } from './npc';
@@ -20,13 +27,17 @@ import { buildingsJob, furnitureJob, railsGeometry, roadsJob, terrainJob, treesJ
 import { facadeTexture, groundDetailTexture, roofTilesTexture } from './textures';
 import { atmosphere, CLEAR, sunFor, sunVector, type Daytime } from './sky';
 import type { WeatherNow } from './weather';
-import { loadBuildings, type Building, type RideDef, type Terrain, type WorldData } from './world';
+import { worldBase, loadBuildings, type Building, type RideDef, type Terrain, type WorldData } from './world';
 import { WorldPath } from './path';
 import { createFarMask, farSinks, patchFarShader, updateFarMask, type FarMask } from './farMask';
 import { createMidMask, midGeometry, midSpacing, patchMidShader, setMidMask, tileRectDist, type MidMask } from './midTerrain';
 import { createTunnelCut, patchTerrainShader, updateTunnelCut, type TunnelCut } from './tunnels';
 import type { ArchSpec } from '@/game/arches';
 import { Arches } from '@/world/Arches';
+import { aggregatoTexture, cemento } from './materialiBordo';
+import { fitRoncalliRoof, addRoncalliFacade } from './palazzoRoncalli';
+import { CartelliSelvino } from './CartelliSelvino';
+import { campioni } from './campioni';
 import { HairpinSigns, hairpinSigns } from '@/world/HairpinSigns';
 import { findHairpins } from '@/domain/geo';
 import {
@@ -93,7 +104,8 @@ export interface RemoteWorldRider {
 }
 
 export interface WorldSceneProps {
-  engine: RideEngine;
+  engine: Pick<RideEngine, 'distance' | 'speed' | 'power' | 'cadence'>;
+  preview?: () => SurveyAngles;
   data: WorldData;
   path: WorldPath;
   field: WorldField;
@@ -151,6 +163,7 @@ export function WorldScene(props: WorldSceneProps) {
   return (
     <Canvas
       dpr={q.dpr}
+      shadows={props.quality !== 'low' && !props.data.leggero ? 'percentage' : false}
       gl={{ antialias: props.quality !== 'low', alpha: false, stencil: false, powerPreference: 'high-performance' }}
       camera={{ fov: 55, near: 0.3, far: q.far + 2000, position: [0, 4, -10] }}
       onCreated={({ gl }) => {
@@ -247,7 +260,19 @@ function WorldContent(props: WorldSceneProps & { counts: TileCounts; status: Loa
   useEffect(() => () => midMask?.uMid.value.dispose(), [midMask]);
   // il terreno che entra nelle gallerie vicine non si disegna (tunnels.ts)
   const cut = useMemo(() => createTunnelCut(), []);
-  const mats = useMaterials(farMask, cut, ctx.look, midMask);
+  const landscape = useMemo(() => landscapeUniforms(data.graph.far), [data.graph]);
+  const ortho = useRef<OrthoWindow | null>(null);
+  useEffect(() => {
+    if (data.leggero || typeof createImageBitmap !== 'function') return;
+    const active = new OrthoWindow(worldBase(data.graph.id) + 'ortofoto-v1/', quality === 'low' ? 256 : 512, landscape);
+    ortho.current = active;
+    return () => { active.dispose(); ortho.current = null; };
+  }, [data.graph, data.leggero, quality, landscape]);
+  useFrame(() => {
+    const p = props.playerPose();
+    ortho.current?.tick(p.x,p.z,performance.now());
+  });
+  const mats = useMaterials(farMask, cut, ctx.look, midMask, data.graph, !data.leggero, landscape);
   const names = useMemo(() => new Set<THREE.Sprite>(), []);
   const { counts } = props;
   // le case e i monumenti intorno al ciclista: coprono i nomi (WorldLabels)
@@ -255,8 +280,8 @@ function WorldContent(props: WorldSceneProps & { counts: TileCounts; status: Loa
   const stats = useMemo(() => statsWanted(), []);
   return (
     <group>
-      {stats ? <StatsProbe tiles={() => ({ ...counts, treesNear: treeCount.near, treesFar: treeCount.far })} /> : null}
-      <Atmosphere weather={props.weather} daytime={props.daytime} data={data} far={q.far} mats={mats} />
+      {stats ? <StatsProbe tiles={() => ({ ...counts, orthoSheets: ortho.current?.sheets ?? 0, treesNear: treeCount.near, treesFar: treeCount.far })} /> : null}
+      <Atmosphere weather={props.weather} daytime={props.daytime} data={data} far={q.far} mats={mats} counts={counts} quality={quality} />
       {props.weather && props.weather.rain >= 0.1 ? <Rain mmh={props.weather.rain} weather={props.weather} /> : null}
       <FarTerrain terrain={terrain} stride={q.farStride} material={mats.far} ctx={ctx} />
       {midMask ? <MidTerrain terrain={terrain} material={mats.mid} ctx={ctx} mask={midMask} range={q.mid} nearCover={(q.ring - 0.5) * q.tile} playerPose={props.playerPose} status={props.status} /> : null}
@@ -265,13 +290,14 @@ function WorldContent(props: WorldSceneProps & { counts: TileCounts; status: Loa
       <Walls data={data} field={field} />
       <Lifts data={data} terrain={terrain} playerPose={props.playerPose} />
       <Passi data={data} field={field} playerPose={props.playerPose} />
-      <Monumenti playerPose={props.playerPose} />
+      {data.graph.id === 'bergamo' && <CartelliSelvino data={data} field={field} playerPose={props.playerPose} />}
+      <Monumenti world={data.graph.id} playerPose={props.playerPose} />
       <Labels data={data} playerPose={props.playerPose} names={names} />
       <Landmarks data={data} playerPose={props.playerPose} names={names} />
       <Declutter names={names} terrain={terrain} playerPose={props.playerPose} occluders={occluders} />
       {props.ride ? <RideSigns data={data} ride={props.ride} /> : null}
-      <PlayerRider {...props} />
-      <ContactShadow playerPose={props.playerPose} />
+      {!props.preview && <PlayerRider {...props} />}
+      {!props.preview && <ContactShadow playerPose={props.playerPose} />}
       {props.extraRiders?.map((r) => (
         <ExtraRider key={r.id} rider={r} />
       ))}
@@ -289,40 +315,59 @@ function WorldContent(props: WorldSceneProps & { counts: TileCounts; status: Loa
 
 // ---------- materiali condivisi ----------
 
-function useMaterials(mask: FarMask, cut: TunnelCut, look: WorldLook, midMask: MidMask | null) {
+function useMaterials(mask: FarMask, cut: TunnelCut, look: WorldLook, midMask: MidMask | null, graph: WorldData['graph'], detailed: boolean, satellite: ReturnType<typeof landscapeUniforms>) {
+  useEffect(() => {
+    if (!detailed) return;
+    let active = true;
+    const tex = new THREE.TextureLoader().load(worldBase(graph.id) + 'paesaggio-2021.webp', image => {
+      if (!active) return;
+      image.colorSpace = THREE.SRGBColorSpace;
+      satellite.uLandscape.value = image;
+      satellite.uLandscapeReady.value = 1;
+    }, undefined, () => { /* una copia offline vecchia mantiene i colori procedurali */ });
+    return () => { active = false; satellite.uLandscapeReady.value = 0; satellite.uLandscape.value = null; tex.dispose(); };
+  }, [graph, satellite, detailed]);
   const mats = useMemo(() => {
     const asphaltTex = asphaltTexture();
+    // Gli incroci usano UV in metri locali (anche fuori da 0..1): il clamp stirava il bordo in righe.
+    asphaltTex.wrapS = THREE.RepeatWrapping;
     const stoneTex = settTexture();
+    const gravelTex = gravelTexture();
     // le facciate: persiane verdi e balconcini in Lombardia, legno e balconi a tutta facciata nei paesi ladini
     const facadeTex = facadeTexture(look.case);
-    const tilesTex = roofTilesTexture();
+    const tilesTex = roofTilesTexture(look.case);
     const groundTex = groundDetailTexture();
+    const chips = aggregatoTexture();
     const far = new THREE.MeshLambertMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: 3, polygonOffsetUnits: 6 });
     far.onBeforeCompile = (shader) => {
       patchFarShader(shader, mask);
       // e sotto la fascia di mezzo pronta (midTerrain.ts)
       if (midMask) patchMidShader(shader, midMask);
       patchRockShader(shader, look.rock.bands);
+      patchLandscape(shader, satellite);
     };
     // la fascia di mezzo: come il lontano, ma si scarta solo sotto le mattonelle vicine pronte
     const mid = new THREE.MeshLambertMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: 1.5, polygonOffsetUnits: 3 });
     mid.onBeforeCompile = (shader) => {
       patchFarShader(shader, mask);
       patchRockShader(shader, look.rock.bands);
+      patchLandscape(shader, satellite);
     };
     return {
       far,
       mid,
-      terrain: terrainMaterial(groundTex, cut, look.rock.bands, look.triplanar),
+      terrain: terrainMaterial(groundTex, cut, look.rock.bands, look.triplanar, satellite),
       asphalt: new THREE.MeshLambertMaterial({ map: asphaltTex, color: '#c9cbd0', polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
       stone: new THREE.MeshLambertMaterial({ map: stoneTex, color: '#d8cfc2', polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
-      cycle: new THREE.MeshLambertMaterial({ map: asphaltTex, color: '#c98f7d', polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
+      gravel: new THREE.MeshLambertMaterial({ map: gravelTex, color: '#ede6d8', polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
       paint: new THREE.MeshLambertMaterial({ color: '#efeee6', polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }),
-      verge: new THREE.MeshLambertMaterial({ color: '#8f8574', side: THREE.DoubleSide }),
-      concrete: new THREE.MeshLambertMaterial({ color: '#b3b1aa', side: THREE.DoubleSide }),
+      verge: cemento(new THREE.MeshLambertMaterial({ color: '#8f8574', side: THREE.DoubleSide }), chips),
+      concrete: cemento(new THREE.MeshLambertMaterial({ color: '#b3b1aa', side: THREE.DoubleSide }), chips),
       /** dentro le gallerie la luce è cotta nei colori (tunnels.ts): niente sole sotto il monte */
       tunnel: new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }),
       tunnelRoad: new THREE.MeshBasicMaterial({ map: asphaltTex, color: '#b9bbc0', vertexColors: true, side: THREE.DoubleSide }),
+      tunnelStone: new THREE.MeshBasicMaterial({ map: stoneTex, vertexColors: true, side: THREE.DoubleSide }),
+      tunnelGravel: new THREE.MeshBasicMaterial({ map: gravelTex, vertexColors: true, side: THREE.DoubleSide }),
       rails: new THREE.MeshLambertMaterial({ color: '#7d756b' }),
       buildings: new THREE.MeshLambertMaterial({ vertexColors: true, map: facadeTex }),
       roofs: new THREE.MeshLambertMaterial({ vertexColors: true, map: tilesTex }),
@@ -337,17 +382,17 @@ function useMaterials(mask: FarMask, cut: TunnelCut, look: WorldLook, midMask: M
         trunk: new THREE.MeshLambertMaterial({ color: '#5a4331' }),
       },
       /** cordoli, marciapiedi e aiuole delle rotatorie: colori di vertice, visti anche da sotto */
-      kerb: new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }),
+      kerb: cemento(new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }), chips),
       /** l'arredo stradale: lamiera zincata, cartelli, semafori, catadiottri */
       road: roadsideMaterials(),
       lamp: new THREE.MeshLambertMaterial({ color: '#3b3f45' }),
       lampHead: new THREE.MeshLambertMaterial({ color: '#d9d6cc', emissive: '#000000' }),
-      textures: [asphaltTex, stoneTex, facadeTex, tilesTex, groundTex],
+      textures: [asphaltTex, stoneTex, gravelTex, facadeTex, tilesTex, groundTex, chips],
       geos: furnitureGeometries(),
       /** cartelli d'inizio paese, uno per nome */
       signs: new Map<string, THREE.MeshLambertMaterial>(),
     };
-  }, [mask, cut, look, midMask]);
+  }, [mask, cut, look, midMask, satellite]);
   useEffect(
     () => () => {
       for (const [k, v] of Object.entries(mats)) {
@@ -369,11 +414,12 @@ function useMaterials(mask: FarMask, cut: TunnelCut, look: WorldLook, midMask: M
 }
 
 /** Il terreno vicino: colori di vertice, la grana, il taglio dentro le gallerie, le bande della roccia. */
-function terrainMaterial(map: THREE.Texture, cut: TunnelCut, bands: number, triplanar: boolean): THREE.MeshLambertMaterial {
+function terrainMaterial(map: THREE.Texture, cut: TunnelCut, bands: number, triplanar: boolean, satellite: ReturnType<typeof landscapeUniforms>): THREE.MeshLambertMaterial {
   const m = new THREE.MeshLambertMaterial({ vertexColors: true, map });
   m.onBeforeCompile = (shader) => {
     patchTerrainShader(shader, cut);
     patchRockShader(shader, bands, triplanar);
+    patchLandscape(shader, satellite);
   };
   // i due mondi hanno due programmi: three li distingue da questa chiave (la closure è la stessa)
   if (triplanar) m.customProgramCacheKey = () => 'terreno-triplanare';
@@ -463,29 +509,31 @@ function settTexture(): THREE.CanvasTexture {
  * Il cielo di Bergamo adesso (o all'ora scelta): sole nella posizione vera, colori del cielo e della
  * luce, foschia che si chiude con le nuvole e la pioggia, strade bagnate. Si ricalcola ogni 30 s.
  */
-function Atmosphere({ weather, daytime, data, far, mats }: { weather: WeatherNow | null; daytime: Daytime; data: WorldData; far: number; mats: Mats }) {
+function Atmosphere({ weather, daytime, data, far, mats, counts, quality }: { weather: WeatherNow | null; daytime: Daytime; data: WorldData; far: number; mats: Mats; counts: TileCounts; quality: Quality }) {
   const { scene, gl, camera } = useThree();
   const hemi = useRef<THREE.HemisphereLight>(null);
   const sun = useRef<THREE.DirectionalLight>(null);
   const dome = useRef<THREE.Mesh>(null);
   const clouds = useRef<THREE.Mesh>(null);
   const clock = useRef(0);
-  const geo = useMemo(() => {
-    const g = new THREE.SphereGeometry(1000, 40, 24);
-    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 3), 3));
-    return g;
-  }, []);
+  const geo = useMemo(() => new THREE.SphereGeometry(1000, 32, 16), []);
+  const sky = useMemo(makeSkyDome, []);
+  const direction = useMemo(() => new THREE.Vector3(), []);
+  const updateShadow = useMemo(localShadow, []);
+  const shaded = quality !== 'low' && !data.leggero;
+  const extent = quality === 'high' ? 105 : 76;
   const cloudGeo = useMemo(() => new THREE.SphereGeometry(940, 48, 16, 0, Math.PI * 2, 0, Math.PI * 0.47), []);
   const cloudTex = useMemo(() => cloudTexture(), []);
   const cloudMat = useMemo(() => new THREE.MeshBasicMaterial({ map: cloudTex, transparent: true, depthWrite: false, fog: false, side: THREE.BackSide, opacity: 0 }), [cloudTex]);
   useEffect(
     () => () => {
       geo.dispose();
+      sky.dispose();
       cloudGeo.dispose();
       cloudTex.dispose();
       cloudMat.dispose();
     },
-    [geo, cloudGeo, cloudTex, cloudMat],
+    [geo, sky, cloudGeo, cloudTex, cloudMat],
   );
   const appliedAlt = useRef(0);
   const apply = () => {
@@ -495,20 +543,14 @@ function Atmosphere({ weather, daytime, data, far, mats }: { weather: WeatherNow
     appliedAlt.current = camera.position.y;
     const a = atmosphere(s, look, camera.position.y);
     const dir = sunVector(s);
-    const pos = geo.attributes.position as THREE.BufferAttribute;
-    const col = geo.attributes.color as THREE.BufferAttribute;
-    const c = new THREE.Color();
-    const v = new THREE.Vector3();
-    for (let i = 0; i < pos.count; i++) {
-      const y = pos.getY(i) / 1000;
-      if (y > 0.08) c.copy(a.mid).lerp(a.zenith, Math.min(1, (y - 0.08) / 0.7));
-      else c.copy(a.horizon).lerp(a.mid, Math.max(0, (y + 0.1) / 0.18));
-      v.set(pos.getX(i), pos.getY(i), pos.getZ(i)).normalize();
-      const k = Math.max(0, v.dot(dir));
-      c.lerp(a.glow, Math.pow(k, 24) * 0.85 + Math.pow(k, 4) * 0.16);
-      col.setXYZ(i, c.r, c.g, c.b);
-    }
-    col.needsUpdate = true;
+    const u = sky.uniforms;
+    u.skyHorizon.value.copy(a.horizon);
+    u.skyMid.value.copy(a.mid);
+    u.skyZenith.value.copy(a.zenith);
+    u.skyGlow.value.copy(a.glow);
+    u.solarDirection.value.copy(dir);
+    u.solarVisibility.value = Math.max(0, Math.min(1, (dir.y+0.03)*18)) * (1-look.cloud*0.9);
+    direction.copy(dir);
     if (scene.background instanceof THREE.Color) scene.background.copy(a.horizon);
     if (scene.fog instanceof THREE.Fog) {
       scene.fog.color.copy(a.horizon);
@@ -516,7 +558,9 @@ function Atmosphere({ weather, daytime, data, far, mats }: { weather: WeatherNow
       scene.fog.far = far * 0.92 * a.fogFar;
     }
     if (sun.current) {
-      sun.current.position.copy(dir).multiplyScalar(1000);
+      if (shaded) updateShadow(sun.current,camera.position,dir,counts.ready*4096+counts.detail,performance.now(),true);
+      else sun.current.position.copy(dir).multiplyScalar(200);
+      sun.current.shadow.intensity = 0.78 * Math.max(0, Math.min(1,dir.y*10)) * (1-look.cloud*0.87);
       sun.current.color.copy(a.sunColor);
       sun.current.intensity = a.sunIntensity;
     }
@@ -536,12 +580,14 @@ function Atmosphere({ weather, daytime, data, far, mats }: { weather: WeatherNow
     const wet = look.rain >= 0.1;
     mats.asphalt.color.set(wet ? '#7f8186' : '#c9cbd0');
     mats.stone.color.set(wet ? '#a39a8e' : '#d8cfc2');
+    mats.gravel.color.set(wet ? '#aa9d84' : '#ede6d8');
   };
   useEffect(() => {
     apply();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weather, daytime]);
   useFrame((_, dt) => {
+    if (shaded && sun.current) updateShadow(sun.current,camera.position,direction,counts.ready*4096+counts.detail,performance.now());
     if (dome.current) dome.current.position.copy(camera.position);
     if (clouds.current) {
       clouds.current.position.copy(camera.position);
@@ -559,10 +605,12 @@ function Atmosphere({ weather, daytime, data, far, mats }: { weather: WeatherNow
   return (
     <>
       <hemisphereLight ref={hemi} args={['#e6f0fb', '#4f5a3c', 0.62]} />
-      <directionalLight ref={sun} position={[-700, 760, 520]} intensity={1.85} color="#fff0d6" />
-      <mesh ref={dome} geometry={geo} frustumCulled={false} renderOrder={-100}>
-        <meshBasicMaterial vertexColors side={THREE.BackSide} depthWrite={false} fog={false} />
-      </mesh>
+      <directionalLight ref={sun} position={[-700, 760, 520]} intensity={1.85} color="#fff0d6"
+        castShadow={shaded} shadow-autoUpdate={false} shadow-mapSize-width={quality === 'high' ? 1024 : 512}
+        shadow-mapSize-height={quality === 'high' ? 1024 : 512} shadow-camera-left={-extent} shadow-camera-right={extent}
+        shadow-camera-top={extent} shadow-camera-bottom={-extent} shadow-camera-near={5} shadow-camera-far={410}
+        shadow-normalBias={0.17} shadow-bias={-0.00018} />
+      <mesh ref={dome} geometry={geo} material={sky} frustumCulled={false} renderOrder={-100} />
       <mesh ref={clouds} geometry={cloudGeo} material={cloudMat} frustumCulled={false} renderOrder={-99} />
     </>
   );
@@ -834,6 +882,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
   const roadside = useRef<RoadsideHandle | null>(null);
   const center = useRef<[number, number] | null>(null);
   const dirtyTrees = useRef(false);
+  const lastForest = useRef({ x: Infinity, z: Infinity });
   /** l'arredo piccolo (paletti, cartelli, semafori) si rifà anche quando il centro si sposta */
   const dirtyProps = useRef(false);
   const riderTile = useRef<[number, number] | null>(null);
@@ -916,29 +965,43 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
     for (;;) {
       const list = buildingsFor(spec);
       if (list) {
-        bGeo = yield* buildingsJob(field, list, spec, ctx);
+        bGeo = yield* buildingsJob(field, fitRoncalliRoof(data.graph.id, field, spec, list), spec, ctx);
         break;
       }
       yield;
     }
-    const trees = yield* treesJob(field, spec, 0, false, ctx);
+    const trees = yield* treesJob(field, spec, 0, false, ctx, data.roadPoints);
+    for (const [x, z, kind, h] of data.roadPoints?.(spec.x0, spec.z0, spec.size) ?? []) {
+      if (kind === 'lamp') continue;
+      const tint = Math.abs(Math.sin(x * 0.4 + z));
+      trees.push({ x, z, y: field.height(x, z, spec.spacing) - 0.15, kind,
+        s: h ? Math.max(0.3, Math.min(3, h / (kind === 'spruce' ? 10.85 : 9))) : 0.78 + 0.42 * tint,
+        r: tint * Math.PI * 2, tint });
+    }
     const water = waterGeometry(data.features, spec);
     const rails = railsGeometry(field, data.features, spec);
     const g = new THREE.Group();
     const add = (geo: THREE.BufferGeometry | null, mat: THREE.Material) => {
-      if (geo) g.add(new THREE.Mesh(geo, mat));
+      if (!geo) return;
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.castShadow = mat === mats.buildings || mat === mats.roofs;
+      mesh.receiveShadow = mat !== mats.tunnel && mat !== mats.tunnelRoad && mat !== mats.water;
+      g.add(mesh);
     };
     add(terrainGeo, mats.terrain);
     add(roads.asphalt, mats.asphalt);
     add(roads.stone, mats.stone);
-    add(roads.cycle, mats.cycle);
+    add(roads.gravel, mats.gravel);
     add(roads.paint, mats.paint);
     add(roads.verge, mats.verge);
     add(roads.concrete, mats.concrete);
     add(roads.kerb, mats.kerb);
     add(roads.tunnel, mats.tunnel);
     add(roads.tunnelRoad, mats.tunnelRoad);
+    add(roads.tunnelStone, mats.tunnelStone);
+    add(roads.tunnelGravel, mats.tunnelGravel);
     add(bGeo.walls, mats.buildings);
+    addRoncalliFacade(g, data.graph.id, field, spec, buildingsFor(spec) ?? []);
     add(bGeo.roofs, mats.roofs);
     add(water, mats.water);
     add(rails, mats.rails);
@@ -977,7 +1040,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
       g.add(stone);
     }
     // arredo dei paesi: lampioni e il cartello col nome all'ingresso
-    const furn = yield* furnitureJob(data.graph, field, data.features.places, spec);
+    const furn = yield* furnitureJob(data.graph, field, data.features.places, spec, data.roadPoints);
     const d = new THREE.Object3D();
     if (furn.lamps.length) {
       const poles = new THREE.InstancedMesh(mats.geos.lamp, mats.lamp, furn.lamps.length);
@@ -985,6 +1048,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
       furn.lamps.forEach((l, i) => {
         d.position.set(l.x, l.y - 0.2, l.z);
         d.rotation.set(0, l.h, 0);
+        d.scale.set(1, l.scaleY ?? 1, 1);
         d.updateMatrix();
         poles.setMatrixAt(i, d.matrix);
         heads.setMatrixAt(i, d.matrix);
@@ -992,6 +1056,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
       poles.computeBoundingSphere();
       heads.computeBoundingSphere();
       g.add(poles, heads);
+      d.scale.set(1, 1, 1);
     }
     for (const t of furn.towns) {
       let mat = mats.signs.get(t.name);
@@ -1134,7 +1199,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
       if (!job) break;
       if (kind === 'dense') {
         if (job.dense === 'none') {
-          job.xjob = treesJob(field, { ...specOf(job.ix, job.iz, 0), trees: q.trees * DENSE_EXTRA }, 7.3, true, ctx);
+          job.xjob = treesJob(field, { ...specOf(job.ix, job.iz, 0), trees: q.trees * DENSE_EXTRA }, 7.3, true, ctx, data.roadPoints);
           job.dense = 'build';
         }
         const r = job.xjob!.next();
@@ -1211,7 +1276,8 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
       });
     }
     updateFarMask(mask, b.x0, b.z0, T, cx, cz, (ix, iz) => !!map.get(`${ix}_${iz}`)?.shown);
-    if (dirtyTrees.current && forest.current) {
+    if (forest.current && (dirtyTrees.current || Math.hypot(pose.x-lastForest.current.x, pose.z-lastForest.current.z) > 125)) {
+      lastForest.current = {x: pose.x, z: pose.z};
       dirtyTrees.current = false;
       const all: ForestPatch[] = [];
       for (const t of map.values()) if (t.state === 'ready') all.push({ trees: t.trees, near: near(t) <= DENSE_RING });
@@ -1229,7 +1295,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
   return (
     <group>
       <group ref={root} />
-      <Forest handle={forest} mats={mats} larch={LARCH_PALETTE[ctx.season.larch]} />
+      <Forest handle={forest} mats={mats} season={ctx.season.larch} />
       <Roadside handle={roadside} mats={mats} />
     </group>
   );
@@ -1417,7 +1483,7 @@ interface ForestPatch {
 }
 
 /** `larch`: i colori del larice nella stagione di oggi (look.ts: d'oro in ottobre e novembre). */
-function Forest({ handle, mats, larch }: { handle: React.MutableRefObject<ForestHandle | null>; mats: Mats; larch: string[] }) {
+function Forest({ handle, mats, season }: { handle: React.MutableRefObject<ForestHandle | null>; mats: Mats; season: LookCtx['season']['larch'] }) {
   const group = useRef<THREE.Group>(null);
   const geos = useMemo(() => {
     const larch = new THREE.ConeGeometry(2.4, 8, 6, 1, true);
@@ -1435,10 +1501,24 @@ function Forest({ handle, mats, larch }: { handle: React.MutableRefObject<Forest
   useEffect(() => {
     const g = group.current;
     const current = meshes.current;
+    let ready = false;
+    let alive = true;
+    let last: Parameters<ForestHandle['set']> | undefined;
+    const photo = new THREE.TextureLoader().load(photoUrl, () => {
+      if (!alive) return;
+      ready = true;
+      if (last) handle.current?.set(...last);
+    });
+    photo.colorSpace = THREE.SRGBColorSpace;
+    const foliage = new THREE.MeshLambertMaterial({ map: photo, alphaTest: 0.34 });
+    const crowns = canopyNames.map(name => ({ name, geometry: photoCrown(name) }));
+    const leaves = season === 'oro' ? ['#7c8153','#938246','#896d43','#627347'] :
+      season === 'spoglio' ? ['#746651','#695f50','#7f705b'] : TREE_COLORS.broadleaf;
     const KINDS: TreeKind[] = ['spruce', 'larch', 'broadleaf', 'cypress', 'rock'];
     handle.current = {
       set(patches, px, pz, cap) {
         if (!g) return;
+        last = [patches, px, pz, cap];
         const by = new Map<string, TileMeshes['trees']>();
         const push = (key: string, t: TileMeshes['trees'][number]) => {
           const l = by.get(key);
@@ -1457,10 +1537,14 @@ function Forest({ handle, mats, larch }: { handle: React.MutableRefObject<Forest
         let nFar = 0;
         for (const p of patches) {
           for (const t of p.trees) {
-            const full = p.near && (t.x - px) ** 2 + (t.z - pz) ** 2 <= limit;
-            push(treeKey(t.kind, full), t);
+            const dist2 = (t.x - px) ** 2 + (t.z - pz) ** 2;
+            const full = p.near && dist2 <= limit;
+            const photographed = full && ready && t.kind !== 'rock' && dist2 < 280 ** 2;
+            const name = t.kind === 'spruce' && t.tint > .53 ? 'dense' :
+              t.kind === 'broadleaf' && season === 'spoglio' ? 'bare' : t.kind;
+            push(photographed ? 'foto:' + name : treeKey(t.kind, full), t);
             // il tronco solo vicino: da lontano è meno di un pixel
-            if (full && t.kind !== 'rock') push('trunk', t);
+            if (full && !photographed && t.kind !== 'rock') push('trunk', t);
             if (full) nNear++;
             else nFar++;
           }
@@ -1479,6 +1563,7 @@ function Forest({ handle, mats, larch }: { handle: React.MutableRefObject<Forest
           const items = by.get(key) ?? [];
           if (items.length === 0) return;
           const m = new THREE.InstancedMesh(geo, mat, items.length);
+          m.castShadow = key.endsWith(':n') || key === 'trunk';
           const rock = key.startsWith('rock');
           const cone = key === 'conifer:f';
           items.forEach((it, i) => {
@@ -1491,9 +1576,10 @@ function Forest({ handle, mats, larch }: { handle: React.MutableRefObject<Forest
             d.updateMatrix();
             m.setMatrixAt(i, d.matrix);
             if (colored) {
-              const colors = it.kind === 'larch' ? larch : TREE_COLORS[it.kind];
+              const colors = it.kind === 'larch' ? LARCH_PALETTE[season] : it.kind === 'broadleaf' ? leaves : TREE_COLORS[it.kind];
               c.set(colors[Math.floor(it.tint * colors.length) % colors.length]);
               c.offsetHSL(0, (((it.tint * 13.7) % 1) - 0.5) * 0.08, (((it.tint * 29.3) % 1) - 0.5) * 0.07);
+              if (key.startsWith('foto:')) c.multiplyScalar(1.45);
               m.setColorAt(i, c);
             }
           });
@@ -1503,6 +1589,7 @@ function Forest({ handle, mats, larch }: { handle: React.MutableRefObject<Forest
           current.set(key, m);
           g.add(m);
         };
+        for (const crown of crowns) make('foto:' + crown.name, crown.geometry, foliage);
         for (const k of KINDS) make(`${k}:n`, geos.near[k], mats.trees[k]);
         make('conifer:f', geos.far.conifer, mats.trees.spruce);
         make('broadleaf:f', geos.far.broadleaf, mats.trees.broadleaf);
@@ -1511,13 +1598,17 @@ function Forest({ handle, mats, larch }: { handle: React.MutableRefObject<Forest
     };
     return () => {
       handle.current = null;
-      for (const m of current.values()) m.dispose();
+      alive = false;
+      photo.dispose();
+      foliage.dispose();
+      crowns.forEach(crown => crown.geometry.dispose());
+      for (const m of current.values()) { g?.remove(m); m.dispose(); }
       current.clear();
       Object.values(geos.near).forEach((x) => x.dispose());
       Object.values(geos.far).forEach((x) => x.dispose());
       geos.trunk.dispose();
     };
-  }, [handle, geos, mats, larch]);
+  }, [handle, geos, mats, season]);
   return <group ref={group} />;
 }
 
@@ -1604,7 +1695,7 @@ function Roadside({ handle, mats }: { handle: React.MutableRefObject<RoadsideHan
  * tipo (traguardi, cassonetto, km, ultimo km, ERG) per vederli senza il gioco (non esiste nella
  * build pubblicata).
  */
-function WorldArches({ arches, path, engine }: { arches?: ArchSpec[]; path: WorldPath; engine: RideEngine }) {
+function WorldArches({ arches, path, engine }: { arches?: ArchSpec[]; path: WorldPath; engine: WorldSceneProps['engine'] }) {
   const lab = useMemo<ArchSpec[] | null>(() => {
     if (!import.meta.env.DEV || typeof location === 'undefined' || !new URLSearchParams(location.search).has('archlab')) return null;
     const at = (d: number) => path.poseAt(Math.min(path.length - 1, engine.distance + d));
@@ -1719,7 +1810,9 @@ function RideSigns({ data, ride }: { data: WorldData; ride: RideDef }) {
     // il giro di una rotatoria non è un tornante
     const nearRing = (d: number) => [-40, -20, 0, 20, 40].some((o) => g.isRing(path.edgeAt(Math.min(path.length, Math.max(0, d + o))).edge));
     const bends = climb ? findHairpins(pts.map((p) => p.distance), pts.map((p) => p.heading)).filter((h) => h.distance > from + 20 && h.distance < to - 20 && !nearRing(h.distance)) : [];
-    const hairpins = hairpinSigns(bends, (d) => path.poseAt(d), (d) => g.edges[path.edgeAt(d).edge].hw);
+    const surveyed = campioni(data);
+    const unposted = bends.filter(bend => { const p=path.poseAt(bend.distance); return !surveyed.some(s=>Math.hypot(p.x-s.x,p.z-s.z)<100); });
+    const hairpins = hairpinSigns(unposted, (d) => path.poseAt(d), (d) => g.edges[path.edgeAt(d).edge].hw);
     return {
       hairpins,
       start: { pose: path.poseAt(Math.min(path.length, from + 4)), tex: startTex, hw: g.edges[path.edgeAt(from + 4).edge].hw },
@@ -1901,13 +1994,19 @@ function TurnArrow({ nextTurn }: { nextTurn: WorldSceneProps['nextTurn'] }) {
 // ---------- camera ----------
 
 /** Camera alle spalle. Fuori resta sopra il terreno; in galleria resta sotto la volta. */
-function WorldCam({ engine, path, field, playerPose }: WorldSceneProps) {
+function WorldCam({ engine, path, field, playerPose, preview }: WorldSceneProps) {
   const { camera } = useThree();
   const look = useRef(new THREE.Vector3());
   const desired = useRef(new THREE.Vector3());
   const heading = useRef<number | null>(null);
   const place = (dt: number) => {
     const pose = playerPose();
+    if (preview) {
+      const {heading: h, pitch} = sightLine(pose,preview());
+      camera.position.set(pose.x, pose.y + 1.65, pose.z);
+      camera.lookAt(pose.x + 20 * Math.sin(h), pose.y + 1.65 + 20 * Math.tan(pitch), pose.z + 20 * Math.cos(h));
+      return;
+    }
     if (heading.current == null) heading.current = pose.heading;
     let dh = pose.heading - heading.current;
     while (dh > Math.PI) dh -= Math.PI * 2;

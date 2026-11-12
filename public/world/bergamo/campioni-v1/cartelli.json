@@ -1,0 +1,178 @@
+{
+ "artist": "Amadvance",
+ "license": "https://creativecommons.org/licenses/by-sa/4.0/",
+ "modification": "Ritaglio e correzione prospettica",
+ "signs": [
+  {
+   "n": 1,
+   "node": 6442657472,
+   "lat": 45.7715376,
+   "lon": 9.7404953,
+   "name": "Felice Gimondi",
+   "alt": 838,
+   "image": "20220904-520dh-060.jpg"
+  },
+  {
+   "n": 2,
+   "node": 6442657473,
+   "lat": 45.7707159,
+   "lon": 9.7436721,
+   "name": "Ivan Gotti",
+   "alt": 816,
+   "image": "20220904-520dh-057.jpg"
+  },
+  {
+   "n": 3,
+   "node": 6442657474,
+   "lat": 45.7709307,
+   "lon": 9.740092,
+   "name": "Paolo Savoldelli",
+   "alt": 797,
+   "image": "20220904-520dh-053.jpg"
+  },
+  {
+   "n": 4,
+   "node": 6442657475,
+   "lat": 45.7691557,
+   "lon": 9.7466501,
+   "name": "Antonio e Guglielmo Pesenti",
+   "alt": 753,
+   "image": "20220904-520dh-048.jpg"
+  },
+  {
+   "n": 5,
+   "node": 6442657476,
+   "lat": 45.7686719,
+   "lon": 9.7427659,
+   "name": "Pietro e Vittorio Algeri",
+   "alt": 733,
+   "image": "20220904-520dh-045.jpg"
+  },
+  {
+   "n": 6,
+   "node": 6442657477,
+   "lat": 45.7678545,
+   "lon": 9.748121,
+   "name": "Gaetano e Gianbattista Baronchelli",
+   "alt": 704,
+   "image": "20220904-520dh-044.jpg"
+  },
+  {
+   "n": 7,
+   "node": 6442657481,
+   "lat": 45.7678278,
+   "lon": 9.743418,
+   "name": "Giuseppe Guerini",
+   "alt": 681,
+   "image": "20220904-520dh-040.jpg"
+  },
+  {
+   "n": 8,
+   "node": 6442657482,
+   "lat": 45.7670254,
+   "lon": 9.7486131,
+   "name": "Flavio Giupponi",
+   "alt": 657,
+   "image": "20220904-520dh-038.jpg"
+  },
+  {
+   "n": 9,
+   "node": 6442657483,
+   "lat": 45.7669773,
+   "lon": 9.7440096,
+   "name": "Claudio Corti",
+   "alt": 640,
+   "image": "20220904-520dh-036.jpg"
+  },
+  {
+   "n": 10,
+   "node": 6442657902,
+   "lat": 45.7664725,
+   "lon": 9.7490038,
+   "name": "Valerio Tebaldi",
+   "alt": 618,
+   "image": "20220904-520dh-034.jpg"
+  },
+  {
+   "n": 11,
+   "node": 6442657903,
+   "lat": 45.7663453,
+   "lon": 9.7443059,
+   "name": "Wladimir Belli",
+   "alt": 604,
+   "image": "20220904-520dh-030.jpg"
+  },
+  {
+   "n": 12,
+   "node": 6442657927,
+   "lat": 45.7660622,
+   "lon": 9.749536,
+   "name": "Mirco Gualdi",
+   "alt": 580,
+   "image": "20220904-520dh-028.jpg"
+  },
+  {
+   "n": 13,
+   "node": 6442657932,
+   "lat": 45.7594178,
+   "lon": 9.7520967,
+   "name": "Marco Pinotti",
+   "alt": 506,
+   "image": "20220904-520dh-025.jpg"
+  },
+  {
+   "n": 14,
+   "node": 6442657937,
+   "lat": 45.7601169,
+   "lon": 9.7515489,
+   "name": "Giovanni Fidanza",
+   "alt": 503,
+   "image": "20220904-520dh-023.jpg"
+  },
+  {
+   "n": 15,
+   "node": 6442657943,
+   "lat": 45.7582584,
+   "lon": 9.753089,
+   "name": "Attilio Rota",
+   "alt": 492,
+   "image": "20220904-520dh-018.jpg"
+  },
+  {
+   "n": 16,
+   "node": 6442657946,
+   "lat": 45.7587241,
+   "lon": 9.7524425,
+   "name": "Paolo Lanfranchi",
+   "alt": 489,
+   "image": "20220904-520dh-017.jpg"
+  },
+  {
+   "n": 17,
+   "node": 6442657948,
+   "lat": 45.7572709,
+   "lon": 9.7548743,
+   "name": "Ennio Vanotti",
+   "alt": 480,
+   "image": "20220904-520dh-011.jpg"
+  },
+  {
+   "n": 18,
+   "node": 6442657949,
+   "lat": 45.7579669,
+   "lon": 9.7543968,
+   "name": "Diego Magoni",
+   "alt": 477,
+   "image": "20220904-520dh-008.jpg"
+  },
+  {
+   "n": 19,
+   "node": 6442657950,
+   "lat": 45.7484456,
+   "lon": 9.7614117,
+   "name": "Oliviero Morotti",
+   "alt": 355,
+   "image": "20220904-520dh-006.jpg"
+  }
+ ]
+}

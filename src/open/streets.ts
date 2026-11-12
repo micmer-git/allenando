@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { gandaSurvey } from './rilievoGanda';
+import { drawGandaBoundaries, nearGandaBoundary } from './confiniGanda';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { hash2 } from '@/world/builders';
 import { DECAL, poiGeometry, RAIL_POST_STEP, railFrames, sculptureGeometry, SIGN, signPlateGeometry, sideYaw, sweepBeam, type Placed, type RailFrame, type SignKind, type Tri } from '@/world/roadside';
@@ -276,6 +278,8 @@ export function wallAlong(m: Mesh, pts: WallPt[]): void {
 }
 
 export function* streetJob(graph: WorldGraph, field: WorldField, features: WorldFeatures, spec: TileSpec): Generator<void, StreetDetail, void> {
+  const survey = gandaSurvey(graph);
+  const mapped = (x: number, z: number) => survey && nearGandaBoundary(survey, x, z);
   const ix = streetIndex(graph, features);
   const x0 = spec.x0;
   const z0 = spec.z0;
@@ -355,6 +359,7 @@ export function* streetJob(graph: WorldGraph, field: WorldField, features: World
           if (!near(p.x, p.z, 50)) continue;
           const lx = Math.cos(p.heading) * side;
           const lz = -Math.sin(p.heading) * side;
+          if (mapped(p.x + lx * (e.hw + 0.85), p.z + lz * (e.hw + 0.85))) continue;
           const px = p.x + lx * (e.hw + 6);
           const pz = p.z + lz * (e.hw + 6);
           const other = field.roadAt(px, pz, 6);
@@ -448,7 +453,7 @@ export function* streetJob(graph: WorldGraph, field: WorldField, features: World
           const lz = -Math.sin(p.heading) * side;
           const cut = field.terrain.height(p.x + lx * (e.hw + 5), p.z + lz * (e.hw + 5)) - p.y;
           const k = Math.round((s - 2) / RAIL_POST_STEP);
-          const ok = s > endA + 4 && s < L - endB - 4 && cut > 2 && own(p.x, p.z) && !wantBy[side].get(k) && !URBAN.has(field.terrain.cover(p.x, p.z)) && offRoad(p.x + lx * (e.hw + 1), p.z + lz * (e.hw + 1), p.y, id);
+          const ok = !mapped(p.x + lx * (e.hw + 1), p.z + lz * (e.hw + 1)) && s > endA + 4 && s < L - endB - 4 && cut > 2 && own(p.x, p.z) && !wantBy[side].get(k) && !URBAN.has(field.terrain.cover(p.x, p.z)) && offRoad(p.x + lx * (e.hw + 1), p.z + lz * (e.hw + 1), p.y, id);
           if (!ok) {
             flush();
             continue;
@@ -777,6 +782,8 @@ export function* streetJob(graph: WorldGraph, field: WorldField, features: World
       addSign('belvedere', sx, road.y - 0.05, sz, road.heading + Math.PI, false, false);
     }
   }
+
+  if (survey) yield* drawGandaBoundaries(survey, field, spec, island);
 
   return {
     beam: triGeometry(beam),

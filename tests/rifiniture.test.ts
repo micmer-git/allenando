@@ -4,11 +4,12 @@ import { describe, expect, it } from 'vitest';
 import { CLS, FLAG, WorldGraph, type WorldGraphFile } from '../src/open/graph';
 import { crossingClearance, lowerWaterAt, planCrossings, WATER_RAMP, WATER_UNDER_DECK, WATER_UNDER_ROAD } from '../src/open/crossings';
 import { deeperProbe, fitRingToRoads, junctionProbe, PASSAGE_H, ringPenetration, type JunctionShape, type RoadProbe } from '../src/open/footprints';
+import { surveyedWalk, walkSections } from '../src/open/marciapiediGanda';
 import { junctionAt, junctionCut, mitreAt } from '../src/open/junctions';
 import { GRADE_WINDOW_M, WorldPath } from '../src/open/path';
 import { createWorldField } from '../src/open/field';
 import { decodeFeatures, type RideDef, type Terrain } from '../src/open/world';
-import { runsInside } from '../src/open/tiles';
+import { roadsJob, runsInside } from '../src/open/tiles';
 
 /*
  * Le rifiniture del mondo 3D (piano OROBIA 07/11, pista M): ponti con la luce (M.1), case fuori
@@ -54,9 +55,45 @@ function graphOf(nodes: (P | [number, number, number])[], edges: { a: number; b:
   return new WorldGraph(file);
 }
 
+describe('Fondo dei nastri stradali', () => {
+  it.each([
+    [CLS.cycleway, 0, 'asphalt'],
+    [CLS.pedestrian, FLAG.cobbles, 'stone'],
+    [CLS.tertiary, FLAG.unpaved, 'gravel'],
+    [CLS.cycleway, FLAG.unpaved | FLAG.tunnel, 'tunnelGravel'],
+    [CLS.pedestrian, FLAG.cobbles | FLAG.tunnel, 'tunnelStone'],
+  ] as const)('classe %i e flag %i usano la mesh %s', (cls, flags, surface) => {
+    const g = graphOf([[10, 40], [110, 40]], [{ a: 0, b: 1, cls, flags }]);
+    const terrain = { graph: g, cover: () => 0, height: () => 0 } as unknown as Terrain;
+    const features = decodeFeatures({ rivers: [], lakes: [], peaks: [], places: [], rails: [], walls: [], cables: [], landmarks: [] });
+    const spec = { tx: 0, tz: 0, x0: 0, z0: 0, size: 200, spacing: 10, trees: 1, buildings: false, ring: 0 };
+    const job = roadsJob(g, createWorldField(g, terrain, features), spec);
+    let part = job.next();
+    while (!part.done) part = job.next();
+    const result = part.value;
+    expect(result[surface]?.index?.count).toBeGreaterThan(0);
+    if (surface !== 'asphalt') expect(result.asphalt).toBeNull();
+    if (flags & FLAG.unpaved) expect(result.paint).toBeNull();
+  });
+});
+
 const dir = join(__dirname, '..', 'public', 'world', 'bergamo');
 const graph = new WorldGraph(JSON.parse(readFileSync(join(dir, 'graph.json'), 'utf8')) as WorldGraphFile);
 const rides = JSON.parse(readFileSync(join(dir, 'rides.json'), 'utf8')) as RideDef[];
+
+describe('Marciapiedi rilevati nel DBGT', () => {
+  it('a Orezzo elimina i due marciapiedi procedurali e in via Terruzzi mantiene il solo lato rilevato', () => {
+    const orezzo = walkSections(graph, 11198);
+    expect(graph.edges[11198].name).toBe('Via Luigi Don Sturzo');
+    expect(surveyedWalk(orezzo, 130, 1)).toBe(0);
+    expect(surveyedWalk(orezzo, 130, -1)).toBe(0);
+    const terruzzi = walkSections(graph, 3090);
+    expect(surveyedWalk(terruzzi, 10, 1)).toBe(0);
+    expect(surveyedWalk(terruzzi, 10, -1)).toBe(.9);
+    // La lacuna di copertura fra due sezioni di Via Don Bossetti conserva il comportamento generale.
+    expect(surveyedWalk(walkSections(graph, 4689), 300, 1)).toBeUndefined();
+  });
+});
 
 const inRing = (ring: { x: number; z: number }[], x: number, z: number) => {
   let inside = false;

@@ -204,7 +204,8 @@ describe('S3 · le fonti nell’app', () => {
     expect(s).toMatch(/EU-DEM © Copernicus/);
     expect(worldInfo('sellaronda').quote).toBe('Quote LiDAR Alto Adige e Trentino, EU-DEM');
     expect(worldInfo('bergamo').quote).toBe('Quote EU-DEM');
-    expect(worldInfo('bergamo').quoteCredits).toBe('Quote EU-DEM © Copernicus.');
+    expect(worldInfo('bergamo').quoteCredits).toContain('Quote EU-DEM © Copernicus.');
+    expect(worldInfo('bergamo').quoteCredits).toContain('DBGT rielaborati © Regione Lombardia (CC BY 4.0)');
   });
 
   it('il grafo del Sellaronda porta l’attribuzione delle province', () => {

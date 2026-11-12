@@ -1,3 +1,8 @@
+import { BUILT_SURFACE, intersectsGanda, LandSurvey } from './suoloGanda';
+import { loadRoofColours } from './tetti';
+import { footprintKey, loadArchitecture, type Architecture } from './architettura';
+import { indexRoadPoints, type RoadPoint } from './puntiStrada';
+import { gandaSurvey, registerGandaSurvey, type GandaFile } from './rilievoGanda';
 import { unzlibSync } from 'fflate';
 import { projector, type LatLon } from '@/domain/geo';
 import { WorldGraph, type WorldGraphFile } from './graph';
@@ -275,6 +280,7 @@ export interface WorldData {
    * sul telefono: il terreno lontano vale anche vicino e la strada lo spiana sotto di sé.
    */
   leggero?: boolean;
+  roadPoints?: ReturnType<typeof indexRoadPoints>;
 }
 
 export interface FeaturesFile {
@@ -341,8 +347,8 @@ export function decodeFeatures(f: FeaturesFile): WorldFeatures {
 /** Una cache per mondo: si scarica una volta, e il mondo cambia senza perdere l'altro. */
 const cached = new Map<string, Promise<WorldData>>();
 
-async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(url);
+async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
+  const res = await fetch(url, { signal });
   if (!res.ok) throw new Error(`${url}: ${res.status}`);
   return (await res.json()) as T;
 }
@@ -352,10 +358,20 @@ export function loadWorld(id: string | null | undefined = WORLD_ID): Promise<Wor
   let p = cached.get(wid);
   if (!p) {
     const base = worldBase(wid);
-    p = Promise.all([getJson<WorldGraphFile>(`${base}graph.json`), getJson<RideDef[]>(`${base}rides.json`), getJson<FeaturesFile>(`${base}features.json`)]).then(([g, rides, f]) => {
+    const survey = wid === 'bergamo'
+      ? getJson<GandaFile>(`${base}rilievo-ganda-v1.json`, AbortSignal.timeout?.(5000)).catch(() => null)
+      : null;
+    p = Promise.all([
+      getJson<WorldGraphFile>(`${base}graph.json`),
+      getJson<RideDef[]>(`${base}rides.json`),
+      getJson<FeaturesFile>(`${base}features.json`),
+      getJson<RoadPoint[]>(`${base}punti-strada-v1.json`, AbortSignal.timeout?.(5000)).catch(() => []),
+      survey,
+    ]).then(([g, rides, f, points, relief]) => {
       const graph = new WorldGraph(g);
       const proj = projector(graph.origin);
-      return { graph, rides, features: decodeFeatures(f), proj, toGeo: (x: number, z: number) => proj.toGeo(x, z) };
+      const trees = relief?.borders && relief.trees && relief.heights ? registerGandaSurvey(graph, relief) : [];
+      return { graph, rides, roadPoints: indexRoadPoints([...points, ...trees]), features: decodeFeatures(f), proj, toGeo: (x: number, z: number) => proj.toGeo(x, z) };
     });
     cached.set(wid, p);
     p.catch(() => {
@@ -447,6 +463,8 @@ export class Terrain {
   private tiles = new Map<string, DemTile>();
   private pending = new Map<string, Promise<DemTile | null>>();
   private farH: Float32Array | null = null;
+  private land: LandSurvey | null = null;
+  private landPending?: Promise<void>;
   /** mattonelle del DEM che non sono arrivate (404, rete giù): un errore, non un caricamento lento */
   private failed = new Set<string>();
   /** il terreno lontano non è arrivato */
@@ -479,6 +497,20 @@ export class Terrain {
     return this.tiles.get(`${tx}_${tz}`);
   }
 
+  private loadLand(tx: number, tz: number): Promise<void> | undefined {
+    const g = this.graph;
+    if (g.id !== 'bergamo' || this.land || !intersectsGanda(g.bounds.x0+tx*g.tile,g.bounds.z0+tz*g.tile,g.tile)) return;
+    this.landPending ??= fetch(this.base + 'suolo-ganda-v1.bin').then(async res => {
+      if (res.ok) this.land = LandSurvey.decode(await res.arrayBuffer());
+    }).catch(() => { this.landPending = undefined; });
+    return this.landPending;
+  }
+
+  /** Classe DBGT alla posizione effettiva di un oggetto. Zero fuori dal rilievo certo. */
+  surveyedCover(x: number, z: number): number {
+    return this.land?.at(x,z) ?? 0;
+  }
+
   load(tx: number, tz: number): Promise<DemTile | null> {
     const key = `${tx}_${tz}`;
     const have = this.tiles.get(key);
@@ -486,8 +518,8 @@ export class Terrain {
     if (!this.inBounds(tx, tz) || this.light) return Promise.resolve(null);
     let p = this.pending.get(key);
     if (!p) {
-      p = fetch(`${this.base}dem/${key}.bin`)
-        .then(async (res) => {
+      p = Promise.all([fetch(`${this.base}dem/${key}.bin`), this.loadLand(tx,tz)])
+        .then(async ([res]) => {
           if (!res.ok) {
             this.failed.add(key);
             return null;
@@ -600,6 +632,8 @@ export class Terrain {
 
   /** Uso del suolo della cella più vicina (COVER.open se la mattonella non c'è). */
   cover(x: number, z: number): number {
+    const surveyed = this.surveyedCover(x,z);
+    if (surveyed && surveyed !== BUILT_SURFACE) return surveyed;
     const b = this.graph.bounds;
     const T = this.graph.tile;
     const tx = Math.floor((x - b.x0) / T);
@@ -616,6 +650,9 @@ export class Terrain {
 // ---------- edifici ----------
 
 export interface Building {
+  architecture?: Architecture;
+  /** Colore sRGB della copertura campionato sull'ortofoto AGEA. */
+  sampledRoof?: number;
   kind: number;
   /** altezza del tetto sopra il suolo, metri */
   h: number;
@@ -640,8 +677,9 @@ export async function loadBuildings(graph: WorldGraph, tx: number, tz: number, b
   try {
     const res = await fetch(`${base}b/${tx}_${tz}.json`);
     if (!res.ok) return [];
-    const json = (await res.json()) as { o: [number, number]; b: number[][] };
+    const [json, hints, colours] = await Promise.all([res.json() as Promise<{ o: [number, number]; b: number[][] }>, loadArchitecture(graph.id), loadRoofColours(base)]);
     const [ox, oz] = json.o;
+    const surveyed = gandaSurvey(graph)?.file.heights[`${tx}_${tz}`];
     return json.b.map((r) => {
       const [kind, h, minH, roof, ...coords] = r;
       const ring = new Float32Array(coords.length);
@@ -653,7 +691,8 @@ export async function loadBuildings(graph: WorldGraph, tx: number, tz: number, b
         ring[i] = ox + x / 10;
         ring[i + 1] = oz + z / 10;
       }
-      return { kind, h: h / 10, minH: minH / 10, roof, ring };
+      const key = footprintKey(ring);
+      return { kind, h: (surveyed?.[r.join(',')]?.[0] ?? h) / 10, minH: minH / 10, roof, ring, architecture: hints[key], sampledRoof: colours.get(Number(key)) };
     });
   } catch {
     return [];

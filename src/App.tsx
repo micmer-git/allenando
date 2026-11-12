@@ -22,6 +22,7 @@ import { OfflineBanner } from '@/components/Install';
 import { useApp } from '@/store/useApp';
 import { redirectFor } from '@/lib/redirect';
 
+const SurveyPage = lazy(() => import('@/pages/Confronto'));
 const RidePage = lazy(() => import('@/pages/Ride').then((mod) => ({ default: mod.RidePage })));
 const PlansPage = lazy(() => import('@/pages/Plans').then((mod) => ({ default: mod.PlansPage })));
 
@@ -36,6 +37,7 @@ export function App() {
     <>
       <ThemeSync />
       <Routes>
+        <Route path="/confronto" element={<Suspense fallback={<Splash />}><SurveyPage /></Suspense>} />
         <Route element={<Shell />}>
           <Route path="/start" element={<OnboardingPage />} />
           <Route path="/" element={<PedalaPage />} />

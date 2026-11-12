@@ -214,8 +214,8 @@ export function routeStats(track: RouteTrack): RouteStats {
  * Link al visore ufficiale di Google Street View (Maps URLs, apertura in una scheda nuova).
  * Solo un collegamento: nessuna immagine viene scaricata, copiata o usata nel mondo 3D.
  */
-export function streetViewUrl(p: LatLon, heading?: number): string {
-  const h = heading != null && Number.isFinite(heading) ? `&heading=${Math.round(((heading % 360) + 360) % 360)}&pitch=0&fov=90` : '';
+export function streetViewUrl(p: LatLon, heading?: number, pitch = 0): string {
+  const h = heading != null && Number.isFinite(heading) ? `&heading=${Math.round(((heading % 360) + 360) % 360) % 360}&pitch=${Number.isFinite(pitch) ? Math.round(Math.max(-80,Math.min(80,pitch))) : 0}&fov=90` : '';
   return `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${p.lat.toFixed(5)},${p.lon.toFixed(5)}${h}`;
 }
 

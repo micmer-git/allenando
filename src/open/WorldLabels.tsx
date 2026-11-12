@@ -5,6 +5,7 @@ import type { TrackPose } from '@/domain/track';
 import { canvasTex } from '@/world/Scene';
 import type { Terrain, WorldData } from './world';
 import { LABEL_GONE, labelFade, landmarkSub, occluded, peakSub, placeLabels, volumeBlocks, type LabelCandidate, type Rect, type Volume } from './labels';
+import { arteStrada } from './arteStrada';
 import { lookFor } from './look';
 
 /*
@@ -108,6 +109,7 @@ export function Labels({ data, playerPose, names }: { data: WorldData; playerPos
       const range = p.kind === 'city' ? 30000 : p.kind === 'town' ? 9000 : p.kind === 'village' ? 4500 : p.kind === 'suburb' || p.kind === 'quarter' ? 1500 : 1200;
       out.push({ name: p.name, sub: '', x: p.x, y: p.y + (p.kind === 'city' ? 120 : 45), z: p.z, ground: p.y, range, peak: false });
     }
+    for (const a of arteStrada(data)) out.push({name:a.name,sub:a.place,x:a.x,z:a.z,y:a.y+9,ground:a.y,range:320,peak:false});
     return out;
   }, [data]);
   const group = useRef<THREE.Group>(null);
