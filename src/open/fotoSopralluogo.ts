@@ -17,6 +17,8 @@ export interface SurveyPhoto extends LatLon {
   image: string;
   credits?: string;
   positionSource?: string;
+  subject?: LatLon;
+  derivative?: {image: string; note: string};
   radiusM?: number;
 }
 
@@ -44,7 +46,7 @@ export function roadPhoto(frame: RoadFrame): SurveyPhoto {
 }
 
 export interface PhotoStation extends LatLon { bearing: number; distance: number }
-export interface PhotoMatch { photo: SurveyPhoto; off: number }
+export interface PhotoMatch { photo: SurveyPhoto; off: number; subjectOff?: number }
 export interface StationPhotos { station: number; distance: number; matches: PhotoMatch[] }
 
 export function surveyStations(path: WorldPath, toGeo: (x: number, z: number) => LatLon): PhotoStation[] {
@@ -77,7 +79,7 @@ export function matchSurveyPhotos(atlas: PhotoAtlas, stations: PhotoStation[]): 
       if (meters < off) { closest = i; off = meters; }
     });
     const radius = photo.radiusM ?? 120;
-    if (closest >= 0 && off <= radius) result[closest].matches.push({photo, off});
+    if (closest >= 0 && off <= radius) result[closest].matches.push({photo, off, subjectOff: photo.subject && haversine(photo.subject, stations[closest])});
   }
 
   // 0.001° cells are wider than our search radius at both worlds' latitudes.

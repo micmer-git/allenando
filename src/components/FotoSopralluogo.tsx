@@ -15,7 +15,7 @@ const km = (distance: number) => (distance / 1000).toLocaleString('it-IT', {maxi
 const dateFormat = new Intl.DateTimeFormat('it-IT', {day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC'});
 
 function PhotoFigure({match, travel, base}: {match: PhotoMatch; travel: number; base: string}) {
-  const {photo, off} = match;
+  const {photo, off, subjectOff} = match;
   const [failed, setFailed] = useState(false);
   const image = photo.image.startsWith('https://') ? photo.image : base + photo.image;
   return <figure className="min-w-0 space-y-2">
@@ -27,7 +27,8 @@ function PhotoFigure({match, travel, base}: {match: PhotoMatch; travel: number; 
       <strong>{photo.title}</strong>
       <span>{photo.position === 'subject'
         ? <>Soggetto fotografato a {Math.round(off)} m dal punto · posizione della fotocamera sconosciuta</>
-        : <>Fotocamera a {Math.round(off)} m dal punto · {viewDirection(photo.bearing, travel)}</>}</span>
+        : <>Fotocamera a {Math.round(off)} m dal punto{subjectOff != null && <> · soggetto a {Math.round(subjectOff)} m</>} · {viewDirection(photo.bearing, travel)}</>}</span>
+      {photo.derivative && <span className="text-xs text-muted">{photo.derivative.note}</span>}
       <span className="text-xs text-muted">
         {photo.date && <>{dateFormat.format(new Date(photo.date + 'T12:00:00Z'))} · </>}
         {photo.author}{photo.credits && <> · {photo.credits}</>} ·{' '}
