@@ -69,9 +69,9 @@ export function SessioneRiga({ now }: { now: number }) {
 }
 
 /** L'allenamento del programma per oggi (o da recuperare), se c'è. */
-export function useProgrammaOggi(): PlanSession | null {
+export function useProgrammaOggi(): (PlanSession & { recupero?: boolean }) | null {
   const rides = useApp((s) => s.rides);
-  const [sess, setSess] = useState<PlanSession | null>(null);
+  const [sess, setSess] = useState<(PlanSession & { recupero?: boolean }) | null>(null);
   useEffect(() => {
     let alive = true;
     void loadPlanState().then((state) => {
@@ -81,7 +81,8 @@ export function useProgrammaOggi(): PlanSession | null {
       const synced = syncDone(plan, state, rides);
       if (synced !== state) void savePlanState(synced);
       const t = todayOf(plan, synced, localDateKey(new Date()));
-      setSess(t.kind === 'sessione' ? t.day.session ?? null : null);
+      // una seduta saltata negli ultimi due giorni si recupera: la riga lo dice (come Programmi)
+      setSess(t.kind === 'sessione' && t.day.session ? { ...t.day.session, recupero: t.catchUp } : null);
     });
     return () => {
       alive = false;
@@ -91,14 +92,14 @@ export function useProgrammaOggi(): PlanSession | null {
 }
 
 /** «Oggi nel programma» (I3): «Usa» riempie Dove e Come con il giorno del programma. */
-export function ProgrammaRiga({ s, onUsa }: { s: PlanSession; onUsa: () => void }) {
+export function ProgrammaRiga({ s, onUsa }: { s: PlanSession & { recupero?: boolean }; onUsa: () => void }) {
   const { t } = useI18n();
   const w = s.workout ? builtinById(s.workout) : undefined;
   const titolo = w ? workoutTitle(w, t) : 'La prova';
   return (
     <section className="flex items-center gap-3 rounded-2xl border border-line bg-elev px-3 py-2" data-testid="pedala-programma">
       <span className="min-w-0 flex-1">
-        <span className="block font-semibold leading-snug">Oggi nel programma</span>
+        <span className="block font-semibold leading-snug" data-testid="pedala-programma-quando">{s.recupero ? 'Da recuperare' : 'Oggi nel programma'}</span>
         <span className="block text-sm leading-snug text-muted">{`${titolo} · ${placeName(s.place)}`}</span>
       </span>
       <button type="button" className="h-11 shrink-0 rounded-full border border-line px-4 text-sm font-semibold" onClick={onUsa} data-testid="pedala-programma-usa">
