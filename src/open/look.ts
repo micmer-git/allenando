@@ -54,6 +54,13 @@ export interface WorldLook {
   peakRange: number;
   /** metri di vista in più (camera e foschia): nelle Dolomiti la Marmolada sta a 6-7 km dai passi */
   farExtra: number;
+  /**
+   * fin dove arriva la fascia di mezzo (midTerrain.ts: le mattonelle del DEM senza strade né case,
+   * a 25-50 m), in metri; 0 = niente, oltre il vicino c'è subito il lontano
+   */
+  midRange: number;
+  /** la grana del suolo proiettata da tre lati (rockShader.ts): sulle pareti vere non si stira */
+  triplanar: boolean;
 }
 
 export const LOOKS: Record<WorldLookId, WorldLook> = {
@@ -71,6 +78,8 @@ export const LOOKS: Record<WorldLookId, WorldLook> = {
     case: 'lombardo',
     peakRange: 8000,
     farExtra: 0,
+    midRange: 0,
+    triplanar: false,
   },
   sellaronda: {
     id: 'sellaronda',
@@ -90,6 +99,9 @@ export const LOOKS: Record<WorldLookId, WorldLook> = {
     case: 'ladino',
     peakRange: 8000,
     farExtra: 4000,
+    // le pareti del Sella dal Gardena (3 km), la Marmolada dal Pordoi (6-7 km)
+    midRange: 9000,
+    triplanar: true,
   },
 };
 

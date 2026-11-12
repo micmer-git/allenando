@@ -26,6 +26,10 @@ export interface WorldInfo {
   away: string;
   /** quanto pesa scaricarlo, MB (a mano, dal build) */
   mb: number;
+  /** le quote, nella riga delle fonti sotto il percorso (F.14) */
+  quote: string;
+  /** le quote con autori e licenze, in fondo alla pagina Mondo */
+  quoteCredits: string;
 }
 
 /** I mondi dell'app, nell'ordine delle schede. I dati stanno in public/world/<id>/. */
@@ -44,6 +48,8 @@ export const WORLDS: readonly WorldInfo[] = [
     home: 'Bergamo',
     away: 'Selvino',
     mb: 22,
+    quote: 'Quote EU-DEM',
+    quoteCredits: 'Quote EU-DEM © Copernicus.',
   },
   {
     id: 'sellaronda',
@@ -56,7 +62,10 @@ export const WORLDS: readonly WorldInfo[] = [
     starts: ['Selva di Val Gardena', 'Corvara in Badia', 'Colfosco', 'Arabba', 'Canazei', 'Campitello di Fassa', 'Plan de Gralba'],
     home: 'Selva di Val Gardena',
     away: 'Corvara in Badia',
-    mb: 12,
+    mb: 5,
+    // pista S3: il rilievo LiDAR delle province dove c'è (Alto Adige, Trentino), EU-DEM altrove (Veneto)
+    quote: 'Quote LiDAR Alto Adige e Trentino, EU-DEM',
+    quoteCredits: 'Quote: DTM 2,5 m © Provincia autonoma di Bolzano – Alto Adige (CC0 1.0), LiDAR PAT 2006/2008 © Provincia autonoma di Trento (CC BY 4.0), EU-DEM © Copernicus.',
   },
 ];
 

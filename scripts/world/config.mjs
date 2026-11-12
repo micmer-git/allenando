@@ -13,6 +13,7 @@
  *   osmDir: string,
  *   lang?: string,
  *   alpino?: { treeLine: number, rockSlope: number },
+ *   fine?: { sources: string[], step: number, margin?: number, feather: number, steep: number },
  * }} World
  */
 
@@ -50,6 +51,14 @@ export const WORLDS = {
     lang: 'it',
     /** Il bosco finisce a 2100 m; sopra i 38° di pendenza è parete anche senza un poligono di roccia. */
     alpino: { treeLine: 2100, rockSlope: 38 },
+    /**
+     * Il terreno fine delle province (scripts/world/dtm.mjs): il LiDAR dell'Alto Adige (2,5 m) e del
+     * Trentino (1 m), ridotti a 5 m in cache; nelle mattonelle dove la montagna è ripida il passo
+     * scende a 12,5 m (`step`), altrove resta 25. Dove il dato fine finisce si passa a EU-DEM in
+     * `feather` metri, senza gradini. `steep`: la parte dei punti di una mattonella sopra i 35° oltre
+     * cui la mattonella vuole il passo fine.
+     */
+    fine: { sources: ['bz', 'tn'], step: 12.5, margin: 1000, feather: 250, steep: 0.02 },
   },
 };
 

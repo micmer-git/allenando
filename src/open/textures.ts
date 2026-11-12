@@ -34,8 +34,7 @@ export function facadeTexture(style: 'lombardo' | 'ladino' = 'lombardo'): THREE.
         const x0 = col * C;
         const y0 = row * C;
         const kind = rnd();
-        // le case ladine: persiane e cornici di legno, e il balcone di legno a tutta facciata su
-        // ogni piano, coi gerani (km0-49680937, corvara-79922438)
+        // le case ladine: persiane e cornici di legno (km0-49680937, corvara-79922438)
         const shutter = ladino ? (rnd() < 0.5 ? '#6b4a2e' : '#8a6238') : rnd() < 0.62 ? '#58744b' : '#7a5636';
         const wx = x0 + C * 0.34;
         const ww = C * 0.32;
@@ -74,22 +73,10 @@ export function facadeTexture(style: 'lombardo' | 'ladino' = 'lombardo'): THREE.
           slats(wx - ww / 2 - 6, ww / 2);
           slats(wx + ww + 6, ww / 2);
         }
-        if (ladino && rnd() < 0.88) {
-          // balcone di legno da un capo all'altro della casella: soletta, tavole della ringhiera, gerani
-          const by = wy + wh * 0.5;
-          g.fillStyle = '#5a3f2a';
-          g.fillRect(x0, wy + wh + 2, C, 14);
-          g.fillStyle = '#7a5637';
-          g.fillRect(x0, by, C, wh * 0.5 + 2);
-          g.fillStyle = 'rgba(0,0,0,0.25)';
-          for (let x = x0 + 6; x < x0 + C; x += 14) g.fillRect(x, by, 3, wh * 0.5 + 2);
-          g.fillStyle = '#4a3322';
-          g.fillRect(x0, by - 6, C, 8);
-          for (let x = x0 + 8; x < x0 + C - 8; x += 11) {
-            g.fillStyle = rnd() < 0.7 ? '#c8302a' : '#e05a7a';
-            g.fillRect(x + rnd() * 4, by - 14 + rnd() * 8, 6, 6);
-          }
-        } else if (!ladino && row === 1 && rnd() < 0.4) {
+        // le case ladine non hanno il balcone dipinto (pista S3): quelle vicine (due anelli) lo hanno in
+        // rilievo all'altezza del piano (buildings.ts); dipinto stava a metà finestra e la facciata ne
+        // mostrava due per piano. Oltre i due anelli un balcone è meno di un pixel
+        if (!ladino && row === 1 && rnd() < 0.4) {
           // balcone: soletta e ringhiera
           g.fillStyle = '#d9d3c6';
           g.fillRect(wx - 26, wy + wh + 2, ww + 52, 12);

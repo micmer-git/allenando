@@ -127,11 +127,14 @@ export function ringArea(ring: ArrayLike<number>): number {
 export type RoofShape = 'gable' | 'hip' | 'flat';
 
 /** Che tetto ha: a falde solo dove la pianta è quasi un rettangolo e non troppo grande. */
-export function roofShape(b: Building, obb: Obb, area: number, wide = false): RoofShape {
+export function roofShape(b: Building, obb: Obb, area: number, wide = false, alpine = false): RoofShape {
   const m = b.ring.length / 2;
   if (b.kind === BUILDING_KIND.industrial || b.kind === BUILDING_KIND.tower || b.kind === BUILDING_KIND.castle) return 'flat';
   if (obb.area <= 0 || obb.hs < 2.2) return 'flat';
   const fill = area / obb.area;
+  // le case e gli hotel ladini: due falde quasi sempre, anche sulle impronte a L o a gradini degli
+  // alberghi (fino a 3200 m², 40 vertici); il padiglione lì quasi non c'è (km0-49680937, corvara-79922438)
+  if (alpine) return fill > 0.62 && area < 3200 && m <= 40 && obb.hs < 22 ? 'gable' : 'flat';
   const pitched = b.kind === BUILDING_KIND.church ? fill > 0.7 && area < 2500 : wide ? fill > 0.75 && area < 2200 && m <= 18 && obb.hs < 16 : fill > 0.8 && area < 950 && m <= 14 && obb.hs < 11;
   if (!pitched) return 'flat';
   // tozze (quasi quadrate): padiglione; lunghe: due falde, come le cascine e le chiese
@@ -158,7 +161,15 @@ export interface BuildingColors {
   eaves?: number;
   /** tetto a falde anche sugli edifici grandi (gli hotel tirolesi fino a 2200 m²) */
   wide?: boolean;
+  /**
+   * le case ladine: due falde anche sugli hotel, il timpano di legno e (se `balconies`) i balconi
+   * di legno in rilievo a ogni piano sopra il terreno, sui lati lunghi almeno 5 m
+   */
+  alpine?: { wood: Rgb; balconies: boolean };
 }
+
+/** Il balcone ladino: sporge 1,1 m, ringhiera alta 1 m, dal 10% al 90% del lato. */
+export const BALCONY = { depth: 1.1, rail: 1.0, inset: 0.1, minLen: 5 };
 
 /**
  * Pareti e tetto di un edificio. `walls` va con la trama delle facciate, `roofs` con quella dei coppi.
@@ -173,7 +184,7 @@ export function addBuilding(walls: Tris, roofs: Tris, b: Building, ground: numbe
   const m = r.length / 2;
   const area = Math.abs(ringArea(r));
   const obb = minRect(r);
-  const shape = roofShape(b, obb, area, c.wide);
+  const shape = roofShape(b, obb, area, c.wide, !!c.alpine);
   const bottom = ground + b.minH;
   // dove comincia la facciata: sui portici (minH) resta sospesa, altrimenti scende verso lo zoccolo
   const face = b.minH > 0 || plinth >= bottom - 0.05 ? bottom : Math.max(plinth + 1, bottom - FLOOR);
@@ -225,6 +236,39 @@ export function addBuilding(walls: Tris, roofs: Tris, b: Building, ground: numbe
       if (band) {
         quad(b0, b1, band);
         quad(b1, wallTop, c.base);
+      }
+    }
+    // i balconi di legno: una soletta e la ringhiera davanti, chiusa ai due capi, a ogni piano
+    // sopra il piano terra (anche l'ultimo, sotto la gronda)
+    if (c.alpine?.balconies && !blind && len >= BALCONY.minLen) {
+      const ol = Math.hypot(ox, oz);
+      const nx = (ox / ol) * BALCONY.depth;
+      const nz = (oz / ol) * BALCONY.depth;
+      const ta = BALCONY.inset;
+      const tb = 1 - BALCONY.inset;
+      const p0x = ax + (bx - ax) * ta;
+      const p0z = az + (bz - az) * ta;
+      const p1x = ax + (bx - ax) * tb;
+      const p1z = az + (bz - az) * tb;
+      const wood = c.alpine.wood;
+      const slab = { r: wood.r * 0.7, g: wood.g * 0.7, b: wood.b * 0.7 };
+      const side: [number, number, number] = [bx - ax, 0, bz - az];
+      const back: [number, number, number] = [-(bx - ax), 0, -(bz - az)];
+      for (let y = bottom + FLOOR; y + FLOOR * 0.8 <= wallTop + 0.01; y += FLOOR) {
+        const yt = y + BALCONY.rail;
+        // la soletta, vista da sotto e da sopra
+        walls.facing(v(p0x, y, p0z), v(p1x, y, p1z), v(p0x + nx, y, p0z + nz), [0, -1, 0], slab);
+        walls.facing(v(p1x, y, p1z), v(p1x + nx, y, p1z + nz), v(p0x + nx, y, p0z + nz), [0, -1, 0], slab);
+        walls.facing(v(p0x, y + 0.12, p0z), v(p1x, y + 0.12, p1z), v(p0x + nx, y + 0.12, p0z + nz), [0, 1, 0], wood);
+        walls.facing(v(p1x, y + 0.12, p1z), v(p1x + nx, y + 0.12, p1z + nz), v(p0x + nx, y + 0.12, p0z + nz), [0, 1, 0], wood);
+        // la ringhiera davanti
+        walls.facing(v(p0x + nx, y, p0z + nz), v(p1x + nx, y, p1z + nz), v(p0x + nx, yt, p0z + nz), out, wood);
+        walls.facing(v(p1x + nx, y, p1z + nz), v(p1x + nx, yt, p1z + nz), v(p0x + nx, yt, p0z + nz), out, wood);
+        // i due capi
+        walls.facing(v(p1x, y, p1z), v(p1x + nx, y, p1z + nz), v(p1x, yt, p1z), side, wood);
+        walls.facing(v(p1x + nx, y, p1z + nz), v(p1x + nx, yt, p1z + nz), v(p1x, yt, p1z), side, wood);
+        walls.facing(v(p0x, y, p0z), v(p0x + nx, y, p0z + nz), v(p0x, yt, p0z), back, wood);
+        walls.facing(v(p0x + nx, y, p0z + nz), v(p0x + nx, yt, p0z + nz), v(p0x, yt, p0z), back, wood);
       }
     }
   }
@@ -293,8 +337,10 @@ function pitchedRoof(walls: Tris, roofs: Tris, o: Obb, eaveY: number, ridgeY: nu
   }
   // timpani: triangoli di muro sotto le falde, sul filo del rettangolo (senza gronda)
   const W = (a: number, b: number, y: number): V => v(o.cx + o.ax * a + px * b, y, o.cz + o.az * a + pz * b);
-  walls.facing(W(o.hl, o.hs, eaveY), W(o.hl, -o.hs, eaveY), W(o.hl, 0, ridgeY), [o.ax, 0, o.az], c.wall);
-  walls.facing(W(-o.hl, o.hs, eaveY), W(-o.hl, -o.hs, eaveY), W(-o.hl, 0, ridgeY), [-o.ax, 0, -o.az], c.wall);
+  // nelle case ladine il timpano è di legno
+  const gable = c.alpine ? c.alpine.wood : c.wall;
+  walls.facing(W(o.hl, o.hs, eaveY), W(o.hl, -o.hs, eaveY), W(o.hl, 0, ridgeY), [o.ax, 0, o.az], gable);
+  walls.facing(W(-o.hl, o.hs, eaveY), W(-o.hl, -o.hs, eaveY), W(-o.hl, 0, ridgeY), [-o.ax, 0, -o.az], gable);
 }
 
 /** Triangolazione a orecchie di un anello semplice (x, z): indici dei vertici. */
