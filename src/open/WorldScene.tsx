@@ -11,6 +11,8 @@ import { sightLine, type SurveyAngles } from './sopralluogo';
 import { localShadow, makeSkyDome } from './luceStrada';
 import { OrthoWindow } from './ortofoto';
 import { landscapeUniforms, patchLandscape } from './paesaggio';
+import { canopyNames, photoCrown } from './chiome';
+import photoUrl from './chiome.webp?url';
 import { patchRockShader } from './rockShader';
 import { Lifts } from './Lifts';
 import { Passi } from './Passi';
@@ -872,6 +874,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
   const roadside = useRef<RoadsideHandle | null>(null);
   const center = useRef<[number, number] | null>(null);
   const dirtyTrees = useRef(false);
+  const lastForest = useRef({ x: Infinity, z: Infinity });
   /** l'arredo piccolo (paletti, cartelli, semafori) si rifà anche quando il centro si sposta */
   const dirtyProps = useRef(false);
   const riderTile = useRef<[number, number] | null>(null);
@@ -1262,7 +1265,8 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
       });
     }
     updateFarMask(mask, b.x0, b.z0, T, cx, cz, (ix, iz) => !!map.get(`${ix}_${iz}`)?.shown);
-    if (dirtyTrees.current && forest.current) {
+    if (forest.current && (dirtyTrees.current || Math.hypot(pose.x-lastForest.current.x, pose.z-lastForest.current.z) > 125)) {
+      lastForest.current = {x: pose.x, z: pose.z};
       dirtyTrees.current = false;
       const all: ForestPatch[] = [];
       for (const t of map.values()) if (t.state === 'ready') all.push({ trees: t.trees, near: near(t) <= DENSE_RING });
@@ -1280,7 +1284,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
   return (
     <group>
       <group ref={root} />
-      <Forest handle={forest} mats={mats} larch={LARCH_PALETTE[ctx.season.larch]} />
+      <Forest handle={forest} mats={mats} season={ctx.season.larch} />
       <Roadside handle={roadside} mats={mats} />
     </group>
   );
@@ -1468,7 +1472,7 @@ interface ForestPatch {
 }
 
 /** `larch`: i colori del larice nella stagione di oggi (look.ts: d'oro in ottobre e novembre). */
-function Forest({ handle, mats, larch }: { handle: React.MutableRefObject<ForestHandle | null>; mats: Mats; larch: string[] }) {
+function Forest({ handle, mats, season }: { handle: React.MutableRefObject<ForestHandle | null>; mats: Mats; season: LookCtx['season']['larch'] }) {
   const group = useRef<THREE.Group>(null);
   const geos = useMemo(() => {
     const larch = new THREE.ConeGeometry(2.4, 8, 6, 1, true);
@@ -1486,10 +1490,24 @@ function Forest({ handle, mats, larch }: { handle: React.MutableRefObject<Forest
   useEffect(() => {
     const g = group.current;
     const current = meshes.current;
+    let ready = false;
+    let alive = true;
+    let last: Parameters<ForestHandle['set']> | undefined;
+    const photo = new THREE.TextureLoader().load(photoUrl, () => {
+      if (!alive) return;
+      ready = true;
+      if (last) handle.current?.set(...last);
+    });
+    photo.colorSpace = THREE.SRGBColorSpace;
+    const foliage = new THREE.MeshLambertMaterial({ map: photo, alphaTest: 0.34 });
+    const crowns = canopyNames.map(name => ({ name, geometry: photoCrown(name) }));
+    const leaves = season === 'oro' ? ['#7c8153','#938246','#896d43','#627347'] :
+      season === 'spoglio' ? ['#746651','#695f50','#7f705b'] : TREE_COLORS.broadleaf;
     const KINDS: TreeKind[] = ['spruce', 'larch', 'broadleaf', 'cypress', 'rock'];
     handle.current = {
       set(patches, px, pz, cap) {
         if (!g) return;
+        last = [patches, px, pz, cap];
         const by = new Map<string, TileMeshes['trees']>();
         const push = (key: string, t: TileMeshes['trees'][number]) => {
           const l = by.get(key);
@@ -1508,10 +1526,14 @@ function Forest({ handle, mats, larch }: { handle: React.MutableRefObject<Forest
         let nFar = 0;
         for (const p of patches) {
           for (const t of p.trees) {
-            const full = p.near && (t.x - px) ** 2 + (t.z - pz) ** 2 <= limit;
-            push(treeKey(t.kind, full), t);
+            const dist2 = (t.x - px) ** 2 + (t.z - pz) ** 2;
+            const full = p.near && dist2 <= limit;
+            const photographed = full && ready && t.kind !== 'rock' && dist2 < 280 ** 2;
+            const name = t.kind === 'spruce' && t.tint > .53 ? 'dense' :
+              t.kind === 'broadleaf' && season === 'spoglio' ? 'bare' : t.kind;
+            push(photographed ? 'foto:' + name : treeKey(t.kind, full), t);
             // il tronco solo vicino: da lontano è meno di un pixel
-            if (full && t.kind !== 'rock') push('trunk', t);
+            if (full && !photographed && t.kind !== 'rock') push('trunk', t);
             if (full) nNear++;
             else nFar++;
           }
@@ -1543,9 +1565,10 @@ function Forest({ handle, mats, larch }: { handle: React.MutableRefObject<Forest
             d.updateMatrix();
             m.setMatrixAt(i, d.matrix);
             if (colored) {
-              const colors = it.kind === 'larch' ? larch : TREE_COLORS[it.kind];
+              const colors = it.kind === 'larch' ? LARCH_PALETTE[season] : it.kind === 'broadleaf' ? leaves : TREE_COLORS[it.kind];
               c.set(colors[Math.floor(it.tint * colors.length) % colors.length]);
               c.offsetHSL(0, (((it.tint * 13.7) % 1) - 0.5) * 0.08, (((it.tint * 29.3) % 1) - 0.5) * 0.07);
+              if (key.startsWith('foto:')) c.multiplyScalar(1.45);
               m.setColorAt(i, c);
             }
           });
@@ -1555,6 +1578,7 @@ function Forest({ handle, mats, larch }: { handle: React.MutableRefObject<Forest
           current.set(key, m);
           g.add(m);
         };
+        for (const crown of crowns) make('foto:' + crown.name, crown.geometry, foliage);
         for (const k of KINDS) make(`${k}:n`, geos.near[k], mats.trees[k]);
         make('conifer:f', geos.far.conifer, mats.trees.spruce);
         make('broadleaf:f', geos.far.broadleaf, mats.trees.broadleaf);
@@ -1563,13 +1587,17 @@ function Forest({ handle, mats, larch }: { handle: React.MutableRefObject<Forest
     };
     return () => {
       handle.current = null;
-      for (const m of current.values()) m.dispose();
+      alive = false;
+      photo.dispose();
+      foliage.dispose();
+      crowns.forEach(crown => crown.geometry.dispose());
+      for (const m of current.values()) { g?.remove(m); m.dispose(); }
       current.clear();
       Object.values(geos.near).forEach((x) => x.dispose());
       Object.values(geos.far).forEach((x) => x.dispose());
       geos.trunk.dispose();
     };
-  }, [handle, geos, mats, larch]);
+  }, [handle, geos, mats, season]);
   return <group ref={group} />;
 }
 
