@@ -48,6 +48,8 @@ Passa i test (geometria, terreno sotto la strada, replay, Intervals con API simu
 - La lista Sessioni si apre solo dal nome della sessione aperta in Pedala (e dalla rotta `/sessioni`).
 - I filtri del foglio Allenamento scorrono in orizzontale (otto tipi).
 - Sul percorso scelto la scelta all'incrocio è una riga di frecce senza i nomi delle strade che non sono il percorso (il nome è nell'etichetta per chi legge lo schermo); i nomi grandi restano nel giro libero e fuori percorso.
+- In Dove un tocco su una linea della carta accende la riga del percorso e la porta in vista (la carta può uscire dallo schermo); si sceglie toccando la riga.
+- Il collaudo della corsa gira col 3D software (swiftshader): sotto carico il 10× della prova va piano e le letture della pagina arrivano in ritardo. `collaudoGiri` chiude il ritorno della Città Alta con «Termina» se in 120 s non arriva al via, e il «+» della Potenza fissa è stato misurato in 17 ms a macchina scarica e in 3,5 s con un altro collaudo 3D in corso.
 
 ## Il mondo Sellaronda (7 novembre 2026)
 
