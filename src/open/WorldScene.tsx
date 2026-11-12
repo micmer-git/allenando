@@ -60,8 +60,8 @@ import { loadProgress, READY_RADIUS, readyReason, tileDist, tileStage, type Read
 import { URBAN_R, urbanDensity } from './urban';
 
 /**
- * Per qualità: lato e anelli delle mattonelle, passo del terreno, alberi per cella di bosco e il
- * tetto degli alberi con le geometrie piene (`nearTrees`, i più vicini al ciclista: gli altri hanno
+ * Per qualitÃ : lato e anelli delle mattonelle, passo del terreno, alberi per cella di bosco e il
+ * tetto degli alberi con le geometrie piene (`nearTrees`, i piÃ¹ vicini al ciclista: gli altri hanno
  * la chioma povera, 4-8 triangoli e niente tronco).
  */
 const QUALITY = {
@@ -75,13 +75,13 @@ export function npcCount(quality: Quality): number {
 }
 
 /**
- * La qualità per questo mondo: nei mondi di montagna (look.ringExtra) un anello di mattonelle in
- * più, perché le pareti si vedono da 5 km e devono entrare prima; e il terreno lontano non si
- * dimezza (look.farFine), perché l'orizzonte è il punto; e si vede più lontano (look.farExtra).
+ * La qualitÃ  per questo mondo: nei mondi di montagna (look.ringExtra) un anello di mattonelle in
+ * piÃ¹, perchÃ© le pareti si vedono da 5 km e devono entrare prima; e il terreno lontano non si
+ * dimezza (look.farFine), perchÃ© l'orizzonte Ã¨ il punto; e si vede piÃ¹ lontano (look.farExtra).
  */
 export function qualityFor(quality: Quality, look: WorldLook): (typeof QUALITY)[Quality] & { mid: number } {
   const q = QUALITY[quality];
-  // la fascia di mezzo (midTerrain.ts) si accorcia con la qualità: 9 km in alta, 7,2 in media, 5,4 in bassa
+  // la fascia di mezzo (midTerrain.ts) si accorcia con la qualitÃ : 9 km in alta, 7,2 in media, 5,4 in bassa
   const mid = look.midRange * (quality === 'high' ? 1 : quality === 'medium' ? 0.8 : 0.6);
   return { ...q, ring: q.ring + look.ringExtra, farStride: look.farFine ? 1 : q.farStride, far: q.far + look.farExtra, mid };
 }
@@ -92,7 +92,7 @@ export interface RemoteWorldRider {
   id: string;
   nick: string;
   color: string;
-  /** posa in questo istante, o null se non è da mostrare */
+  /** posa in questo istante, o null se non Ã¨ da mostrare */
   pose: () => { x: number; y: number; z: number; heading: number; grade: number; v: number; idle: boolean } | null;
 }
 
@@ -111,7 +111,7 @@ export interface WorldSceneProps {
   nextTurn: () => { x: number; y: number; z: number; heading: number } | null;
   /** posa del giocatore con lo scostamento di corsia: la usano anche HUD e scia */
   playerPose: () => TrackPose;
-  /** il mondo è pronto, e perché: `tutto`, `leggero` (senza rete), `errore`, `tetto` (per `data-reason`) */
+  /** il mondo Ã¨ pronto, e perchÃ©: `tutto`, `leggero` (senza rete), `errore`, `tetto` (per `data-reason`) */
   onReady: (reason?: ReadyReason) => void;
   /**
    * Avanzamento del caricamento del mondo intorno al ciclista, da 0 a 1 (il velo della corsa):
@@ -127,10 +127,10 @@ export interface WorldSceneProps {
   arches?: ArchSpec[];
   /** quello che indossi nel garage */
   look?: Look;
-  /** il tuo fantasma (src/game/ghosts.ts): la sua posa adesso, null quando non c'è */
+  /** il tuo fantasma (src/game/ghosts.ts): la sua posa adesso, null quando non c'Ã¨ */
   ghost?: () => TrackPose | null;
   /**
-   * Ciclisti in più, disegnati come il giocatore (`ghost: true` lo fa trasparente).
+   * Ciclisti in piÃ¹, disegnati come il giocatore (`ghost: true` lo fa trasparente).
    * La posa si legge a ogni fotogramma; null lo nasconde.
    */
   extraRiders?: ExtraWorldRider[];
@@ -141,7 +141,7 @@ export interface ExtraWorldRider {
   pose: () => TrackPose | null;
   ghost?: boolean;
   look?: Look;
-  /** velocità (m/s) e cadenza, per le gambe; senza, pedala piano */
+  /** velocitÃ  (m/s) e cadenza, per le gambe; senza, pedala piano */
   speed?: () => number;
   cadence?: () => number;
 }
@@ -150,7 +150,7 @@ export function WorldScene(props: WorldSceneProps) {
   const q = qualityFor(props.quality, lookFor(props.data.graph.id));
   // il mondo leggero (senza rete): il terreno non chiede le mattonelle del DEM
   props.terrain.light = !!props.data.leggero;
-  // le mattonelle contate da NearTiles: le leggono il «pronto», l'avanzamento e le misure (?stats=1)
+  // le mattonelle contate da NearTiles: le leggono il Â«prontoÂ», l'avanzamento e le misure (?stats=1)
   const counts = useMemo<TileCounts>(() => ({ ready: 0, pending: 0, detail: 0, near: 0, nearReady: 0, nearPartial: 0, late: 0, lateMin: -1 }), []);
   const status = useMemo<LoadStatus>(() => ({ ready: false }), []);
   return (
@@ -172,21 +172,21 @@ export function WorldScene(props: WorldSceneProps) {
   );
 }
 
-/** Lo stato del caricamento, condiviso fra il «pronto» e le mattonelle. */
+/** Lo stato del caricamento, condiviso fra il Â«prontoÂ» e le mattonelle. */
 interface LoadStatus {
   ready: boolean;
 }
 
 /**
- * Il tetto: dopo READY_TIMEOUT ms si dice «pronto» comunque (meglio un mondo a metà che un velo per
+ * Il tetto: dopo READY_TIMEOUT ms si dice Â«prontoÂ» comunque (meglio un mondo a metÃ  che un velo per
  * sempre). Prima solo per un errore (una mattonella del DEM o il terreno lontano che non arrivano).
- * Un caricamento lento non è un errore: su un telefono lento il velo dura di più, e dietro non c'è
+ * Un caricamento lento non Ã¨ un errore: su un telefono lento il velo dura di piÃ¹, e dietro non c'Ã¨
  * un mondo vuoto.
  */
 const READY_TIMEOUT = 60000;
 
 /**
- * «Pronto» vuol dire che intorno al ciclista c'è il mondo: il terreno lontano e tutte le mattonelle
+ * Â«ProntoÂ» vuol dire che intorno al ciclista c'Ã¨ il mondo: il terreno lontano e tutte le mattonelle
  * entro READY_RADIUS (suolo, strade, case) sono in scena. Prima, l'avanzamento va al velo.
  */
 function ReadyWhenTiles({
@@ -226,7 +226,7 @@ function ReadyWhenTiles({
     if (reason) {
       sent.current = true;
       status.ready = true;
-      // per il collaudo (?stats=1): com'era il mondo intorno nell'istante del «pronto»
+      // per il collaudo (?stats=1): com'era il mondo intorno nell'istante del Â«prontoÂ»
       if (statsWanted()) window.__orobiaReady = { reason, ms: Math.round(now - t0.current), near: counts.near, nearReady: counts.nearReady };
       onProgress?.(1);
       onReady(reason);
@@ -326,7 +326,7 @@ function useMaterials(mask: FarMask, cut: TunnelCut, look: WorldLook, midMask: M
     const stoneTex = settTexture();
     // le facciate: persiane verdi e balconcini in Lombardia, legno e balconi a tutta facciata nei paesi ladini
     const facadeTex = facadeTexture(look.case);
-    const tilesTex = roofTilesTexture();
+    const tilesTex = roofTilesTexture(look.case);
     const groundTex = groundDetailTexture();
     const far = new THREE.MeshLambertMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: 3, polygonOffsetUnits: 6 });
     far.onBeforeCompile = (shader) => {
@@ -353,7 +353,7 @@ function useMaterials(mask: FarMask, cut: TunnelCut, look: WorldLook, midMask: M
       paint: new THREE.MeshLambertMaterial({ color: '#efeee6', polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }),
       verge: new THREE.MeshLambertMaterial({ color: '#8f8574', side: THREE.DoubleSide }),
       concrete: new THREE.MeshLambertMaterial({ color: '#b3b1aa', side: THREE.DoubleSide }),
-      /** dentro le gallerie la luce è cotta nei colori (tunnels.ts): niente sole sotto il monte */
+      /** dentro le gallerie la luce Ã¨ cotta nei colori (tunnels.ts): niente sole sotto il monte */
       tunnel: new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }),
       tunnelRoad: new THREE.MeshBasicMaterial({ map: asphaltTex, color: '#b9bbc0', vertexColors: true, side: THREE.DoubleSide }),
       rails: new THREE.MeshLambertMaterial({ color: '#7d756b' }),
@@ -409,7 +409,7 @@ function terrainMaterial(map: THREE.Texture, cut: TunnelCut, bands: number, trip
     patchRockShader(shader, bands, triplanar);
     patchLandscape(shader, satellite);
   };
-  // i due mondi hanno due programmi: three li distingue da questa chiave (la closure è la stessa)
+  // i due mondi hanno due programmi: three li distingue da questa chiave (la closure Ã¨ la stessa)
   if (triplanar) m.customProgramCacheKey = () => 'terreno-triplanare';
   return m;
 }
@@ -434,7 +434,7 @@ function furnitureGeometries() {
   return out;
 }
 
-/** La faccia scritta del cippo, verso chi arriva (−z). */
+/** La faccia scritta del cippo, verso chi arriva (âˆ’z). */
 function stonePlane(): THREE.BufferGeometry {
   const g = new THREE.PlaneGeometry(0.28, 0.42);
   g.rotateY(Math.PI);
@@ -466,7 +466,7 @@ function townSignTexture(name: string): THREE.CanvasTexture {
 
 type Mats = ReturnType<typeof useMaterials>;
 
-/** Porfido di Città Alta: cubetti in file ad arco, toni caldi. */
+/** Porfido di CittÃ  Alta: cubetti in file ad arco, toni caldi. */
 function settTexture(): THREE.CanvasTexture {
   const t = canvasTex(128, 128, (g) => {
     g.fillStyle = '#7d7469';
@@ -527,7 +527,7 @@ function Atmosphere({ weather, daytime, data, far, mats, counts, quality }: { we
   const apply = () => {
     const s = sunFor(daytime, new Date(), data.graph.origin.lat, data.graph.origin.lon);
     const look = weather ?? CLEAR;
-    // il cielo di chi guarda da quassù: a 2000 m più scuro e saturo, l'aria più tersa
+    // il cielo di chi guarda da quassÃ¹: a 2000 m piÃ¹ scuro e saturo, l'aria piÃ¹ tersa
     appliedAlt.current = camera.position.y;
     const a = atmosphere(s, look, camera.position.y);
     const dir = sunVector(s);
@@ -558,13 +558,13 @@ function Atmosphere({ weather, daytime, data, far, mats, counts, quality }: { we
       hemi.current.intensity = a.hemiIntensity;
     }
     gl.toneMappingExposure = a.exposure;
-    // nuvole: più fitte col cielo coperto, tinte dalla luce del momento
+    // nuvole: piÃ¹ fitte col cielo coperto, tinte dalla luce del momento
     cloudMat.opacity = look.cloud < 0.05 ? 0 : Math.min(0.92, 0.15 + look.cloud * 0.85);
     cloudMat.color.copy(a.horizon).lerp(a.glow, 0.35).multiplyScalar(look.rain > 0.1 ? 0.8 : 1.05);
-    // lampioni accesi quando il sole è basso o il cielo è scuro
+    // lampioni accesi quando il sole Ã¨ basso o il cielo Ã¨ scuro
     const dusk = s.elevation < (7 * Math.PI) / 180 || (look.cloud > 0.85 && look.rain > 1);
     mats.lampHead.emissive.set(dusk ? '#ffcf8a' : '#000000');
-    // asfalto e porfido bagnati: più scuri
+    // asfalto e porfido bagnati: piÃ¹ scuri
     const wet = look.rain >= 0.1;
     mats.asphalt.color.set(wet ? '#7f8186' : '#c9cbd0');
     mats.stone.color.set(wet ? '#a39a8e' : '#d8cfc2');
@@ -583,7 +583,7 @@ function Atmosphere({ weather, daytime, data, far, mats, counts, quality }: { we
       clouds.current.rotation.y += dt * w * 0.0006;
     }
     clock.current += dt;
-    // ogni 30 s, o quando si è saliti (o scesi) di 250 m: il cielo cambia con la quota
+    // ogni 30 s, o quando si Ã¨ saliti (o scesi) di 250 m: il cielo cambia con la quota
     if (clock.current > 30 || (clock.current > 2 && Math.abs(camera.position.y - appliedAlt.current) > 250)) {
       clock.current = 0;
       apply();
@@ -692,7 +692,7 @@ function Rain({ mmh, weather }: { mmh: number; weather: WeatherNow }) {
 
 /**
  * Il terreno lontano (far.bin): la stessa regola roccia/prato/neve delle mattonelle (look.ts), le
- * normali vere così il sole lo ombreggia (le pareti a nord scure, quelle al sole chiare) e
+ * normali vere cosÃ¬ il sole lo ombreggia (le pareti a nord scure, quelle al sole chiare) e
  * l'attributo `rock` per le bande. Il passo lo decide il build del mondo (120 m per le Dolomiti,
  * 250 per Bergamo): qui si legge `graph.far.step`.
  */
@@ -709,7 +709,7 @@ function FarTerrain({ terrain, stride, material, ctx }: { terrain: Terrain; stri
       geo.rotateX(-Math.PI / 2);
       geo.translate(f.x0 + ((nx - 1) * f.step * stride) / 2, 0, f.z0 + ((nz - 1) * f.step * stride) / 2);
       const pos = geo.attributes.position as THREE.BufferAttribute;
-      // il lontano sta sotto il vicino, di più dove il posto è ruvido: a passo grosso la retta fra
+      // il lontano sta sotto il vicino, di piÃ¹ dove il posto Ã¨ ruvido: a passo grosso la retta fra
       // due creste passa sopra la valle e, bianca di neve, faceva una lastra sulla cresta (R1)
       const sink = farSinks(h, f.nx, f.nz, stride);
       for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) pos.setY(j * nx + i, h[j * stride * f.nx + i * stride] - sink[j * nx + i]);
@@ -749,9 +749,9 @@ interface MidEntry {
 
 /**
  * La fascia di mezzo (midTerrain.ts): le mattonelle del DEM fra il vicino e `range`, senza strade
- * né case, a 25 m fino a 4 km e a 50 m oltre. Una mattonella tutta dentro il quadrato delle
+ * nÃ© case, a 25 m fino a 4 km e a 50 m oltre. Una mattonella tutta dentro il quadrato delle
  * mattonelle vicine non si disegna (`nearCover`, metri dal ciclista per lato). Si costruisce una
- * mattonella per fotogramma, la più vicina che manca; il DEM si chiede tre mattonelle alla volta,
+ * mattonella per fotogramma, la piÃ¹ vicina che manca; il DEM si chiede tre mattonelle alla volta,
  * dopo quelle del vicino.
  */
 function MidTerrain({ terrain, material, ctx, mask, range, nearCover, playerPose, status }: { terrain: Terrain; material: THREE.Material; ctx: LookCtx; mask: MidMask; range: number; nearCover: number; playerPose: () => TrackPose; status: LoadStatus }) {
@@ -769,8 +769,8 @@ function MidTerrain({ terrain, material, ctx, mask, range, nearCover, playerPose
     };
   }, [terrain, ctx]);
   useFrame(() => {
-    // prima il vicino: finché la corsa non è pronta la fascia di mezzo non chiede e non costruisce
-    // niente (il «pronto» aspetta le mattonelle vicine, non queste; dietro il velo c'è il lontano)
+    // prima il vicino: finchÃ© la corsa non Ã¨ pronta la fascia di mezzo non chiede e non costruisce
+    // niente (il Â«prontoÂ» aspetta le mattonelle vicine, non queste; dietro il velo c'Ã¨ il lontano)
     if (!status.ready) return;
     const pose = playerPose();
     const nx = Math.ceil((b.x1 - b.x0) / T);
@@ -845,7 +845,7 @@ interface TileEntry {
   detail: 'none' | 'build' | 'ready';
   djob: Generator<void, void, void> | null;
   items: RoadsideItems | null;
-  /** la mattonella è entrata del tutto (dissolvenza finita): sotto, il terreno lontano si nasconde */
+  /** la mattonella Ã¨ entrata del tutto (dissolvenza finita): sotto, il terreno lontano si nasconde */
   shown: boolean;
   /** passi fatti del lavoro della mattonella e di quello dell'arredo (l'avanzamento del velo) */
   steps: number;
@@ -869,7 +869,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
   const roadside = useRef<RoadsideHandle | null>(null);
   const center = useRef<[number, number] | null>(null);
   const dirtyTrees = useRef(false);
-  /** l'arredo piccolo (paletti, cartelli, semafori) si rifà anche quando il centro si sposta */
+  /** l'arredo piccolo (paletti, cartelli, semafori) si rifÃ  anche quando il centro si sposta */
   const dirtyProps = useRef(false);
   const riderTile = useRef<[number, number] | null>(null);
   /** le mattonelle (e l'arredo) che stanno entrando in dissolvenza */
@@ -941,7 +941,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
   }
 
   function* tileJob(entry: TileEntry, spec: TileSpec): Generator<void, void, void> {
-    // prima le case (anche delle mattonelle del DEM vicine): dicono dove il suolo è città
+    // prima le case (anche delle mattonelle del DEM vicine): dicono dove il suolo Ã¨ cittÃ 
     let near: Building[][] | null = null;
     while (!(near = buildingsAround(spec.x0 - URBAN_R, spec.z0 - URBAN_R, spec.x0 + T + URBAN_R, spec.z0 + T + URBAN_R))) yield;
     const urban = urbanDensity(near, spec.x0, spec.z0, spec.x0 + T, spec.z0 + T, URBAN_R);
@@ -994,7 +994,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
 
   /**
    * L'arredo vicino: lampioni e cartelli dei paesi, guardrail, delineatori, semafori, cartelli,
-   * strisce, aiuole, i luoghi da passare. Si aggiunge al gruppo della mattonella già pronta.
+   * strisce, aiuole, i luoghi da passare. Si aggiunge al gruppo della mattonella giÃ  pronta.
    */
   function* detailJob(entry: TileEntry, spec: TileSpec): Generator<void, void, void> {
     const g = new THREE.Group();
@@ -1049,7 +1049,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
       }
       const sign = new THREE.Group();
       sign.position.set(t.x, t.y - 0.1, t.z);
-      // la faccia (+z del piano) guarda chi arriva: verso −avanti
+      // la faccia (+z del piano) guarda chi arriva: verso âˆ’avanti
       sign.rotation.y = t.h + Math.PI;
       sign.add(new THREE.Mesh(mats.geos.sign, mat));
       for (const dx of [-0.8, 0.8]) {
@@ -1067,12 +1067,12 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
 
   useFrame((_, dt) => {
     const pose = playerPose();
-    // il centro sta un po' avanti: si vede più strada davanti che dietro
+    // il centro sta un po' avanti: si vede piÃ¹ strada davanti che dietro
     const ax = pose.x + Math.sin(pose.heading) * T * 0.4;
     const az = pose.z + Math.cos(pose.heading) * T * 0.4;
     const cx = Math.floor((ax - b.x0) / T);
     const cz = Math.floor((az - b.z0) / T);
-    // la mattonella sotto le ruote: l'arredo vicino parte da lì (il centro sta 200 m avanti)
+    // la mattonella sotto le ruote: l'arredo vicino parte da lÃ¬ (il centro sta 200 m avanti)
     const rx = Math.floor((pose.x - b.x0) / T);
     const rz = Math.floor((pose.z - b.z0) / T);
     const near = (t: TileEntry) => Math.min(Math.max(Math.abs(t.ix - cx), Math.abs(t.iz - cz)), Math.max(Math.abs(t.ix - rx), Math.abs(t.iz - rz)));
@@ -1108,7 +1108,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
           dirtyTrees.current = true;
         }
       }
-      // le mattonelle del DEM: prima quelle sotto le ruote (il «pronto» aspetta quelle), poi le altre
+      // le mattonelle del DEM: prima quelle sotto le ruote (il Â«prontoÂ» aspetta quelle), poi le altre
       void terrain.around(pose.x, pose.z, READY_RADIUS + 100);
       void terrain.around(pose.x, pose.z, (q.ring + 1.5) * T);
       // e le case, che il suolo delle mattonelle aspetta: si chiedono subito, tutte insieme
@@ -1117,7 +1117,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
       // la fascia di mezzo usa le mattonelle del DEM fino a q.mid: non si buttano
       terrain.prune(pose.x, pose.z, Math.max((q.ring + 3) * T, q.mid));
     }
-    // un lavoro alla volta, il più vicino, per non più di 6 ms a fotogramma; mentre si carica
+    // un lavoro alla volta, il piÃ¹ vicino, per non piÃ¹ di 6 ms a fotogramma; mentre si carica
     // il velo copre la scena e un fotogramma lento non si vede: 24 ms
     const t0 = performance.now();
     // e su un telefono lento (fotogrammi lunghi) almeno tre quarti del fotogramma: altrimenti il
@@ -1160,7 +1160,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
           kind = 'tile';
           break;
         }
-        // si comincia solo quando il DEM sotto la mattonella (e il bordo) è arrivato; nel mondo
+        // si comincia solo quando il DEM sotto la mattonella (e il bordo) Ã¨ arrivato; nel mondo
         // leggero basta il terreno lontano, che vale anche vicino
         const spec = specOf(t.ix, t.iz, d);
         let ok = true;
@@ -1267,7 +1267,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
     }
     if (dirtyProps.current && roadside.current) {
       dirtyProps.current = false;
-      // solo le mattonelle intorno al ciclista: a più di un anello un paletto è meno di un pixel
+      // solo le mattonelle intorno al ciclista: a piÃ¹ di un anello un paletto Ã¨ meno di un pixel
       const list: RoadsideItems[] = [];
       for (const t of map.values()) if (t.items && near(t) <= PROP_RING) list.push(t.items);
       roadside.current.set(list);
@@ -1289,7 +1289,7 @@ const NO_BUILDINGS: Building[] = [];
 /** Fin dove case e monumenti possono coprire un nome, metri dal ciclista. */
 const OCC_R = 120;
 
-/** Il riquadro delle case già lette, per non ricalcolarlo a ogni giro. */
+/** Il riquadro delle case giÃ  lette, per non ricalcolarlo a ogni giro. */
 const bboxOf = new WeakMap<Building, [number, number, number, number]>();
 
 /** Case e monumenti entro `r` da (x, z), come volumi che coprono la vista. */
@@ -1320,10 +1320,10 @@ function nearVolumes(lists: Map<string, Building[] | Promise<Building[]>>, mons:
   return out;
 }
 
-/** Sotto questa distanza, una mattonella o il suo arredo che entra in scena dopo il «pronto» si vede comparire. */
+/** Sotto questa distanza, una mattonella o il suo arredo che entra in scena dopo il Â«prontoÂ» si vede comparire. */
 const POP_NEAR = 150;
 
-/** Una mattonella (o il suo arredo) entrata in scena dopo il «pronto»: per le misure del pop-in. */
+/** Una mattonella (o il suo arredo) entrata in scena dopo il Â«prontoÂ»: per le misure del pop-in. */
 function noteLate(c: TileCounts, d: number): void {
   if (d < POP_NEAR) c.late++;
   if (c.lateMin < 0 || d < c.lateMin) c.lateMin = Math.round(d);
@@ -1354,7 +1354,7 @@ function countTiles(c: TileCounts, map: Map<string, TileEntry>, x0: number, z0: 
 
 /** Quanto dura l'entrata di una mattonella o del suo arredo, millisecondi. */
 const FADE_MS = 300;
-/** Da quanto sotto sale: abbastanza da stare sotto il terreno lontano, che la copre finché non arriva. */
+/** Da quanto sotto sale: abbastanza da stare sotto il terreno lontano, che la copre finchÃ© non arriva. */
 const RISE_M = 8;
 
 interface Fade {
@@ -1367,8 +1367,8 @@ interface Fade {
 
 /**
  * Una mattonella (o il suo arredo) entra in scena salendo da sotto il terreno lontano in 300 ms,
- * invece di comparire di colpo: il terreno lontano resta finché non è arrivata. Niente trasparenza
- * (alphaHash): voleva un programma in più per ogni materiale, e con la grafica software il «pronto»
+ * invece di comparire di colpo: il terreno lontano resta finchÃ© non Ã¨ arrivata. Niente trasparenza
+ * (alphaHash): voleva un programma in piÃ¹ per ogni materiale, e con la grafica software il Â«prontoÂ»
  * arrivava 20 s dopo.
  */
 function startFade(group: THREE.Group, tile: TileEntry, part: Fade['part']): Fade {
@@ -1390,7 +1390,7 @@ function disposeGroup(g: THREE.Group | null): void {
 // ---------- bosco: un'istanza per specie per tutto il mondo vicino ----------
 
 interface ForestHandle {
-  /** gli alberi di tutte le mattonelle; i più vicini a (px, pz), al più `cap`, con le geometrie piene */
+  /** gli alberi di tutte le mattonelle; i piÃ¹ vicini a (px, pz), al piÃ¹ `cap`, con le geometrie piene */
   set(list: ForestPatch[], px: number, pz: number, cap: number): void;
 }
 
@@ -1420,7 +1420,7 @@ function broadleafCrown(): THREE.BufferGeometry {
   return out;
 }
 
-/** Un abete a due palchi, aperto sotto: più abete di un cono solo, con pochi triangoli in più. */
+/** Un abete a due palchi, aperto sotto: piÃ¹ abete di un cono solo, con pochi triangoli in piÃ¹. */
 function spruceTiers(): THREE.BufferGeometry {
   const a = new THREE.ConeGeometry(2.3, 6, 7, 1, true);
   a.translate(0, 5.2, 0);
@@ -1458,7 +1458,7 @@ function treeKey(kind: TreeKind, full: boolean): string {
 /** Gli alberi in scena con le geometrie piene e con quelle povere (per le misure, ?stats=1). */
 export const treeCount = { near: 0, far: 0 };
 
-/** Gli alberi di una mattonella, e se la mattonella è vicina (geometrie piene) o lontana (povere). */
+/** Gli alberi di una mattonella, e se la mattonella Ã¨ vicina (geometrie piene) o lontana (povere). */
 interface ForestPatch {
   trees: TileMeshes['trees'];
   near: boolean;
@@ -1493,7 +1493,7 @@ function Forest({ handle, mats, larch }: { handle: React.MutableRefObject<Forest
           if (l) l.push(t);
           else by.set(key, [t]);
         };
-        // le geometrie piene alle mattonelle vicine, e fra i loro alberi ai `cap` più vicini
+        // le geometrie piene alle mattonelle vicine, e fra i loro alberi ai `cap` piÃ¹ vicini
         const near: TileMeshes['trees'] = [];
         for (const p of patches) for (const t of p.trees) if (p.near) near.push(t);
         let limit = Infinity;
@@ -1507,7 +1507,7 @@ function Forest({ handle, mats, larch }: { handle: React.MutableRefObject<Forest
           for (const t of p.trees) {
             const full = p.near && (t.x - px) ** 2 + (t.z - pz) ** 2 <= limit;
             push(treeKey(t.kind, full), t);
-            // il tronco solo vicino: da lontano è meno di un pixel
+            // il tronco solo vicino: da lontano Ã¨ meno di un pixel
             if (full && t.kind !== 'rock') push('trunk', t);
             if (full) nNear++;
             else nFar++;
@@ -1533,7 +1533,7 @@ function Forest({ handle, mats, larch }: { handle: React.MutableRefObject<Forest
           items.forEach((it, i) => {
             d.position.set(it.x, it.y, it.z);
             d.rotation.set(rock ? it.tint : 0, it.r, 0);
-            // chiome più alte o più tozze, e colori un po' diversi da un albero all'altro
+            // chiome piÃ¹ alte o piÃ¹ tozze, e colori un po' diversi da un albero all'altro
             const tall = rock ? 1 : 0.85 + ((it.tint * 7.31) % 1) * 0.35;
             const [wide, high] = (cone && FAR_CONE[it.kind]) || [1, 1];
             d.scale.set(it.s * wide, it.s * tall * high, it.s * wide);
@@ -1578,7 +1578,7 @@ const DETAIL_RING = 2;
 const PROP_RING = 1;
 /** Le mattonelle entro questo anello hanno il bosco fitto e gli alberi con le geometrie piene. */
 const DENSE_RING = 1;
-/** Quanti alberi in più per cella di bosco nelle mattonelle vicine, rispetto alla qualità. */
+/** Quanti alberi in piÃ¹ per cella di bosco nelle mattonelle vicine, rispetto alla qualitÃ . */
 const DENSE_EXTRA = 0.9;
 
 interface RoadsideHandle {
@@ -1669,8 +1669,8 @@ function WorldArches({ arches, path, engine }: { arches?: ArchSpec[]; path: Worl
       spec('lab:d', 'crono', 'start', 'CRONO', 'Cronoscalata', 170),
       spec('lab:e', 'cassonetto', 'finish', 'CASSONETTO', 'Cene', 230),
       spec('lab:f', 'km', 'km', '3 km', 'alla vetta', 290, 0.084),
-      spec('lab:g', 'ultimo', 'km', 'Ultimo km', 'all’arrivo', 350),
-      spec('lab:h', 'erg', 'start', '5′ · 280 W', 'Intervallo', 410),
+      spec('lab:g', 'ultimo', 'km', 'Ultimo km', 'allâ€™arrivo', 350),
+      spec('lab:h', 'erg', 'start', '5â€² Â· 280 W', 'Intervallo', 410),
     ];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path]);
@@ -1709,7 +1709,7 @@ function Lakes({ data }: { data: WorldData }) {
   );
 }
 
-/** Le Mura venete di Città Alta: la strada corre sopra, la cortina scende di 14 m verso la pianura. */
+/** Le Mura venete di CittÃ  Alta: la strada corre sopra, la cortina scende di 14 m verso la pianura. */
 function Walls({ data, field }: { data: WorldData; field: WorldField }) {
   const geo = useMemo(() => {
     const pos: number[] = [];
@@ -1747,7 +1747,7 @@ function Walls({ data, field }: { data: WorldData; field: WorldField }) {
 // ---------- cartelli del percorso ----------
 
 /**
- * Sul percorso scelto: l'arco di partenza e quello d'arrivo del tratto cronometrato e, se è una
+ * Sul percorso scelto: l'arco di partenza e quello d'arrivo del tratto cronometrato e, se Ã¨ una
  * salita, i tornanti numerati. I chilometri sono i portali alla Zwift del gioco (game.arches).
  */
 function RideSigns({ data, ride }: { data: WorldData; ride: RideDef }) {
@@ -1765,7 +1765,7 @@ function RideSigns({ data, ride }: { data: WorldData; ride: RideDef }) {
     const finishTex = bannerTexture('ARRIVO', ride.name);
     // tornanti numerati sulle salite, contati dall'alto come i cartelli veri (Selvino ne ha venti)
     const pts = path.points;
-    // il giro di una rotatoria non è un tornante
+    // il giro di una rotatoria non Ã¨ un tornante
     const nearRing = (d: number) => [-40, -20, 0, 20, 40].some((o) => g.isRing(path.edgeAt(Math.min(path.length, Math.max(0, d + o))).edge));
     const bends = climb ? findHairpins(pts.map((p) => p.distance), pts.map((p) => p.heading)).filter((h) => h.distance > from + 20 && h.distance < to - 20 && !nearRing(h.distance)) : [];
     const hairpins = hairpinSigns(bends, (d) => path.poseAt(d), (d) => g.edges[path.edgeAt(d).edge].hw);
@@ -1839,7 +1839,7 @@ function ContactShadow({ playerPose }: { playerPose: () => TrackPose }) {
   );
 }
 
-/** Un ciclista in più (ExtraWorldRider): fuori scena quando non ha una posa. */
+/** Un ciclista in piÃ¹ (ExtraWorldRider): fuori scena quando non ha una posa. */
 function ExtraRider({ rider }: { rider: ExtraWorldRider }) {
   const hidden: TrackPose = { x: 0, y: -5000, z: 0, heading: 0, grade: 0, altitude: 0, distance: 0 };
   return (
@@ -1879,7 +1879,7 @@ function NpcRiders({ crowd }: { crowd: NpcCrowd }) {
 
 const HIDDEN: TrackPose = { x: 0, y: -5000, z: 0, heading: 0, grade: 0, altitude: 0, distance: 0 };
 
-/** Il fantasma del tuo giro migliore: trasparente, sotto terra quando non c'è. */
+/** Il fantasma del tuo giro migliore: trasparente, sotto terra quando non c'Ã¨. */
 function GhostRider({ pose }: { pose: () => TrackPose | null }) {
   return <Rider ghost side={0} detail="media" getPose={() => pose() ?? HIDDEN} getCadence={() => 86} getSpeed={() => 6} />;
 }
@@ -1981,7 +1981,7 @@ function WorldCam({ engine, path, field, playerPose, preview }: WorldSceneProps)
       const yaw = pose.heading - (yawDeg * Math.PI) / 180;
       camera.position.set(pose.x - Math.sin(h) * b0 + Math.cos(h) * side, pose.y + up, pose.z - Math.cos(h) * b0 - Math.sin(h) * side);
       // con lo sguardo girato si guarda lontano, un filo verso l'alto: le pareti e le cime, non il
-      // ciglio; il quinto campo dà l'inclinazione in gradi (positivi in su), per guardare una cima
+      // ciglio; il quinto campo dÃ  l'inclinazione in gradi (positivi in su), per guardare una cima
       const far = yawDeg || pitchDeg != null;
       const reach = far ? 300 : 7;
       const lift = pitchDeg != null ? Math.tan((pitchDeg * Math.PI) / 180) * reach : 20;

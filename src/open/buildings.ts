@@ -1,20 +1,20 @@
+import { PLASTER_UV, finishUV } from './facadeLayout';
+import { facadeSide } from './facadeGeometry';
 import { BUILDING_KIND, type Building } from './world';
 
 /*
  * Edifici del mondo aperto, senza Three.js: pareti con le coordinate delle finestre e tetti a falde.
  *
- * - Le pareti hanno uv in «campate × piani» (3,2 m × 3 m), 4 campate e 2 piani per ripetizione: la
- *   trama della facciata disegna una finestra con le persiane per ogni casella. Muri ciechi (capannoni, chiese, muri corti) usano una
- *   uv fissa nell'angolo vuoto della trama, così prendono solo il colore.
+ * - Le campate, i materiali e gli ingressi mappati sono emessi da facadeSide.
  * - Case, palazzine e chiese con la pianta quasi rettangolare hanno il tetto a due falde (o a padiglione
- *   se la pianta è tozza), in coppi, poggiato sul rettangolo minimo che contiene la pianta, con la gronda
+ *   se la pianta Ã¨ tozza), in coppi, poggiato sul rettangolo minimo che contiene la pianta, con la gronda
  *   che sporge. Gli altri hanno il tetto piano con il parapetto.
  */
 
 export const BAY = 3.2;
 export const FLOOR = 3.0;
 /** uv della parte vuota della trama: muro senza finestre */
-export const BLANK_UV = 0.01;
+export const BLANK_UV = PLASTER_UV;
 const PITCH = Math.tan((21 * Math.PI) / 180);
 const EAVE = 0.45;
 
@@ -126,14 +126,17 @@ export function ringArea(ring: ArrayLike<number>): number {
 
 export type RoofShape = 'gable' | 'hip' | 'flat';
 
-/** Che tetto ha: a falde solo dove la pianta è quasi un rettangolo e non troppo grande. */
+/** Che tetto ha: a falde solo dove la pianta Ã¨ quasi un rettangolo e non troppo grande. */
 export function roofShape(b: Building, obb: Obb, area: number, wide = false, alpine = false): RoofShape {
   const m = b.ring.length / 2;
+  const known = b.architecture?.roof;
+  if (known === 'flat') return 'flat';
+  if (known && obb.hs >= 1 && area / obb.area > 0.78) return known;
   if (b.kind === BUILDING_KIND.industrial || b.kind === BUILDING_KIND.tower || b.kind === BUILDING_KIND.castle) return 'flat';
   if (obb.area <= 0 || obb.hs < 2.2) return 'flat';
   const fill = area / obb.area;
   // le case e gli hotel ladini: due falde quasi sempre, anche sulle impronte a L o a gradini degli
-  // alberghi (fino a 3200 m², 40 vertici); il padiglione lì quasi non c'è (km0-49680937, corvara-79922438)
+  // alberghi (fino a 3200 mÂ², 40 vertici); il padiglione lÃ¬ quasi non c'Ã¨ (km0-49680937, corvara-79922438)
   if (alpine) return fill > 0.62 && area < 3200 && m <= 40 && obb.hs < 22 ? 'gable' : 'flat';
   const pitched = b.kind === BUILDING_KIND.church ? fill > 0.7 && area < 2500 : wide ? fill > 0.75 && area < 2200 && m <= 18 && obb.hs < 16 : fill > 0.8 && area < 950 && m <= 14 && obb.hs < 11;
   if (!pitched) return 'flat';
@@ -152,14 +155,15 @@ export interface BuildingColors {
   blind: boolean;
   /**
    * i capannoni: la fascia delle finestre a nastro sotto la gronda (questo colore, il vetro) e uno
-   * zoccolo più scuro, sui muri ciechi abbastanza alti e lunghi
+   * zoccolo piÃ¹ scuro, sui muri ciechi abbastanza alti e lunghi
    */
   ribbon?: Rgb;
-  /** pendenza delle falde (tangente); senza, i 21° dei tetti lombardi */
+  entranceGround?: (x: number, z: number) => number;
+  /** pendenza delle falde (tangente); senza, i 21Â° dei tetti lombardi */
   pitch?: number;
   /** sporto della gronda, metri (0,45 di norma; le case ladine 1,1) */
   eaves?: number;
-  /** tetto a falde anche sugli edifici grandi (gli hotel tirolesi fino a 2200 m²) */
+  /** tetto a falde anche sugli edifici grandi (gli hotel tirolesi fino a 2200 mÂ²) */
   wide?: boolean;
   /**
    * le case ladine: due falde anche sugli hotel, il timpano di legno e (se `balconies`) i balconi
@@ -175,9 +179,9 @@ export const BALCONY = { depth: 1.1, rail: 1.0, inset: 0.1, minLen: 5 };
  * Pareti e tetto di un edificio. `walls` va con la trama delle facciate, `roofs` con quella dei coppi.
  * Ritorna la quota del colmo (per la cuspide delle torri, e per le prove).
  *
- * `ground` è il piano terra (le finestre e l'altezza partono da lì); `plinth`, se è più in basso,
- * è il piede dello zoccolo: su un pendio la facciata scende a valle di un piano al massimo (il
- * seminterrato), e sotto c'è il muro di sostegno in pietra fino al terreno.
+ * `ground` Ã¨ il piano terra (le finestre e l'altezza partono da lÃ¬); `plinth`, se Ã¨ piÃ¹ in basso,
+ * Ã¨ il piede dello zoccolo: su un pendio la facciata scende a valle di un piano al massimo (il
+ * seminterrato), e sotto c'Ã¨ il muro di sostegno in pietra fino al terreno.
  */
 export function addBuilding(walls: Tris, roofs: Tris, b: Building, ground: number, c: BuildingColors, plinth = ground): { top: number; shape: RoofShape } {
   const r = b.ring;
@@ -195,6 +199,8 @@ export function addBuilding(walls: Tris, roofs: Tris, b: Building, ground: numbe
   // l'altezza OSM comprende il tetto: il muro si ferma sotto, ma mai sotto un piano
   const wallTop = Math.max(bottom + 2.6, ground + height - rise * 0.6);
   const ccw = ringArea(r) > 0;
+  const seed = Math.imul(Math.round(obb.cx * 10), 73856093) ^ Math.imul(Math.round(obb.cz * 10), 19349663);
+  const family = (seed >>> 0) % 3;
   for (let i = 0; i < m; i++) {
     const ax = r[i * 2];
     const az = r[i * 2 + 1];
@@ -203,44 +209,19 @@ export function addBuilding(walls: Tris, roofs: Tris, b: Building, ground: numbe
     const len = Math.hypot(bx - ax, bz - az);
     if (len < 0.05) continue;
     // fuori: la normale orizzontale del lato, dal verso dell'anello
-    // anello antiorario (area positiva nel piano x, z): fuori è a destra del lato, (dz, −dx)
+    // anello antiorario (area positiva nel piano x, z): fuori Ã¨ a destra del lato, (dz, âˆ’dx)
     const ox = ccw ? bz - az : -(bz - az);
     const oz = ccw ? -(bx - ax) : bx - ax;
     const out: [number, number, number] = [ox, 0, oz];
     const blind = c.blind || len < 2.4 || wallTop - bottom < 2.4;
-    const bays = Math.max(1, Math.round(len / BAY));
-    // la trama copre 4 campate × 2 piani
-    const u1 = blind ? BLANK_UV : bays / 4;
-    const u0 = blind ? BLANK_UV : 0;
-    const vv = (y: number) => (blind ? BLANK_UV : (y - bottom) / (FLOOR * 2));
-    // lo zoccolo cieco, dal piede alla facciata
-    if (face > foot + 0.01) {
-      walls.facing(v(ax, foot, az), v(bx, foot, bz), v(ax, face, az), out, stone);
-      walls.facing(v(bx, foot, bz), v(bx, face, bz), v(ax, face, az), out, stone);
-    }
-    // piano terra più scuro, sopra il colore della casa
-    const mid = Math.min(wallTop, bottom + FLOOR);
-    walls.facing(v(ax, face, az, u0, vv(face)), v(bx, face, bz, u1, vv(face)), v(ax, mid, az, u0, vv(mid)), out, c.base);
-    walls.facing(v(bx, face, bz, u1, vv(face)), v(bx, mid, bz, u1, vv(mid)), v(ax, mid, az, u0, vv(mid)), out, c.base);
-    if (wallTop > mid + 0.01) {
-      // il capannone: pannelli, poi il nastro delle finestre (1,2 m, a 0,7 m dalla gronda), poi la lamiera
-      // (anche sui capannoni bassi, da 6 m: sono la maggior parte della valle)
-      const band = c.ribbon && blind && len >= 6 && wallTop - mid > 2.2 ? c.ribbon : null;
-      const b0 = band ? wallTop - 1.9 : wallTop;
-      const b1 = band ? wallTop - 0.7 : wallTop;
-      const quad = (y0: number, y1: number, col: Rgb) => {
-        walls.facing(v(ax, y0, az, u0, vv(y0)), v(bx, y0, bz, u1, vv(y0)), v(ax, y1, az, u0, vv(y1)), out, col);
-        walls.facing(v(bx, y0, bz, u1, vv(y0)), v(bx, y1, bz, u1, vv(y1)), v(ax, y1, az, u0, vv(y1)), out, col);
-      };
-      quad(mid, b0, c.wall);
-      if (band) {
-        quad(b0, b1, band);
-        quad(b1, wallTop, c.base);
-      }
-    }
+    facadeSide(walls, {
+      ax, az, bx, bz, out, foot, face, bottom, top: wallTop, wall: c.wall, base: c.base, stone, blind,
+      ribbon: c.ribbon, alpine: !!c.alpine, family, shift: ((seed >>> 3) + i) % 4,
+      edge: i, architecture: b.architecture, groundAt: c.entranceGround,
+    });
     // i balconi di legno: una soletta e la ringhiera davanti, chiusa ai due capi, a ogni piano
     // sopra il piano terra (anche l'ultimo, sotto la gronda)
-    if (c.alpine?.balconies && !blind && len >= BALCONY.minLen) {
+    if (c.alpine?.balconies && !b.architecture?.kind && !blind && len >= BALCONY.minLen) {
       const ol = Math.hypot(ox, oz);
       const nx = (ox / ol) * BALCONY.depth;
       const nz = (oz / ol) * BALCONY.depth;
@@ -306,7 +287,7 @@ function pitchedRoof(walls: Tris, roofs: Tris, o: Obb, eaveY: number, ridgeY: nu
   const P = (a: number, b: number, y: number): V => {
     const x = o.cx + o.ax * a + px * b;
     const z = o.cz + o.az * a + pz * b;
-    // coppi: u lungo la gronda, v giù per la falda (in metri)
+    // coppi: u lungo la gronda, v giÃ¹ per la falda (in metri)
     return { x, y, z, u: a, v: Math.abs(b) * 1.07 };
   };
   const ridgeHalf = shape === 'hip' ? Math.max(0, hl - hs) : hl;
@@ -323,7 +304,7 @@ function pitchedRoof(walls: Tris, roofs: Tris, o: Obb, eaveY: number, ridgeY: nu
   roofs.facing(E1, R2, R1, up(1), t);
   roofs.facing(E4, R1, R2, up(-1), t);
   roofs.facing(E4, R2, E3, up(-1), t);
-  // sotto la gronda: si vede da vicino, stesso colore un po' più scuro
+  // sotto la gronda: si vede da vicino, stesso colore un po' piÃ¹ scuro
   const under = { r: t.r * 0.55, g: t.g * 0.55, b: t.b * 0.55 };
   roofs.facing(E1, E2, R2, [0, -1, 0], under);
   roofs.facing(E1, R2, R1, [0, -1, 0], under);
@@ -336,8 +317,11 @@ function pitchedRoof(walls: Tris, roofs: Tris, o: Obb, eaveY: number, ridgeY: nu
     return;
   }
   // timpani: triangoli di muro sotto le falde, sul filo del rettangolo (senza gronda)
-  const W = (a: number, b: number, y: number): V => v(o.cx + o.ax * a + px * b, y, o.cz + o.az * a + pz * b);
-  // nelle case ladine il timpano è di legno
+  const W = (a: number, b: number, y: number): V => {
+    const uv = c.alpine ? finishUV('assi', (b / o.hs + 1) / 2, y === ridgeY ? 1 : 0) : [BLANK_UV, BLANK_UV];
+    return v(o.cx + o.ax * a + px * b, y, o.cz + o.az * a + pz * b, uv[0], uv[1]);
+  };
+  // nelle case ladine il timpano Ã¨ di legno
   const gable = c.alpine ? c.alpine.wood : c.wall;
   walls.facing(W(o.hl, o.hs, eaveY), W(o.hl, -o.hs, eaveY), W(o.hl, 0, ridgeY), [o.ax, 0, o.az], gable);
   walls.facing(W(-o.hl, o.hs, eaveY), W(-o.hl, -o.hs, eaveY), W(-o.hl, 0, ridgeY), [-o.ax, 0, -o.az], gable);

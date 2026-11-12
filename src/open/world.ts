@@ -1,3 +1,4 @@
+import { footprintKey, loadArchitecture, type Architecture } from './architettura';
 import { indexRoadPoints, type RoadPoint } from './puntiStrada';
 import { unzlibSync } from 'fflate';
 import { projector, type LatLon } from '@/domain/geo';
@@ -618,6 +619,7 @@ export class Terrain {
 // ---------- edifici ----------
 
 export interface Building {
+  architecture?: Architecture;
   kind: number;
   /** altezza del tetto sopra il suolo, metri */
   h: number;
@@ -642,7 +644,7 @@ export async function loadBuildings(graph: WorldGraph, tx: number, tz: number, b
   try {
     const res = await fetch(`${base}b/${tx}_${tz}.json`);
     if (!res.ok) return [];
-    const json = (await res.json()) as { o: [number, number]; b: number[][] };
+    const [json, hints] = await Promise.all([res.json() as Promise<{ o: [number, number]; b: number[][] }>, loadArchitecture(graph.id)]);
     const [ox, oz] = json.o;
     return json.b.map((r) => {
       const [kind, h, minH, roof, ...coords] = r;
@@ -655,7 +657,7 @@ export async function loadBuildings(graph: WorldGraph, tx: number, tz: number, b
         ring[i] = ox + x / 10;
         ring[i + 1] = oz + z / 10;
       }
-      return { kind, h: h / 10, minH: minH / 10, roof, ring };
+      return { kind, h: h / 10, minH: minH / 10, roof, ring, architecture: hints[footprintKey(ring)] };
     });
   } catch {
     return [];
