@@ -6,7 +6,7 @@
   "description": "Ciclismo indoor sulle salite vere in 3D, con power replay, grade replay e fantasma. PWA offline.",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build && node -e \"require('node:fs').copyFileSync('dist/index.html','dist/404.html')\"",
+    "build": "tsc --noEmit && vite build && node scripts/pages-entry.mjs",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
     "test": "vitest run",
     "samples": "vite-node scripts/make-samples.ts",
