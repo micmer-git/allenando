@@ -1,0 +1,787 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OROBIA · Wireframe del flusso</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;padding:24px 24px 80px;background:#fff;color:#1d1d1d;font:14px/1.35 sans-serif}
+  h1{font-size:22px;margin:0 0 4px}
+  h2{font-size:17px;margin:44px 0 10px;padding-top:14px;border-top:2px solid #bbb}
+  h3{font-size:14px;margin:18px 0 8px;color:#444}
+  p.lead{margin:0 0 6px;color:#555;max-width:900px}
+  .row{display:flex;flex-wrap:wrap;gap:30px;align-items:flex-start}
+  .scroll{overflow-x:auto;padding-bottom:8px}
+  .w{display:flex;flex-direction:column;gap:6px}
+  .cap{width:390px;font-size:12.5px;color:#444}
+  .cap b{display:block;font-size:13px;color:#111}
+  .oriz-cap{width:844px}.pc-cap{width:1280px}
+  /* il telefono */
+  .f{width:390px;height:844px;border:1px solid #777;position:relative;overflow:hidden;background:#fafafa;display:flex;flex-direction:column}
+  .f.oriz{width:844px;height:390px}
+  .f.pc{width:1280px;height:800px;flex-direction:row}
+  .pad{padding:0 16px}
+  .top{height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;flex-shrink:0}
+  .logo{font-weight:800;letter-spacing:.06em}
+  .b{background:#e7e7e7;border:1px solid #c9c9c9;border-radius:12px;padding:10px 12px}
+  .b2{background:#f1f1f1;border:1px solid #d3d3d3;border-radius:10px;padding:8px 10px}
+  .hatch{background:repeating-linear-gradient(45deg,#d9d9d9 0 9px,#e8e8e8 9px 18px);border:1px solid #c4c4c4}
+  .btn{min-height:44px;border:1px solid #8a8a8a;border-radius:22px;display:flex;align-items:center;justify-content:center;font-weight:600;background:#fff;padding:0 14px;text-align:center}
+  .pieno{background:#3d3d3d;color:#fff;border-color:#3d3d3d;min-height:56px;border-radius:28px;font-size:17px}
+  .off{opacity:.45}
+  .chip{border:1px solid #9a9a9a;border-radius:22px;padding:0 12px;height:44px;display:inline-flex;align-items:center;gap:6px;font-weight:600;background:#fff;white-space:nowrap}
+  .tok{display:inline-flex;align-items:center;border:1px solid #a5a5a5;border-radius:12px;padding:1px 8px;font-size:12px;font-weight:600;background:#fff;white-space:nowrap}
+  .eye{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:#666;margin:14px 0 6px;font-weight:700}
+  .seg{display:grid;border:1px solid #a9a9a9;border-radius:26px;overflow:hidden;min-height:52px;background:#fff}
+  .seg>span{display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:600;font-size:14px;line-height:1.15;padding:4px 2px}
+  .seg>span small{font-weight:500;font-size:11px;color:#666}
+  .seg>.on{background:#cdcdcd}
+  .nav{position:absolute;bottom:0;left:0;right:0;height:64px;border-top:1px solid #bbb;display:grid;grid-template-columns:repeat(3,1fr);background:#efefef}
+  .nav span{display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11.5px;font-weight:600;color:#666;gap:3px}
+  .nav span:before{content:"";width:22px;height:22px;border:1.6px solid #888;border-radius:6px}
+  .nav .on{color:#111}.nav .on:before{border-color:#111;background:#cfcfcf}
+  .lr{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .rowi{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:56px;border-bottom:1px solid #d6d6d6;padding:6px 0}
+  .t1{font-weight:700;font-size:16px}.t2{color:#666;font-size:13px}
+  .xl{font-size:30px;font-weight:800;line-height:1}
+  .big{font-size:38px;font-weight:800;line-height:1}
+  .dock .big,.glass .big{font-size:30px;font-weight:700}
+  .num{font-variant-numeric:tabular-nums}
+  .sq{width:44px;height:44px;border:1px solid #8a8a8a;border-radius:22px;display:inline-flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;background:#fff;flex-shrink:0}
+  .sw{width:50px;height:30px;border-radius:15px;border:1px solid #888;background:#cfcfcf;position:relative;flex-shrink:0}
+  .sw:after{content:"";position:absolute;top:3px;right:3px;width:22px;height:22px;border-radius:11px;background:#3d3d3d}
+  .sw.no{background:#fff}.sw.no:after{right:auto;left:3px;background:#999}
+  .sheet{position:absolute;left:0;right:0;bottom:0;background:#fff;border-top:1px solid #888;border-radius:22px 22px 0 0;box-shadow:0 -6px 18px rgba(0,0,0,.12)}
+  .veil{position:absolute;inset:0;background:rgba(240,240,240,.88)}
+  .grab{width:44px;height:5px;border-radius:3px;background:#bbb;margin:8px auto 4px}
+  .dock{border-top:1px solid #bbb;background:#ededed;padding:8px 12px 12px;flex-shrink:0}
+  .nums{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+  .nums small{display:block;font-size:12px;color:#555;margin-top:2px}
+  .sec{display:flex;gap:14px;font-size:15px;margin-top:6px;flex-wrap:wrap}
+  .ctl{display:flex;gap:8px;margin-top:8px}.ctl .btn{flex:1;min-height:48px}
+  .pill{background:rgba(255,255,255,.88);border:1px solid #bbb;border-radius:20px;padding:5px 12px}
+  .round{width:44px;height:44px;border-radius:22px;background:rgba(255,255,255,.9);border:1px solid #aaa;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0}
+  .alt{height:46px;border:1px solid #bbb;background:linear-gradient(to top,#cfcfcf 0 40%,transparent 40%);border-radius:8px;position:relative}
+  .alt i{position:absolute;top:8px;left:38%;width:12px;height:12px;border-radius:6px;background:#3d3d3d}
+  .bar{height:8px;border-radius:4px;background:#ddd;overflow:hidden}.bar i{display:block;height:100%;background:#555}
+  .wchart{height:34px;border:1px solid #bbb;border-radius:6px;background:linear-gradient(90deg,#d5d5d5 0 14%,#a9a9a9 14% 30%,#d5d5d5 30% 37%,#a9a9a9 37% 53%,#d5d5d5 53% 60%,#a9a9a9 60% 76%,#d5d5d5 76% 100%);position:relative}
+  .wchart:after{content:"";position:absolute;top:-3px;bottom:-3px;left:44%;width:2px;background:#111}
+  .sys{position:absolute;left:24px;right:24px;top:220px;background:#fff;border:2px dashed #777;border-radius:10px;padding:12px}
+  .glass{position:absolute;left:10px;right:10px;bottom:10px;background:rgba(237,237,237,.93);border:1px solid #aaa;border-radius:16px;padding:8px 12px;display:flex;gap:16px;align-items:center}
+  table{border-collapse:collapse;font-size:13px;margin-top:6px}
+  td,th{border:1px solid #ccc;padding:5px 8px;text-align:left;vertical-align:top}
+  th{background:#eee}
+  .rail{width:230px;border-right:1px solid #bbb;padding:22px 14px;display:flex;flex-direction:column;gap:4px;flex-shrink:0;background:#f3f3f3}
+  .rail .it{height:44px;display:flex;align-items:center;padding:0 12px;border-radius:10px;font-weight:600;color:#555}
+  .rail .it.on{background:#d3d3d3;color:#111}
+  .rail .sub{height:40px;display:flex;align-items:center;padding:0 12px 0 26px;font-size:13.5px;color:#666}
+</style>
+</head>
+<body>
+
+<h1>OROBIA · Pedala, Diario, Tu</h1>
+<p class="lead">Wireframe del 11/11/2026. Scatole grigie, testo vero, 390 × 844; orizzontale 844 × 390; computer 1280 × 800 dove cambia davvero. Il tasto scuro pieno è l'unico pieno della schermata. I numeri dei percorsi vengono da <code>rides.json</code>; quelli degli anelli suggeriti e delle stime dei giri sono d'esempio.</p>
+
+<!-- ===================================================== -->
+<h2>1 · Navigazione</h2>
+<p class="lead">Tre voci. Mondo, Salite, Sessioni e Allenamenti finiscono dentro Pedala; il resto dentro Tu. Le rotte vecchie restano come redirect (piano, § 3).</p>
+<table>
+  <tr><th>Voce</th><th>Cosa c'è dentro</th><th>Rotte vecchie che ci portano</th></tr>
+  <tr><td><b>Pedala</b> <code>/</code></td><td>Rullo · Dove (percorsi, anelli, salite, grandi salite, tuoi giri, giro libero, crea un anello, A → B, scheda) · Come (Libera, Potenza fissa, Allenamento, Watt di allora) · Fantasma · Via · Sessione · Programma di oggi · Missioni</td><td><code>/mondo</code> <code>/salite</code> <code>/sessioni</code> <code>/giri/:id</code></td></tr>
+  <tr><td><b>Diario</b> <code>/history</code></td><td>Settimana · Forma · Giri · Importa · Giro (Rifai, Esporta, Elimina)</td><td><code>/giri</code> <code>/load</code> <code>/import</code></td></tr>
+  <tr><td><b>Tu</b> <code>/tu</code></td><td>Livello, oro · Garage · Traguardi · Classifiche · Allenamenti (libreria, Nuovo, Importa .zwo, Programmi) · Impostazioni (profilo, rullo, modalità prova, mondi senza rete, grafica, aspetto, dati)</td><td><code>/garage</code> <code>/traguardi</code> <code>/classifiche</code> <code>/workouts</code> <code>/programmi</code> <code>/profile</code></td></tr>
+</table>
+
+<div class="row" style="margin-top:22px">
+  <div class="w">
+    <div class="cap"><b>A2 · Tu</b>Una riga per sezione, niente carte. Il livello e l'oro solo qui.</div>
+    <div class="f">
+      <div class="top"><span class="logo">OROBIA</span></div>
+      <div class="pad">
+        <div class="lr"><div style="display:flex;gap:12px;align-items:center"><div class="hatch" style="width:64px;height:64px;border-radius:32px"></div><div><div class="xl">Anna</div><div class="t2">Pedalatore della domenica</div></div></div><span class="tok">Liv. 1</span></div>
+        <div class="bar" style="margin:14px 0 4px"><i style="width:8%"></i></div>
+        <div class="lr t2 num"><span>Punti 40 · 460 al livello 2</span><span>Oro 120</span></div>
+        <div style="margin-top:14px">
+          <div class="rowi"><span class="t1">Garage</span><span class="t2">Maglie e bici ›</span></div>
+          <div class="rowi"><span class="t1">Traguardi</span><span class="t2 num">3 di 50 ›</span></div>
+          <div class="rowi"><span class="t1">Classifiche</span><span class="t2">›</span></div>
+          <div class="rowi"><span class="t1">Allenamenti</span><span class="t2 num">33 · Programmi ›</span></div>
+          <div class="rowi"><span class="t1">Impostazioni</span><span class="t2">Profilo, rullo, prova ›</span></div>
+        </div>
+      </div>
+      <div class="nav"><span>Pedala</span><span>Diario</span><span class="on">Tu</span></div>
+    </div>
+  </div>
+
+  <div class="w">
+    <div class="cap"><b>A3 · Diario</b>I numeri della settimana nei gettoni. «Rifai» sta nella pagina del giro: porta a Pedala con quel giro come Dove.</div>
+    <div class="f">
+      <div class="top"><span class="xl">Diario</span><span class="chip">Importa</span></div>
+      <div class="pad">
+        <div style="display:flex;gap:6px;flex-wrap:wrap"><span class="tok num">7 gg · 84 km</span><span class="tok num">3 h 10</span><span class="tok num">TSS 210</span><span class="tok num">Forma +4 ›</span></div>
+        <div style="margin-top:12px">
+          <div class="rowi"><div><div class="t1">Il giro della Ganda</div><div class="t2">Oggi, 18:40 · Bergamo</div></div><div class="num" style="text-align:right"><b>38,5 km</b><div class="t2">1:41:12</div></div></div>
+          <div class="rowi"><div><div class="t1">Anello da Bergamo · 2 giri</div><div class="t2">Ieri · Sweet spot 3×8</div></div><div class="num" style="text-align:right"><b>34,8 km</b><div class="t2">58:40</div></div></div>
+          <div class="rowi"><div><div class="t1">Selvino <span class="tok">Prova</span></div><div class="t2">9 novembre</div></div><div class="num" style="text-align:right"><b>12,6 km</b><div class="t2">41:02</div></div></div>
+          <div class="rowi"><div><div class="t1">Giro del lago</div><div class="t2">7 novembre · FIT importato</div></div><div class="num" style="text-align:right"><b>62,0 km</b><div class="t2">2:12:30</div></div></div>
+        </div>
+      </div>
+      <div class="nav"><span>Pedala</span><span class="on">Diario</span><span>Tu</span></div>
+    </div>
+  </div>
+
+  <div class="w">
+    <div class="cap"><b>A4 · Impostazioni</b>Profilo e impostazioni in una pagina. La modalità prova vive solo qui (F). I mondi senza rete stanno sotto (G3).</div>
+    <div class="f">
+      <div class="top"><span class="chip">‹ Tu</span><span></span></div>
+      <div class="pad">
+        <div class="xl">Impostazioni</div>
+        <div class="eye">Tu</div>
+        <div class="lr" style="gap:8px"><div class="b2" style="flex:1">Peso<br><b class="num">78 kg</b></div><div class="b2" style="flex:1">FTP<br><b class="num">220 W</b></div><div class="b2" style="flex:1">FC max<br><b class="num">186</b></div></div>
+        <div class="eye">Rullo e sensori</div>
+        <div class="rowi"><div><div class="t1">● Wahoo KICKR</div><div class="t2">Pendenza · ERG · Potenza</div></div><span class="btn">Scollega</span></div>
+        <div class="rowi"><span class="t1">Aggiungi la fascia cardio</span><span class="t2">›</span></div>
+        <div class="eye">Modalità prova</div>
+        <div class="rowi"><div><div class="t1">Prova senza rullo</div><div class="t2">⚠ I giri di prova non vanno in classifica</div></div><span class="sw no"></span></div>
+        <div class="eye">Mondi senza rete</div>
+        <div class="rowi"><div><div class="t1">Bergamo e le valli</div><div class="t2 num">Leggero ✓ · Intero 20 MB</div></div><span class="btn">Scarica</span></div>
+        <div class="eye">Grafica</div>
+        <div class="seg" style="grid-template-columns:repeat(3,1fr)"><span>Bassa</span><span class="on">Media</span><span>Alta</span></div>
+      </div>
+      <div class="nav"><span>Pedala</span><span>Diario</span><span class="on">Tu</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================================================== -->
+<h2>2 · Senza rullo collegato: nessuna opzione</h2>
+<p class="lead">Pedala senza un sensore di potenza e con la prova spenta: un tasto. Niente Dove, niente Come, niente Via. Un link diretto a <code>/ride</code> torna qui.</p>
+<div class="row">
+  <div class="w">
+    <div class="cap"><b>B1 · Mai collegato</b>È anche la prima schermata dopo il primo avvio. Il selettore del browser cerca rulli FTMS, misuratori di potenza, fasce e cadenza.</div>
+    <div class="f">
+      <div class="top"><span class="logo">OROBIA</span></div>
+      <div class="pad" style="flex:1;display:flex;flex-direction:column;justify-content:center;padding-bottom:120px">
+        <div class="hatch" style="height:230px;border-radius:16px"></div>
+        <div style="display:flex;gap:6px;justify-content:center;margin:16px 0 18px"><span class="tok">Rullo smart</span><span class="tok">Potenza</span><span class="tok">Cardio</span></div>
+        <div class="btn pieno">Collega il rullo</div>
+      </div>
+      <div class="nav"><span class="on">Pedala</span><span>Diario</span><span>Tu</span></div>
+    </div>
+  </div>
+
+  <div class="w">
+    <div class="cap"><b>B2 · In collegamento</b>Il selettore è del browser (tratteggio). Il tasto resta dov'era e dice cosa sta succedendo.</div>
+    <div class="f">
+      <div class="top"><span class="logo">OROBIA</span></div>
+      <div class="pad" style="flex:1;display:flex;flex-direction:column;justify-content:center;padding-bottom:120px">
+        <div class="hatch" style="height:230px;border-radius:16px"></div>
+        <div style="height:56px"></div>
+        <div class="btn pieno off">◌ Cerco il rullo</div>
+        <div class="btn" style="margin-top:8px;border:0">Annulla</div>
+      </div>
+      <div class="sys"><b>Selettore di Chrome</b><div class="rowi">KICKR CORE 1A2B</div><div class="rowi">ASSIOMA DUO</div><div class="rowi">HRM-Pro 41022</div><div class="lr" style="margin-top:8px"><span>Annulla</span><b>Accoppia</b></div></div>
+      <div class="nav"><span class="on">Pedala</span><span>Diario</span><span>Tu</span></div>
+    </div>
+  </div>
+
+  <div class="w">
+    <div class="cap"><b>B3 · Fallito</b>Chiuso il selettore senza scegliere: si torna a B1, senza messaggio. Errore vero: questa.</div>
+    <div class="f">
+      <div class="top"><span class="logo">OROBIA</span></div>
+      <div class="pad" style="flex:1;display:flex;flex-direction:column;justify-content:center;padding-bottom:120px">
+        <div class="hatch" style="height:230px;border-radius:16px"></div>
+        <div style="text-align:center;margin:16px 0 18px"><span class="tok">⚠ Collegamento non riuscito</span></div>
+        <div class="btn pieno">Riprova</div>
+        <div class="btn" style="margin-top:8px">Cerca tutti i dispositivi</div>
+      </div>
+      <div class="nav"><span class="on">Pedala</span><span>Diario</span><span>Tu</span></div>
+    </div>
+  </div>
+
+  <div class="w">
+    <div class="cap"><b>B4 · iPhone, Safari: niente Web Bluetooth</b>Una riga che cambia cosa fai, due tasti. Diario e Tu funzionano; la prova si accende da Impostazioni. Su Firefox: «Questo browser non vede il Bluetooth» e «Apri in Chrome o Edge».</div>
+    <div class="f">
+      <div class="top"><span class="logo">OROBIA</span></div>
+      <div class="pad" style="flex:1;display:flex;flex-direction:column;justify-content:center;padding-bottom:120px">
+        <div class="hatch" style="height:230px;border-radius:16px"></div>
+        <div style="text-align:center;margin:16px 0 6px"><b>⚠ Su iPhone il rullo passa da Bluefy</b></div>
+        <div style="text-align:center;margin:0 0 18px" class="t2">Apri questo link in Bluefy</div>
+        <div class="btn pieno">Scarica Bluefy</div>
+        <div class="btn" style="margin-top:8px">Copia il link</div>
+      </div>
+      <div class="nav"><span class="on">Pedala</span><span>Diario</span><span>Tu</span></div>
+    </div>
+  </div>
+
+  <div class="w">
+    <div class="cap"><b>B5 · Ricollega</b>Dopo un riavvio dell'app l'ultimo rullo si ricorda: un tocco, il selettore mostra solo lui. Se il browser lo permette (<code>getDevices</code>) si ricollega da solo.</div>
+    <div class="f">
+      <div class="top"><span class="logo">OROBIA</span></div>
+      <div class="pad" style="flex:1;display:flex;flex-direction:column;justify-content:center;padding-bottom:120px">
+        <div class="hatch" style="height:230px;border-radius:16px"></div>
+        <div style="text-align:center;margin:16px 0 18px"><b>Wahoo KICKR</b></div>
+        <div class="btn pieno">Ricollega</div>
+        <div class="btn" style="margin-top:8px;border:0">Un altro rullo</div>
+      </div>
+      <div class="nav"><span class="on">Pedala</span><span>Diario</span><span>Tu</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================================================== -->
+<h2>3 · Collegato: Dove · Come · Via</h2>
+<p class="lead">Dove e Come ricordano l'ultima scelta: ripetere l'ultimo giro è un tocco, «Via». Cambiare il posto o il tipo è al massimo tre tocchi. Un solo tasto pieno.</p>
+<div class="row">
+  <div class="w">
+    <div class="cap"><b>C1 · Rullo con controllo · Libera</b>Libera: il rullo riceve la pendenza, i watt li fanno le gambe. Il fantasma compare solo dove c'è un record, e mai con un allenamento.</div>
+    <div class="f">
+      <div class="top"><span class="logo">OROBIA</span><span class="chip">● Wahoo KICKR</span></div>
+      <div class="pad">
+        <div class="eye" style="margin-top:2px">Dove</div>
+        <div class="b" style="display:flex;gap:12px">
+          <div class="hatch" style="width:84px;height:84px;border-radius:10px;flex-shrink:0"></div>
+          <div style="flex:1;min-width:0"><div class="lr"><span class="t1">Il giro della Ganda</span><span>›</span></div><div class="t2">Nembro, Gazzaniga, Orezzo, Selvino</div><div class="num" style="margin-top:4px"><b>38,5 km · 897 m</b> <span class="tok">Anello</span></div></div>
+        </div>
+        <div class="lr" style="margin-top:6px"><div style="display:flex;align-items:center;gap:8px"><span class="sq">−</span><b class="num">1 giro</b><span class="sq">+</span></div><span class="btn" style="border:0">Scheda</span></div>
+        <div class="eye">Come</div>
+        <div class="seg" style="grid-template-columns:repeat(3,1fr)"><span class="on">Libera<small>Pendenza</small></span><span>Potenza fissa<small>ERG</small></span><span>Allenamento<small>A blocchi</small></span></div>
+        <div class="rowi" style="margin-top:6px"><div><div class="t1">Contro il record</div><div class="t2 num">1:41:12 · 7 novembre</div></div><span class="sw"></span></div>
+        <div class="btn pieno" style="margin-top:12px">Via</div>
+        <div class="rowi" style="border-bottom:0"><span>Missioni di oggi</span><span class="t2 num">0/3 ›</span></div>
+      </div>
+      <div class="nav"><span class="on">Pedala</span><span>Diario</span><span>Tu</span></div>
+    </div>
+  </div>
+
+  <div class="w">
+    <div class="cap"><b>C2 · Potenza fissa</b>ERG costante: i watt li tiene il rullo, − e + di 5 W (tenuto premuto: 25 W). Parte dall'ultimo valore, la prima volta dal 75 % dell'FTP.</div>
+    <div class="f">
+      <div class="top"><span class="logo">OROBIA</span><span class="chip">● Wahoo KICKR</span></div>
+      <div class="pad">
+        <div class="eye" style="margin-top:2px">Dove</div>
+        <div class="b" style="display:flex;gap:12px">
+          <div class="hatch" style="width:84px;height:84px;border-radius:10px;flex-shrink:0"></div>
+          <div style="flex:1;min-width:0"><div class="lr"><span class="t1">Val Seriana</span><span>›</span></div><div class="t2">Da Ranica a Clusone</div><div class="num" style="margin-top:4px"><b>31,9 km · 485 m</b></div></div>
+        </div>
+        <div class="eye">Come</div>
+        <div class="seg" style="grid-template-columns:repeat(3,1fr)"><span>Libera<small>Pendenza</small></span><span class="on">Potenza fissa<small>ERG</small></span><span>Allenamento<small>A blocchi</small></span></div>
+        <div class="lr" style="margin-top:10px;justify-content:center;gap:18px"><span class="sq">−</span><span class="big num">165 W</span><span class="sq">+</span></div>
+        <div style="text-align:center;margin-top:4px"><span class="tok num">75 % FTP</span> <span class="tok num">≈ 1 h 02</span></div>
+        <div class="btn pieno" style="margin-top:16px">Via</div>
+        <div class="rowi" style="border-bottom:0"><span>Missioni di oggi</span><span class="t2 num">0/3 ›</span></div>
+      </div>
+      <div class="nav"><span class="on">Pedala</span><span>Diario</span><span>Tu</span></div>
+    </div>
+  </div>
+
+  <div class="w">
+    <div class="cap"><b>C3 · Allenamento su un anello</b>Scelto l'allenamento, i giri si propongono da soli: durata ÷ stima del giro ai watt medi dell'allenamento. Si correggono con − +.</div>
+    <div class="f">
+      <div class="top"><span class="logo">OROBIA</span><span class="chip">● Wahoo KICKR</span></div>
+      <div class="pad">
+        <div class="eye" style="margin-top:2px">Dove</div>
+        <div class="b" style="display:flex;gap:12px">
+          <div class="hatch" style="width:84px;height:84px;border-radius:10px;flex-shrink:0"></div>
+          <div style="flex:1;min-width:0"><div class="lr"><span class="t1">Anello da Bergamo</span><span>›</span></div><div class="t2">Città Alta, San Vigilio, Valtesse</div><div class="num" style="margin-top:4px"><b>17,4 km · 310 m</b> <span class="tok">Anello</span></div></div>
+        </div>
+        <div class="lr" style="margin-top:6px"><div style="display:flex;align-items:center;gap:8px"><span class="sq">−</span><b class="num">2 giri · ≈ 58 min</b><span class="sq">+</span></div><span class="btn" style="border:0">Scheda</span></div>
+        <div class="eye">Come</div>
+        <div class="seg" style="grid-template-columns:repeat(3,1fr)"><span>Libera<small>Pendenza</small></span><span>Potenza fissa<small>ERG</small></span><span class="on">Allenamento<small>A blocchi</small></span></div>
+        <div class="b2" style="margin-top:8px"><div class="lr"><span class="t1">Sweet spot 3×8</span><span>›</span></div><div class="wchart" style="margin:6px 0 4px"></div><div class="t2 num">54 min · NP 167 W · TSS 52</div></div>
+        <div class="btn pieno" style="margin-top:12px">Via</div>
+      </div>
+      <div class="nav"><span class="on">Pedala</span><span>Diario</span><span>Tu</span></div>
+    </div>
+  </div>
+
+  <div class="w">
+    <div class="cap"><b>C4 · Solo misuratore di potenza</b>O un rullo che non dà il controllo. Potenza fissa sparisce; l'allenamento si fa a bersaglio, i watt li tieni tu.</div>
+    <div class="f">
+      <div class="top"><span class="logo">OROBIA</span><span class="chip">● Assioma DUO</span></div>
+      <div class="pad">
+        <div class="eye" style="margin-top:2px">Dove</div>
+        <div class="b" style="display:flex;gap:12px">
+          <div class="hatch" style="width:84px;height:84px;border-radius:10px;flex-shrink:0"></div>
+          <div style="flex:1;min-width:0"><div class="lr"><span class="t1">Selvino</span><span>›</span></div><div class="t2">Da Nembro</div><div class="num" style="margin-top:4px"><b>12,6 km · 639 m</b> <span class="tok">Salita</span></div></div>
+        </div>
+        <div class="eye">Come</div>
+        <div class="seg" style="grid-template-columns:repeat(2,1fr)"><span class="on">Libera<small>Senza pendenza</small></span><span>Allenamento<small>A bersaglio</small></span></div>
+        <div class="rowi" style="margin-top:6px"><div><div class="t1">Contro il record</div><div class="t2 num">41:20 · 2 novembre</div></div><span class="sw"></span></div>
+        <div class="btn pieno" style="margin-top:12px">Via</div>
+      </div>
+      <div class="nav"><span class="on">Pedala</span><span>Diario</span><span>Tu</span></div>
+    </div>
+  </div>
+
+  <div class="w">
+    <div class="cap"><b>C5 · Solo cardio</b>Senza potenza non si va avanti: resta il tasto del rullo. La fascia è già tenuta e si aggiunge da sola al rullo.</div>
+    <div class="f">
+      <div class="top"><span class="logo">OROBIA</span><span class="chip">● HRM-Pro</span></div>
+      <div class="pad" style="flex:1;display:flex;flex-direction:column;justify-content:center;padding-bottom:120px">
+        <div class="hatch" style="height:230px;border-radius:16px"></div>
+        <div style="text-align:center;margin:16px 0 18px"><span class="tok">⚠ Manca la potenza</span></div>
+        <div class="btn pieno">Collega il rullo</div>
+      </div>
+      <div class="nav"><span class="on">Pedala</span><span>Diario</span><span>Tu</span></div>
+    </div>
+  </div>
+
+  <div class="w">
+    <div class="cap"><b>C6 · Il chip del rullo</b>Cosa sa fare quello che è collegato, in gettoni. Da qui si aggiunge la fascia o si cambia rullo.</div>
+    <div class="f">
+      <div class="top"><span class="logo">OROBIA</span><span class="chip">● Wahoo KICKR</span></div>
+      <div class="veil"></div>
+      <div class="sheet" style="height:360px">
+        <div class="grab"></div>
+        <div class="pad">
+          <div class="lr"><span class="xl">Wahoo KICKR</span><span class="btn" style="border:0">Chiudi</span></div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0"><span class="tok">Pendenza ✓</span><span class="tok">ERG ✓</span><span class="tok">Potenza ✓</span><span class="tok">Cadenza ✓</span><span class="tok">Cardio —</span></div>
+          <div class="rowi"><span class="t1">Aggiungi la fascia cardio</span><span>›</span></div>
+          <div class="rowi"><span class="t1">Un altro rullo</span><span>›</span></div>
+          <div class="rowi" style="border:0"><span class="t1">Scollega</span><span></span></div>
+        </div>
+      </div>
+      <div class="nav"><span class="on">Pedala</span><span>Diario</span><span>Tu</span></div>
+    </div>
+  </div>
+</div>
+
+<h3>Oggi dentro Pedala</h3>
+<div class="row">
+  <div class="w">
+    <div class="cap"><b>I3 · Sessione aperta e programma</b>Due righe sopra Dove, solo quando valgono. «Entra» porta dritto in corsa (la sessione decide dove e come). «Usa» riempie Dove e Come con il giorno del programma. Il tasto pieno resta «Via».</div>
+    <div class="f">
+      <div class="top"><span class="logo">OROBIA</span><span class="chip">● Wahoo KICKR</span></div>
+      <div class="pad">
+        <div class="b2 lr"><div><div class="t1"><span class="tok">Gruppo</span> Colle Gallo</div><div class="t2 num">Passo C · 1,9 W/kg · Via fra 3:56</div></div><span class="btn">Entra</span></div>
+        <div class="b2 lr" style="margin-top:8px"><div><div class="t1">Oggi nel programma</div><div class="t2 num">Soglia 2×20′ · Selvino</div></div><span class="btn">Usa</span></div>
+        <div class="eye">Dove</div>
+        <div class="b" style="display:flex;gap:12px">
+          <div class="hatch" style="width:84px;height:84px;border-radius:10px;flex-shrink:0"></div>
+          <div style="flex:1;min-width:0"><div class="lr"><span class="t1">Il giro della Ganda</span><span>›</span></div><div class="t2">Nembro, Gazzaniga, Orezzo, Selvino</div><div class="num" style="margin-top:4px"><b>38,5 km · 897 m</b> <span class="tok">Anello</span></div></div>
+        </div>
+        <div class="eye">Come</div>
+        <div class="seg" style="grid-template-columns:repeat(3,1fr)"><span class="on">Libera<small>Pendenza</small></span><span>Potenza fissa<small>ERG</small></span><span>Allenamento<small>A blocchi</small></span></div>
+        <div class="btn pieno" style="margin-top:14px">Via</div>
+        <div class="rowi" style="border-bottom:0"><span>Missioni di oggi</span><span class="t2 num">1/3 ›</span></div>
+      </div>
+      <div class="nav"><span class="on">Pedala</span><span>Diario</span><span>Tu</span></div>
+    </div>
+  </div>
+
+  <div class="w">
+    <div class="cap"><b>I1 · Primo avvio</b>Mondo, nome, peso, FTP, «Entra»: poi B1. Via le tre righe di presentazione e la FC max (va in Impostazioni). Il mondo leggero scelto comincia a scendere da solo.</div>
+    <div class="f">
+      <div class="top"><span class="logo">OROBIA</span></div>
+      <div class="pad">
+        <div style="font-size:40px;font-weight:800;line-height:1">Pedala sulle strade vere.</div>
+        <div class="eye">Da dove cominci</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div class="b" style="padding:0;overflow:hidden;border-width:2px;border-color:#555"><div class="hatch" style="height:100px;border:0"></div><div style="padding:8px"><b>Bergamo e le valli</b><div class="t2">Città Alta, Brembana, Seriana</div></div></div>
+          <div class="b" style="padding:0;overflow:hidden"><div class="hatch" style="height:100px;border:0"></div><div style="padding:8px"><b>Sellaronda</b><div class="t2">Sella, Pordoi, Gardena</div></div></div>
+        </div>
+        <div style="margin-top:14px">Come ti chiami</div>
+        <div class="b2" style="height:48px;margin-top:4px;color:#888">Il tuo nome</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
+          <div>Peso, kg<div class="b2 num" style="height:48px;margin-top:4px">78</div></div>
+          <div>FTP, W<div class="b2 num" style="height:48px;margin-top:4px">220</div></div>
+        </div>
+        <div class="btn pieno" style="margin-top:20px">Entra</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3>Sul computer</h3>
+<div class="scroll">
+  <div class="w">
+    <div class="cap pc-cap"><b>P1 · Pedala a 1280</b>Dove non è un foglio: carta e lista a sinistra, Come e Via fissi a destra. Un clic sulla riga, un clic su Via. La barra diventa la colonna a sinistra, con le sezioni di Tu sotto.</div>
+    <div class="f pc">
+      <div class="rail"><div class="logo" style="padding:0 12px 18px">OROBIA</div><div class="it on">Pedala</div><div class="it">Diario</div><div class="it">Tu</div><div class="sub">Garage</div><div class="sub">Traguardi</div><div class="sub">Classifiche</div><div class="sub">Allenamenti</div><div class="sub">Impostazioni</div></div>
+      <div style="flex:1;display:flex;flex-direction:column">
+        <div class="top" style="padding:0 28px"><span class="xl">Pedala</span><span class="chip">● Wahoo KICKR</span></div>
+        <div style="flex:1;display:grid;grid-template-columns:1fr 380px;gap:24px;padding:0 28px 24px">
+          <div style="display:flex;flex-direction:column;gap:10px;min-height:0">
+            <div class="lr"><span class="chip">Bergamo e le valli ▾</span><span class="tok">Intero ✓</span></div>
+            <div class="hatch" style="height:330px;border-radius:14px"></div>
+            <div style="display:flex;gap:8px"><span class="chip">Giro libero</span><span class="chip">Crea un anello</span><span class="chip">A → B</span><span style="flex:1"></span><span class="chip" style="background:#cdcdcd">Tutti</span><span class="chip">Anelli</span><span class="chip">Salite</span><span class="chip">Tuoi giri</span></div>
+            <div style="overflow:hidden">
+              <div class="rowi" style="background:#e3e3e3;padding:6px 10px"><div><b>Il giro della Ganda</b> <span class="tok">Anello</span><div class="t2">Nembro, Gazzaniga, Orezzo, Selvino</div></div><span class="num">38,5 km · 897 m</span></div>
+              <div class="rowi" style="padding:6px 10px"><div><b>Selvino</b> <span class="tok">Salita</span><div class="t2">Da Nembro · Record 41:20</div></div><span class="num">12,6 km · 639 m</span></div>
+              <div class="rowi" style="padding:6px 10px"><div><b>Colle Gallo</b> <span class="tok">Salita</span><div class="t2">Da Albino</div></div><span class="num">11,0 km · 465 m</span></div>
+            </div>
+          </div>
+          <div class="b" style="background:#f0f0f0;display:flex;flex-direction:column;gap:8px;align-self:start">
+            <div class="t1">Il giro della Ganda</div><div class="t2 num">38,5 km · 897 m · 1 giro</div>
+            <div class="alt" style="margin:4px 0"></div>
+            <div class="eye" style="margin:6px 0 0">Come</div>
+            <div class="seg" style="grid-template-columns:repeat(3,1fr)"><span class="on">Libera<small>Pendenza</small></span><span>Potenza fissa<small>ERG</small></span><span>Allenamento<small>A blocchi</small></span></div>
+            <div class="rowi"><div><div class="t1">Contro il record</div><div class="t2 num">1:41:12</div></div><span class="sw"></span></div>
+            <div class="btn pieno">Via</div>
+            <div class="rowi" style="border:0"><span>Missioni di oggi</span><span class="t2 num">0/3</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================================================== -->
+<h2>4 · Dove</h2>
+<p class="lead">Un foglio a tutta altezza. Un tocco su una riga sceglie e chiude: nessun secondo «Pedala». La scheda del percorso (luoghi, tratti, classifica) si apre da «Scheda» in Pedala.</p>
+<div class="row">
+  <div class="w">
+    <div class="cap"><b>D1 · Dove</b>Tre strumenti in testa, quattro filtri, poi la lista per gruppo. Le quattro salite verificate diventano «Grandi salite». Il catalogo senza traccia esce.</div>
+    <div class="f">
+      <div class="veil" style="background:rgba(230,230,230,.9)"></div>
+      <div class="sheet" style="top:24px;bottom:0">
+        <div class="grab"></div>
+        <div class="pad">
+          <div class="lr"><span class="xl">Dove</span><span class="btn" style="border:0">Chiudi</span></div>
+          <div class="lr" style="margin-top:6px"><span class="chip">Bergamo e le valli ▾</span><span class="tok">Intero ✓</span></div>
+          <div class="hatch" style="height:190px;border-radius:12px;margin-top:8px"></div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px"><span class="btn">Giro libero</span><span class="btn">Crea un anello</span><span class="btn">A → B</span></div>
+          <div style="display:flex;gap:6px;margin-top:8px"><span class="chip" style="background:#cdcdcd">Tutti</span><span class="chip">Anelli</span><span class="chip">Salite</span><span class="chip">Tuoi giri</span></div>
+          <div class="eye">Anelli</div>
+          <div class="rowi"><div><div class="t1">Il giro della Ganda</div><div class="t2">Nembro, Gazzaniga, Orezzo, Selvino</div></div><span class="num t2">38,5 km<br>897 m</span></div>
+          <div class="eye">Salite</div>
+          <div class="rowi"><div><div class="t1">Selvino</div><div class="t2 num">Da Nembro · Record 41:20</div></div><span class="num t2">12,6 km<br>639 m</span></div>
+          <div class="rowi"><div><div class="t1">Colle Gallo</div><div class="t2">Da Albino</div></div><span class="num t2">11,0 km<br>465 m</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="w">
+    <div class="cap"><b>D2 · Crea un anello</b>Un generatore solo (quello di Mondo, con le strade). Con un allenamento scelto, «Lunghezza» diventa «Per 54 min» e la cerca da sé. Toccare una proposta la sceglie.</div>
+    <div class="f">
+      <div class="veil" style="background:rgba(230,230,230,.9)"></div>
+      <div class="sheet" style="top:24px;bottom:0">
+        <div class="grab"></div>
+        <div class="pad">
+          <div class="lr"><span class="chip">‹ Dove</span><span class="btn" style="border:0">Chiudi</span></div>
+          <div class="xl" style="margin-top:8px">Crea un anello</div>
+          <div class="lr" style="margin-top:10px"><span>Partenza</span><span class="chip">Bergamo ▾</span></div>
+          <div class="lr" style="margin-top:8px"><span>Lunghezza</span><span style="display:flex;align-items:center;gap:8px"><span class="sq">−</span><b class="num">20 km</b><span class="sq">+</span></span></div>
+          <div class="seg" style="grid-template-columns:repeat(3,1fr);margin-top:10px"><span>Pianeggiante</span><span class="on">Misto</span><span>In salita</span></div>
+          <div class="btn pieno" style="margin-top:12px">Cerca</div>
+          <div class="hatch" style="height:150px;border-radius:12px;margin-top:10px"></div>
+          <div class="rowi"><div><div class="t1">Città Alta · San Vigilio · Valtesse</div><div class="t2 num">4 % di strada ripetuta</div></div><span class="num t2">17,4 km<br>310 m</span></div>
+          <div class="rowi"><div><div class="t1">Seriate · Pedrengo · Gorle</div><div class="t2 num">0 % di strada ripetuta</div></div><span class="num t2">21,0 km<br>96 m</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="w">
+    <div class="cap"><b>E1 · Scegli l'allenamento</b>Un foglio, una riga per allenamento: tocco = scelto, si torna a Pedala. L'ultimo usato in cima. Duplica, Esporta .zwo, Nuovo e Programmi stanno in Tu › Allenamenti.</div>
+    <div class="f">
+      <div class="veil" style="background:rgba(230,230,230,.9)"></div>
+      <div class="sheet" style="top:24px;bottom:0">
+        <div class="grab"></div>
+        <div class="pad">
+          <div class="lr"><span class="xl">Allenamento</span><span class="btn" style="border:0">Chiudi</span></div>
+          <div style="display:flex;gap:6px;margin-top:8px"><span class="chip" style="background:#cdcdcd">Tutti</span><span class="chip">Fondo</span><span class="chip">Tempo</span><span class="chip">Soglia</span><span class="chip">VO2</span></div>
+          <div style="display:flex;gap:6px;margin-top:6px"><span class="chip" style="background:#cdcdcd">Ogni durata</span><span class="chip">Fino a 45′</span><span class="chip">45–75′</span></div>
+          <div class="rowi" style="margin-top:6px"><div style="flex:1"><div class="lr"><span class="t1">Sweet spot 3×8</span><span class="tok">Ultimo</span></div><div class="wchart" style="margin:5px 0 3px;height:22px"></div><div class="t2 num">54 min · NP 167 W · TSS 52</div></div></div>
+          <div class="rowi"><div style="flex:1"><div class="t1">Fondo</div><div class="wchart" style="margin:5px 0 3px;height:22px;background:#d5d5d5"></div><div class="t2 num">55 min · NP 138 W · TSS 36</div></div></div>
+          <div class="rowi"><div style="flex:1"><div class="t1">Soglia 2×20′</div><div class="wchart" style="margin:5px 0 3px;height:22px"></div><div class="t2 num">1 h 10 · NP 195 W · TSS 92</div></div></div>
+          <div class="rowi"><div style="flex:1"><div class="t1">VO2max 5×4′</div><div class="wchart" style="margin:5px 0 3px;height:22px"></div><div class="t2 num">1 h 00 · NP 199 W · TSS 82</div></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="w">
+    <div class="cap"><b>E2 · Allenamento su un percorso che non è un anello</b>Si va e si torna sulla stessa strada: andata, andata e ritorno, e così via. La riga sotto propone l'anello giusto per la durata: un tocco lo mette in Dove.</div>
+    <div class="f">
+      <div class="top"><span class="logo">OROBIA</span><span class="chip">● Wahoo KICKR</span></div>
+      <div class="pad">
+        <div class="eye" style="margin-top:2px">Dove</div>
+        <div class="b" style="display:flex;gap:12px">
+          <div class="hatch" style="width:84px;height:84px;border-radius:10px;flex-shrink:0"></div>
+          <div style="flex:1;min-width:0"><div class="lr"><span class="t1">Selvino</span><span>›</span></div><div class="t2">Da Nembro</div><div class="num" style="margin-top:4px"><b>12,6 km · 639 m</b> <span class="tok">Salita</span></div></div>
+        </div>
+        <div class="seg" style="grid-template-columns:repeat(2,1fr);margin-top:8px;min-height:44px"><span>Andata · 41 min</span><span class="on">Andata e ritorno · 58 min</span></div>
+        <div class="rowi"><span>Anello da Nembro per 54 min</span><span class="t2">›</span></div>
+        <div class="eye">Come</div>
+        <div class="seg" style="grid-template-columns:repeat(3,1fr)"><span>Libera<small>Pendenza</small></span><span>Potenza fissa<small>ERG</small></span><span class="on">Allenamento<small>A blocchi</small></span></div>
+        <div class="b2" style="margin-top:8px"><div class="lr"><span class="t1">Sweet spot 3×8</span><span>›</span></div><div class="t2 num">54 min · NP 167 W</div></div>
+        <div class="btn pieno" style="margin-top:12px">Via</div>
+      </div>
+      <div class="nav"><span class="on">Pedala</span><span>Diario</span><span>Tu</span></div>
+    </div>
+  </div>
+</div>
+
+<table style="margin-top:16px">
+  <tr><th>Dove</th><th>Con un allenamento</th><th>A fine allenamento</th><th>A fine strada, allenamento non finito</th></tr>
+  <tr><td>Anello (si chiude su sé stesso)</td><td>Giri proposti: ⌈durata ÷ stima del giro⌉</td><td>Il rullo torna Libera; si finisce al traguardo dell'ultimo giro</td><td>Un giro in più, da solo; avviso «Giro in più»</td></tr>
+  <tr><td>Percorso aperto, salita</td><td>Andata, o andata e ritorno se la durata supera l'andata</td><td>Libera fino alla fine del passaggio</td><td>Si gira e si torna (inversione), un passaggio in più</td></tr>
+  <tr><td>Giro libero</td><td>Nessun giro: si va finché dura</td><td>Libera, si chiude con Termina</td><td>—</td></tr>
+  <tr><td>Grande salita fuori dal mondo (Mortirolo, Stelvio)</td><td>⚠ «Finisce in cima · 38 di 54 min»</td><td>Libera fino in cima</td><td>Si arriva in cima e si chiude (come oggi)</td></tr>
+  <tr><td>Un tuo giro (replay)</td><td>«Watt di allora» al posto di Allenamento</td><td>—</td><td>Si chiude alla fine della traccia</td></tr>
+</table>
+
+<!-- ===================================================== -->
+<h2>5 · Modalità prova</h2>
+<p class="lead">Il simulatore non parte più da solo. Si accende in Impostazioni (A4). Accesa e senza rullo, Pedala ha tutte le opzioni. Il rullo collegato vince sempre sulla prova.</p>
+<div class="row">
+  <div class="w">
+    <div class="cap"><b>F2 · Pedala in prova</b>Il chip dice «Prova» al posto del rullo; toccandolo: «Collega il rullo» e «Spegni la prova».</div>
+    <div class="f">
+      <div class="top"><span class="logo">OROBIA</span><span class="chip">◐ Prova</span></div>
+      <div class="pad">
+        <div class="eye" style="margin-top:2px">Dove</div>
+        <div class="b" style="display:flex;gap:12px">
+          <div class="hatch" style="width:84px;height:84px;border-radius:10px;flex-shrink:0"></div>
+          <div style="flex:1;min-width:0"><div class="lr"><span class="t1">Il giro della Ganda</span><span>›</span></div><div class="t2">Nembro, Gazzaniga, Orezzo, Selvino</div><div class="num" style="margin-top:4px"><b>38,5 km · 897 m</b> <span class="tok">Anello</span></div></div>
+        </div>
+        <div class="eye">Come</div>
+        <div class="seg" style="grid-template-columns:repeat(3,1fr)"><span class="on">Libera<small>Pendenza</small></span><span>Potenza fissa<small>ERG</small></span><span>Allenamento<small>A blocchi</small></span></div>
+        <div class="btn pieno" style="margin-top:16px">Via</div>
+      </div>
+      <div class="nav"><span class="on">Pedala</span><span>Diario</span><span>Tu</span></div>
+    </div>
+  </div>
+
+  <div class="w">
+    <div class="cap"><b>F4 · Fine di un giro di prova</b>Nel Diario col gettone «Prova». Niente classifica, record, fantasma, oro, punti, missioni, traguardi; niente esportazione (Strava avrebbe un giro finto).</div>
+    <div class="f">
+      <div class="pad" style="padding-top:28px">
+        <div class="lr"><span class="tok">Prova</span><span class="t2">Giro salvato</span></div>
+        <div class="xl" style="margin-top:10px">Arrivato</div>
+        <div class="t2">Il giro della Ganda</div>
+        <div class="hatch" style="height:180px;border-radius:12px;margin-top:12px"></div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px" class="num"><div class="b2"><b>1:38:20</b><div class="t2">Tempo</div></div><div class="b2"><b>38,5 km</b><div class="t2">Distanza</div></div><div class="b2"><b>171 W</b><div class="t2">Media</div></div></div>
+        <div style="margin-top:12px"><span class="tok">Niente classifica né oro</span></div>
+        <div class="btn pieno" style="margin-top:18px">Fatto</div>
+        <div class="btn" style="margin-top:8px;border:0">Scarta</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================================================== -->
+<h2>6 · Senza rete</h2>
+<p class="lead">L'app si apre sempre (il guscio è nel service worker). Una parola: «Offline». Il mondo leggero (strade, terreno lontano, nomi; niente case né terreno fine) scende da solo al primo avvio, 2,4 MB: basta per pedalare ogni percorso. Il mondo intero si scarica in Impostazioni.</p>
+<div class="row">
+  <div class="w">
+    <div class="cap"><b>G1 · Pedala offline, mondo leggero</b>Il gettone «Leggero» sulla carta di Dove. Sessioni e stanze non ci sono; le missioni sì.</div>
+    <div class="f">
+      <div class="top"><span class="logo">OROBIA</span><span style="display:flex;gap:6px"><span class="chip">Offline</span><span class="chip">● KICKR</span></span></div>
+      <div class="pad">
+        <div class="eye" style="margin-top:2px">Dove</div>
+        <div class="b" style="display:flex;gap:12px">
+          <div class="hatch" style="width:84px;height:84px;border-radius:10px;flex-shrink:0"></div>
+          <div style="flex:1;min-width:0"><div class="lr"><span class="t1">Il giro della Ganda</span><span>›</span></div><div class="t2">Nembro, Gazzaniga, Orezzo, Selvino</div><div class="num" style="margin-top:4px"><b>38,5 km · 897 m</b> <span class="tok">Leggero</span></div></div>
+        </div>
+        <div class="eye">Come</div>
+        <div class="seg" style="grid-template-columns:repeat(3,1fr)"><span class="on">Libera<small>Pendenza</small></span><span>Potenza fissa<small>ERG</small></span><span>Allenamento<small>A blocchi</small></span></div>
+        <div class="btn pieno" style="margin-top:16px">Via</div>
+        <div class="rowi" style="border-bottom:0"><span>Missioni di oggi</span><span class="t2 num">0/3 ›</span></div>
+      </div>
+      <div class="nav"><span class="on">Pedala</span><span>Diario</span><span>Tu</span></div>
+    </div>
+  </div>
+
+  <div class="w">
+    <div class="cap"><b>G2 · Dove offline, niente in cache</b>Il caso raro (primo avvio senza rete). Si pedalano le grandi salite (nel guscio) e i tuoi giri; le righe del mondo dicono «Offline».</div>
+    <div class="f">
+      <div class="veil" style="background:rgba(230,230,230,.9)"></div>
+      <div class="sheet" style="top:24px;bottom:0">
+        <div class="grab"></div>
+        <div class="pad">
+          <div class="lr"><span class="xl">Dove</span><span class="btn" style="border:0">Chiudi</span></div>
+          <div class="lr" style="margin-top:6px"><span class="chip">Bergamo e le valli ▾</span><span class="tok">Offline</span></div>
+          <div class="eye">Grandi salite</div>
+          <div class="rowi"><div><div class="t1">Mortirolo</div><div class="t2">Da Mazzo di Valtellina</div></div><span class="t2">›</span></div>
+          <div class="rowi"><div><div class="t1">Stelvio</div><div class="t2">Da Prato allo Stelvio</div></div><span class="t2">›</span></div>
+          <div class="eye">Tuoi giri</div>
+          <div class="rowi"><div><div class="t1">Giro del lago</div><div class="t2 num">62,0 km · 7 novembre</div></div><span class="t2">›</span></div>
+          <div class="eye">Anelli</div>
+          <div class="rowi off"><div><div class="t1">Il giro della Ganda</div><div class="t2">Nembro, Gazzaniga, Orezzo, Selvino</div></div><span class="tok">Offline</span></div>
+          <div class="eye">Salite</div>
+          <div class="rowi off"><div><div class="t1">Selvino</div><div class="t2">Da Nembro</div></div><span class="tok">Offline</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="w">
+    <div class="cap"><b>G3 · Impostazioni › Mondi</b>Leggero e intero per ogni mondo. Lo scarico si ferma e riparte da dov'era.</div>
+    <div class="f">
+      <div class="top"><span class="chip">‹ Impostazioni</span><span></span></div>
+      <div class="pad">
+        <div class="xl">Mondi senza rete</div>
+        <div class="eye">Bergamo e le valli</div>
+        <div class="rowi"><div><div class="t1">Leggero</div><div class="t2 num">Strade, terreno lontano, nomi · 2,4 MB</div></div><span class="tok">✓</span></div>
+        <div class="rowi" style="flex-wrap:wrap"><div><div class="t1">Intero</div><div class="t2 num">Scarico · 9 di 20 MB</div></div><span class="btn">Ferma</span><div class="bar" style="width:100%"><i style="width:45%"></i></div></div>
+        <div class="eye">Sellaronda</div>
+        <div class="rowi"><div><div class="t1">Leggero</div><div class="t2 num">1,1 MB</div></div><span class="btn">Scarica</span></div>
+        <div class="rowi"><div><div class="t1">Intero</div><div class="t2 num">14 MB</div></div><span class="btn">Scarica</span></div>
+        <div class="eye">Spazio</div>
+        <div class="rowi"><span>Usato da OROBIA</span><span class="num">11,4 MB</span></div>
+      </div>
+      <div class="nav"><span>Pedala</span><span>Diario</span><span class="on">Tu</span></div>
+    </div>
+  </div>
+
+  <div class="w">
+    <div class="cap"><b>G4 · Corsa nel mondo leggero</b>«Leggero» accanto al titolo. Strada sulle sue quote, terreno lontano anche vicino, nomi; niente case. Pronto subito, senza aspettare le mattonelle.</div>
+    <div class="f">
+      <div class="hatch" style="flex:1;position:relative;border:0">
+        <div style="position:absolute;top:10px;left:10px;right:10px;display:flex;gap:8px;align-items:flex-start"><span class="round">‹</span><div class="pill" style="flex:1"><b>Il giro della Ganda</b> <span class="tok">Leggero</span><div class="t2">Gazzaniga · SP41 · 794 m</div></div><span class="round">●</span></div>
+        <div style="position:absolute;top:96px;right:10px" class="pill num">▲ Passo di Ganda fra 3,1 km</div>
+        <div style="position:absolute;left:50%;top:48%;transform:translate(-50%,-50%);width:150px;text-align:center" class="pill">Strada, terreno lontano, nomi</div>
+        <div style="position:absolute;left:10px;right:10px;bottom:10px" class="alt"><i></i></div>
+      </div>
+      <div class="dock">
+        <div class="nums num"><div><span class="big">135</span> W<small>Z2 · 1,7 W/kg</small></div><div><span class="big">0:18</span><small>Tempo</small></div><div><span class="big">22,5</span><small>km all’arrivo</small></div></div>
+        <div class="sec num"><span><b>12,0</b> km/h</span><b>+4,0 %</b><span><b>88</b> rpm</span><span>FC <b>112</b></span></div>
+        <div class="ctl"><span class="btn">Pausa</span><span class="btn">◉ Termina</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================================================== -->
+<h2>7 · In corsa</h2>
+<p class="lead">Tre cifre grandi sempre (watt, tempo, km). Il tipo aggiunge una riga sola sopra: niente per Libera, il bersaglio con − + per Potenza fissa, il blocco dell'ERG per Allenamento, sforzo e velocità per Prova. Nessun tasto pieno in corsa.</p>
+<div class="row">
+  <div class="w">
+    <div class="cap"><b>H1 · Libera</b>La pendenza è la cifra che conta dopo i watt: in grassetto nella riga sotto. Il chip in alto a destra è il rullo: ● collegato, ◐ prova.</div>
+    <div class="f">
+      <div class="hatch" style="flex:1;position:relative;border:0">
+        <div style="position:absolute;top:10px;left:10px;right:10px;display:flex;gap:8px;align-items:flex-start"><span class="round">‹</span><div class="pill" style="flex:1"><b>Il giro della Ganda</b><div class="t2">Gazzaniga · SP41 · 794 m</div></div><span class="round">●</span></div>
+        <div style="position:absolute;top:92px;left:10px" class="pill num"><b>GPM</b> Passo di Ganda · 0:16,1</div>
+        <div style="position:absolute;top:92px;right:10px" class="pill">6° · Aria ferma</div>
+        <div style="position:absolute;right:12px;bottom:66px;width:96px;height:96px;border-radius:48px" class="pill"></div>
+        <div style="position:absolute;left:10px;right:10px;bottom:10px" class="alt"><i></i></div>
+      </div>
+      <div class="dock">
+        <div class="nums num"><div><span class="big">138</span> W<small>Z2 · 1,8 W/kg</small></div><div><span class="big">16:02</span><small>Tempo</small></div><div><span class="big">31,4</span><small>km all’arrivo</small></div></div>
+        <div class="sec num"><span><b>16,3</b> km/h</span><b>+6,1 %</b><span><b>87</b> rpm</span><span>FC <b>124</b></span></div>
+        <div class="ctl"><span class="btn">Pausa</span><span class="btn">◉ Termina</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="w">
+    <div class="cap"><b>H2 · Potenza fissa</b>Il bersaglio con − + sopra le cifre; i watt grandi sono quelli veri. La pendenza c'è ma non va al rullo.</div>
+    <div class="f">
+      <div class="hatch" style="flex:1;position:relative;border:0">
+        <div style="position:absolute;top:10px;left:10px;right:10px;display:flex;gap:8px;align-items:flex-start"><span class="round">‹</span><div class="pill" style="flex:1"><b>Val Seriana</b><div class="t2">Albino · Via Provinciale · 342 m</div></div><span class="round">●</span></div>
+        <div style="position:absolute;left:10px;right:10px;bottom:10px" class="alt"><i></i></div>
+      </div>
+      <div class="dock">
+        <div class="lr" style="margin-bottom:8px"><span class="tok">Potenza fissa</span><span style="display:flex;align-items:center;gap:12px"><span class="sq">−</span><span class="xl num">165 W</span><span class="sq">+</span></span></div>
+        <div class="nums num"><div><span class="big">163</span> W<small>Z3 · 2,1 W/kg</small></div><div><span class="big">22:40</span><small>Tempo</small></div><div><span class="big">19,8</span><small>km all’arrivo</small></div></div>
+        <div class="sec num"><span><b>31,2</b> km/h</span><b>+0,8 %</b><span><b>91</b> rpm</span><span>FC <b>138</b></span></div>
+        <div class="ctl"><span class="btn">Pausa</span><span class="btn">◉ Termina</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="w">
+    <div class="cap"><b>H3 · Allenamento su un anello</b>«Giro 2 di 2» accanto al titolo; l'altimetria è quella del giro, col traguardo. Il blocco dell'ERG sopra le cifre col tempo che resta. A fine allenamento: «Allenamento finito · Traguardo fra 2,3 km».</div>
+    <div class="f">
+      <div class="hatch" style="flex:1;position:relative;border:0">
+        <div style="position:absolute;top:10px;left:10px;right:10px;display:flex;gap:8px;align-items:flex-start"><span class="round">‹</span><div class="pill" style="flex:1"><b>Anello da Bergamo</b> <span class="tok num">Giro 2 di 2</span><div class="t2">Città Alta · Via Sudorno · 410 m</div></div><span class="round">●</span></div>
+        <div style="position:absolute;top:96px;left:10px" class="pill num">Giro 1 · 28:51</div>
+        <div style="position:absolute;left:10px;right:10px;bottom:10px" class="alt"><i style="left:22%"></i></div>
+      </div>
+      <div class="dock">
+        <div class="lr"><div><span class="tok">ERG</span> <b class="num">205 W</b><div class="t1">Sweet spot 2 di 3</div></div><span class="xl num">6:12</span></div>
+        <div class="wchart" style="margin:6px 0 8px"></div>
+        <div class="nums num"><div><span class="big">204</span> W<small>Z3 · 2,6 W/kg</small></div><div><span class="big">33:48</span><small>Tempo</small></div><div><span class="big">13,1</span><small>km al traguardo</small></div></div>
+        <div class="ctl"><span class="btn">Pausa</span><span class="btn">◉ Termina</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="w">
+    <div class="cap"><b>H4 · Prova</b>«Prova» nel titolo, sempre. Sforzo e velocità del tempo in una riga sola, solo qui.</div>
+    <div class="f">
+      <div class="hatch" style="flex:1;position:relative;border:0">
+        <div style="position:absolute;top:10px;left:10px;right:10px;display:flex;gap:8px;align-items:flex-start"><span class="round">‹</span><div class="pill" style="flex:1"><span class="tok">Prova</span> <b>Il giro della Ganda</b><div class="t2">Nembro · Via Roma · 309 m</div></div><span class="round">◐</span></div>
+        <div style="position:absolute;left:10px;right:10px;bottom:10px" class="alt"><i></i></div>
+      </div>
+      <div class="dock">
+        <div class="nums num"><div><span class="big">136</span> W<small>Z2 · 1,7 W/kg</small></div><div><span class="big">4:10</span><small>Tempo</small></div><div><span class="big">36,9</span><small>km all’arrivo</small></div></div>
+        <div class="sec num"><span><b>27,4</b> km/h</span><b>+1,2 %</b><span><b>85</b> rpm</span></div>
+        <div class="ctl"><span class="btn">Pausa</span><span class="btn">◉ Termina</span></div>
+        <div class="lr" style="margin-top:8px"><span>Sforzo</span><div class="bar" style="flex:1;height:10px"><i style="width:62%"></i></div><span class="num">62 %</span><span style="display:flex;gap:4px"><span class="sq" style="font-size:14px;background:#cdcdcd">1×</span><span class="sq" style="font-size:14px">4×</span><span class="sq" style="font-size:14px">10×</span></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="w">
+    <div class="cap"><b>H5 · Pausa</b>Come oggi (A4 del 04/11). Con Potenza fissa la ripresa riparte dallo stesso bersaglio. L'autopausa a rullo fermo resta.</div>
+    <div class="f">
+      <div class="hatch" style="flex:1;position:relative;border:0;opacity:.5"></div>
+      <div class="veil" style="background:rgba(235,235,235,.93)"></div>
+      <div style="position:absolute;left:36px;right:36px;top:250px;text-align:center">
+        <div class="xl" style="font-size:44px">In pausa</div>
+        <div class="num" style="margin:8px 0 18px"><b>24:10 · 8,4 km</b></div>
+        <div class="btn pieno">Riprendi</div>
+        <div class="btn" style="margin-top:8px">Termina e salva</div>
+        <div class="btn" style="margin-top:8px;justify-content:space-between"><span>Impostazioni</span><span>▾</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="w">
+    <div class="cap"><b>H6 · Fine</b>Il giro è già salvato. Classifica solo per Libera e Potenza fissa su un percorso fatto tutto; con un allenamento no (come oggi). Senza rete il tempo parte quando torna la rete.</div>
+    <div class="f">
+      <div class="pad" style="padding-top:28px">
+        <div class="lr"><span class="t2">Giro salvato</span><span class="tok num">+52 punti · +40 oro</span></div>
+        <div class="xl" style="margin-top:10px">Arrivato</div>
+        <div class="t2">Anello da Bergamo · 2 giri · Sweet spot 3×8</div>
+        <div class="hatch" style="height:180px;border-radius:12px;margin-top:12px"></div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px" class="num"><div class="b2"><b>58:40</b><div class="t2">Tempo</div></div><div class="b2"><b>34,8 km</b><div class="t2">Distanza</div></div><div class="b2"><b>TSS 54</b><div class="t2">Carico</div></div></div>
+        <div class="rowi"><span>Giro 1 · 28:51</span><span>Giro 2 · 29:49</span></div>
+        <div class="btn pieno" style="margin-top:14px">Fatto</div>
+        <div class="btn" style="margin-top:8px;border:0">Esporta FIT</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3>Orizzontale, 844 × 390 (il computer usa lo stesso impianto, scalato)</h3>
+<div class="row">
+  <div class="w">
+    <div class="cap oriz-cap"><b>O1 · Libera</b>3D a tutto schermo; una striscia di vetro in basso con pendenza, cifre e comandi.</div>
+    <div class="f oriz"><div class="hatch" style="position:absolute;inset:0;border:0"></div>
+      <div style="position:absolute;top:8px;left:10px;right:10px;display:flex;gap:8px"><span class="round">‹</span><div class="pill"><b>Il giro della Ganda</b> <span class="t2">· Gazzaniga · 794 m</span></div><span style="flex:1"></span><span class="pill">6° · Aria ferma</span><span class="round">●</span></div>
+      <div class="glass"><div style="width:118px;white-space:nowrap"><span class="xl num">+6,1 %</span><div class="t2">Pendenza</div></div><div class="nums num" style="flex:1"><div><span class="big">138</span> W</div><div><span class="big">16:02</span></div><div><span class="big">31,4</span> km</div></div><span class="btn" style="width:96px">Pausa</span><span class="btn" style="width:120px">◉ Termina</span></div>
+    </div>
+  </div>
+  <div class="w">
+    <div class="cap oriz-cap"><b>O2 · Potenza fissa</b>Il bersaglio a sinistra, coi tasti grandi a portata di pollice.</div>
+    <div class="f oriz"><div class="hatch" style="position:absolute;inset:0;border:0"></div>
+      <div style="position:absolute;top:8px;left:10px;right:10px;display:flex;gap:8px"><span class="round">‹</span><div class="pill"><b>Val Seriana</b> <span class="t2">· Albino · 342 m</span></div><span style="flex:1"></span><span class="round">●</span></div>
+      <div class="glass"><div style="display:flex;align-items:center;gap:8px"><span class="sq">−</span><span class="xl num">165 W</span><span class="sq">+</span></div><div class="nums num" style="flex:1"><div><span class="big">163</span> W</div><div><span class="big">22:40</span></div><div><span class="big">19,8</span> km</div></div><span class="btn" style="width:96px">Pausa</span><span class="btn" style="width:120px">◉ Termina</span></div>
+    </div>
+  </div>
+  <div class="w">
+    <div class="cap oriz-cap"><b>O3 · Allenamento su un anello</b>Blocco dell'ERG e grafico a sinistra, il giro accanto al titolo.</div>
+    <div class="f oriz"><div class="hatch" style="position:absolute;inset:0;border:0"></div>
+      <div style="position:absolute;top:8px;left:10px;right:10px;display:flex;gap:8px"><span class="round">‹</span><div class="pill"><b>Anello da Bergamo</b> <span class="tok num">Giro 2 di 2</span></div><span style="flex:1"></span><span class="round">●</span></div>
+      <div class="glass"><div style="width:230px"><div class="lr"><span><span class="tok">ERG</span> <b class="num">205 W</b></span><b class="num">6:12</b></div><div class="wchart" style="margin-top:4px;height:26px"></div></div><div class="nums num" style="flex:1"><div><span class="big">204</span> W</div><div><span class="big">33:48</span></div><div><span class="big">13,1</span> km</div></div><span class="btn" style="width:96px">Pausa</span><span class="btn" style="width:110px">◉ Termina</span></div>
+    </div>
+  </div>
+  <div class="w">
+    <div class="cap oriz-cap"><b>O4 · Prova</b>Sforzo e velocità del tempo in una pillola sopra la striscia, a destra.</div>
+    <div class="f oriz"><div class="hatch" style="position:absolute;inset:0;border:0"></div>
+      <div style="position:absolute;top:8px;left:10px;right:10px;display:flex;gap:8px"><span class="round">‹</span><div class="pill"><span class="tok">Prova</span> <b>Il giro della Ganda</b></div><span style="flex:1"></span><span class="round">◐</span></div>
+      <div style="position:absolute;right:10px;bottom:104px;width:330px" class="pill"><div class="lr"><span>Sforzo</span><div class="bar" style="flex:1;height:10px"><i style="width:62%"></i></div><span class="num">62 %</span><span style="display:flex;gap:4px"><span class="sq" style="font-size:13px;background:#cdcdcd">1×</span><span class="sq" style="font-size:13px">4×</span><span class="sq" style="font-size:13px">10×</span></span></div></div>
+      <div class="glass"><div style="width:118px;white-space:nowrap"><span class="xl num">+1,2 %</span><div class="t2">Pendenza</div></div><div class="nums num" style="flex:1"><div><span class="big">136</span> W</div><div><span class="big">4:10</span></div><div><span class="big">36,9</span> km</div></div><span class="btn" style="width:96px">Pausa</span><span class="btn" style="width:120px">◉ Termina</span></div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

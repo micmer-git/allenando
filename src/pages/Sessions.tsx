@@ -99,7 +99,7 @@ export function SessionsPage() {
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 pb-nav pt-5 md:px-8 md:pt-10" data-testid="sessions">
-      <PageHeader eyebrow="Ogni mezz’ora, per tutti" title="Sessioni" />
+      <PageHeader back={{ to: '/', label: 'Pedala' }} eyebrow="Ogni mezz’ora, per tutti" title="Sessioni" />
 
       <ul className="mt-4 flex flex-col gap-2">
         {list.map((s, i) => {

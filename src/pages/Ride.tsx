@@ -1,28 +1,16 @@
 import { Component, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { WorkoutChart } from '@/components/WorkoutChart';
 import { gradeColor, ProfileChart, RouteMap } from '@/components/RouteViz';
 import { legsBounds, WorldMap, type MapMarker, type MapOverlay } from '@/components/WorldMap';
 import { Button, Segmented, Wordmark } from '@/components/ui';
-import { bluetoothSupport } from '@/bluetooth/support';
 import { BluetoothTrainer } from '@/bluetooth/trainer';
 import { formatAlt, formatAltText, formatDuration, formatGrade, formatKm, formatKmText, formatNumber, formatTss, msToKmh, withUnit } from '@/domain/format';
 import { STANDARD_AIR, type PhysicsParams } from '@/domain/physics';
-import {
-  gapSeconds,
-  geoPointsFromSamples,
-  ghostDistanceAt,
-  hasAltitude,
-  hasGps,
-  powerAtTime,
-  profileFromSamples,
-  sliceSection,
-  type ReplayMode,
-} from '@/domain/replay';
-import { headingToBearing, loadRouteFile, mapillaryUrl, routeMeta, streetViewUrl, trackFromGeo, trackFromRouteFile, type LoadedRoute } from '@/domain/routes';
+import { gapSeconds, ghostDistanceAt, powerAtTime } from '@/domain/replay';
+import { headingToBearing, mapillaryUrl, routeMeta, streetViewUrl, type LoadedRoute } from '@/domain/routes';
 import { projector } from '@/domain/geo';
 import { RIDER_COLORS } from '@/multiplayer/protocol';
-import { createRouteTrack } from '@/domain/track';
 import type { Profile, Quality, Ride, RideSample, Settings, Workout, WorkoutStep } from '@/domain/types';
 import { estimateLthr, powerZone } from '@/domain/zones';
 import { findWorkout, workoutAt } from '@/domain/workouts';
@@ -31,25 +19,26 @@ import { RideEngine } from '@/sim/engine';
 import { CHECKPOINT_EVERY_MS, clearCheckpoint, loadCheckpoint, resumePath, rideFromCheckpoint, RideKeeper, rideSearch, sameRide, type RideCheckpoint } from '@/sim/recovery';
 import { useApp } from '@/store/useApp';
 import { RideScene } from '@/world/Scene';
-import { decodeSection } from './ReplaySetup';
 import { RoomPanel, RoomSheet, useRoom } from './RideRoom';
 import { RecoveryCard } from './RideRecovery';
 import { workoutTitle } from './Workouts';
-import { isWorld, loadWorld, Terrain, worldBase, type RideDef, type WorldData } from '@/open/world';
+import { isWorld, Terrain, worldBase, type RideDef } from '@/open/world';
 import { createWorldField } from '@/open/field';
 import { WorldSession } from '@/open/session';
-import { WorldScene, npcCount, type RemoteWorldRider } from '@/open/WorldScene';
+import { WorldScene, type RemoteWorldRider } from '@/open/WorldScene';
 import { loadPlan } from '@/open/plan';
 import { WorldClient } from '@/multiplayer/world-client';
-import { applyRide, levelOf, loadProgress, postResult, postXp, type XpLine } from '@/open/progress';
+import { levelOf, type XpLine } from '@/open/progress';
 import { AheadProfile, cap, LoopSheet, MapSheet, Nearby, Toasts, TurnPicker, WeatherChip, WorldMini, XpSummary } from './WorldHud';
-import type { Dir } from '@/open/graph';
 import { fetchWeather, type WeatherNow } from '@/open/weather';
 import { nextPass, passesAlongPath, passSub, rideMarks, type PassPoint } from '@/game/passes';
 import { rememberRide } from '@/open/lastRide';
 import { rememberWorld, worldInfo } from '@/open/worlds';
-import { sunFor } from '@/open/sky';
-import { applyCareer, ORO_RULES, type CareerOutcome, type OroLine, type RideFacts, type SegmentResult } from '@/game/career';
+import { type CareerOutcome, type SegmentResult } from '@/game/career';
+import { commitProgress as commitRide, NOTHING_COMMITTED, type Committed } from '@/game/commit';
+import { useRideSetup, type RideSetup } from '@/ride/setup';
+import { puoPedalare, rullo, rulloAdesso, tipiAmmessi, useRullo } from '@/sim/rullo';
+import { giriDi } from '@/ride/intento';
 import { RideGame, rideFrame } from '@/game/rideGame';
 import { SEGMENT_STYLE } from '@/game/arches';
 import { sessionById } from '@/game/sessions';
@@ -66,40 +55,6 @@ const HOLD_MS = 800;
 /** dopo quanto il velo offre «Parti lo stesso» (rete lenta, mattonelle che non arrivano) */
 const SLOW_LOAD_MS = 20_000;
 
-interface RideSetup {
-  route: LoadedRoute;
-  /** id della salita verificata, per legare il giro salvato al fantasma futuro */
-  routeId?: string;
-  replayMode?: ReplayMode;
-  replaySamples?: RideSample[];
-  ghostSamples?: RideSample[];
-  label: string;
-  note?: string;
-  /** mondo aperto: il grafo e la pedalata che lo percorre */
-  world?: { data: WorldData; session: WorldSession };
-}
-
-/** La potenza media migliore su `n` campioni consecutivi (1 Hz). */
-function peakAvg(powers: number[], n: number): number {
-  if (powers.length < n) return 0;
-  let sum = 0;
-  for (let i = 0; i < n; i++) sum += powers[i];
-  let best = sum;
-  for (let i = n; i < powers.length; i++) {
-    sum += powers[i] - powers[i - n];
-    if (sum > best) best = sum;
-  }
-  return best / n;
-}
-
-/** Nelle sessioni «volate» e «salita» i tratti del loro tipo valgono doppio. */
-function sessionBonus(game: RideGame, results: SegmentResult[]): OroLine[] {
-  const kind = game.sessionDef?.kind;
-  if (kind !== 'volate' && kind !== 'salita') return [];
-  const want = kind === 'volate' ? 'volata' : 'gpm';
-  return results.filter((r) => r.kind === want).map((r) => ({ label: `Sessione, doppio: ${r.name}`, oro: ORO_RULES[want] }));
-}
-
 /** Da distanza sulla strada a latitudine e longitudine; null se la strada non è da nessuna parte. */
 export function geoFor(route: LoadedRoute): ((distance: number) => { lat: number; lon: number } | null) | undefined {
   if (route.id === 'neutral' || (route.origin.lat === 0 && route.origin.lon === 0)) return undefined;
@@ -108,138 +63,6 @@ export function geoFor(route: LoadedRoute): ((distance: number) => { lat: number
     const p = route.track.poseAt(distance);
     return Number.isFinite(p.x) && Number.isFinite(p.z) ? proj.toGeo(p.x, p.z) : null;
   };
-}
-
-/** Strada neutra, dritta, per i giri senza GPS: lo diciamo, non la spacciamo per vera. */
-function neutralRoute(samples: RideSample[]): LoadedRoute {
-  const prof = hasAltitude(samples) ? profileFromSamples(samples) : [];
-  const total = Math.max(200, samples[samples.length - 1]?.distance ?? 1000);
-  const pts = [];
-  for (let d = 0; d <= total; d += 10) {
-    let ele: number | null = null;
-    if (prof.length) {
-      const k = prof.findIndex((p) => p.distance >= d);
-      ele = (k < 0 ? prof[prof.length - 1] : prof[k]).altitude;
-    }
-    pts.push({ x: 0, z: d, ele });
-  }
-  return {
-    id: 'neutral',
-    title: 'Strada neutra',
-    subtitle: 'Giro senza GPS',
-    track: createRouteTrack(pts, { halfWidth: 3 }),
-    dem: null,
-    origin: { lat: 0, lon: 0 },
-    attribution: '',
-    verified: false,
-  };
-}
-
-function useRideSetup(): { setup: RideSetup | null; error: string | null } {
-  const [params] = useSearchParams();
-  const rides = useApp((s) => s.rides);
-  const quality = useApp((s) => s.settings.quality);
-  const [state, setState] = useState<{ setup: RideSetup | null; error: string | null }>({ setup: null, error: null });
-  // entrare o uscire da una stanza cambia ?room=, non la strada: non si ricarica niente
-  const key = useMemo(() => {
-    const p = new URLSearchParams(params);
-    p.delete('room');
-    return p.toString();
-  }, [params]);
-  useEffect(() => {
-    let alive = true;
-    const done = (setup: RideSetup | null, error: string | null = null) => {
-      if (alive) setState({ setup, error });
-    };
-    if (params.get('world')) {
-      loadWorld(params.get('world'))
-        .then((data) => {
-          const n = npcCount(quality);
-          const rideId = params.get('ride');
-          const planKey = params.get('plan');
-          let session: WorldSession;
-          let title: string;
-          let subtitle: string;
-          if (rideId) {
-            const ride = data.rides.find((r) => r.id === rideId);
-            if (!ride) throw new Error('Percorso sconosciuto.');
-            session = new WorldSession(data, { ride }, n);
-            title = ride.name;
-            subtitle = ride.side;
-          } else if (planKey) {
-            const plan = loadPlan(planKey);
-            if (!plan || plan.legs.length === 0) throw new Error('Anello non più disponibile: rifallo da Mondo.');
-            session = new WorldSession(data, { legs: plan.legs, name: plan.name }, n);
-            title = plan.name;
-            subtitle = 'Anello suggerito';
-          } else {
-            const edge = Number(params.get('edge'));
-            const e = data.graph.edges[edge];
-            if (!e) throw new Error('Punto di partenza fuori dal mondo.');
-            const dir = (params.get('dir') === '-1' ? -1 : 1) as Dir;
-            const s0 = Math.min(e.length, Math.max(0, Number(params.get('s')) || 0));
-            session = new WorldSession(data, { edge, dir: data.graph.allowed(edge, dir) ? dir : ((-dir) as Dir), s: s0 }, n);
-            title = 'Giro libero';
-            subtitle = e.name || e.ref || worldInfo(data.graph.id).name;
-          }
-          const route: LoadedRoute = { id: 'world', title, subtitle, track: session.path, dem: null, origin: data.graph.origin, attribution: data.graph.attribution, verified: true };
-          done({ route, label: subtitle && rideId ? `${title} ${subtitle}` : title, world: { data, session } });
-        })
-        .catch((err: unknown) => done(null, err instanceof Error ? err.message : 'Mondo non disponibile.'));
-      return () => {
-        alive = false;
-      };
-    }
-    const replayId = params.get('replay');
-    if (replayId) {
-      const ride = rides.find((r) => r.id === replayId);
-      if (!ride) {
-        done(null, 'Giro da rifare non trovato.');
-        return;
-      }
-      const raw = params.get('mode') ?? '';
-      const mode: ReplayMode = raw === 'power' || raw === 'ghost' ? raw : 'grade';
-      const samples = sliceSection(ride, decodeSection(params.get('sec')));
-      if (samples.length < 2) {
-        done(null, 'Il pezzo scelto è vuoto.');
-        return;
-      }
-      let route: LoadedRoute;
-      let note: string | undefined;
-      try {
-        route = hasGps(samples)
-          ? trackFromGeo(`replay-${ride.id}`, ride.name, geoPointsFromSamples(samples), 'Traccia del tuo giro')
-          : neutralRoute(samples);
-        if (!hasGps(samples)) note = 'Giro senza GPS: strada neutra, pendenza dal file se c’è.';
-        else if (!hasAltitude(samples)) note = 'Il file non ha quota: la strada è in piano.';
-      } catch {
-        route = neutralRoute(samples);
-        note = 'Traccia GPS inutilizzabile: strada neutra.';
-      }
-      done({ route, replayMode: mode, replaySamples: samples, ghostSamples: mode === 'grade' ? undefined : samples, label: ride.name, note });
-      return;
-    }
-    const id = params.get('route') ?? DEFAULT_ROUTE;
-    const meta = routeMeta(id);
-    if (!meta) {
-      done(null, 'Salita sconosciuta.');
-      return;
-    }
-    const ghostId = params.get('ghost');
-    const ghost = ghostId ? rides.find((r) => r.id === ghostId) : undefined;
-    loadRouteFile(id)
-      .then((file) => {
-        const route = trackFromRouteFile(file, meta.halfWidth);
-        done({ route, routeId: id, ghostSamples: ghost?.samples, label: `${meta.name} ${meta.side}` });
-      })
-      .catch((err: unknown) => done(null, err instanceof Error ? err.message : 'Traccia non disponibile.'));
-    return () => {
-      alive = false;
-    };
-    // salvare un giro cambia la lista: la strada non va ricaricata per questo
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
-  return state;
 }
 
 /**
@@ -303,6 +126,13 @@ function useQuickTitle(params: URLSearchParams): { title?: string; subtitle?: st
 export function RidePage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
+  // senza un sensore di potenza (e senza la prova) la corsa non parte: si torna a Pedala (A4).
+  // Si decide una volta, all'entrata: un rullo perso a metà giro non chiude la corsa.
+  const rulloNow = useRullo();
+  const [ammesso, setAmmesso] = useState<boolean | null>(() => (rulloNow.stato === 'cerco' ? null : puoPedalare(rulloNow)));
+  useEffect(() => {
+    if (ammesso === null && rulloNow.stato !== 'cerco') setAmmesso(puoPedalare(rulloNow));
+  }, [ammesso, rulloNow]);
   const { setup, error } = useRideSetup();
   const quick = useQuickTitle(params);
   const title = setup?.route.title ?? quick.title;
@@ -350,13 +180,14 @@ export function RidePage() {
     };
   }, [cp, same, saveRide]);
   const back = () => (window.history.length > 1 ? navigate(-1) : navigate('/'));
+  if (ammesso === false) return <Navigate to="/" replace />;
   if (error) {
     return (
       <div className="grid min-h-dvh place-items-center px-6 text-center">
         <div>
           <p className="text-lg">{error}</p>
-          <Link to="/salite" className="mt-3 inline-flex h-11 items-center font-semibold text-accent">
-            Salite
+          <Link to="/" className="mt-3 inline-flex h-11 items-center font-semibold text-accent">
+            Pedala
           </Link>
         </div>
       </div>
@@ -372,7 +203,7 @@ export function RidePage() {
     );
   }
   const kept = keptNote ? <p className="mt-6 text-sm text-muted" data-testid="ride-kept">Il giro di prima è nel diario</p> : null;
-  if (cp === undefined || (cp && !same) || !setup || !gameReady) {
+  if (ammesso === null || cp === undefined || (cp && !same) || !setup || !gameReady) {
     return (
       <LoadingVeil title={title} subtitle={subtitle} onBack={back}>
         {kept}
@@ -401,13 +232,22 @@ function RideSession({ setup, resume, kept }: { setup: RideSetup; resume: RideCh
   const profile = useApp((s) => s.profile);
   const settings = useApp((s) => s.settings);
   const custom = useApp((s) => s.workouts);
-  const workoutId = params.get('workout');
+  const intento = setup.intento;
+  // il tipo che quello che è collegato permette (A8): una Potenza fissa senza ERG diventa Libera
+  const [tipo] = useState(() => (tipiAmmessi(rulloAdesso()).includes(intento.tipo) ? intento.tipo : 'libera'));
+  const workoutId = tipo === 'allenamento' ? (intento.workout ?? null) : null;
   const workout = workoutId ? findWorkout(workoutId, custom) ?? null : null;
   const parts = useRef<{ engine: RideEngine; trainer: BluetoothTrainer; game: RideGame } | null>(null);
   if (!parts.current) {
-    const trainer = new BluetoothTrainer();
-    const replay = setup.replayMode === 'power' ? setup.replaySamples : undefined;
+    // il rullo dell'app, già collegato da Pedala; il simulatore solo in prova (src/sim/rullo.ts)
+    const trainer = rullo.sorgente();
+    const r = rulloAdesso();
+    const replay = tipo === 'allora' && setup.replayMode === 'power' ? setup.replaySamples : undefined;
     const engine = new RideEngine({
+      tipo,
+      watt: intento.watt,
+      // misuratore di potenza o rullo senza ERG: l'allenamento è a bersaglio, al rullo nessun comando
+      ergAlRullo: r.sa.erg || r.prova,
       track: setup.route.track,
       source: trainer,
       physics: physicsFrom(profile),
@@ -424,6 +264,8 @@ function RideSession({ setup, resume, kept }: { setup: RideSetup; resume: RideCh
       // la traccia GPS vera nel FIT: dalla posa sulla strada, riproiettata sull'origine del mondo
       geoAt: geoFor(setup.route),
     });
+    engine.prova = setup.prova;
+    engine.giri = giriDi(intento);
     // un giro ripreso torna dov'era; ?at=metri parte da un punto della salita (per riprendere un tratto)
     const at = Number(params.get('at'));
     if (resume) engine.restore(resume.engine);
@@ -443,12 +285,20 @@ function RideSession({ setup, resume, kept }: { setup: RideSetup; resume: RideCh
       pbs: useGame.getState().career.pbs,
       sim: () => trainer.snapshot().mode === 'simulator',
       scale: () => (trainer.snapshot().mode === 'simulator' ? engine.timeScale : 1),
-      ranked: !setup.replayMode && !workout,
+      // in classifica Libera e Potenza fissa (i watt sono veri); Allenamento no; Prova mai (A10)
+      ranked: !setup.prova && !setup.replayMode && (engine.tipo === 'libera' || engine.tipo === 'fissa'),
+      prova: setup.prova,
+      // il fantasma: l'interruttore di Pedala, mai con un allenamento (A9)
+      fantasma: intento.fantasma !== false && engine.tipo !== 'allenamento',
+      // i tratti cronometrati solo dove il ritmo è tuo: con un allenamento o coi watt di allora no
+      tratti: engine.tipo === 'libera' || engine.tipo === 'fissa',
     });
     if (resume) {
       // i tratti, i punti caldi, il dislivello e i luoghi di prima valgono ancora; si riparte in pausa
       game.restore(resume.game);
       const ws = setup.world?.session;
+      // i passaggi aggiunti prima del crash (giro in più) tornano: il percorso è lungo come allora
+      if (ws && resume.engine.giri) ws.ensureGiri(resume.engine.giri);
       if (ws && resume.world) {
         ws.gainM = resume.world.gainM;
         for (const id of resume.world.passed) ws.passed.add(id);
@@ -476,7 +326,8 @@ function RideSession({ setup, resume, kept }: { setup: RideSetup; resume: RideCh
     frame = requestAnimationFrame(loop);
     return () => {
       cancelAnimationFrame(frame);
-      trainer.disconnect();
+      // il rullo resta collegato per la corsa dopo: torna in piano, e il simulatore si spegne
+      rullo.riposa();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine, trainer]);
@@ -556,6 +407,13 @@ function useFade(open: boolean, ms = 220): { mounted: boolean; shown: boolean } 
   return { mounted, shown };
 }
 
+// HUD per tipo (piano U, F8): il rullo, il bersaglio, i giri, la prova
+import { RulloChip } from '@/components/ride/RulloChip';
+import { Bersaglio } from '@/components/ride/Bersaglio';
+import { ProvaBar } from '@/components/ride/ProvaBar';
+import { GiroBadge, UltimoGiro } from '@/components/ride/GiroBadge';
+import { esportabile } from '@/domain/types';
+
 function RideScreen({
   engine,
   trainer,
@@ -594,7 +452,6 @@ function RideScreen({
   // l'avanzamento del mondo, da 0 a 1, da WorldScene (onProgress): finché non arriva, la barra è indeterminata
   const [worldProgress, setWorldProgress] = useState<number | undefined>(undefined);
   const [webgl, setWebgl] = useState(true);
-  const [sensorsOpen, setSensorsOpen] = useState(false);
   const [effort, setEffort] = useState(() => Math.round(engine.effort * 100));
   const [summary, setSummary] = useState<Ride | null>(null);
   const [saveState, setSaveState] = useState<'saving' | 'saved' | 'failed'>('saving');
@@ -645,7 +502,6 @@ function RideScreen({
   const step = progress && engine.workout ? engine.workout.steps[progress.stepIndex] : undefined;
   const snap = trainer.snapshot();
   const sim = snap.mode === 'simulator';
-  const support = bluetoothSupport();
   const modeLabel = setup.replayMode === 'power' ? 'Watt di allora' : setup.replayMode === 'grade' ? 'Pendenza di allora' : setup.replayMode === 'ghost' ? 'Fantasma' : null;
   const rideName = resume?.name ?? (workout ? `${workoutTitle(workout, t)} · ${setup.label}` : modeLabel ? `${modeLabel} · ${setup.label}` : setup.label);
   const track = setup.route.track;
@@ -820,90 +676,28 @@ function RideScreen({
   }, [ready, keeper, engine]);
 
   // quanto è già stato contato: «Continua a pedalare» dopo il riepilogo non conta due volte
-  const committed = useRef({ distance: 0, sample: 0, elapsed: 0, results: 0, gain: 0, pois: 0 });
+  const committed = useRef<Committed>({ ...NOTHING_COMMITTED });
   const [rewards, setRewards] = useState<{ outcome: CareerOutcome; results: SegmentResult[] } | null>(null);
-  const setGameProgress = useGame((s) => s.setProgress);
-  const setCareer = useGame((s) => s.setCareer);
 
-  /** Punti, livello e, se vale, il tempo del percorso in classifica. Poi oro e traguardi. */
+  /** Punti, livello e, se vale, il tempo del percorso in classifica. Poi oro e traguardi (src/game/commit.ts). */
   async function commitProgress(): Promise<void> {
-    const c = committed.current;
-    const sim = snap.mode === 'simulator';
-    const climbId = !session && setup.routeId && engine.arrived && !setup.replayMode && !workout ? setup.routeId : undefined;
-    // un allenamento più lungo del percorso prosegue libero: il percorso è fatto quando si passa la sua fine
-    const routeFinished = !!session && (engine.arrived || (session.routeEnd != null && engine.distance >= session.routeEnd));
-    const completed = session ? routeFinished && session.rankable : !!climbId;
-    // dislivello: il mondo lo conta da sé; sulle salite e nei replay dai campioni
-    const fresh = engine.samples.slice(c.sample);
-    let climbGain = 0;
-    for (let i = 1; i < fresh.length; i++) climbGain += Math.max(0, fresh[i].altitude - fresh[i - 1].altitude);
-    const gainM = session ? session.gainM - session.committedGain : climbGain;
-    const landmarks = session ? [...session.passed].filter((id) => !session.committedLandmarks.has(id)) : [];
-    const prev = await loadProgress();
-    const out = applyRide(prev, {
-      rideId: session ? session.ride?.id : climbId ? `salita:${climbId}` : undefined,
-      completed,
-      // con un allenamento il tempo non è quello del percorso: niente record
-      sec: completed && !workout ? engine.elapsed : undefined,
-      sim,
-      distanceM: engine.odometer - c.distance,
-      gainM,
-      landmarks,
-    });
-    session?.markCommitted(engine.distance);
-    await setGameProgress(out.next);
-    const total = out.lines.reduce((a, l) => a + l.xp, 0);
-    let rank: string | null = null;
-    let rankNote: string | undefined;
-    if (session?.ride && workout) rankNote = 'Con un allenamento il tempo non va in classifica.';
-    else if (session && completed && session.ride && profile.name) {
-      const avg = engine.samples.length ? engine.samples.reduce((a, x) => a + x.power, 0) / engine.samples.length : engine.power3s;
-      const res = await postResult({ nick: profile.name, ride: session.ride.id, sec: engine.elapsed, wkg: profile.weightKg > 0 ? avg / profile.weightKg : 0, sim });
-      if (res.ok && res.rank) rank = `${res.rank}° in classifica${sim ? ' (simulatore)' : ''}${res.best ? ', il tuo tempo migliore' : ''}`;
-      else if (res.error === 'implausible') rankNote = 'Tempo troppo veloce per essere vero: non va in classifica.';
-      else if (res.error === 'rete') rankNote = 'Senza rete: il tempo resta qui, non in classifica.';
-    } else if (session?.ride && !completed) rankNote = session.offRoute || session.rejoined ? 'Sei uscito dal percorso: il tempo non va in classifica.' : 'Percorso non finito: niente tempo in classifica.';
-    if (profile.name) void postXp(out.next, profile.name);
-    setXp({ lines: out.lines, total, level: { ...levelOf(out.next.xp), xp: out.next.xp }, rank, rankNote });
-
-    // la carriera: oro, record, missioni, traguardi
-    const powers = fresh.map((s) => s.power);
-    const results = game.results.slice(c.results);
-    const origin = world?.data.graph.origin;
-    const facts: RideFacts = {
-      distanceM: engine.odometer - c.distance,
-      gainM,
-      durationSec: engine.elapsed - c.elapsed,
-      sim,
-      startedAt: engine.startedAt,
-      avgPower: powers.length ? powers.reduce((a, p) => a + p, 0) / powers.length : 0,
-      peak5s: peakAvg(powers, 5),
-      peak5min: peakAvg(powers, 300),
-      ftp: profile.ftp,
-      climbDone: climbId,
-      worldRideDone: session?.ride && completed ? session.ride.id : undefined,
-      segments: results,
-      pois: game.poisPassed.slice(c.pois),
-      landmarks,
-      discovered: Object.keys(out.next.visited).length,
+    const out = await commitRide({
+      engine,
+      game,
+      session,
+      routeId: setup.routeId,
+      replay: !!setup.replayMode,
+      workout,
+      profile,
+      sim: snap.mode === 'simulator',
+      origin: world?.data.graph.origin,
       rain: !!session && weatherMode === 'vero' && (weather?.rain ?? 0) >= 0.1,
-      night: !!origin && sunFor(daytime, new Date(), origin.lat, origin.lon).night,
-      session: game.sessionDef ? { id: game.sessionDef.id, kind: game.sessionDef.kind, finished: game.stage === 'arrivo', withPack: game.pack ? game.withPack : 1 } : undefined,
-      workoutDone: engine.workoutDone,
+      daytime,
       together: (room.snap?.riders.length ?? 0) > 0 || peers.length > 0,
-      level: levelOf(out.next.xp).level,
-      extra: sessionBonus(game, results),
-    };
-    const outcome = applyCareer(useGame.getState().career, facts);
-    // il tempo del percorso intero, per i record della pagina Classifiche
-    if (facts.worldRideDone && !workout) {
-      const key = `w:${facts.worldRideDone}`;
-      const old = outcome.next.pbs[key];
-      if (!old || engine.elapsed < old.sec) outcome.next.pbs[key] = { sec: Math.round(engine.elapsed), at: new Date().toISOString(), sim, count: (old?.count ?? 0) + 1 };
-    }
-    await setCareer(outcome.next);
-    committed.current = { distance: engine.odometer, sample: engine.samples.length, elapsed: engine.elapsed, results: game.results.length, gain: 0, pois: game.poisPassed.length };
-    setRewards({ outcome, results });
+      committed: committed.current,
+    });
+    setXp(out.xp);
+    setRewards({ outcome: out.outcome, results: out.results });
   }
 
   // dove sei, per aprire la strada vera nel visore ufficiale (non per disegnarla nel 3D)
@@ -948,8 +742,12 @@ function RideScreen({
   useStageVars(stageRef, dockRef, simRef, simOn);
   const onRoute = !session || session.onRoute;
   const kmLeft = Math.max(0, track.length - engine.distance);
+  // più passaggi: i km al traguardo di questo passaggio, non all'ultimo
+  const traguardo = session && session.giri > 1 ? session.traguardoFra(engine.distance) : null;
   const turning = !!session?.junction && session.junction.dist <= 220 && engine.phase !== 'finished';
-  const mini = big && wide ? 132 : wide ? 88 : 96;
+  // la cartina: sul percorso scelto basta un segno per aprire la carta (la strada la dice
+  // l'altimetria); nel giro libero e fuori percorso serve per orientarsi
+  const mini = big && wide ? 132 : session?.onRoute ? 64 : wide ? 88 : 96;
   // in montagna (F.4): i passi davanti, dal percorso scelto o dalla strada che si sta facendo
   const passMarks = usePassMarks(session, engine.distance);
   const pass = session ? nextPass(passMarks, engine.distance, engine.altitude) : null;
@@ -1115,7 +913,20 @@ function RideScreen({
                   <BackIcon />
                 </button>
                 <div className="min-w-0 flex-1 rounded-[1.375rem] bg-bg/70 px-3.5 py-1.5 backdrop-blur-md landscape:max-w-[40rem]" data-testid="ride-route">
-                  <p className="break-words font-display text-lg uppercase leading-tight lg:text-2xl">{setup.route.title}</p>
+                  <p className="break-words font-display text-lg uppercase leading-tight lg:text-2xl">
+                    {setup.prova ? (
+                      <span className="mr-1.5 inline-flex translate-y-[-2px] items-center rounded-full border border-accent/60 px-2 py-px align-middle font-sans text-xs font-semibold normal-case text-accent" data-testid="ride-prova">
+                        Prova
+                      </span>
+                    ) : null}
+                    {setup.route.title}
+                    <GiroBadge session={session} />
+                    {setup.pacco === 'leggero' ? (
+                      <span className="ml-1.5 inline-flex translate-y-[-2px] items-center rounded-full border border-line px-2 py-px align-middle font-sans text-xs font-semibold normal-case" data-testid="ride-leggero">
+                        Leggero
+                      </span>
+                    ) : null}
+                  </p>
                   <p className="break-words text-[13px] leading-tight text-muted lg:text-[15px]" data-testid="ride-where">
                     {where}
                     {session && engine.aero < 0.93 ? <span className="font-semibold text-good"> · In scia −{Math.round((1 - engine.aero) * 100)}% aria</span> : null}
@@ -1136,15 +947,7 @@ function RideScreen({
                     ) : null}
                   </button>
                 ) : null}
-                <button
-                  type="button"
-                  aria-label={snap.mode === 'bluetooth' ? snap.deviceName || t('ride.connected') : t('ride.simulator')}
-                  className={`pointer-events-auto grid h-11 w-11 shrink-0 place-items-center rounded-full backdrop-blur-md ${room.available ? '' : 'landscape:ml-auto'} ${snap.mode === 'bluetooth' && snap.status === 'connected' ? 'bg-good/30 text-good' : 'bg-bg/70'}`}
-                  onClick={() => setSensorsOpen(true)}
-                  data-testid="ride-sensors"
-                >
-                  {snap.mode === 'bluetooth' ? <BleIcon /> : <SimIcon />}
-                </button>
+                <RulloChip className={room.available ? undefined : 'landscape:ml-auto'} />
               </div>
               <div className="mt-2 flex items-start justify-between gap-2">
                 <div
@@ -1156,14 +959,19 @@ function RideScreen({
                   <ErgAheadHud game={game} />
                   {game.poiToast ? <PoiToast game={game} /> : session ? <Toasts session={session} /> : null}
                   {setup.note ? <p className="rounded-2xl bg-bg/75 px-3 py-1.5 text-xs font-semibold text-warn backdrop-blur-md">{setup.note}</p> : null}
-                  {engine.workoutDone ? <p className="rounded-2xl bg-bg/75 px-3 py-1.5 text-xs font-semibold text-good backdrop-blur-md">Allenamento finito: pedala libero</p> : null}
+                  {engine.workoutDone ? (
+                    <p className="num rounded-2xl bg-bg/75 px-3 py-1.5 text-xs font-semibold text-good backdrop-blur-md" data-testid="ride-allenamento-finito">
+                      {traguardo != null && session && session.giri > 1 ? `Allenamento finito · Traguardo fra ${formatKmText(traguardo)}` : 'Allenamento finito: pedala libero'}
+                    </p>
+                  ) : null}
+                  <UltimoGiro session={session} format={formatDuration} />
                   {snap.mode === 'bluetooth' && snap.status === 'connected' && engine.power <= 0 && engine.phase === 'riding' ? (
                     <p className="rounded-2xl bg-bg/75 px-3 py-1.5 text-xs font-semibold text-warn backdrop-blur-md">{t('ride.waiting')}</p>
                   ) : null}
                   {snap.mode === 'bluetooth' && snap.status === 'disconnected' ? (
                     <p className="pointer-events-auto flex items-center gap-2 rounded-2xl bg-bg/80 pl-3 pr-1 text-xs font-semibold text-warn backdrop-blur-md" role="status">
                       Sensore perso
-                      <button type="button" className="h-11 rounded-full px-3 font-semibold text-ink underline" onClick={() => setSensorsOpen(true)}>
+                      <button type="button" className="h-11 rounded-full px-3 font-semibold text-ink underline" onClick={() => void rullo.ricollega()} data-testid="ride-ricollega">
                         {t('ride.reconnect')}
                       </button>
                     </p>
@@ -1220,7 +1028,9 @@ function RideScreen({
                 <WorldMini session={session} size={mini} onOpen={() => setMapOpen(true)} />
               </div>
             ) : null}
-            <div className="pointer-events-none absolute bottom-[calc(var(--dock)+0.5rem)] left-2.5 right-[calc(var(--simw)+0.625rem)] z-10 rounded-xl bg-bg/55 p-1 backdrop-blur-md" data-testid="ride-profile">
+            {/* il telefono in orizzontale: l'altimetria a sinistra, sotto la scelta all'incrocio; nel
+                mezzo c'è il ciclista, che col blocco dell'allenamento nel pannello finiva sotto (O3) */}
+            <div className="pointer-events-none absolute bottom-[calc(var(--dock)+0.5rem)] left-2.5 right-[calc(var(--simw)+0.625rem)] z-10 rounded-xl bg-bg/55 p-1 backdrop-blur-md rail:right-[56%]" data-testid="ride-profile">
               {session && !session.onRoute ? (
                 <AheadProfile session={session} engine={engine} />
               ) : (
@@ -1269,7 +1079,7 @@ function RideScreen({
             <div className="flex items-end justify-between gap-3 landscape:shrink-0">
               <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-wide text-accent" data-testid="erg-target">
-                  {t('ride.erg')} {formatNumber(engine.targetPower, 0)} {t('units.watt')}
+                  {engine.aBersaglio ? 'Bersaglio' : t('ride.erg')} {formatNumber(engine.targetPower, 0)} {t('units.watt')}
                 </p>
                 <p className="font-display text-xl leading-none">
                   {step ? stepLabel(step, t) : ''}
@@ -1286,6 +1096,7 @@ function RideScreen({
           </div>
         ) : null}
         <div className="landscape:flex landscape:items-center landscape:gap-5">
+          <Bersaglio engine={engine} onChange={() => bump((n) => n + 1)} className="mb-2 landscape:mb-0 landscape:shrink-0" />
           <dl className={cn('grid grid-cols-3 gap-2 transition-opacity duration-200 landscape:flex landscape:shrink-0 landscape:gap-6', paused && 'opacity-45')} data-testid="ride-numbers">
             <div className="min-w-0">
               <dt className="sr-only">{t('units.watt')} 3 s</dt>
@@ -1309,12 +1120,12 @@ function RideScreen({
             <div className="min-w-0" data-testid="ride-km">
               <dt className="sr-only">{t('metrics.distance')}</dt>
               <dd className="num font-display text-[38px] leading-none lg:text-[48px]" data-big="">
-                {formatKm(onRoute ? kmLeft : engine.odometer)}
+                {formatKm(traguardo != null ? traguardo : onRoute ? kmLeft : engine.odometer)}
               </dd>
-              <dd className="mt-0.5 text-xs leading-tight text-muted">{onRoute ? 'km all’arrivo' : 'km fatti'}</dd>
+              <dd className="mt-0.5 text-xs leading-tight text-muted">{traguardo != null ? 'km al traguardo' : onRoute ? 'km all’arrivo' : 'km fatti'}</dd>
             </div>
           </dl>
-          <p className={cn('num mt-1.5 flex flex-wrap gap-x-3.5 gap-y-0.5 text-[15px] leading-tight landscape:mt-0 landscape:grid landscape:min-w-0 landscape:flex-1 landscape:grid-cols-[auto_auto] landscape:justify-start landscape:gap-x-3 landscape:gap-y-0.5 lg:landscape:flex lg:landscape:gap-x-4', paused && 'opacity-45')} data-testid="ride-secondary">
+          <p className={cn('num mt-1.5 flex flex-wrap gap-x-3.5 gap-y-0.5 text-[15px] leading-tight landscape:mt-0 landscape:grid landscape:min-w-0 landscape:flex-1 landscape:grid-cols-[auto_auto] landscape:justify-start landscape:gap-x-3 landscape:gap-y-0.5 lg:landscape:flex lg:landscape:gap-x-4', paused && 'opacity-45', engine.tipo === 'fissa' && 'landscape:hidden lg:landscape:flex')} data-testid="ride-secondary">
             <span>
               <span className="font-semibold">{paused ? '–' : formatNumber(msToKmh(engine.speed), 1)}</span> <span className="text-xs text-muted">{t('units.kmh')}</span>
             </span>
@@ -1345,50 +1156,16 @@ function RideScreen({
               {t('actions.finish')}
             </HoldButton>
             {simOn ? (
-              <div
+              <ProvaBar
                 ref={simRef}
-                className={cn(
-                  'flex items-center gap-2 landscape:absolute landscape:bottom-[calc(100%+0.5rem)] landscape:right-0 landscape:h-12 landscape:rounded-xl landscape:bg-bg/72 landscape:px-2 landscape:backdrop-blur-md',
-                  engine.mode === 'free' ? 'basis-full landscape:w-[19rem]' : 'shrink-0',
-                )}
-                data-testid="sim-controls"
-              >
-                {engine.mode === 'free' ? (
-                  <label className="flex min-w-0 flex-1 items-center gap-2">
-                    <span className="text-xs text-muted">{t('ride.effort')}</span>
-                    <input
-                      aria-label={t('a11y.effort')}
-                      className="h-11 min-w-0 flex-1 accent-[var(--accent)]"
-                      type="range"
-                      min={0}
-                      max={160}
-                      value={effort}
-                      onChange={(event) => {
-                        const value = Number(event.target.value);
-                        setEffort(value);
-                        engine.effort = value / 100;
-                      }}
-                    />
-                    <span className="num w-9 text-right text-xs">{effort}%</span>
-                  </label>
-                ) : null}
-                <div className="grid shrink-0 grid-cols-3 gap-0.5 rounded-full bg-elev2 p-0.5" role="group" aria-label="Velocità del simulatore">
-                  {[1, 4, 10].map((scale) => (
-                    <button
-                      key={scale}
-                      type="button"
-                      aria-pressed={engine.timeScale === scale}
-                      className={`h-11 w-11 rounded-full text-sm font-semibold ${engine.timeScale === scale ? 'bg-accent text-accent-ink' : 'text-muted'}`}
-                      onClick={() => {
-                        engine.timeScale = scale;
-                        bump((n) => n + 1);
-                      }}
-                    >
-                      {scale}×
-                    </button>
-                  ))}
-                </div>
-              </div>
+                engine={engine}
+                effort={effort}
+                onEffort={(value) => {
+                  setEffort(value);
+                  engine.effort = value / 100;
+                }}
+                onScale={() => bump((n) => n + 1)}
+              />
             ) : null}
           </div>
         </div>
@@ -1414,7 +1191,6 @@ function RideScreen({
         </LoadingVeil>
       ) : null}
 
-      {sensorsOpen ? <SensorSheet trainer={trainer} supportReason={support.available ? undefined : support.reason} onClose={() => setSensorsOpen(false)} t={t} /> : null}
       {loopOpen && session ? <LoopSheet session={session} engine={engine} onClose={() => setLoopOpen(false)} /> : null}
       {mapOpen && session ? <MapSheet session={session} engine={engine} far={far} track={track} onClose={closeMap} /> : null}
       {room.sheet && room.available ? <RoomSheet handle={room} routeTitle={`${setup.route.title} ${setup.route.subtitle}`} onClose={() => room.setSheet(false)} /> : null}
@@ -1741,6 +1517,12 @@ function RideSummary({
             {saveState === 'saved' ? <CheckIcon /> : null}
             {saveState === 'saved' ? 'Giro salvato' : saveState === 'saving' ? 'Salvo il giro…' : 'Non salvato: riprova dal diario'}
           </p>
+          {ride.prova ? (
+            <p className="mt-1.5 flex flex-wrap gap-1.5" data-testid="summary-prova">
+              <span className="rounded-full border border-accent/60 px-2 py-px text-xs font-semibold text-accent">Prova</span>
+              <span className="rounded-full border border-line px-2 py-px text-xs font-semibold">Niente classifica né oro</span>
+            </p>
+          ) : null}
           <h2 className="mt-1.5 break-words font-display text-4xl leading-[0.95]">{ride.name}</h2>
           {engine.arrived && !session ? (
             <p className="mt-2 font-semibold text-accent">
@@ -1758,6 +1540,14 @@ function RideSummary({
           <Sum label="Dislivello" value={withUnit(formatNumber(ride.elevationGainM, 0), 'm')} />
           <Sum label={t('metrics.avgPower')} value={ride.avgPower != null ? `${formatNumber(ride.avgPower, 0)} W` : '–'} />
         </dl>
+        {/* i passaggi chiusi, anche se la corsa finisce a metà del secondo: «Giro 1 · 1:03» */}
+        {session && session.giri > 1 && session.giriFatti.length > 0 ? (
+          <p className="num -mt-1.5 flex flex-wrap gap-x-4 gap-y-1 px-1 text-sm" data-testid="summary-giri">
+            {session.giriFatti.map((g) => (
+              <span key={g.giro}>{`${session.chiuso ? 'Giro' : 'Tratta'} ${g.giro} · ${formatDuration(g.sec)}`}</span>
+            ))}
+          </p>
+        ) : null}
         <p className="num -mt-1.5 px-1 text-sm text-muted">
           {/* lo stesso formattatore del dettaglio del giro: riepilogo e diario dicono lo stesso numero */}
           NP {ride.np != null ? withUnit(formatNumber(ride.np, 0), 'W') : '–'} · IF {ride.intensityFactor != null ? formatNumber(ride.intensityFactor, 2) : '–'} · TSS {ride.tss != null ? formatTss(ride.tss) : '–'}
@@ -1784,9 +1574,10 @@ function RideSummary({
             {game.sessionRank ? ` · ${game.sessionRank}` : ''}
           </p>
         ) : null}
-        {xp ? <LevelUp xp={xp.level.xp} gained={xp.total} /> : null}
-        {rewards ? <RewardsSummary outcome={rewards.outcome} results={rewards.results} /> : null}
-        {xp ? <XpSummary lines={xp.lines} total={xp.total} level={xp.level} rank={xp.rank} rankNote={xp.rankNote} /> : null}
+        {/* la prova non dà oro, punti né livello (A11): niente riquadri a zero */}
+        {xp && !ride.prova ? <LevelUp xp={xp.level.xp} gained={xp.total} /> : null}
+        {rewards && !ride.prova ? <RewardsSummary outcome={rewards.outcome} results={rewards.results} /> : null}
+        {xp && !ride.prova ? <XpSummary lines={xp.lines} total={xp.total} level={xp.level} rank={xp.rank} rankNote={xp.rankNote} /> : null}
 
         <div className="mt-1 flex flex-col gap-2">
           <Button data-testid="ride-done" className="h-14 text-lg" onClick={onDone}>
@@ -1794,17 +1585,19 @@ function RideSummary({
           </Button>
           {/* azioni secondarie del giro salvato: qui entra anche «Cartolina» (pista 4) */}
           <div className="grid auto-cols-fr grid-flow-col gap-2" data-testid="ride-summary-extra">
-            <Button
-              variant="ghost"
-              data-testid="ride-fit"
-              onClick={() => void import('@/io/fit').then(({ encodeActivityFit }) => downloadBytes(safeFileName(ride.name, 'fit'), encodeActivityFit(ride), 'application/octet-stream'))}
-            >
-              File FIT
-            </Button>
+            {esportabile(ride) ? (
+              <Button
+                variant="ghost"
+                data-testid="ride-fit"
+                onClick={() => void import('@/io/fit').then(({ encodeActivityFit }) => downloadBytes(safeFileName(ride.name, 'fit'), encodeActivityFit(ride), 'application/octet-stream'))}
+              >
+                File FIT
+              </Button>
+            ) : null}
             <Button variant="ghost" data-testid="ride-open-history" onClick={onHistory}>
               Nel diario
             </Button>
-            <CartolinaButton ride={ride} />
+            {esportabile(ride) ? <CartolinaButton ride={ride} /> : null}
           </div>
           <Button variant="soft" data-testid="ride-continue" onClick={onContinue}>
             {t('ride.keepRiding')}
@@ -1902,85 +1695,6 @@ function SampleProfile({ samples }: { samples: RideSample[] }) {
   );
 }
 
-function SensorSheet({
-  trainer,
-  supportReason,
-  onClose,
-  t,
-}: {
-  trainer: BluetoothTrainer;
-  supportReason?: 'ios' | 'missing';
-  onClose: () => void;
-  t: Translate;
-}) {
-  const snap = trainer.snapshot();
-  const [note, setNote] = useState<string | null>(supportReason ?? null);
-  async function connect(all: boolean) {
-    setNote(null);
-    try {
-      await trainer.connectBluetooth(all);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : '';
-      if (message === 'ios' || message === 'missing') setNote(message);
-      else if (trainer.snapshot().status === 'cancelled') setNote('cancelled');
-      else setNote('failed');
-    }
-  }
-  return (
-    <div className="fixed inset-0 z-30 flex items-end justify-center bg-black/50 p-3 md:items-center">
-      <section className="max-h-[85vh] w-full max-w-lg overflow-auto rounded-3xl bg-elev p-5">
-        <div className="flex items-center justify-between">
-          <h2 className="font-display text-3xl">{t('sensors.title')}</h2>
-          <button type="button" className="h-10 rounded-full px-3 text-sm font-semibold" onClick={onClose}>
-            {t('actions.close')}
-          </button>
-        </div>
-        {supportReason === 'ios' || note === 'ios' ? (
-          <p className="mt-3 rounded-2xl bg-warn/15 p-3 text-sm leading-relaxed">
-            {t('sensors.ios')}{' '}
-            <a className="font-semibold underline" href="https://apps.apple.com/app/bluefy-web-ble-browser/id1492822055">
-              {t('sensors.iosLink')}
-            </a>
-          </p>
-        ) : null}
-        {supportReason === 'missing' || note === 'missing' ? <p className="mt-3 text-sm leading-relaxed">{t('sensors.missing')}</p> : null}
-        {note === 'cancelled' ? <p className="mt-3 text-sm">{t('sensors.cancelled')}</p> : null}
-        {note === 'failed' ? <p className="mt-3 text-sm text-danger">{t('sensors.failed')}</p> : null}
-        {snap.status === 'disconnected' ? <p className="mt-3 text-sm text-warn">{t('sensors.disconnected')}</p> : null}
-        <p className="mt-3 text-sm leading-relaxed text-muted">{snap.mode === 'simulator' ? t('sensors.simLead') : t('sensors.bleLead')}</p>
-        {snap.deviceName ? <p className="mt-2 font-semibold">{snap.deviceName}</p> : null}
-        <ul className="mt-3 flex flex-wrap gap-2 text-sm">
-          <Service on={snap.services.ftms} label={t('sensors.ftms')} />
-          <Service on={snap.services.power} label={t('sensors.power')} />
-          <Service on={snap.services.hr} label={t('sensors.hr')} />
-          <Service on={snap.services.csc} label={t('sensors.csc')} />
-        </ul>
-        {snap.control === 'granted' ? <p className="mt-3 text-sm text-good">{t('sensors.controlOn')}</p> : null}
-        {snap.control === 'denied' ? <p className="mt-3 text-sm text-warn">{t('sensors.controlOff')}</p> : null}
-        {snap.control === 'unsupported' ? <p className="mt-3 text-sm text-warn">{t('sensors.controlMissing')}</p> : null}
-        {snap.simulation === 'active' ? <p className="mt-1 text-sm text-good">{t('sensors.simOn')}</p> : null}
-        {snap.simulation === 'unsupported' ? <p className="mt-1 text-sm text-muted">{t('sensors.simOff')}</p> : null}
-        <p className="mt-3 text-xs leading-relaxed text-muted">{t('sensors.weightNote')}</p>
-        <div className="mt-4 flex flex-col gap-2">
-          <Button disabled={!supportReason ? snap.busy : true} onClick={() => void connect(false)}>
-            {t('sensors.search')}
-          </Button>
-          <Button variant="ghost" disabled={Boolean(supportReason) || snap.busy} onClick={() => void connect(true)}>
-            {t('sensors.searchAll')}
-          </Button>
-          <Button variant="soft" onClick={() => void trainer.useSimulator().then(onClose)}>
-            {t('sensors.useSim')}
-          </Button>
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function Service({ on, label }: { on: boolean; label: string }) {
-  return <li className={`rounded-full px-3 py-1 ${on ? 'bg-good/20 text-good' : 'bg-elev2 text-muted'}`}>{label}</li>;
-}
-
 function BackIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
@@ -2008,23 +1722,7 @@ function PeopleIcon() {
   );
 }
 
-function SimIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="6" cy="16.5" r="3.2" stroke="currentColor" strokeWidth="1.8" />
-      <circle cx="18" cy="16.5" r="3.2" stroke="currentColor" strokeWidth="1.8" />
-      <path d="M6 16.5 9.5 9h4.5l4 7.5M9.5 9l2.5 7.5" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
-    </svg>
-  );
-}
 
-function BleIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M7 7l10 10-5 4V3l5 4L7 17" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
 
 function Sum({ label, value }: { label: string; value: string }) {
   return (

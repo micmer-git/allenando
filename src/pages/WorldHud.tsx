@@ -47,6 +47,34 @@ export function TurnPicker({ session, engine }: { session: WorldSession; engine:
   }, [session]);
   if (!j || j.dist > 220 || engine.phase === 'finished') return null;
   const choices = turnChoices(j.options, j.selected);
+  // sul percorso scelto la strada la sai già: una riga, le frecce piccole per uscirne (H3 del
+  // collaudo U, 11/11/2026: due carte grandi coprivano la strada). Il nome di ogni freccia sta
+  // nell'etichetta; a schermo solo quello della scelta fatta
+  if (session.onRoute) {
+    const sel = choices.find((c) => c.selected) ?? choices.find((c) => c.onRoute) ?? choices[0];
+    return (
+      <div className="pointer-events-auto inline-flex max-w-full items-center gap-1 rounded-full bg-bg/80 py-1 pl-3.5 pr-1 backdrop-blur-md" data-testid="turn-picker" data-compact="" role="group" aria-label="Svolta al prossimo incrocio">
+        <p className="mr-1 min-w-0 text-[13px] font-semibold leading-tight" data-testid="turn-scelta">
+          <span className={sel?.onRoute ? 'text-accent' : undefined}>{sel?.name}</span>
+          <span className="num whitespace-nowrap text-muted"> · {Math.max(0, Math.round(j.dist))} m</span>
+        </p>
+        {choices.map((c, k) => (
+          <button
+            key={c.index}
+            type="button"
+            onClick={() => session.choose(c.index)}
+            aria-pressed={c.selected}
+            aria-label={c.name}
+            data-testid={`turn-${k}`}
+            data-route={c.onRoute ? 'yes' : undefined}
+            className={`grid h-11 w-11 shrink-0 place-items-center rounded-full transition-colors duration-200 ${c.selected ? 'bg-accent/20 text-accent ring-2 ring-accent ring-inset' : 'bg-elev2/90'}`}
+          >
+            {c.exit ? <span className="num font-display text-lg leading-none">{c.exit}ª</span> : <TurnIcon deg={c.turn} uTurn={c.uTurn} size={22} />}
+          </button>
+        ))}
+      </div>
+    );
+  }
   return (
     <div className="pointer-events-auto w-full max-w-[23rem] rounded-2xl bg-bg/80 p-1.5 backdrop-blur-md" data-testid="turn-picker" role="group" aria-label="Svolta al prossimo incrocio">
       <p className="px-1.5 pb-1 text-[13px] font-semibold text-muted">
@@ -80,17 +108,17 @@ export function TurnPicker({ session, engine }: { session: WorldSession; engine:
   );
 }
 
-function TurnIcon({ deg, uTurn }: { deg: number; uTurn: boolean }) {
+function TurnIcon({ deg, uTurn, size = 30 }: { deg: number; uTurn: boolean; size?: number }) {
   if (uTurn) {
     return (
-      <svg width="30" height="30" viewBox="0 0 24 24" aria-hidden="true">
+      <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
         <path d="M8 20V9a4 4 0 0 1 8 0v6M13 12l3 3 3-3" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     );
   }
   // freccia ruotata dell'angolo di svolta: positivo = sinistra
   return (
-    <svg width="30" height="30" viewBox="0 0 24 24" aria-hidden="true" style={{ transform: `rotate(${-deg}deg)` }}>
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" style={{ transform: `rotate(${-deg}deg)` }}>
       <path d="M12 20V5M6 11l6-6 6 6" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
@@ -155,9 +183,12 @@ export function WorldMini({ session, size, onOpen }: { session: WorldSession; si
   return (
     <button type="button" onClick={onOpen} aria-label="Apri la carta: dove sei" data-testid="world-mini" className="pointer-events-auto relative block rounded-full">
       {map}
-      <span aria-hidden="true" className="absolute bottom-1 left-1/2 -translate-x-1/2 rounded-full bg-bg/85 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink">
-        Carta
-      </span>
+      {/* piccola, la scritta coprirebbe metà della cartina: resta l'etichetta */}
+      {size >= 80 ? (
+        <span aria-hidden="true" className="absolute bottom-1 left-1/2 -translate-x-1/2 rounded-full bg-bg/85 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink">
+          Carta
+        </span>
+      ) : null}
     </button>
   );
 }
@@ -394,28 +425,25 @@ export function XpSummary({ lines, total, level, rank, rankNote }: { lines: XpLi
   );
 }
 
-/** Meteo vero in una riga: temperatura, tempo, e da dove arriva il vento rispetto a chi pedala. */
+/**
+ * Il vento, quando si sente: una riga, da dove arriva rispetto a chi pedala. Il cielo, la pioggia e
+ * la luce li dice già il mondo; «8° Coperto · Aria ferma» era una pillola in più sopra la strada
+ * (H3 del collaudo U, 11/11/2026).
+ */
 export function WeatherChip({ session, engine }: { session: WorldSession; engine: RideEngine }) {
   const w = session.weather;
-  if (!w) return null;
+  if (!w || w.windMs < 1.2) return null;
   // freccia: dove va il vento rispetto alla strada davanti (su = a favore, giù = contro)
   const rel = w.windFrom + session.pose.heading;
   const kmh = Math.round(w.windMs * 3.6);
   const head = engine.wind;
-  const text = w.windMs < 1.2 ? 'Aria ferma' : Math.abs(head) < 0.5 ? `Laterale ${kmh} km/h` : head > 0 ? `Contro ${kmh} km/h` : `A favore ${kmh} km/h`;
+  const text = Math.abs(head) < 0.5 ? `Laterale ${kmh} km/h` : head > 0 ? `Contro ${kmh} km/h` : `A favore ${kmh} km/h`;
   return (
-    <div className="flex flex-col items-end rounded-xl bg-bg/70 px-2.5 py-1 text-xs leading-tight backdrop-blur-md" data-testid="world-weather" aria-label={`Meteo: ${weatherLabel(w.code)}, vento ${text.toLowerCase()}`}>
-      <p>
-        <span className="num font-semibold">{Math.round(w.tempC)}°</span> <span className="text-muted">{cap(weatherLabel(w.code))}</span>
-      </p>
-      <p className="flex items-center gap-1">
-        {w.windMs >= 1.2 ? (
-          <svg viewBox="0 0 12 12" className="h-3 w-3" style={{ transform: `rotate(${rel}rad)` }} aria-hidden="true">
-            <path d="M6 1 L10 7 H7.2 V11 H4.8 V7 H2 Z" fill={head > 0.5 ? 'var(--danger, #e5484d)' : head < -0.5 ? 'var(--good, #3fbf7f)' : 'currentColor'} />
-          </svg>
-        ) : null}
-        <span className="font-semibold">{text}</span>
-      </p>
-    </div>
+    <p className="flex items-center gap-1 rounded-xl bg-bg/70 px-2.5 py-1 text-xs font-semibold leading-tight backdrop-blur-md" data-testid="world-weather" aria-label={`Meteo: ${weatherLabel(w.code)}, ${Math.round(w.tempC)} gradi, vento ${text.toLowerCase()}`}>
+      <svg viewBox="0 0 12 12" className="h-3 w-3" style={{ transform: `rotate(${rel}rad)` }} aria-hidden="true">
+        <path d="M6 1 L10 7 H7.2 V11 H4.8 V7 H2 Z" fill={head > 0.5 ? 'var(--danger, #e5484d)' : head < -0.5 ? 'var(--good, #3fbf7f)' : 'currentColor'} />
+      </svg>
+      {text}
+    </p>
   );
 }

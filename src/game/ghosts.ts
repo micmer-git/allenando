@@ -253,12 +253,12 @@ export class RideGhosts {
 
   /** Il fantasma da battere adesso, o null. */
   now(): GhostNow | null {
-    if (!this.opts.enabled) return null;
+    if (!this.opts.enabled || !this.opts.game.fantasma) return null;
     const e = this.opts.engine;
     const s = this.opts.session;
     // il percorso intero: solo partendo dal via e restando sul percorso
     const route = this.routeKey ? this.traces[this.routeKey] : undefined;
-    if (route && s && s.onRoute && this.startD < 1) {
+    if (route && s && s.onRoute && s.giro === 1 && this.startD < 1) {
       return { kind: 'percorso', of: '', distance: ghostMetersAt(route, e.elapsed), gap: ghostGap(route, e.distance, e.elapsed) };
     }
     // il tratto partito per primo (la salita intera prima degli ultimi 3 km)
@@ -291,7 +291,7 @@ export class RideGhosts {
 
   /** C'è un fantasma per questa strada: il percorso o uno dei suoi tratti (per montare il ciclista solo se serve). */
   get any(): boolean {
-    if (!this.opts.enabled) return false;
+    if (!this.opts.enabled || !this.opts.game.fantasma) return false;
     if (this.routeKey && this.traces[this.routeKey]) return true;
     return this.opts.game.tracker.windows.some((w) => !!this.traces[w.seg.id]);
   }
@@ -301,7 +301,8 @@ export class RideGhosts {
    * finisce il percorso) ne fa un fantasma, che resta se è il primo o il più veloce.
    */
   readonly observe = (): void => {
-    if (!this.opts.enabled) return;
+    // un giro di prova non lascia fantasmi (A11)
+    if (!this.opts.enabled || this.opts.game.prova) return;
     const { engine: e, game, session } = this.opts;
     for (const l of game.tracker.live) this.seen.set(l.seg.id, { from: l.from, to: l.to, t0: l.t0 });
     while (this.resultsSeen < game.results.length) {
@@ -310,9 +311,13 @@ export class RideGhosts {
       if (!w) continue;
       this.offer(traceFromSamples(r.id, e.samples, w.from, w.to, w.t0, w.t0 + r.sec, { sim: this.opts.sim() }));
     }
-    if (this.routeKey && session && !this.routeSaved && this.startD < 1 && e.arrived && session.rankable) {
+    // il percorso intero: il primo passaggio (con più giri), o tutto all'arrivo
+    const lap1 = session && session.giri > 1 ? session.giriFatti.find((g) => g.giro === 1) : undefined;
+    if (this.routeKey && session && !this.routeSaved && this.startD < 1 && (e.arrived || lap1) && session.rankable) {
       this.routeSaved = true;
-      this.offer(traceFromSamples(this.routeKey, e.samples, 0, e.distance, 0, e.elapsed, { sim: this.opts.sim() }));
+      const to = lap1 ? session.traguardi()[0] : e.distance;
+      const t1 = lap1 ? lap1.sec : e.elapsed;
+      this.offer(traceFromSamples(this.routeKey, e.samples, 0, to, 0, t1, { sim: this.opts.sim() }));
     }
   };
 

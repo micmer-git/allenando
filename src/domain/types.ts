@@ -32,6 +32,11 @@ export interface Settings {
   weather: 'vero' | 'sereno';
   /** Mondo aperto: la luce dell'ora vera o di un momento scelto. */
   daytime: 'vera' | 'mattina' | 'mezzogiorno' | 'sera';
+  /**
+   * Modalità prova: il simulatore al posto del rullo, spento di serie (A3 del piano U). I giri di
+   * prova vanno nel Diario col gettone, ma non in classifica, né in oro, punti, record, esportazione.
+   */
+  prova?: boolean;
 }
 
 export interface RideSample {
@@ -98,6 +103,12 @@ export interface Ride {
   routeId?: string;
   /** Il mondo aperto in cui si è pedalato (`bergamo`, `sellaronda`), se nel mondo. */
   world?: string;
+  /** Giro di prova (simulatore): nel Diario col gettone, mai in classifica, oro, punti o esportazione. */
+  prova?: true;
+  /** Come si è pedalato: Libera, Potenza fissa, Allenamento, Watt di allora. */
+  tipo?: 'libera' | 'fissa' | 'allenamento' | 'allora';
+  /** Passaggi scelti: giri su un anello, tratte su un percorso aperto. */
+  giri?: number;
 }
 
 export interface SleepSession {
@@ -169,6 +180,11 @@ export const PROFILE_LIMITS = {
   cda: [0.15, 0.7],
   crr: [0.001, 0.02],
 } as const satisfies Record<string, readonly [number, number]>;
+
+/** Un giro si esporta (FIT, TCX, GPX) se è vero: quelli di prova no, Strava avrebbe un giro finto. */
+export function esportabile(ride: Pick<Ride, 'prova'>): boolean {
+  return ride.prova !== true;
+}
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'dark',

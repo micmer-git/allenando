@@ -3,19 +3,15 @@ import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { BottomNav, SideNav } from '@/components/Nav';
 import { useI18n } from '@/i18n';
 import { OnboardingPage } from '@/pages/Onboarding';
-import { HomePage } from '@/pages/Home';
+import { PedalaPage } from '@/pages/Pedala';
 import { WorkoutsPage } from '@/pages/Workouts';
 import { WorkoutEditorPage } from '@/pages/WorkoutEditor';
 import { HistoryPage } from '@/pages/History';
 import { RideDetailPage } from '@/pages/RideDetail';
 import { LoadPage } from '@/pages/Load';
 import { ImportPage } from '@/pages/Import';
-import { ClimbsPage } from '@/pages/Climbs';
 import { ClimbDetailPage } from '@/pages/ClimbDetail';
-import { RidesPage } from '@/pages/Rides';
-import { ReplaySetupPage } from '@/pages/ReplaySetup';
-import { ProfilePage } from '@/pages/Profile';
-import { WorldPage } from '@/pages/World';
+import { ImpostazioniPage } from '@/pages/Impostazioni';
 import { GaragePage } from '@/pages/Garage';
 import { AchievementsPage } from '@/pages/Achievements';
 import { LeaderboardsPage } from '@/pages/Leaderboards';
@@ -24,6 +20,7 @@ import { MePage } from '@/pages/Me';
 import { Wordmark } from '@/components/ui';
 import { OfflineBanner } from '@/components/Install';
 import { useApp } from '@/store/useApp';
+import { redirectFor } from '@/lib/redirect';
 
 const RidePage = lazy(() => import('@/pages/Ride').then((mod) => ({ default: mod.RidePage })));
 const PlansPage = lazy(() => import('@/pages/Plans').then((mod) => ({ default: mod.PlansPage })));
@@ -41,7 +38,7 @@ export function App() {
       <Routes>
         <Route element={<Shell />}>
           <Route path="/start" element={<OnboardingPage />} />
-          <Route path="/" element={<HomePage />} />
+          <Route path="/" element={<PedalaPage />} />
           <Route path="/ride" element={<Suspense fallback={<Splash />}><RidePage /></Suspense>} />
           <Route path="/workouts" element={<WorkoutsPage />} />
           <Route path="/workouts/edit/:id" element={<WorkoutEditorPage />} />
@@ -49,12 +46,12 @@ export function App() {
           <Route path="/history/:id" element={<RideDetailPage />} />
           <Route path="/load" element={<LoadPage />} />
           <Route path="/import" element={<ImportPage />} />
-          <Route path="/mondo" element={<WorldPage />} />
-          <Route path="/salite" element={<ClimbsPage />} />
           <Route path="/salite/:id" element={<ClimbDetailPage />} />
-          <Route path="/giri" element={<RidesPage />} />
-          <Route path="/giri/:id" element={<ReplaySetupPage />} />
-          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/impostazioni" element={<ImpostazioniPage />} />
+          {/* le rotte di prima del riordino (piano U, § 2.6): ognuna porta dove la cosa sta adesso */}
+          {['/mondo', '/salite', '/giri', '/giri/:id', '/profile'].map((path) => (
+            <Route key={path} path={path} element={<Redirect />} />
+          ))}
           <Route path="/garage" element={<GaragePage />} />
           <Route path="/traguardi" element={<AchievementsPage />} />
           <Route path="/classifiche" element={<LeaderboardsPage />} />
@@ -83,13 +80,19 @@ function Shell() {
     <div className="rail:grid rail:grid-cols-[76px_minmax(0,1fr)] wide:grid wide:grid-cols-[240px_minmax(0,1fr)]">
       <SideNav />
       <div>
-        <OfflineBanner />
+        <OfflineBanner hidden={location.pathname === '/'} />
         {memoryOnly ? <p className="bg-warn/15 px-4 py-2 text-sm text-warn">{t('app.memory')}</p> : null}
         <Outlet />
         <BottomNav />
       </div>
     </div>
   );
+}
+
+/** Una rotta vecchia: si va dove la cosa sta adesso, sostituendo la voce della cronologia. */
+function Redirect() {
+  const location = useLocation();
+  return <Navigate to={redirectFor(location.pathname, location.search) ?? '/'} replace />;
 }
 
 function ThemeSync() {

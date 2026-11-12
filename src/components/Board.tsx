@@ -1,47 +1,39 @@
 import { useEffect, useState } from 'react';
-import { Segmented } from '@/components/ui';
+import { useOnline } from '@/components/Install';
 import { formatDuration, formatNumber } from '@/domain/format';
 import { fetchRideBoard } from '@/open/progress';
 import type { BoardRow } from '@/multiplayer/world-protocol';
 
 type BoardData = { total: number; rows: BoardRow[]; mine: { rank: number; sec: number } | null };
 
-/** Una classifica: rullo o simulatore, i primi dieci e la tua posizione. */
+/**
+ * Una classifica: i primi dieci e la tua posizione. Solo i tempi del rullo: la prova non va in
+ * classifica (piano U, A11), e i tempi «sim» del server restano dove sono, senza mostrarsi.
+ */
 export function BoardPanel({ id, title = 'Classifica', limit = 10 }: { id: string; title?: string; limit?: number }) {
-  const [sim, setSim] = useState(false);
+  const online = useOnline();
   const [board, setBoard] = useState<BoardData | null | 'loading'>('loading');
   useEffect(() => {
     let alive = true;
     setBoard('loading');
-    void fetchRideBoard(id, sim).then((b) => alive && setBoard(b));
+    void fetchRideBoard(id, false).then((b) => alive && setBoard(b));
     return () => {
       alive = false;
     };
-  }, [id, sim]);
+  }, [id, online]);
   return (
     <section data-testid={`board-${id}`}>
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="eyebrow">{title}</h3>
-        <div className="w-48">
-          <Segmented<'rullo' | 'sim'>
-            label="Tipo di tempo"
-            value={sim ? 'sim' : 'rullo'}
-            onChange={(v) => setSim(v === 'sim')}
-            options={[
-              { value: 'rullo', label: 'Rullo' },
-              { value: 'sim', label: 'Simulatore' },
-            ]}
-          />
-        </div>
-      </div>
-      <BoardRows board={board} limit={limit} />
+      <h3 className="eyebrow">{title}</h3>
+      <BoardRows board={board} limit={limit} offline={!online} />
     </section>
   );
 }
 
-export function BoardRows({ board, limit = 10 }: { board: BoardData | null | 'loading'; limit?: number }) {
-  if (board === 'loading') return <p className="mt-2 text-sm text-muted">Carico la classifica…</p>;
-  if (!board) return <p className="mt-2 text-sm text-muted">Classifica non raggiungibile: serve la rete.</p>;
+export function BoardRows({ board, limit = 10, offline = false }: { board: BoardData | null | 'loading'; limit?: number; offline?: boolean }) {
+  // senza rete, una parola (A16)
+  if (offline && board !== 'loading' && !board) return <p className="mt-2 text-sm text-muted" data-testid="rete-offline">Offline</p>;
+  if (board === 'loading') return <p className="mt-2 text-sm text-muted">Carico la classifica</p>;
+  if (!board) return <p className="mt-2 text-sm text-muted">Classifica non raggiungibile</p>;
   if (board.rows.length === 0) return <p className="mt-2 text-sm text-muted">Nessun tempo ancora. Il primo è tuo.</p>;
   return (
     <ol className="mt-2 flex flex-col gap-1">

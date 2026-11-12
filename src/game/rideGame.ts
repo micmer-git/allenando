@@ -50,7 +50,20 @@ export interface RideGameOptions {
   scale: () => number;
   /** niente classifiche dei tratti: replay e allenamenti ERG non sono corse */
   ranked: boolean;
+  /** giro di prova: niente record, niente classifica della sessione, niente fantasma registrato */
+  prova?: boolean;
+  /** il fantasma da battere si mostra? (interruttore di Pedala, A9) Di serie sì */
+  fantasma?: boolean;
+  /**
+   * i tratti cronometrati (GPM, volate, crono, cassonetti): di serie sì. Con un allenamento o coi
+   * watt di allora no: il ritmo lo decide l'ERG, il tempo non è una corsa e non fa record (A10), e
+   * sulla strada restano gli archi dell'ERG e dei km
+   */
+  tratti?: boolean;
 }
+
+/** Un arco di partenza entro questi metri da dove si parte non si mette: ci si è già sotto, e copre la strada. */
+const SPAWN_ARCH_M = 15;
 
 export class RideGame {
   readonly engine: RideEngine;
@@ -84,6 +97,18 @@ export class RideGame {
   private readonly erg: ErgArchPlanner | null;
   private ergCur: { gate: { id: string; role: 'start' | 'finish'; label: string; sub?: string }; d: number } | null = null;
   private ergSpec: ArchSpec | null = null;
+  /** dove si parte (o si riprende), metri sul percorso */
+  private readonly spawnD: number;
+
+  /** giro di prova: niente record né fantasmi registrati */
+  get prova(): boolean {
+    return !!this.opts.prova;
+  }
+
+  /** il fantasma si mostra (A9) */
+  get fantasma(): boolean {
+    return this.opts.fantasma !== false;
+  }
 
   constructor(opts: RideGameOptions) {
     this.opts = opts;
@@ -92,8 +117,11 @@ export class RideGame {
     this.world = opts.world ?? null;
     this.sessionDef = opts.sessionDef ?? null;
     this.pbs = { ...opts.pbs };
+    this.spawnD = this.engine.distance;
     let windows: Window[] = [];
-    if (this.world) {
+    if (opts.tratti === false) {
+      // nessun tratto: niente da cronometrare né da mettere sulla strada
+    } else if (this.world) {
       this.anchors = worldSegments(this.world.data).anchors;
       windows = windowsOnPath(this.world.session.path, this.anchors);
       this.pathVersion = this.world.session.path.version;
@@ -148,8 +176,8 @@ export class RideGame {
       return;
     }
     const e = this.engine;
-    // il percorso finisce prima dell'allenamento: non ci si ferma, si prosegue libero
-    if (this.world && e.workout && !e.workoutDone && this.world.session.planned && this.world.session.path.length - e.distance < 400) this.world.session.continueFree(e.distance);
+    // il percorso finisce prima dell'allenamento: un passaggio in più (giro o tratta), oltre i 20 libero
+    if (this.world && e.workout && !e.workoutDone && this.world.session.planned) this.world.session.allenamentoContinua(e.distance);
     // il percorso del mondo cambia a ogni svolta: i tratti si rimettono sul percorso nuovo
     if (this.world && this.anchors && this.world.session.path.version !== this.pathVersion) {
       this.pathVersion = this.world.session.path.version;
@@ -160,7 +188,8 @@ export class RideGame {
     for (const ev of this.tracker.update(e.distance, e.elapsed, e.power, e.altitude)) {
       if (ev.type !== 'finish') continue;
       const old = this.pbs[ev.seg.id];
-      const isPb = !old || ev.sec < old.sec;
+      // in prova nessun record: il tempo del simulatore non batte niente
+      const isPb = !this.opts.prova && (!old || ev.sec < old.sec);
       const wkg = this.opts.weightKg > 0 ? ev.avgPower / this.opts.weightKg : 0;
       this.results.push({ id: ev.seg.id, kind: ev.seg.kind, name: ev.seg.name, sec: ev.sec, wkg, lengthM: ev.lengthM, gainM: ev.gainM });
       if (isPb) this.pbs[ev.seg.id] = { sec: ev.sec, at: new Date().toISOString(), sim: this.opts.sim(), count: (old?.count ?? 0) + 1 };
@@ -211,7 +240,7 @@ export class RideGame {
     // arrivo della sessione: tempo nella classifica della sessione
     if (def && this.stage === 'corsa' && e.arrived) {
       this.stage = 'arrivo';
-      if (!this.sessionPosted && this.opts.nick) {
+      if (!this.sessionPosted && this.opts.nick && !this.opts.prova) {
         this.sessionPosted = true;
         const avg = e.samples.length ? e.samples.reduce((s, x) => s + x.power, 0) / e.samples.length : e.power3s;
         void postResult({ nick: this.opts.nick, ride: sessionBoardId(def), sec: e.elapsed, wkg: this.opts.weightKg > 0 ? avg / this.opts.weightKg : 0, sim: this.opts.sim() }).then((r) => {
@@ -273,7 +302,10 @@ export class RideGame {
     // un portale dei km sotto un arco di un tratto non si mette (se ne vede uno solo); un
     // cartellino a bordo strada sotto un portale dei km è di troppo («1 km» e «Ultimo km»)
     const km = kmArchSpecs(this.kmMarks(), this.poseAt, this.halfWidth).filter((k) => !seg.some((a) => a.role !== 'banner' && near(a, k)));
-    this.baseArches = [...seg.filter((a) => a.role !== 'banner' || !km.some((k) => near(a, k))), ...km];
+    // il via di un tratto dove si parte non si disegna: il cartello starebbe fermo davanti alla
+    // camera per i primi secondi, e il tempo parte lo stesso (H3 del collaudo U, 11/11/2026)
+    const spawn = (a: ArchSpec) => a.role === 'start' && a.d != null && Math.abs(a.d - this.spawnD) < SPAWN_ARCH_M;
+    this.baseArches = [...seg.filter((a) => !spawn(a) && (a.role !== 'banner' || !km.some((k) => near(a, k)))), ...km];
     this.arches = this.ergSpec ? [...this.baseArches, this.ergSpec] : this.baseArches;
     this.archVersion++;
   }

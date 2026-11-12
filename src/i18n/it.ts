@@ -71,7 +71,6 @@ export const it = {
     namePlaceholder: 'Il tuo nome',
     weight: 'Peso, kg',
     ftp: 'FTP, W',
-    ftpHint: 'Non sai l’FTP? Lascia 220 e fai il test a rampa, in Allenamenti.',
     maxHr: 'FC max',
     enter: 'Entra',
   },
@@ -91,7 +90,7 @@ export const it = {
     load: 'Carico',
   },
   ride: {
-    simulator: 'Simulatore',
+    simulator: 'Prova',
     sensors: 'Sensori',
     connected: 'Connesso',
     waiting: 'In attesa dei dati del sensore…',
@@ -122,16 +121,14 @@ export const it = {
   theme: { dark: 'Scuro', light: 'Chiaro' },
   sensors: {
     title: 'Sensori',
-    simLead: 'Il simulatore genera potenza, frequenza e cadenza. Puoi pedalare e fare gli allenamenti anche senza rullo.',
     bleLead: 'Collega un rullo FTMS, un misuratore di potenza, una fascia cardio o un sensore di cadenza.',
     search: 'Cerca il rullo',
     searchAll: 'Mostra tutti i dispositivi',
-    useSim: 'Usa il simulatore',
     ios: 'Safari su iPhone e iPad non ha il Web Bluetooth. Apri OROBIA con Bluefy, il browser che abilita il Bluetooth.',
     iosLink: 'Bluefy sull’App Store',
     missing: 'Questo browser non supporta il Web Bluetooth. Su Android e computer usa Chrome o Edge. Su iPhone, Bluefy.',
     cancelled: 'Connessione annullata.',
-    failed: 'Non sono riuscito a collegare il sensore. Riprova, o continua col simulatore.',
+    failed: 'Collegamento non riuscito',
     disconnected: 'Sensore disconnesso. I dati si sono fermati.',
     ftms: 'Rullo FTMS',
     power: 'Potenza',
@@ -147,7 +144,7 @@ export const it = {
   },
   workouts: {
     title: 'Allenamenti',
-    lead: 'Libreria pronta e i tuoi schemi. In ERG il simulatore, o il rullo FTMS, insegue i watt.',
+    lead: 'Libreria pronta e i tuoi schemi.',
     new: 'Nuovo allenamento',
     mine: 'I tuoi schemi',
     none: 'Nessuno schema personale, per ora.',
@@ -304,7 +301,7 @@ export const it = {
     free: 'Giro libero',
   },
   a11y: {
-    effort: 'Sforzo del simulatore, in percentuale della FTP',
+    effort: 'Sforzo della prova, in percentuale della FTP',
     openProfile: 'Apri il profilo',
   },
 };

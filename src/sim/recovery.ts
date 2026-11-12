@@ -2,6 +2,7 @@ import { loadKv, saveKv } from '@/db/db';
 import { buildRide } from '@/domain/metrics';
 import type { Ride } from '@/domain/types';
 import type { SegmentResult } from '@/game/career';
+import { normalizzaSearch } from '@/ride/intento';
 import type { EngineCheckpoint, RideEngine } from './engine';
 
 /**
@@ -77,12 +78,15 @@ export function rideFromCheckpoint(cp: RideCheckpoint): Ride {
   });
   if (cp.routeId) ride.routeId = cp.routeId;
   if (cp.worldId) ride.world = cp.worldId;
+  if (e.tipo) ride.tipo = e.tipo;
+  if (e.giri && e.giri > 1) ride.giri = e.giri;
+  if (e.prova) ride.prova = true;
   return ride;
 }
 
-/** Il link che riprende il giro. */
+/** Il link che riprende il giro: lo stesso intento (dove, tipo, giri), più `resume`. */
 export function resumePath(cp: RideCheckpoint): string {
-  const p = new URLSearchParams(cp.search);
+  const p = new URLSearchParams(normalizzaSearch(cp.search) ?? cp.search);
   p.set('resume', '1');
   return `/ride?${p.toString()}`;
 }
@@ -99,7 +103,12 @@ export function rideSearch(params: URLSearchParams, drop: string[] = []): string
  * chiede «Riprendi / Salva com'è». Un giro diverso invece salva il vecchio nel diario e parte.
  */
 export function sameRide(cp: RideCheckpoint, params: URLSearchParams): boolean {
-  return rideSearch(new URLSearchParams(cp.search)) === rideSearch(params);
+  const a = rideSearch(new URLSearchParams(cp.search));
+  const b = rideSearch(params);
+  if (a === b) return true;
+  // lo stesso intento scritto in un altro ordine (un link rifatto da intentoInSearch) è lo stesso giro
+  const na = normalizzaSearch(a, ['resume']);
+  return na != null && na === normalizzaSearch(b, ['resume']);
 }
 
 export interface KeeperMeta {

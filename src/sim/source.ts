@@ -31,6 +31,8 @@ export interface TrainerSnapshot {
   simulation: 'none' | 'active' | 'unsupported';
   status: 'idle' | 'connecting' | 'connected' | 'cancelled' | 'failed' | 'disconnected';
   busy: boolean;
+  /** Cosa il rullo sa comandare: i watt (ERG) e la pendenza (SIM). Assente = niente. */
+  can?: { erg: boolean; sim: boolean };
 }
 
 /**

@@ -1,4 +1,5 @@
-// Collaudo della corsa (pista 2): velo di caricamento, numeri grandi, niente tasti gialli, fascia
+// Collaudo della corsa (pista 2, in prova col piano U: senza rullo né prova la corsa torna a
+// Pedala): velo di caricamento, numeri grandi, niente tasti gialli, fascia
 // centrale libera, pausa che si vede, «Termina» da tenere premuto, giro salvato da solo, ripresa
 // dopo la scheda chiusa, incrocio con tre frecce, orizzontale e computer.
 // Lo chiamano ui-shot.mjs (in coda) e game-shot.mjs (holdFinish). Non apre un Chrome suo.
@@ -32,8 +33,8 @@ export const probe = `(() => {
   const c = r.querySelector('[data-testid=ride-stage] canvas');
   const cb = c ? c.getBoundingClientRect() : null;
   const big = [...r.querySelectorAll('[data-big]')].map((e) => Math.round(parseFloat(getComputedStyle(e).fontSize)));
-  // tasti gialli pieni: ammessa solo la velocità scelta del simulatore
-  const yellow = [...r.querySelectorAll('button')].filter((b) => vis(b) && getComputedStyle(b).backgroundColor === 'rgb(255, 200, 20)' && !(b.closest('[aria-label="Velocità del simulatore"]') && b.getAttribute('aria-pressed') === 'true')).map((b) => (b.getAttribute('aria-label') || b.textContent).trim().slice(0, 24));
+  // tasti gialli pieni: nessuno (la velocità scelta della prova è chiara sul binario, non gialla)
+  const yellow = [...r.querySelectorAll('button')].filter((b) => vis(b) && getComputedStyle(b).backgroundColor === 'rgb(255, 200, 20)' && !(b.closest('[aria-label="Velocità del tempo nella prova"]') && b.getAttribute('aria-pressed') === 'true')).map((b) => (b.getAttribute('aria-label') || b.textContent).trim().slice(0, 24));
   // la fascia 35–65% dell'altezza del 3D: libera, tranne l'incrocio
   const band = cb ? [cb.top + cb.height * 0.35, cb.top + cb.height * 0.65] : [0, 0];
   const panels = [
@@ -49,7 +50,7 @@ export const probe = `(() => {
   }
   // la velocità scelta contro quella non scelta: contrasto dei fondi ≥ 3:1
   const lum = (c) => { const m = c.match(/[\\d.]+/g); if (!m) return null; const [R, G, B] = m.slice(0, 3).map((v) => { const s = Number(v) / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; }); return 0.2126 * R + 0.7152 * G + 0.0722 * B; };
-  const group = r.querySelector('[aria-label="Velocità del simulatore"]');
+  const group = r.querySelector('[aria-label="Velocità del tempo nella prova"]');
   const on = group?.querySelector('[aria-pressed=true]');
   let speedContrast = null;
   if (group && on) { const a = lum(getComputedStyle(on).backgroundColor), b = lum(getComputedStyle(group).backgroundColor); if (a != null && b != null) speedContrast = Math.round(((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) * 10) / 10; }
@@ -96,8 +97,14 @@ export async function collaudoCorsa({ b, base, check, out = '' }) {
   void out;
   const p = await b.phone(base);
   // il profilo c'è già nel browser (onboarding fatto da chi chiama): si entra
+  // piano U: senza rullo la corsa parte solo in prova. Si accende in Impostazioni (vale per tutte le
+  // schede di questo browser, anche quella che riprende il giro a metà); ?prova=1 vale per una scheda
+  await p.go('/impostazioni');
+  await p.waitFor(`!!document.querySelector('[data-testid=impostazioni-prova]')`, 15000);
+  if (await p.evaluate(`document.querySelector('[data-testid=impostazioni-prova]')?.getAttribute('aria-checked') === 'false'`)) await p.click('[data-testid=impostazioni-prova]');
+  await sleep(400);
   // 2.2 il velo prima del mondo
-  await p.go('/ride?world=bergamo&ride=citta-alta');
+  await p.go('/ride?world=bergamo&ride=citta-alta&prova=1');
   // l'app si avvia (sotto carico anche qualche secondo), poi la corsa si monta sotto il velo e aspetta il mondo
   await p.waitFor(`!!document.querySelector('[data-testid=ride-loading]') || ${ready}`, 60000);
   const veil0 = await p.evaluate(`({ veil: !!document.querySelector('[data-testid=ride-loading]') && !(${ready}), title: document.querySelector('[data-testid=ride-loading-title]')?.textContent ?? '' })`);
@@ -139,7 +146,7 @@ export async function collaudoCorsa({ b, base, check, out = '' }) {
   check(!(await p.evaluate(`!!document.querySelector('[data-testid=ride-summary]')`)), 'termina: un tocco breve non apre il riepilogo');
   // 2.4 la pausa si vede, e i numeri stanno fermi
   await p.evaluate(`(() => { const b = [...document.querySelectorAll('button')].find((x) => /^Pausa$/.test(x.textContent.trim())); b?.click(); return !!b; })()`);
-  check(await p.waitFor(`!!document.querySelector('[data-testid=pause-veil]') && getComputedStyle(document.querySelector('[data-testid=pause-veil]')).opacity === '1'`, 4000), 'pausa: il velo «In pausa»');
+  check(await p.waitFor(`!!document.querySelector('[data-testid=pause-veil]') && getComputedStyle(document.querySelector('[data-testid=pause-veil]')).opacity === '1'`, 10000), 'pausa: il velo «In pausa»');
   const t0 = await p.evaluate(`[document.querySelector('[data-testid=ride-time]').textContent, document.querySelector('[data-testid=ride-km]').textContent, document.querySelector('[data-testid=ride-power]').textContent]`);
   await sleep(1500);
   await p.shot('c2-24-pausa');
@@ -155,7 +162,8 @@ export async function collaudoCorsa({ b, base, check, out = '' }) {
   check(await holdFinish(p), 'termina: il dito tiene premuto');
   check(await p.waitFor(`!!document.querySelector('[data-testid=ride-summary]')`, 30000), 'termina: tenuto 1 s apre il riepilogo');
   check(await p.waitFor(`document.querySelector('[data-testid=ride-saved]')?.dataset.state === 'saved'`, 30000), 'riepilogo: «Giro salvato» senza toccare niente');
-  check(await p.waitFor(`!!document.querySelector('[data-testid=rewards]')`, 15000), 'riepilogo: oro e traguardi');
+  // la corsa qui è in prova (piano U, A11): il riepilogo dice «Prova», e niente oro né traguardi
+  check(await p.waitFor(`!!document.querySelector('[data-testid=summary-prova]')`, 15000) && !(await p.evaluate(`!!document.querySelector('[data-testid=rewards]')`)), 'riepilogo di prova: «Prova», niente oro né traguardi');
   check(await p.evaluate(`!!document.querySelector('[data-testid=summary-map] canvas') && !!document.querySelector('[data-testid=summary-profile]')`), 'riepilogo: la carta con la traccia e il profilo');
   check(await p.evaluate(`!!document.querySelector('[data-testid=ride-summary-extra]')`), 'riepilogo: la riga delle azioni secondarie (FIT, diario; cartolina)');
   await sleep(800);
@@ -170,11 +178,11 @@ export async function collaudoCorsa({ b, base, check, out = '' }) {
   const saved = await p.evaluate(`document.querySelector('[data-testid=ride-summary] h2')?.textContent ?? ''`);
   // ricaricando, il giro è nel diario
   await p.go('/history');
-  await sleep(1500);
-  check(await p.evaluate(`document.body.innerText.includes(${JSON.stringify(saved)})`), 'salvataggio: il giro è nel diario dopo un ricaricamento', saved);
+  // sotto carico la pagina ricaricata ci mette qualche secondo: si aspetta la riga, col gettone «Prova»
+  check(await p.waitFor(`document.body.innerText.includes(${JSON.stringify(saved)}) && !!document.querySelector('[data-testid=diario-prova]')`, 15000), 'salvataggio: il giro è nel diario dopo un ricaricamento, col gettone «Prova»', saved);
 
   // 2.1 la scheda si chiude a metà giro: alla riapertura «Riprendi»
-  await p.go('/ride?world=bergamo&ride=citta-alta');
+  await p.go('/ride?world=bergamo&ride=citta-alta&prova=1');
   await p.waitFor(ready, 150000);
   await p.clickText('10×');
   // si chiude la scheda a 60 s di giro (sul tempo del giro: col 3D lento il simulatore va più piano dell'orologio)
@@ -221,7 +229,7 @@ export async function collaudoCorsa({ b, base, check, out = '' }) {
 
   // 2.7 l'incrocio, a Città Alta at=130 e at=1500
   for (const at of [130, 1500]) {
-    await q.go(`/ride?world=bergamo&ride=citta-alta&at=${at}`);
+    await q.go(`/ride?world=bergamo&ride=citta-alta&at=${at}&prova=1`);
     await q.waitFor(ready, 150000);
     await q.clickText('4×');
     const seen = await q.waitFor(`!!document.querySelector('[data-testid=turn-picker]')`, 40000);
@@ -231,13 +239,16 @@ export async function collaudoCorsa({ b, base, check, out = '' }) {
       check(false, `incrocio at=${at}: compare la scelta`);
       continue;
     }
-    const turns = await q.evaluate(`[...document.querySelectorAll('[data-testid=turn-picker] button')].map((b) => b.innerText.replace(/\\s+/g, ' ').trim())`);
+    // sul percorso scelto la scelta è una riga di frecce (data-compact): il nome sta nell'etichetta
+    const turns = await q.evaluate(`[...document.querySelectorAll('[data-testid=turn-picker] button')].map((b) => (b.getAttribute('aria-label') || b.innerText).replace(/\\s+/g, ' ').trim())`);
+    const compact = await q.evaluate(`(() => { const t = document.querySelector('[data-testid=turn-picker]'); return t && t.dataset.compact !== undefined ? Math.round(t.getBoundingClientRect().height) : null; })()`);
+    check(compact != null && compact <= 56, `incrocio at=${at}: sul percorso scelto una riga sola`, String(compact));
     const cutT = await q.evaluate(ellipsis('[data-testid=turn-picker]'));
     check(turns.length >= 2 && turns.length <= 3, `incrocio at=${at}: al massimo 3 frecce`, turns.join(' | '));
     check(new Set(turns).size === turns.length, `incrocio at=${at}: nomi diversi`, turns.join(' | '));
     check(cutT.length === 0, `incrocio at=${at}: nessun nome troncato`, cutT.join(' | '));
     check((await q.evaluate(lowercase('[data-testid=turn-picker]'))).length === 0, `incrocio at=${at}: maiuscole`);
-    const route = await q.evaluate(`document.querySelector('[data-testid=turn-picker] [data-route=yes]')?.innerText.trim() ?? ''`);
+    const route = await q.evaluate(`(() => { const b = document.querySelector('[data-testid=turn-picker] [data-route=yes]'); return b ? (b.getAttribute('aria-label') || b.innerText).trim() : ''; })()`);
     check(!route || /Percorso/.test(route), `incrocio at=${at}: la freccia del percorso dice «Percorso»`, route);
   }
   // un giro rimasto a metà non deve restare nel browser di chi chiama
@@ -253,7 +264,7 @@ export async function collaudoLargo({ b, base, check }) {
   ]) {
     const p = await b.phone(base, { width: w, height: h });
     if (w >= 1280) await p.s('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 1, mobile: false });
-    await p.go('/ride?world=bergamo&ride=citta-alta&at=1500');
+    await p.go('/ride?world=bergamo&ride=citta-alta&at=1500&prova=1');
     check(await p.waitFor(ready, 150000), `${w}×${h}: mondo pronto`);
     await p.clickText('4×');
     await sleep(5000);
@@ -269,6 +280,57 @@ export async function collaudoLargo({ b, base, check }) {
     check(a.small.length === 0, `${w}×${h}: bersagli ≥ 44 px`, a.small.join(' | '));
     const cut = await p.evaluate(ellipsis('[data-testid=ride-screen]'));
     check(cut.length === 0, `${w}×${h}: nessun testo troncato`, cut.join(' | '));
+    await p.s('Page.close').catch(() => null);
+    await sleep(500);
+  }
+}
+
+/**
+ * § 5 «Giri» del piano U, in prova a 10× (collaudo d'integrazione, 11/11/2026). Sulla Ganda con
+ * due giri, 250 m prima del traguardo: «Giro 1 di 2» diventa «Giro 2 di 2» e compare il tempo
+ * del primo giro. Sulla Città Alta con un allenamento e due tratte (andata e ritorno), da 250 m
+ * prima della svolta fino in fondo: il giro si chiude da solo e il riepilogo ha i tempi delle due.
+ * Le lunghezze dei percorsi stanno in public/world/bergamo/rides.json (lengthM).
+ */
+export async function collaudoGiri({ b, base, check, lunghezze }) {
+  const p = await b.phone(base);
+  const testo = (sel) => p.evaluate(`document.querySelector(${JSON.stringify(sel)})?.textContent ?? ''`);
+  try {
+    await p.go(`/ride?world=bergamo&ride=ganda&giri=2&at=${lunghezze.ganda - 250}&prova=1`);
+    check(await p.waitFor(ready, 150000), 'giri: la Ganda pronta, 250 m prima del traguardo');
+    check((await testo('[data-testid=ride-giro]')) === 'Giro 1 di 2', 'giri: «Giro 1 di 2» accanto al titolo', await testo('[data-testid=ride-giro]'));
+    await p.clickText('10×');
+    const t0 = Date.now();
+    check(await p.waitFor(`document.querySelector('[data-testid=ride-giro]')?.textContent === 'Giro 2 di 2'`, 240000), 'giri: al traguardo «Giro 2 di 2»', `${Math.round((Date.now() - t0) / 1000)} s`);
+    check(await p.waitFor(`/^Giro 1 · /.test(document.querySelector('[data-testid=ride-giro-tempo]')?.textContent ?? '')`, 10000), 'giri: il tempo del primo giro sotto il titolo', await testo('[data-testid=ride-giro-tempo]'));
+    check(/km al traguardo/.test(await testo('[data-testid=ride-km]')), 'giri: i km al traguardo del secondo giro', await testo('[data-testid=ride-km]'));
+    await sleep(800);
+    await p.shot('c2-40-giro-2-di-2');
+    await holdFinish(p);
+    await p.waitFor(`document.querySelector('[data-testid=ride-saved]')?.dataset.state === 'saved'`, 30000);
+    await p.click('[data-testid=ride-done]');
+    await sleep(1500);
+    // andata e ritorno con un allenamento: la svolta, poi giù fino al via
+    await p.go(`/ride?workout=risveglio&world=bergamo&ride=citta-alta&giri=2&at=${lunghezze.citta - 250}&prova=1`);
+    check(await p.waitFor(ready, 150000), 'tratte: la Città Alta pronta, 250 m prima della svolta');
+    check((await testo('[data-testid=ride-giro]')) === 'Tratta 1 di 2', 'tratte: «Tratta 1 di 2»', await testo('[data-testid=ride-giro]'));
+    await p.clickText('10×');
+    check(await p.waitFor(`document.querySelector('[data-testid=ride-giro]')?.textContent === 'Tratta 2 di 2'`, 240000), 'tratte: alla svolta «Tratta 2 di 2»');
+    // il ritorno sono 4,9 km: col 3D software sotto carico il 10× va piano, e il giro può non
+    // arrivare al via in due minuti. Allora «Termina» nella seconda tratta: il riepilogo ha la prima
+    const t1 = Date.now();
+    const fine = await p.waitFor(`!!document.querySelector('[data-testid=ride-summary]')`, 120000);
+    if (!fine) {
+      await holdFinish(p);
+      await p.waitFor(`!!document.querySelector('[data-testid=ride-summary]')`, 30000);
+    }
+    const giri = await testo('[data-testid=summary-giri]');
+    if (fine) check(/Tratta 1 · /.test(giri) && /Tratta 2 · /.test(giri), 'tratte: al via il giro si chiude da solo, il riepilogo coi tempi delle due', `${Math.round((Date.now() - t1) / 1000)} s · ${giri}`);
+    else check(/Tratta 1 · /.test(giri) && !/Tratta 2 · /.test(giri), 'tratte: «Termina» nella seconda (il ritorno non è finito in 120 s), il riepilogo col tempo della prima', giri);
+    await sleep(800);
+    await p.shot('c2-41-riepilogo-tratte');
+  } finally {
+    await p.evaluate(`(async () => { const r = indexedDB.open('allenando'); await new Promise((ok) => (r.onsuccess = ok)); const db = r.result; const tx = db.transaction('kv', 'readwrite'); tx.objectStore('kv').put(null, 'ride:checkpoint'); await new Promise((ok) => (tx.oncomplete = ok)); return true; })()`).catch(() => null);
     await p.s('Page.close').catch(() => null);
     await sleep(500);
   }

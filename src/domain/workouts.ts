@@ -1,6 +1,8 @@
 import type { Workout, WorkoutStep } from './types';
 import { normalizedPower, trainingStressScore } from './metrics';
 import { WORLD_ID, worldOfRide } from '@/multiplayer/world-rides';
+import type { Dove } from '@/ride/contract';
+import { intentoDaSearch, intentoInSearch } from '@/ride/intento';
 
 export function stepPower(step: WorkoutStep, intoSec: number, ftp: number): number {
   const start =
@@ -336,13 +338,12 @@ export type WorkoutPlace =
 
 /** Il link della pedalata: l'allenamento e il posto insieme. */
 export function workoutRideLink(id: string, place: WorkoutPlace): string {
-  const q = new URLSearchParams({ workout: id });
-  if (place.kind === 'salita') q.set('route', place.route);
-  else if (place.kind === 'percorso') {
-    q.set('world', place.world ?? worldOfRide(place.ride) ?? WORLD_ID);
-    q.set('ride', place.ride);
-  } else for (const [k, v] of new URLSearchParams(place.query)) q.set(k, v);
-  return `/ride?${q.toString()}`;
+  let dove: Dove | null;
+  if (place.kind === 'salita') dove = { kind: 'salita', route: place.route };
+  else if (place.kind === 'percorso') dove = { kind: 'percorso', world: place.world ?? worldOfRide(place.ride) ?? WORLD_ID, ride: place.ride };
+  else dove = intentoDaSearch(new URLSearchParams(place.query))?.dove ?? null;
+  // un posto illeggibile: l'allenamento sulla salita di sempre
+  return `/ride?${intentoInSearch({ dove: dove ?? { kind: 'salita', route: 'selvino-nembro' }, tipo: 'allenamento', workout: id })}`;
 }
 
 /**

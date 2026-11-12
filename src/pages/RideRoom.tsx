@@ -201,8 +201,8 @@ export function RoomSheet({ handle, routeTitle, onClose }: { handle: RoomHandle;
           >
             <p className="text-[15px] leading-relaxed text-muted">
               {invited
-                ? `Ti hanno invitato su ${routeTitle}. Ognuno pedala col suo rullo o col simulatore: vi vedete sulla strada e nel pannello dei distacchi.`
-                : `Apri una stanza su ${routeTitle} e manda il link: chi lo apre pedala sulla stessa salita, col suo rullo o col simulatore. Fino a ${MAX_RIDERS} persone.`}
+                ? `Ti hanno invitato su ${routeTitle}. Ognuno pedala col suo rullo: vi vedete sulla strada e nel pannello dei distacchi.`
+                : `Apri una stanza su ${routeTitle} e manda il link: chi lo apre pedala sulla stessa salita, col suo rullo. Fino a ${MAX_RIDERS} persone.`}
             </p>
             <label className="mt-4 block">
               <span className="mb-1.5 block text-sm font-medium text-muted">Come ti vedono gli altri</span>

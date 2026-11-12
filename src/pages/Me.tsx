@@ -1,11 +1,13 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Coin, Glyph } from '@/components/Glyph';
+import { Coin } from '@/components/Glyph';
+import { InstallCard } from '@/components/Install';
+import { ALL_BUILTIN } from '@/domain/workouts';
 import { JerseyArt } from '@/components/KitArt';
 import { ACHIEVEMENTS } from '@/game/achievements';
 import { lookOf } from '@/game/kit';
 import { useGame } from '@/game/useGame';
-import { formatAlt, formatKm, formatNumber } from '@/domain/format';
+import { formatNumber } from '@/domain/format';
 import { levelOf } from '@/open/progress';
 import { useApp } from '@/store/useApp';
 
@@ -28,7 +30,7 @@ export function LevelRing({ xp, size = 64 }: { xp: number; size?: number }) {
 
 export function MePage() {
   const profile = useApp((s) => s.profile);
-  const rides = useApp((s) => s.rides);
+  const custom = useApp((s) => s.workouts);
   const hydrate = useGame((s) => s.hydrate);
   const career = useGame((s) => s.career);
   const progress = useGame((s) => s.progress);
@@ -37,70 +39,48 @@ export function MePage() {
   }, [hydrate]);
   const lv = levelOf(progress.xp);
   const done = ACHIEVEMENTS.filter((a) => career.achievements[a.id]).length;
-  const km = rides.reduce((s, r) => s + r.distanceM, 0);
-  const gain = rides.reduce((s, r) => s + r.elevationGainM, 0);
   return (
     <main className="mx-auto w-full max-w-3xl px-4 pb-nav pt-5 md:px-8 md:pt-10" data-testid="me">
-      <header className="flex items-center gap-4">
-        <span className="grid h-20 w-20 shrink-0 place-items-center rounded-full border border-line bg-elev">
-          <JerseyArt look={lookOf(career.equipped)} className="h-16 w-16" />
+      <header className="flex items-center gap-3">
+        <span className="grid h-16 w-16 shrink-0 place-items-center rounded-full border border-line bg-elev">
+          <JerseyArt look={lookOf(career.equipped)} className="h-12 w-12" />
         </span>
         <div className="min-w-0 flex-1">
           <h1 className="break-words font-display text-4xl uppercase leading-none">{profile.name || 'Tu'}</h1>
           <p className="mt-1 text-sm text-muted">{lv.title}</p>
         </div>
-        <span className="flex shrink-0 items-center gap-1.5" data-testid="me-level">
-          <span className="text-sm font-semibold text-muted">Liv.</span>
-          <LevelRing xp={progress.xp} />
-        </span>
+        <span className="shrink-0 rounded-full border border-line px-2.5 py-1 text-sm font-semibold" data-testid="me-level">{`Liv. ${lv.level}`}</span>
       </header>
-      <div className="mt-3">
+      <div className="mt-4">
         <div className="h-2 overflow-hidden rounded-full bg-elev2">
           <div className="gold-sheen h-full rounded-full" style={{ width: `${Math.min(100, ((progress.xp - lv.from) / Math.max(1, lv.to - lv.from)) * 100)}%` }} />
         </div>
-        <p className="num mt-1 text-xs text-muted">{`${formatNumber(progress.xp, 0)} punti · ${formatNumber(lv.to - progress.xp, 0)} al livello ${lv.level + 1}`}</p>
+        <p className="num mt-1.5 flex items-center justify-between text-sm text-muted">
+          <span>{`Punti ${formatNumber(progress.xp, 0)} · ${formatNumber(lv.to - progress.xp, 0)} al livello ${lv.level + 1}`}</span>
+          <span className="inline-flex items-center gap-1" data-testid="me-oro">
+            <Coin size={14} />
+            {`Oro ${formatNumber(career.oro, 0)}`}
+          </span>
+        </p>
       </div>
 
-      <dl className="mt-4 grid grid-cols-4 gap-2 text-center">
-        <Tile label="oro" value={<span className="inline-flex items-center gap-1"><Coin size={16} />{formatNumber(career.oro, 0)}</span>} />
-        <Tile label="km" value={formatKm(km)} />
-        <Tile label="D+ m" value={formatAlt(gain)} />
-        <Tile label="di fila" value={`${career.streak.days}`} />
-      </dl>
-
-      <nav aria-label="Le tue cose" className="mt-5 grid grid-cols-2 gap-2">
-        <Hub to="/traguardi" glyph="coppa" title="Traguardi" sub={`${done} di ${ACHIEVEMENTS.length}`} testId="me-achievements" />
-        <Hub to="/classifiche" glyph="stella" title="Classifiche" sub="Salite, tratti" testId="me-boards" />
-        <Hub to="/garage" glyph="maglia" title="Garage" sub="Maglie e bici" />
-        <Hub to="/history" glyph="mappa" title="Diario" sub={rides.length === 1 ? '1 giro' : `${rides.length} giri`} />
-        <Hub to="/workouts" glyph="fulmine" title="Allenamenti" sub="ERG e test" />
-        <Hub to="/giri" glyph="crono" title="Rifai un giro" sub="FIT, GPX" />
-        <Hub to="/load" glyph="fiamma" title="Carico" sub="Forma e fatica" />
-        <Hub to="/profile" glyph="ingranaggio" title="Profilo" sub="Peso, FTP" />
+      <nav aria-label="Le tue cose" className="mt-4">
+        <Riga to="/garage" title="Garage" sub="Maglie e bici" />
+        <Riga to="/traguardi" title="Traguardi" sub={`${done} di ${ACHIEVEMENTS.length}`} testId="me-achievements" />
+        <Riga to="/classifiche" title="Classifiche" testId="me-boards" />
+        <Riga to="/workouts" title="Allenamenti" sub={`${ALL_BUILTIN.length + custom.length} · Programmi`} testId="me-workouts" />
+        <Riga to="/impostazioni" title="Impostazioni" sub="Profilo, rullo, prova" testId="me-settings" />
       </nav>
+      <InstallCard className="mt-6" />
     </main>
   );
 }
 
-function Tile({ label, value }: { label: string; value: ReactNode }) {
+function Riga({ to, title, sub, testId }: { to: string; title: string; sub?: string; testId?: string }) {
   return (
-    <div className="rounded-2xl border border-line bg-elev px-1 py-2.5">
-      <dd className="num font-display text-2xl leading-none">{value}</dd>
-      <dt className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-muted">{label}</dt>
-    </div>
-  );
-}
-
-function Hub({ to, glyph, title, sub, testId }: { to: string; glyph: Parameters<typeof Glyph>[0]['name']; title: string; sub: string; testId?: string }) {
-  return (
-    <Link to={to} data-testid={testId} className="flex items-center gap-3 rounded-2xl border border-line bg-elev p-3 transition hover:border-accent/50">
-      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-elev2 text-accent">
-        <Glyph name={glyph} size={20} />
-      </span>
-      <span className="min-w-0">
-        <span className="block font-semibold leading-tight">{title}</span>
-        <span className="block text-xs leading-snug text-muted">{sub}</span>
-      </span>
+    <Link to={to} data-testid={testId} className="flex min-h-14 items-center justify-between gap-3 border-b border-line">
+      <span className="font-semibold">{title}</span>
+      <span className="num text-sm text-muted">{sub ? `${sub} ›` : '›'}</span>
     </Link>
   );
 }

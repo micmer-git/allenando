@@ -48,6 +48,92 @@ describe('motore del giro', () => {
   });
 });
 
+describe('i tipi di attività (M1)', () => {
+  function con(opts: Partial<ConstructorParameters<typeof RideEngine>[0]>) {
+    const source = new SimulatorSource();
+    const calls: { erg: boolean; targetPower: number | null }[] = [];
+    const orig = source.update.bind(source);
+    source.update = (input) => {
+      calls.push({ erg: input.erg, targetPower: input.targetPower });
+      orig(input);
+    };
+    const e = new RideEngine({
+      track: getTrack(),
+      source,
+      physics: { massKg: 80, cda: 0.32, crr: 0.004, ...STANDARD_AIR },
+      ftp: 250,
+      maxHr: 186,
+      restHr: 52,
+      lthr: 166,
+      weightKg: 72,
+      withCamilla: false,
+      crr: 0.004,
+      cw: 0.39,
+      ...opts,
+    });
+    return { e, calls };
+  }
+
+  it('Potenza fissa: ERG costante, − + di 5 W, nei limiti', () => {
+    const { e, calls } = con({ tipo: 'fissa', watt: 165 });
+    expect(e.tipo).toBe('fissa');
+    expect(e.mode).toBe('erg');
+    expect(e.targetPower).toBe(165);
+    e.tick(0.05);
+    expect(calls.at(-1)).toEqual({ erg: true, targetPower: 165 });
+    e.setWattFissi(170);
+    expect(e.wattFissi).toBe(170);
+    expect(e.targetPower).toBe(170);
+    e.tick(0.05);
+    expect(calls.at(-1)).toEqual({ erg: true, targetPower: 170 });
+    e.setWattFissi(2000);
+    expect(e.wattFissi).toBe(1000);
+    e.setWattFissi(3);
+    expect(e.wattFissi).toBe(50);
+  });
+
+  it('Potenza fissa la prima volta: il 75 % dell’FTP, a passi di 5', () => {
+    expect(con({ tipo: 'fissa' }).e.wattFissi).toBe(190);
+  });
+
+  it('Libera e Allenamento non cambiano coi − +', () => {
+    const { e } = con({});
+    expect(e.tipo).toBe('libera');
+    e.setWattFissi(200);
+    expect(e.mode).toBe('free');
+    expect(e.wattFissi).toBeNull();
+    expect(con({ workout: builtinById('risveglio') }).e.tipo).toBe('allenamento');
+    // un allenamento senza allenamento è una pedalata libera
+    expect(con({ tipo: 'allenamento' }).e.tipo).toBe('libera');
+  });
+
+  it('a bersaglio: il blocco si mostra, al rullo non va nessun ERG', () => {
+    const { e, calls } = con({ workout: builtinById('risveglio'), ergAlRullo: false });
+    expect(e.aBersaglio).toBe(true);
+    expect(e.mode).toBe('erg');
+    expect(e.targetPower).toBe(125);
+    for (let i = 0; i < 20; i++) e.tick(0.05);
+    expect(calls.every((c) => !c.erg && c.targetPower == null)).toBe(true);
+    expect(e.targetPower).toBe(125);
+  });
+
+  it('il punto di ripresa tiene tipo, watt di adesso, passaggi e prova', () => {
+    const { e } = con({ tipo: 'fissa', watt: 200 });
+    e.giri = 3;
+    e.prova = true;
+    for (let i = 0; i < 40; i++) e.tick(0.05);
+    e.setWattFissi(240);
+    const cp = e.checkpoint();
+    expect(cp).toMatchObject({ tipo: 'fissa', wattFissi: 240, giri: 3, prova: true });
+    const { e: back } = con({ tipo: 'fissa', watt: 200 });
+    back.restore(cp);
+    expect(back.wattFissi).toBe(240);
+    expect(back.targetPower).toBe(240);
+    const ride = e.toRide('Prova');
+    expect(ride).toMatchObject({ tipo: 'fissa', giri: 3, prova: true });
+  });
+});
+
 describe('numeri scritti a mano', () => {
   it('accetta la virgola decimale', () => {
     expect(parseNumberInput('68,5', 35, 180, 78)).toBe(68.5);

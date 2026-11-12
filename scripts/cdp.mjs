@@ -1,6 +1,6 @@
 // Un Chrome headless pilotato via DevTools, con «telefoni» a 390×844. Lo usa ui-shot.mjs.
 import { spawn } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -46,8 +46,10 @@ export async function launch({ out, chromePath = process.env.CHROME ?? 'C:/Progr
     return new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
   };
 
-  async function phone(base, { width = 390, height = 844 } = {}) {
-    const { targetId } = await send('Target.createTarget', { url: 'about:blank' });
+  async function phone(base, { width = 390, height = 844, isolato = false } = {}) {
+    // isolato: un profilo nuovo (storage, IndexedDB, service worker) solo per questa scheda
+    const browserContextId = isolato ? (await send('Target.createBrowserContext', { disposeOnDetach: true })).browserContextId : undefined;
+    const { targetId } = await send('Target.createTarget', { url: 'about:blank', ...(browserContextId ? { browserContextId } : {}) });
     const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true });
     const errors = [];
     handlers.set(sessionId, (msg) => {
@@ -97,15 +99,31 @@ export async function launch({ out, chromePath = process.env.CHROME ?? 'C:/Progr
           .map((el) => (el.getAttribute('aria-label') || el.textContent || el.tagName).trim().slice(0, 30) + ' ' + Math.round(el.getBoundingClientRect().width) + 'x' + Math.round(el.getBoundingClientRect().height));
         return { overflow, small };
       })()`);
-    return { s, evaluate, go, waitFor, shot, click, clickText, audit, errors };
+    /** chiude la scheda (e il suo profilo, se isolato): la memoria torna libera */
+    const chiudi = async () => {
+      await send('Target.closeTarget', { targetId }).catch(() => null);
+      if (browserContextId) await send('Target.disposeBrowserContext', { browserContextId }).catch(() => null);
+    };
+    return { s, evaluate, go, waitFor, shot, click, clickText, audit, errors, chiudi };
   }
 
   // Browser.close prima di tutto: su Windows chrome.kill() ferma solo il lanciatore e i figli
   // restano vivi, con il loro GPU software, a mangiare memoria
+  // poi via il profilo di questo launch (~20 MB l'uno): prima restavano tutti in %TEMP% e riempivano
+  // il disco (67 cartelle il 12/11/2026). Su Windows Chrome tiene i file un attimo: un secondo tentativo
   const close = async () => {
     await Promise.race([send('Browser.close').catch(() => null), sleep(3000)]);
     await sleep(500);
     chrome.kill();
+    for (const wait of [0, 1000]) {
+      if (wait) await sleep(wait);
+      try {
+        rmSync(profile, { recursive: true, force: true });
+        break;
+      } catch {
+        /* ancora in uso: si riprova una volta */
+      }
+    }
   };
   return { phone, close };
 }

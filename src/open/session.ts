@@ -3,6 +3,7 @@ import type { RideEngine } from '@/sim/engine';
 import type { WorldClient, WorldRemote } from '@/multiplayer/world-client';
 import { CLS, FLAG, type Dir, type Leg, type TurnOption, type WorldGraph } from './graph';
 import { WorldPath } from './path';
+import { chiuso as isClosed, PASSAGGI_MAX, percorribili, rovescia } from './passaggi';
 import { draftFactor, NpcCrowd } from './npc';
 import type { Landmark, Place, RideDef, WorldData } from './world';
 import { headwind, type WeatherNow } from './weather';
@@ -78,10 +79,35 @@ export class WorldSession {
   weather: WeatherNow | null = null;
   private windClock = 0;
 
+  // ---------- passaggi: giri sull'anello, andata e ritorno sul percorso aperto (A12–A13) ----------
+  /** il percorso si chiude su sé stesso */
+  readonly chiuso: boolean = false;
+  /** passaggi previsti (crescono di uno se l'allenamento non è finito al traguardo) */
+  giri = 1;
+  /** il passaggio di adesso, da 1 */
+  giro = 1;
+  /** i passaggi fatti, coi tempi; `giro` è quale (dopo una ripresa i primi possono mancare) */
+  giriFatti: { sec: number; giro: number }[] = [];
+  /** un passaggio: il percorso scelto, e il suo ritorno (rovesciato, senza contromano) */
+  private baseLegs: Leg[] = [];
+  private backLegs: Leg[] = [];
+  /** per ogni passaggio: l'indice, nel percorso scelto, del suo ultimo tratto */
+  private lapEnd: number[] = [];
+  private crossed = 0;
+  private lapStart = 0;
+  private lapClock = false;
+  /**
+   * I passaggi li ha chiesti il link (`giri=`): allora un allenamento più lungo aggiunge un
+   * passaggio. Un link di prima, senza giri, prosegue libero a fine percorso come prima.
+   */
+  private readonly extraLaps: boolean = false;
+  private finishCache: { version: number; at: number[] } | null = null;
+
   constructor(
     readonly data: WorldData,
     start: { ride: RideDef } | { legs: Leg[]; name: string } | { edge: number; dir: Dir; s: number },
     npcs: number,
+    opts: { giri?: number } = {},
   ) {
     this.graph = data.graph;
     this.towns = data.features.places.filter((p) => p.kind !== 'hamlet');
@@ -89,7 +115,13 @@ export class WorldSession {
     if ('ride' in start || 'legs' in start) {
       this.ride = 'ride' in start ? start.ride : null;
       this.planName = 'legs' in start ? start.name : '';
-      this.routeLegs = 'ride' in start ? start.ride.legs.map(([edge, dir]) => ({ edge, dir })) : start.legs;
+      this.baseLegs = 'ride' in start ? start.ride.legs.map(([edge, dir]) => ({ edge, dir })) : start.legs.map((l) => ({ ...l }));
+      this.chiuso = isClosed(this.graph, this.baseLegs);
+      this.backLegs = this.chiuso ? this.baseLegs : percorribili(this.graph, rovescia(this.baseLegs));
+      this.routeLegs = [];
+      this.extraLaps = opts.giri != null;
+      const n = Math.min(PASSAGGI_MAX, Math.max(1, Math.round(opts.giri ?? 1)));
+      for (let i = 0; i < n; i++) this.pushPassage();
       const first = this.routeLegs[0];
       this.path = new WorldPath(this.graph, { edge: first.edge, dir: first.dir, s: first.dir > 0 ? 0 : this.graph.edges[first.edge].length });
       this.routeIndex.push(0);
@@ -105,6 +137,101 @@ export class WorldSession {
       this.extend(0);
     }
     this.crowd = new NpcCrowd(this.graph, npcs);
+  }
+
+  /** Mette in coda al percorso scelto un passaggio: il giro, o la tratta nel verso giusto. */
+  private pushPassage(): Leg[] {
+    const i = this.lapEnd.length;
+    const legs = this.chiuso || i % 2 === 0 ? this.baseLegs : this.backLegs;
+    const from = this.routeLegs.length;
+    for (const l of legs) this.routeLegs.push({ ...l });
+    this.lapEnd.push(this.routeLegs.length - 1);
+    this.giri = this.lapEnd.length;
+    return this.routeLegs.slice(from);
+  }
+
+  /** Un passaggio in più, anche sul percorso vivo (se ci si è sopra). */
+  private addPassage(): void {
+    const legs = this.pushPassage();
+    if (!this.onRoute) return;
+    const base = this.routeLegs.length - legs.length;
+    legs.forEach((l, i) => {
+      this.path.append(l.edge, l.dir);
+      this.routeIndex.push(base + i);
+    });
+  }
+
+  /** Dopo una ripresa: i passaggi aggiunti prima del crash tornano. */
+  ensureGiri(n: number): void {
+    if (!this.onRoute || this.routeEnd != null || this.baseLegs.length === 0) return;
+    while (this.giri < Math.min(PASSAGGI_MAX, n)) this.addPassage();
+  }
+
+  /** Dove finisce ogni passaggio, in metri sul percorso vivo (dopo un rientro i metri cambiano). */
+  traguardi(): number[] {
+    if (this.lapEnd.length === 0 || this.routeEnd != null) return [];
+    const v = this.path.version;
+    if (this.finishCache && this.finishCache.version === v) return this.finishCache.at;
+    const at: number[] = [];
+    for (const idx of this.lapEnd) {
+      let k = -1;
+      for (let j = this.routeIndex.length - 1; j >= 0; j--) {
+        if (this.routeIndex[j] === idx) {
+          k = j;
+          break;
+        }
+      }
+      at.push(k >= 0 ? this.path.legEnd(k) : Number.NaN);
+    }
+    this.finishCache = { version: v, at };
+    return at;
+  }
+
+  /** Metri al traguardo del passaggio di adesso; null nel giro libero o fuori dal percorso. */
+  traguardoFra(distance: number): number | null {
+    if (!this.onRoute) return null;
+    const t = this.traguardi()[this.giro - 1];
+    return t != null && Number.isFinite(t) ? Math.max(0, t - distance) : null;
+  }
+
+  /** Il tempo del percorso da mettere in classifica: il passaggio migliore (sull'aperto, le andate). */
+  tempoPercorso(): number | null {
+    const ok = this.giriFatti.filter((g) => this.chiuso || g.giro % 2 === 1);
+    return ok.length ? Math.min(...ok.map((g) => g.sec)) : null;
+  }
+
+  /**
+   * L'allenamento non è finito e il percorso scelto sta per finire: un passaggio in più, da solo
+   * (fino a 20), con l'avviso; oltre il tetto si prosegue libero come prima.
+   */
+  allenamentoContinua(distance: number): void {
+    if (!this.onRoute || this.routeEnd != null || this.path.length - distance >= 400) return;
+    if (this.extraLaps && this.baseLegs.length > 0 && this.giri < PASSAGGI_MAX) {
+      this.addPassage();
+      this.toast(this.chiuso ? 'Giro in più' : 'Un’altra tratta', `L’allenamento continua: ${this.chiuso ? 'giro' : 'tratta'} ${this.giri}`, 'info');
+      return;
+    }
+    this.continueFree(distance);
+  }
+
+  /** I passaggi: conta i traguardi passati e il tempo di ognuno. */
+  private countLaps(engine: RideEngine): void {
+    if (this.lapEnd.length === 0) return;
+    const at = this.traguardi();
+    const d = engine.distance;
+    while (this.crossed < this.lapEnd.length && Number.isFinite(at[this.crossed]) && d >= at[this.crossed] - 0.5) {
+      // il primo fotogramma (anche dopo una ripresa) non ha un tempo di partenza: quei passaggi non si cronometrano
+      if (this.lapClock) this.giriFatti.push({ sec: engine.elapsed - this.lapStart, giro: this.crossed + 1 });
+      this.crossed++;
+      this.lapStart = engine.elapsed;
+      if (this.lapClock && this.crossed < this.giri) this.toast(this.chiuso ? `Giro ${this.crossed + 1} di ${this.giri}` : this.crossed % 2 === 1 ? 'Si torna indietro' : 'Di nuovo all’andata', this.chiuso ? 'Traguardo' : `Tratta ${this.crossed + 1} di ${this.giri}`, 'info');
+    }
+    if (!this.lapClock) {
+      this.lapClock = true;
+      this.lapStart = engine.elapsed;
+    }
+    this.giro = Math.min(this.giri, this.crossed + 1);
+    if (engine.giri < this.giri) engine.giri = this.giri;
   }
 
   /** nome dell'anello suggerito, se si pedala uno di quelli */
@@ -203,6 +330,7 @@ export class WorldSession {
   tick(engine: RideEngine, dt: number, pose: TrackPose): void {
     const d = engine.distance;
     this.extend(d);
+    this.countLaps(engine);
     const at = this.path.edgeAt(d);
     // fisica: fondo e scia
     const e = this.graph.edges[at.edge];
@@ -243,6 +371,12 @@ export class WorldSession {
       return;
     }
     const leg = this.path.legs[k];
+    // l'inversione del va e torna: si torna indietro sulla stessa strada, non c'è niente da scegliere
+    const after = this.path.legs[k + 1];
+    if (this.onRoute && after && after.edge === leg.edge && after.dir !== leg.dir) {
+      this.junction = null;
+      return;
+    }
     // sull'anello di una rotatoria non si chiede niente: l'uscita è già stata scelta all'ingresso
     if (this.graph.isRing(leg.edge)) {
       this.junction = null;
