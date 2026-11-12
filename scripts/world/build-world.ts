@@ -1841,8 +1841,8 @@ const roadProbe: RoadProbe = deeperProbe(centerProbe, junctionProbe(junctionShap
   let bytes = 0;
   for (const [key, list] of perTile) {
     const [tx, tz] = key.split('_').map(Number);
-    const b = WORLD.id === 'bergamo' && key === '6_20' ? fitPiazzaMascheroni(list) : list;
-    const s = JSON.stringify({ o: [BOUNDS.x0 + tx * TILE, BOUNDS.z0 + tz * TILE], b });
+    const fitted = WORLD.id === 'bergamo' && key === '6_20' ? fitPiazzaMascheroni(list) : {b: list};
+    const s = JSON.stringify({ o: [BOUNDS.x0 + tx * TILE, BOUNDS.z0 + tz * TILE], ...fitted });
     bytes += s.length;
     writeFileSync(join(OUT, 'b', `${key}.json`), s);
   }

@@ -25,13 +25,35 @@ const plazaFacades = new Set([
   '3940,11009,246,125', // OSM way 808431740
 ]);
 
-/** Only apply a correction when the known first edge still matches its footprint.
- * A future OSM geometry change must be reviewed instead of overwriting the new shape. */
-export function fitPiazzaMascheroni(rows: number[][]): number[][] {
-  return rows.flatMap(row => {
+/**
+ * Six ground floors meet the modelled road surface. Their setbacks are differences of
+ * the measured building rings and the union of real graph road ribbons (hw + 0.8 m),
+ * junction polygons + 0.8 m and 0.12 m allowance for decimetre storage.
+ * The complete original upper outline remains above 4.3 m.
+ */
+const recessedBases = new Map<string, number[]>([
+  ['3040,10342,22,82', [0,43,0,0,3062,10424,-6,193,-61,68,95,35,-14,33,-21,62,508,266,80,-192,5,-9,-74,-33,-7,0,-6,-2,-15,48,-407,-200,52,-183,29,-123,-12,-6,11,-48,-2,-7,-61,-1,-11,-4,-105,21]],
+  ['3770,10684,-43,-18', [0,43,0,0,3969,10103,-44,-19,-161,2,-24,1,-388,25,-28,178,425,66,10,46,-1,9,13,3,-13,38,-27,-7,-139,319,11,18,77,34,41,-111,-12,-5,-6,-4,-5,-5,-5,-7,-3,-7,-1,-11,1,-8,2,-7,27,-66,3,-6,5,-6,6,-5,6,-4,5,-2,-3,-7,-1,-8,1,-12,2,-7,74,-165,75,-165,6,-10,6,-5,6,-4,7,-3,7,-1,8,0,19,5,25,-55,7,-10]],
+  ['4135,9966,276,154', [0,43,0,0,4411,10120,-42,65,53,34,49,-73,-43,-26,38,-58,-187,-129,11,-20,-170,-91,-43,70,-72,-40,-63,161,9,5,56,23,40,34,5,3,83,-112]],
+  ['3743,11451,160,73', [0,43,0,0,3903,11524,39,-68,-45,-23,12,-25,49,24,24,-44,-65,-32,16,-25,38,14,65,-114,-44,-24,39,-72,-57,-28,-9,-2,-8,1,-7,4,-5,7,-99,197,-7,8,-6,5,-7,3,-8,2,-57,127]],
+  ['3302,11350,31,20', [0,43,0,0,3333,11370,9,-22,131,77,11,-30,27,10,11,-17,32,8,-1,16,77,30,19,-41,31,12,-17,31,20,7,54,-121,2,-9,-1,-8,-5,-7,-7,-5,-180,-78,-9,-6,-6,-6,-5,-9,-2,-8,-1,-7,1,-8,2,-7,37,-91,-61,-31,-200,300]],
+  ['3940,11009,246,125', [0,43,0,0,4290,10852,-246,-103,-8,19,10,7,8,9,4,11,1,8,0,7,18,19,1,3,1,4,-3,5,-45,43,-45,115,3,5,2,8,0,7,-1,7,5,4,194,95]],
+]);
+
+export function fitPiazzaMascheroni(rows: number[][]) {
+  const b: number[][] = [];
+  const supports: [number, number][] = [];
+  const add = (upper: number[]) => {
+    const base = recessedBases.get(upper.slice(4, 8).join(','));
+    if (!base) { b.push(upper); return; }
+    supports.push([b.length + 1, b.length]);
+    b.push([upper[0], upper[1], 43, ...upper.slice(3)], base);
+  };
+  for (const row of rows) {
     const edge = row.slice(4, 8).join(',');
-    if (edge === "2995,10685,95,35") return cittadella;
-    if (plazaFacades.has(edge)) return [[row[0], row[1], 0, ...row.slice(3)]];
-    return [row];
-  });
+    if (edge === '2995,10685,95,35') cittadella.forEach(add);
+    else if (plazaFacades.has(edge)) add(row);
+    else b.push(row);
+  }
+  return {b, supports};
 }

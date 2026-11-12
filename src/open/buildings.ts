@@ -188,7 +188,7 @@ export function addBuilding(walls: Tris, roofs: Tris, b: Building, ground: numbe
   const m = r.length / 2;
   const area = Math.abs(ringArea(r));
   const obb = minRect(r);
-  const shape = roofShape(b, obb, area, c.wide, !!c.alpine);
+  const shape = b.upperRing ? 'flat' : roofShape(b, obb, area, c.wide, !!c.alpine);
   const bottom = ground + b.minH;
   // dove comincia la facciata: sui portici (minH) resta sospesa, altrimenti scende verso lo zoccolo
   const face = b.minH > 0 || plinth >= bottom - 0.05 ? bottom : Math.max(plinth + 1, bottom - FLOOR);
@@ -253,6 +253,8 @@ export function addBuilding(walls: Tris, roofs: Tris, b: Building, ground: numbe
       }
     }
   }
+  if (b.upperRing) return {top: wallTop, shape}; // coperto dal corpo superiore
+  if (b.recessedGround) flatRoof(walls, r, bottom, c.base, -1);
   if (shape === 'flat') {
     // tetto piano 40 cm sotto il filo dei muri: il parapetto
     const y = wallTop - (area > 120 ? 0.4 : 0);
@@ -264,7 +266,7 @@ export function addBuilding(walls: Tris, roofs: Tris, b: Building, ground: numbe
   return { top: ridge, shape };
 }
 
-function flatRoof(t: Tris, r: Float32Array, y: number, col: Rgb): void {
+function flatRoof(t: Tris, r: Float32Array, y: number, col: Rgb, normalY = 1): void {
   const m = r.length / 2;
   const idx = earcut(r);
   for (let i = 0; i < idx.length; i += 3) {
@@ -272,7 +274,7 @@ function flatRoof(t: Tris, r: Float32Array, y: number, col: Rgb): void {
     const b = idx[i + 1];
     const c = idx[i + 2];
     if (a >= m || b >= m || c >= m) continue;
-    t.facing(v(r[a * 2], y, r[a * 2 + 1]), v(r[b * 2], y, r[b * 2 + 1]), v(r[c * 2], y, r[c * 2 + 1]), [0, 1, 0], col);
+    t.facing(v(r[a * 2], y, r[a * 2 + 1]), v(r[b * 2], y, r[b * 2 + 1]), v(r[c * 2], y, r[c * 2 + 1]), [0, normalY, 0], col);
   }
 }
 
