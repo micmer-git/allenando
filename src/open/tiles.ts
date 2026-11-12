@@ -8,6 +8,7 @@ import { BUILDING_KIND, COVER, type Building, type Place, type WorldFeatures } f
 import { addBuilding, BLANK_UV, earcut, ringArea, Tris } from './buildings';
 import { bandsWeight, groundLook, lookContext, treeDensity, treeSpecies, type LookCtx } from './look';
 import { ringAt, ringBranch, ringsIn, smoothRingOf, type Pt, type RingGeo } from './rings';
+import { surveyedCorner, surveyedWalk, walkSections } from './marciapiediGanda';
 import { portalClear, tunnelGeometry } from './tunnels';
 import { pavedWeight } from './urban';
 import { junctionCut, junctionsIn, mitreAt, type JunctionGeo } from './junctions';
@@ -465,7 +466,7 @@ export function trimWalk(pts: { d: number }[], on: boolean[], min = WALK_MIN): b
 }
 
 /** Il marciapiede di un lato: il fianco del cordolo chiaro, il piano in masselli, il fianco esterno che scende. */
-function walkStrips(kerb: Mesh, pts: P[], hw: number, lift: number, top: number, s: number, on: boolean[], tone: THREE.Color): void {
+function walkStrips(kerb: Mesh, pts: P[], hw: number, lift: number, top: number, s: number, on: boolean[], tone: THREE.Color, widths?: number[]): void {
   const k = walkHeights(pts, on);
   let prev = -1;
   for (let i = 0; i < pts.length; i++) {
@@ -480,12 +481,13 @@ function walkStrips(kerb: Mesh, pts: P[], hw: number, lift: number, top: number,
     const v = p.d / 8;
     const at = (off: number, h: number, u: number, c: THREE.Color) => kerb.vertex(p.x + lx * off, p.y + h, p.z + lz * off, u, v, c);
     // sei vertici per sezione: fianco del cordolo (2), piano (2), fianco esterno (2)
+    const width = widths?.[i] ?? 1.75;
     const i0 = at(s * hw, lift - 0.02, 0, KERB);
     at(s * hw, y, 1, KERB);
-    at(s * (hw + 1.75), y, 0, tone);
+    at(s * (hw + width), y, 0, tone);
     at(s * hw, y, 1, tone);
-    at(s * (hw + 1.75), y, 0, WALK_EDGE);
-    at(s * (hw + 2.1), -2.8, 1, WALK_EDGE);
+    at(s * (hw + width), y, 0, WALK_EDGE);
+    at(s * (hw + width + .35), -2.8, 1, WALK_EDGE);
     if (prev >= 0) {
       for (const [a, b] of [
         [0, 1],
@@ -562,11 +564,13 @@ export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec):
     // dopo un raccordo di rotatoria il marciapiede riparte subito, dove finisce il cordolo del raccordo
     const walkA = ringA ? Math.max(ringA, junctionClear(graph, e.a, id) + 1) : endA + 1;
     const walkB = ringB ? Math.max(ringB, junctionClear(graph, e.b, id) + 1) : endB + 1;
-    const walkAt = (p: P) => walkable && p.d > walkA && p.d < e.length - walkB && URBAN.has(field.terrain.cover(p.x, p.z));
+    const sections = walkSections(graph, id);
+    const widthAt = (p: P, side: number) => surveyedWalk(sections, p.d, side) ??
+      (walkable && URBAN.has(field.terrain.cover(p.x, p.z)) ? 1.75 : 0);
     // e mai sopra un'altra strada: due sensi unici che si uniscono, o una via che corre accanto,
     // si prendevano il marciapiede dell'altra in mezzo alla carreggiata
     const walkSide = (side: number) => (p: P) =>
-      walkAt(p) && ((p.d > 60 && p.d < e.length - 60) || graph.asphaltMargin(p.x + Math.cos(p.h) * side * (hw + 1), p.z - Math.sin(p.h) * side * (hw + 1), p.y, 2.5, id) < -0.4);
+      p.d > walkA && p.d < e.length - walkB && widthAt(p, side) > 0 && ((p.d > 60 && p.d < e.length - 60) || graph.asphaltMargin(p.x + Math.cos(p.h) * side * (hw + 1), p.z - Math.sin(p.h) * side * (hw + 1), p.y, 2.5, id) < -0.4);
     const lineW = e.cls <= CLS.primary ? 0.15 : 0.12;
     for (const raw of runs) {
       if (raw.length < 2) continue;
@@ -601,7 +605,11 @@ export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec):
       } else {
         // dove c'è il marciapiede, lato per lato; i pezzi più corti di WALK_MIN non si fanno (erano
         // i gradini isolati del punto M5), e lì resta la banchina
-        const sides = walkable ? [1, -1].map((side) => trimWalk(pts, pts.map(walkSide(side)))) : null;
+        const sides = (walkable || (sections && !ring)) ? [1, -1].map((side) => {
+          const on = pts.map(walkSide(side));
+          const trimmed = trimWalk(pts, on);
+          return sections ? trimmed.map((value, i) => surveyedWalk(sections, pts[i].d, side) === undefined ? value : on[i]) : trimmed;
+        }) : null;
         const onWalk = sides ? sides.map((on) => new Set(pts.filter((_, i) => on[i]))) : null;
         const bank = (i: number) => (p: P) => past(p) && (!onWalk || !onWalk[i].has(p));
         strip(verge, pts, hw + 0.8, lift - 0.1, hw, lift - 0.02, 8, bank(0));
@@ -612,8 +620,8 @@ export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec):
           // cordolo alto 14 cm, marciapiede di 1,6 m in masselli, e il fianco che scende nel terreno
           const top = lift + 0.14;
           const tone = WALK[Math.floor(hash2(e.id, 3) * WALK.length) % WALK.length];
-          walkStrips(kerb, pts, hw, lift, top, 1, sides[0], tone);
-          walkStrips(kerb, pts, hw, lift, top, -1, sides[1], tone);
+          walkStrips(kerb, pts, hw, lift, top, 1, sides[0], tone, sections && pts.map(p => widthAt(p, 1)));
+          walkStrips(kerb, pts, hw, lift, top, -1, sides[1], tone, sections && pts.map(p => widthAt(p, -1)));
         }
       }
     }
@@ -622,7 +630,7 @@ export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec):
   // le rotatorie lisce: ognuna nella mattonella che ne ha il centro
   for (const g of ringsIn(graph, x0, z0, x1, z1)) if (g.smooth) drawRing(g, graph, field, { surface: g.edges.every(id => graph.edges[id].flags & FLAG.unpaved) ? gravel : g.cobbles ? stone : asphalt, paint, kerb });
   // gli innesti degli incroci: ognuno nella mattonella che ne ha il nodo
-  for (const g of junctionsIn(graph, ids, x0, z0, x1, z1)) drawJunction(g, field, { surface: g.gravel ? gravel : g.stone ? stone : asphalt, kerb });
+  for (const g of junctionsIn(graph, ids, x0, z0, x1, z1)) drawJunction(g, graph, field, { surface: g.gravel ? gravel : g.stone ? stone : asphalt, kerb });
   return {
     asphalt: asphalt.build(),
     stone: stone.build(),
@@ -659,7 +667,7 @@ function withCuts(graph: WorldGraph, e: Edge, pts: P[], cuts: number[]): P[] {
  * centimetri sopra i nastri, le cui teste squadrate finiscono sotto. Il cordolo (o la banchina)
  * segue il bordo fra un taglio e l'altro.
  */
-function drawJunction(g: JunctionGeo, field: WorldField, m: { surface: Mesh; kerb: Mesh }): void {
+function drawJunction(g: JunctionGeo, graph: WorldGraph, field: WorldField, m: { surface: Mesh; kerb: Mesh }): void {
   let lift = roadLift(g.cls);
   for (const a of g.arms) lift = Math.max(lift, roadLift(a.cls));
   lift += 0.02;
@@ -684,7 +692,7 @@ function drawJunction(g: JunctionGeo, field: WorldField, m: { surface: Mesh; ker
   const walk = WALK[Math.floor(hash2(g.cx, g.cz) * WALK.length) % WALK.length];
   for (const curb of g.curbs) {
     if (curb.pts.length < 2) continue;
-    curbAlong(m.kerb, curb.pts.map((p) => ({ ...p, y: p.y + lift })), urban, walk);
+    curbAlong(graph, m.kerb, curb.pts.map((p) => ({ ...p, y: p.y + lift })), urban, walk);
   }
 }
 
@@ -725,9 +733,9 @@ interface CurbPt {
  * fianco che scende nel terreno, fuori la banchina che scende. È la sezione dei marciapiedi delle
  * strade (roadsJob): il cordolo dell'anello continua in quello del ramo.
  */
-function curbAlong(kerb: Mesh, line: CurbPt[], urban: boolean, walk: THREE.Color): void {
+function curbAlong(graph: WorldGraph, kerb: Mesh, line: CurbPt[], urban: boolean, walk: THREE.Color): void {
   if (line.length < 2) return;
-  const prof: [number, number, THREE.Color][] = urban
+  const defaultProfile: [number, number, THREE.Color][] = urban
     ? [
         [0, -0.04, KERB],
         [0, 0.14, KERB],
@@ -745,6 +753,10 @@ function curbAlong(kerb: Mesh, line: CurbPt[], urban: boolean, walk: THREE.Color
   let prev = -1;
   for (const p of line) {
     const base = kerb.pos.length / 3;
+    const measuredWidth = surveyedCorner(graph, p.x, p.z);
+    const prof: [number, number, THREE.Color][] = measuredWidth === undefined ? defaultProfile : measuredWidth === 0
+      ? [[0, -.02, RING_VERGE], [.12, -.03, RING_VERGE], [.35, -.06, RING_VERGE], [.8, -.11, RING_VERGE], [2.1, -2.8, RING_VERGE]]
+      : [[0, -.04, KERB], [0, .14, KERB], [.2, .14, walk], [measuredWidth, .14, WALK_EDGE], [measuredWidth + .35, -2.8, WALK_EDGE]];
     for (const [o, dy, c] of prof) kerb.vertex(p.x + p.ox * o, p.y + dy, p.z + p.oz * o, 0, 0, c);
     if (prev >= 0) for (let j = 0; j < prof.length - 1; j++) kerb.idx.push(prev + j, base + j, prev + j + 1, prev + j + 1, base + j, base + j + 1);
     prev = base;
@@ -824,7 +836,7 @@ function drawRing(g: RingGeo, graph: WorldGraph, field: WorldField, m: { surface
       const p = at(th, g.hw);
       pts.push({ x: p.x, y: p.y + lift, z: p.z, ox: Math.cos(th), oz: Math.sin(th) });
     }
-    curbAlong(m.kerb, pts, urban, walk);
+    curbAlong(graph, m.kerb, pts, urban, walk);
   }
   // i raccordi: un ventaglio dallo spigolo vivo all'arco, e il cordolo che segue l'arco
   for (const b of g.branches) {
@@ -852,7 +864,7 @@ function drawRing(g: RingGeo, graph: WorldGraph, field: WorldField, m: { surface
         p = q;
         curb.push({ x, y: y + fl, z, ox: -Math.cos(ang), oz: -Math.sin(ang) });
       }
-      curbAlong(m.kerb, curb, urban, walk);
+      curbAlong(graph, m.kerb, curb, urban, walk);
     }
   }
   for (const isle of g.splitters) islandTop(m.kerb, isle, lift);

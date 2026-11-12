@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { CLS, FLAG, WorldGraph, type WorldGraphFile } from '../src/open/graph';
 import { crossingClearance, lowerWaterAt, planCrossings, WATER_RAMP, WATER_UNDER_DECK, WATER_UNDER_ROAD } from '../src/open/crossings';
 import { deeperProbe, fitRingToRoads, junctionProbe, PASSAGE_H, ringPenetration, type JunctionShape, type RoadProbe } from '../src/open/footprints';
+import { surveyedWalk, walkSections } from '../src/open/marciapiediGanda';
 import { junctionAt, junctionCut, mitreAt } from '../src/open/junctions';
 import { GRADE_WINDOW_M, WorldPath } from '../src/open/path';
 import { createWorldField } from '../src/open/field';
@@ -79,6 +80,20 @@ describe('Fondo dei nastri stradali', () => {
 const dir = join(__dirname, '..', 'public', 'world', 'bergamo');
 const graph = new WorldGraph(JSON.parse(readFileSync(join(dir, 'graph.json'), 'utf8')) as WorldGraphFile);
 const rides = JSON.parse(readFileSync(join(dir, 'rides.json'), 'utf8')) as RideDef[];
+
+describe('Marciapiedi rilevati nel DBGT', () => {
+  it('a Orezzo elimina i due marciapiedi procedurali e in via Terruzzi mantiene il solo lato rilevato', () => {
+    const orezzo = walkSections(graph, 11198);
+    expect(graph.edges[11198].name).toBe('Via Luigi Don Sturzo');
+    expect(surveyedWalk(orezzo, 130, 1)).toBe(0);
+    expect(surveyedWalk(orezzo, 130, -1)).toBe(0);
+    const terruzzi = walkSections(graph, 3090);
+    expect(surveyedWalk(terruzzi, 10, 1)).toBe(0);
+    expect(surveyedWalk(terruzzi, 10, -1)).toBe(.9);
+    // La lacuna di copertura fra due sezioni di Via Don Bossetti conserva il comportamento generale.
+    expect(surveyedWalk(walkSections(graph, 4689), 300, 1)).toBeUndefined();
+  });
+});
 
 const inRing = (ring: { x: number; z: number }[], x: number, z: number) => {
   let inside = false;

@@ -15,3 +15,6 @@ python scripts/world/ganda-rilievo.py --fetch --osm-buildings scripts/world/cach
 ```
 
 I due GeoPackage e la risposta di Overpass restano nella cache di lavoro. Per aggiornare il rilievo si possono rigenerare separatamente. L'output conserva coordinate locali in decimetri e identificatori sorgente per consentire il controllo di ogni tratto.
+
+
+Per i marciapiedi, `python scripts/world/marciapiedi-ganda.py` confronta le mezzerie con la superficie di circolazione veicolare AC_VEI e le sottoaree AC_PED_ZON 01 (marciapiede) a raso. Ogni tre metri misura l'intersezione trasversale su ciascun lato. Larghezza e lato sono applicati a partire dal bordo della carreggiata del mondo, con un massimo di quattro metri. Le sezioni di strada correnti fuori dal rilievo conservano la regola generale del mondo. Il file incorporato conserva solo le sezioni e le misure rispetto al grafo corrente.
