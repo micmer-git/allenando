@@ -1540,7 +1540,8 @@ function RideSummary({
           <Sum label="Dislivello" value={withUnit(formatNumber(ride.elevationGainM, 0), 'm')} />
           <Sum label={t('metrics.avgPower')} value={ride.avgPower != null ? `${formatNumber(ride.avgPower, 0)} W` : '–'} />
         </dl>
-        {session && session.giriFatti.length > 1 ? (
+        {/* i passaggi chiusi, anche se la corsa finisce a metà del secondo: «Giro 1 · 1:03» */}
+        {session && session.giri > 1 && session.giriFatti.length > 0 ? (
           <p className="num -mt-1.5 flex flex-wrap gap-x-4 gap-y-1 px-1 text-sm" data-testid="summary-giri">
             {session.giriFatti.map((g) => (
               <span key={g.giro}>{`${session.chiuso ? 'Giro' : 'Tratta'} ${g.giro} · ${formatDuration(g.sec)}`}</span>
