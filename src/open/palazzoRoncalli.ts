@@ -24,30 +24,39 @@ function hasFacade(building: Building): boolean {
   return false;
 }
 
-/** Called once for the building list. Keep the portico clearance on the other walls. */
-export function fitRoncalliRoof(world: string, tx: number, tz: number, buildings: Building[]): Building[] {
-  if (world !== 'bergamo' || tx !== 6 || tz !== 20) return buildings;
-  return buildings.map(b => hasFacade(b) ? {...b, h: facadeHeight} : b);
+const center = {x: -10874, z: 18061};
+
+function containsPalazzoTile(spec: TileSpec): boolean {
+  return center.x >= spec.x0 && center.x < spec.x0 + spec.size
+    && center.z >= spec.z0 && center.z < spec.z0 + spec.size;
+}
+
+function frontElevation(field: Pick<WorldField, 'height'>, spec: TileSpec) {
+  const leftY = field.height(left.x, left.z, spec.spacing);
+  const rightY = field.height(right.x, right.z, spec.spacing);
+  return {lowerLeft: leftY - 0.15, lowerRight: rightY - 0.15, eave: (leftY + rightY) / 2 + facadeHeight};
+}
+
+/** The back of the block rises uphill. Measure the eave above the square, then
+ * convert to height above the ground plane buildingsJob computes for the footprint. */
+export function fitRoncalliRoof(world: string, field: Pick<WorldField, 'height'>, spec: TileSpec, buildings: Building[]): Building[] {
+  if (world !== 'bergamo' || !containsPalazzoTile(spec)) return buildings;
+  const {eave} = frontElevation(field, spec);
+  return buildings.map(building => {
+    if (!hasFacade(building)) return building;
+    const ring = building.ring;
+    let cx = 0, cz = 0;
+    for (let i = 0; i < ring.length; i += 2) { cx += ring[i]; cz += ring[i + 1]; }
+    const {low, high} = footprintGround(field, ring, spec.spacing, cx / (ring.length / 2), cz / (ring.length / 2));
+    const ground = Math.max(low - 0.6, Math.min(high - 1, low + 12));
+    return {...building, h: Math.max(building.minH + 2.6, eave - ground)};
+  });
 }
 
 export function roncalliGeometry(field: Pick<WorldField, 'height'>, spec: TileSpec, buildings: Building[]): THREE.BufferGeometry | null {
-  // Both building and decal must belong to the same render tile, including at a tile boundary.
-  const building = buildings.find(hasFacade);
-  if (!building) return null;
-  let cx = 0, cz = 0;
-  const ring = building.ring;
-  for (let i = 0; i < ring.length; i += 2) { cx += ring[i]; cz += ring[i + 1]; }
-  cx /= ring.length / 2;
-  cz /= ring.length / 2;
-  if (cx < spec.x0 || cx >= spec.x0 + spec.size || cz < spec.z0 || cz >= spec.z0 + spec.size) return null;
-
-  // Use the same footprint and spacing as buildingsJob so the roof and photograph meet
-  // when LOD changes. The public square touches the lower edge of the real facade.
-  const {low, high} = footprintGround(field, ring, spec.spacing, cx, cz);
-  const ground = Math.max(low - 0.6, Math.min(high - 1, low + 12));
-  const top = ground + building.h - 0.04;
-  const lowerLeft = field.height(left.x, left.z, spec.spacing) - 0.15;
-  const lowerRight = field.height(right.x, right.z, spec.spacing) - 0.15;
+  if (!containsPalazzoTile(spec) || !buildings.some(hasFacade)) return null;
+  const {lowerLeft, lowerRight, eave} = frontElevation(field, spec);
+  const top = eave - 0.04;
   if (top <= Math.max(lowerLeft, lowerRight) + 1) return null;
 
   const geo = new THREE.BufferGeometry();
@@ -66,9 +75,7 @@ export function roncalliGeometry(field: Pick<WorldField, 'height'>, spec: TileSp
  * The photograph appears only after successful loading. Normal geometry disposal
  * in WorldScene also releases the texture and the material. */
 export function addRoncalliFacade(group: THREE.Group, world: string, field: WorldField, spec: TileSpec, buildings: Building[]): void {
-  if (world !== 'bergamo'
-    || spec.x0 > Math.max(left.x, right.x) || spec.x0 + spec.size <= Math.min(left.x, right.x)
-    || spec.z0 > Math.max(left.z, right.z) || spec.z0 + spec.size <= Math.min(left.z, right.z)) return;
+  if (world !== 'bergamo' || !containsPalazzoTile(spec)) return;
   const geo = roncalliGeometry(field, spec, buildings);
   if (!geo) return;
   const mat = new THREE.MeshLambertMaterial({polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2});
