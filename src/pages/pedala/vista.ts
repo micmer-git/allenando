@@ -61,7 +61,7 @@ export function pannelloDi(r: Rullo): Pannello {
 
 export function vistaPedala(r: Rullo, rete: Rete, c: Contesto = {}): VistaPedala {
   const offline = rete === 'offline';
-  if (!c.manuale && tipiAmmessi(r).length === 0) return { pannello: pannelloDi(r), blocchi: ['rullo'], tipi: [], chip: r.stato === 'collegato' ? 'rullo' : null, offline };
+  if (!c.manuale && tipiAmmessi(r).length === 0) return { pannello: pannelloDi(r), blocchi: ['dove', 'rullo'], tipi: [], chip: r.stato === 'collegato' ? 'rullo' : null, offline };
   const tipi = tipiDi(r, c.dove, !!c.allora, !!c.manuale);
   const tipo = c.tipo && tipi.includes(c.tipo) ? c.tipo : tipi[0];
   const blocchi: Blocco[] = [];

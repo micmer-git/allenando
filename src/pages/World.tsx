@@ -3,6 +3,7 @@ import { Button, Segmented } from '@/components/ui';
 import { WorldMap, legsBounds, type MapMarker, type MapOverlay } from '@/components/WorldMap';
 import { cap, formatAlt, formatAltText, formatDuration, formatGainText, formatKmText, formatNumber } from '@/domain/format';
 import { rideClimbs, rideSense, SENSE_LABEL, siblingRide } from '@/game/passes';
+import { Link } from 'react-router-dom';
 import { worldInfo } from '@/open/worlds';
 import { worldInfo as worldTable } from '@/open/world-table';
 import type { BoardRow } from '@/multiplayer/world-protocol';
@@ -16,7 +17,7 @@ import { useGame } from '@/game/useGame';
 import type { RideDef, WorldData } from '@/open/world';
 import { kindLabel } from '@/open/labels';
 import { planAB, type AbRoute } from '@/open/ab';
-import { pickRoad, roadStart, type FreeStart } from '@/open/partenze';
+import { pickRoad, roadStart, surveyFromPoint, type FreeStart } from '@/open/partenze';
 import { startTowns, townPoint } from '@/open/starts';
 
 /** La riga delle fonti sotto il percorso (F.14): strade e quote; il confronto in rete solo dove qualcuno ha confrontato davvero. */
@@ -272,7 +273,10 @@ export function FreeTab({ data, far, onScegli }: { data: WorldData; far: Float32
           <span className="font-semibold">{label} · {formatAltText(pose.y)}</span>
           {data.graph.allowed(chosen.edge, reverse) && <button type="button" className="min-h-11 rounded-xl border border-line px-3 text-sm" onClick={() => setPoint({ ...chosen, dir: reverse })}>Inverti direzione</button>}
         </div>
-        <button type="button" className="flex h-12 w-full items-center justify-center rounded-2xl border border-accent/60 px-4 font-semibold" onClick={() => onScegli({ ...chosen, paese: label })} data-testid="world-free-start">Parti da qui</button>
+        <div className="grid grid-cols-2 gap-2">
+          <Link to={surveyFromPoint(chosen)} className="grid min-h-12 place-items-center rounded-2xl border border-line px-2 text-center font-semibold">Guarda in 3D</Link>
+          <button type="button" className="min-h-12 rounded-2xl border border-accent/60 px-2 font-semibold" onClick={() => onScegli({ ...chosen, paese: label })} data-testid="world-free-start">Usa questa partenza</button>
+        </div>
       </div>}
       <ul className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
         {starts.map((s) => (

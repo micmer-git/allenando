@@ -8,7 +8,7 @@ import { DEFAULT_PROFILE } from '../src/domain/types';
 
 /*
  * Piano U, § 3 «Prove»: cosa mostra Pedala per gli 8 stati del rullo, con la prova spenta e accesa.
- * Senza potenza e senza prova: un pannello e nient'altro (nessun Dove, Come, Via).
+ * Senza potenza e senza prova si esplora Dove e si prepara il collegamento.
  */
 
 const NIENTE: Capacita = { pendenza: false, erg: false, potenza: false, cardio: false, cadenza: false };
@@ -34,11 +34,11 @@ const ATTESO: Record<string, Pannello | null> = { mai: 'mai', cerco: 'cerco', fa
 
 describe('Pedala, prova spenta', () => {
   for (const [nome, r] of Object.entries(STATI)) {
-    it(`${nome}: ${ATTESO[nome] ? `il pannello «${ATTESO[nome]}» e nient'altro` : 'Dove, Come, Via'}`, () => {
+    it(`${nome}: ${ATTESO[nome] ? `esplorazione e pannello «${ATTESO[nome]}»` : 'Dove, Come, Via'}`, () => {
       const v = vistaPedala(r, 'online');
       expect(v.pannello).toBe(ATTESO[nome]);
       if (ATTESO[nome]) {
-        expect(v.blocchi).toEqual(['rullo']);
+        expect(v.blocchi).toEqual(['dove', 'rullo']);
         expect(v.tipi).toEqual([]);
       } else {
         expect(v.blocchi).toEqual(expect.arrayContaining(['dove', 'come', 'via']));

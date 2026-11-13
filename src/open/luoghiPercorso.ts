@@ -18,8 +18,8 @@ function along(path:WorldPath, target:{x:number;z:number}, reach:number) {
   }
   return distance;
 }
-export function luoghiPercorso(data:WorldData, ride:RideDef, path:WorldPath): SurveyStop[] {
-  const stops:SurveyStop[]=surveyStops(ride,data).map(s=>({...s,kind:'Luoghi'}));
+export function luoghiPercorso(data:WorldData, ride:RideDef | null, path:WorldPath): SurveyStop[] {
+  const stops:SurveyStop[]=ride ? surveyStops(ride,data).map(s=>({...s,kind:'Luoghi'})) : [];
   const roadEdges=new Map(path.legs.map(l=>[l.edge,l]));
   const towns=new Set(stops.map(s=>s.name));
   for(const p of data.features.pois) {
@@ -27,6 +27,7 @@ export function luoghiPercorso(data:WorldData, ride:RideDef, path:WorldPath): Su
     if(!leg || !p.name || p.off>55 || towns.has(p.name) ||
       !['chiesa','santuario','campanile','castello','torre','ponte','cappella','belvedere','rifugio'].includes(p.kind)) continue;
     const at=leg.from + (p.s-leg.s0)*leg.dir;
+    if (at < leg.from || at > leg.from + leg.len) continue;
     stops.push({id:p.id,name:p.name,station:Math.round(at/100),kind:'Luoghi',target:p});
     towns.add(p.name);
   }
@@ -34,6 +35,7 @@ export function luoghiPercorso(data:WorldData, ride:RideDef, path:WorldPath): Su
     const leg=roadEdges.get(s.edge);
     if(!leg) continue;
     const at=leg.from+(s.s-leg.s0)*leg.dir;
+    if (at < leg.from || at > leg.from + leg.len) continue;
     const approaching=Math.cos(path.poseAt(at).heading-s.heading)>=0;
     const viewAt=Math.max(0,Math.min(path.length,at+(approaching?-8:8)));
     stops.push({viewAt,heightOffset:0.30,plate:s.n,id:'cartello-'+s.n,name:'Tornante '+s.n+' · '+s.name,station:Math.round(at/100),kind:'Tornanti dei campioni',
