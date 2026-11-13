@@ -36,7 +36,7 @@ function check(ok, label, extra = '') {
 }
 
 const port = 9300 + Math.floor(Math.random() * 500);
-const { child: chrome, closed } = startTestChrome(CHROME, [
+const { child: chrome, closed, finish } = startTestChrome(CHROME, [
   '--headless=new',
   `--remote-debugging-port=${port}`,
   '--no-first-run',
@@ -306,8 +306,7 @@ try {
   writeFileSync(join(out, 'report.txt'), report.join('\n') + '\n');
   // Browser.close prima: su Windows chrome.kill() ferma solo il lanciatore
   await Promise.race([send('Browser.close').catch(() => null), sleep(3000)]);
-  chrome.kill();
-  await closed;
+  await finish();
 }
 console.log(failures ? `\n${failures} controlli falliti` : '\nTutto verde');
 process.exit(failures ? 1 : 0);
