@@ -61,7 +61,7 @@ try {
     await sleep(800);
     await p.shot('02-pedala');
     await auditCheck(p, 'pedala');
-    check(await p.evaluate(`!!document.querySelector('[data-testid=pedala-collega]') && !document.querySelector('[data-testid=pedala-via]')`), 'pedala: senza rullo solo «Collega il rullo»');
+    check(await p.evaluate(`!!document.querySelector('[data-testid=pedala-collega]') && !document.querySelector('[data-testid=pedala-via]')`), 'pedala: senza rullo si può collegare il dispositivo, Via resta indisponibile');
   }
 
   // pedalata su Città Alta, in prova (?prova=1 accende la prova per la scheda: senza, la corsa torna a Pedala)

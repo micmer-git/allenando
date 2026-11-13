@@ -26,11 +26,27 @@ export function Foglio({
   aside?: ReactNode;
 }) {
   const panel = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  useEffect(() => { closeRef.current = onClose; }, [onClose]);
   useEffect(() => {
     if (!open) return;
+    const trigger = document.activeElement;
     panel.current?.focus();
     const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') closeRef.current();
+      if (e.key !== 'Tab' || !panel.current) return;
+      const items = [...panel.current.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), summary, [tabindex="0"]')]
+        .filter(el => el.getClientRects().length > 0);
+      const first = items[0];
+      const last = items.at(-1);
+      const current = document.activeElement;
+      if (e.shiftKey && (current === first || current === panel.current)) {
+        e.preventDefault();
+        last?.focus();
+      } else if (!e.shiftKey && current === last) {
+        e.preventDefault();
+        first?.focus();
+      }
     };
     window.addEventListener('keydown', key);
     const prev = document.body.style.overflow;
@@ -38,8 +54,9 @@ export function Foglio({
     return () => {
       window.removeEventListener('keydown', key);
       document.body.style.overflow = prev;
+      if (trigger instanceof HTMLElement && trigger.isConnected) trigger.focus({ preventScroll: true });
     };
-  }, [open, onClose]);
+  }, [open]);
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label={title} data-testid={testId}>

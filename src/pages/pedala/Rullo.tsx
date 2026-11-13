@@ -8,27 +8,18 @@ import type { Pannello } from './vista';
 
 const BLUEFY = 'https://apps.apple.com/app/bluefy-web-ble-browser/id1492822055';
 
-/**
- * Pedala senza un sensore di potenza (wireframe B1–B5, C5): una figura, una riga se serve, un
- * tasto pieno. Niente Dove, niente Come: senza potenza non c'è niente da scegliere.
- */
+/** Collegamento del dispositivo durante la preparazione del giro. */
 export function RulloPannello({ r, pannello }: { r: RulloStato; pannello: Pannello }) {
   const [copiato, setCopiato] = useState(false);
   const copia = () => {
     void navigator.clipboard?.writeText(location.href).then(() => setCopiato(true)).catch(() => setCopiato(false));
   };
-  const pieno = 'flex h-14 w-full items-center justify-center rounded-full bg-accent px-5 text-[17px] font-semibold text-accent-ink transition active:scale-[0.98] disabled:opacity-60';
+  const pieno = 'flex min-h-12 w-full items-center justify-center rounded-full bg-elev2 px-4 py-2 font-semibold text-ink transition active:scale-[0.98] disabled:opacity-60';
   const leggero = 'mt-2 flex h-12 w-full items-center justify-center rounded-full px-5 text-[15px] font-semibold text-ink';
   return (
-    <section className="mx-auto flex w-full max-w-sm flex-col justify-center pb-6" data-testid="pedala-rullo" data-pannello={pannello}>
-      <RulloFigura cerca={pannello === 'cerco'} />
+    <section className="mx-auto flex w-full max-w-sm flex-col justify-center" data-testid="pedala-rullo" data-pannello={pannello}>
       {pannello === 'mai' ? (
         <>
-          <p className="mb-5 mt-4 flex justify-center gap-1.5">
-            <Gettone>Rullo smart</Gettone>
-            <Gettone>Potenza</Gettone>
-            <Gettone>Cardio</Gettone>
-          </p>
           <button type="button" className={pieno} onClick={() => void rullo.collega()} data-testid="pedala-collega">
             Collega il rullo
           </button>
@@ -36,7 +27,6 @@ export function RulloPannello({ r, pannello }: { r: RulloStato; pannello: Pannel
       ) : null}
       {pannello === 'cerco' ? (
         <>
-          <div className="mt-4 h-[46px]" />
           <button type="button" className={pieno} disabled aria-busy="true" data-testid="pedala-collega">
             <Giro /> Cerco il rullo
           </button>
@@ -206,28 +196,4 @@ export function Gettone({ children, avviso }: { children: ReactNode; avviso?: bo
 
 function Giro() {
   return <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-accent-ink/40 border-t-accent-ink" />;
-}
-
-/** La figura: la ruota dietro sul rullo, e le onde del Bluetooth quando cerca. */
-function RulloFigura({ cerca }: { cerca: boolean }) {
-  return (
-    <svg viewBox="0 0 320 200" className="mx-auto block h-auto w-full max-w-[320px]" aria-hidden="true" data-testid="rullo-figura">
-      <rect x="0" y="0" width="320" height="200" rx="24" fill="var(--elev)" />
-      {/* il pavimento */}
-      <path d="M24 172h272" stroke="var(--line)" strokeWidth="2" />
-      {/* il rullo: la base e il volano */}
-      <path d="M118 172l22-40h56l22 40" fill="none" stroke="var(--muted)" strokeWidth="5" strokeLinejoin="round" strokeLinecap="round" />
-      <rect x="138" y="104" width="62" height="36" rx="12" fill="var(--elev2)" stroke="var(--muted)" strokeWidth="3" />
-      <circle cx="169" cy="122" r="9" fill="none" stroke="var(--accent)" strokeWidth="3" />
-      {/* la bici: telaio e ruota davanti */}
-      <circle cx="78" cy="130" r="36" fill="none" stroke="var(--ink)" strokeOpacity="0.85" strokeWidth="4" />
-      <path d="M78 130l40-56h48l3 48M118 74l-6-14h-18M166 74l12-16h14M118 74l51 48" fill="none" stroke="var(--ink)" strokeOpacity="0.85" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
-      {/* il segnale */}
-      <g fill="none" stroke="var(--accent)" strokeWidth="4" strokeLinecap="round" className={cerca ? 'animate-pulse' : undefined}>
-        <path d="M232 64a24 24 0 0 1 0 34" />
-        <path d="M246 52a42 42 0 0 1 0 58" opacity="0.7" />
-        <path d="M260 40a60 60 0 0 1 0 82" opacity="0.4" />
-      </g>
-    </svg>
-  );
 }

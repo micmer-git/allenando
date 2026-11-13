@@ -379,6 +379,8 @@ function draw(g: CanvasRenderingContext2D, data: WorldData, relief: HTMLCanvasEl
     if (p.pass || p.ele < (v.mpp > 60 ? 2200 : v.mpp > 25 ? 1700 : 1100) || !inView(p.x, p.z)) continue;
     const x = sx(p.x);
     const y = sz(p.z);
+    // Nella vista regionale una cresta può contenere decine di cime in pochi pixel.
+    if (v.mpp > 45 && !room(x, y + 6, 24, 16)) continue;
     g.fillStyle = '#5b4a3a';
     g.beginPath();
     g.moveTo(x, y - 5);

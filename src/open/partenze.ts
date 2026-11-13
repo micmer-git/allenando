@@ -22,6 +22,10 @@ export function pedalaFromPoint(dove: FreeStart): string {
   return '/?dove=libero&' + intentoInSearch({ dove, tipo: 'libera' });
 }
 
+export function surveyFromPoint(dove: FreeStart): string {
+  return '/confronto?' + intentoInSearch({ dove, tipo: 'libera' });
+}
+
 export const GANDA_PLAN = 'ganda-da-gazzaniga';
 export const GANDA_NAME = 'Salita di Ganda da Gazzaniga';
 export const GANDA_LINK = '/?dove=ganda';

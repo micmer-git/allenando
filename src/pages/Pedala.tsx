@@ -4,7 +4,7 @@ import { Wordmark } from '@/components/ui';
 import { usePacco, useRete } from '@/lib/rete';
 import { formatGainText, formatKmText } from '@/domain/format';
 import { loadRouteFile, routeMeta, trackFromRouteFile } from '@/domain/routes';
-import { GANDA_LINK, GANDA_NAME, GANDA_PLAN, roadStart, type FreeStart } from '@/open/partenze';
+import { GANDA_PLAN, roadStart, type FreeStart } from '@/open/partenze';
 import { lastWorld, isWorldId } from '@/open/worlds';
 import type { Rete, Tipo } from '@/ride/contract';
 import { useApp } from '@/store/useApp';
@@ -104,7 +104,7 @@ export function PedalaPage() {
   const manuale = !!scelta?.manuale && !r.sa.potenza;
   const v = vistaPedala(r, rete, { manuale, dove: scelta?.dove ?? null, tipo: scelta?.tipo, record: !!scelta?.vista?.record, giri: !!scelta?.vista?.anello, allora: !!scelta?.vista?.potenza });
   const puo = !v.pannello;
-  const mondo = useMondo(worldId, !!attesa || (puo && (dove.open || largo)));
+  const mondo = useMondo(worldId, !!attesa || dove.open || largo || !puo);
   const pacco = usePacco(scelta?.dove && 'world' in scelta.dove ? scelta.dove.world : worldId);
 
   // ?dove=… dall'indirizzo: apre il foglio, o sceglie un Dove (piano U, § 2.6)
@@ -232,7 +232,7 @@ export function PedalaPage() {
     if (t === 'allenamento' && !workout) setAllenamenti(true);
   };
   const intento = scelta && scelta.dove ? intentoDi({ ...scelta, tipo, manuale, wattManuali: wattManuale, watt: tipo === 'fissa' ? watt : scelta.watt, giri: giriSi ? scelta.giri : 1 }, vv.tipi, giriSi) : null;
-  let via = !attesa && intento && (tipo !== 'allenamento' || workout) ? `/ride?${intentoInSearch(intento)}` : null;
+  let via = puo && !attesa && intento && (tipo !== 'allenamento' || workout) ? `/ride?${intentoInSearch(intento)}` : null;
   // la salita col fantasma: il giro piu' veloce del diario (?route=R&ghost=ID, par. 2.2)
   if (via && intento?.dove.kind === 'salita' && intento.fantasma !== false && vistaD?.record?.ghost && tipo !== 'allenamento') via += `&ghost=${encodeURIComponent(vistaD.record.ghost)}`;
   const minutiAll = tipo === 'allenamento' && durataAll ? durataAll / 60 : undefined;
@@ -247,6 +247,7 @@ export function PedalaPage() {
     setFiltro: (filtro: Filtro) => setDove((d) => ({ ...d, filtro })),
     onScegli: scegli,
     scelto: idScelto(scelta?.dove ?? null),
+    punto: scelta?.dove?.kind === 'libero' ? scelta.dove : undefined,
     offline: v.offline,
     schedaRide: dove.ride ?? null,
     soloStrumento: dove.solo,
@@ -324,13 +325,13 @@ export function PedalaPage() {
 
   return (
     <main
-      className={cn('mx-auto flex w-full flex-col px-4 pb-nav pt-[max(0.5rem,env(safe-area-inset-top))] md:px-8 wide:min-h-dvh wide:pt-6', largo && puo ? 'max-w-6xl' : 'min-h-[calc(100dvh-4.5rem)] max-w-3xl')}
+      className={cn('mx-auto flex w-full flex-col px-4 pb-nav pt-[max(0.5rem,env(safe-area-inset-top))] md:px-8 wide:min-h-dvh wide:pt-6', largo ? 'max-w-6xl' : 'min-h-[calc(100dvh-4.5rem)] max-w-3xl')}
       data-testid="pedala"
       data-pannello={v.pannello ?? ''}
     >
       <header className="flex h-14 shrink-0 items-center justify-between gap-2">
         <Wordmark className="rail:hidden wide:hidden" />
-        <h1 className="hidden font-display text-4xl uppercase leading-none wide:block">Pedala</h1>
+        <h1 className="hidden font-display text-4xl uppercase leading-none wide:block">{puo ? 'Pedala' : 'Esplora le strade'}</h1>
         <span className="ml-auto flex min-w-0 items-center gap-1.5">
           {v.offline ? <ReteChip /> : null}
           {v.chip === 'manuale' ? (
@@ -338,18 +339,20 @@ export function PedalaPage() {
           ) : v.chip ? <RulloChip r={r} onClick={() => setFoglio(true)} /> : null}
         </span>
       </header>
-      {v.pannello ? (
-        <div className="flex flex-1 flex-col justify-center">
-          {vistaD && <p className="mb-3 text-center font-semibold" data-testid="pedala-destinazione">{vistaD.titolo}{scelta?.dove?.kind === 'libero' ? ` · ${vistaD.partenza}` : ''}</p>}
-          <RulloPannello r={r} pannello={v.pannello} />
-          {!vistaD && worldId === 'bergamo' && <Link to={GANDA_LINK} className="self-center py-3 font-semibold text-accent" data-testid="pedala-ganda-salita">{GANDA_NAME}</Link>}
-          {scelta ? <div className="text-center">{avviaManuale}<p className="mt-1.5 text-xs text-muted">Giro virtuale senza rullo · fuori classifica</p></div> : null}
-        </div>
-      ) : largo ? (
-        <div className="grid flex-1 grid-cols-[minmax(0,1fr)_380px] gap-6 pb-6">
-          <DoveContenuto {...doveProps} strumento="lista" setStrumento={(strumento) => setDove((d) => ({ ...d, open: true, strumento, solo: true }))} colonna />
-          <aside className="self-start rounded-3xl border border-line bg-elev p-4" data-testid="pedala-colonna">
-            {pannelloScelta}
+      {v.pannello || largo ? (
+        <div className={cn('grid items-start gap-5 pb-6', largo && 'grid-cols-[minmax(0,1fr)_minmax(280px,34%)] gap-6')}>
+          <section className="min-w-0">
+            {v.pannello && <h2 className="mb-2 font-display text-3xl uppercase wide:hidden">Esplora le strade</h2>}
+            <DoveContenuto {...doveProps} strumento="lista" colonna={largo} apriPercorsi={largo ? undefined : apriDove}
+              setStrumento={(strumento) => setDove((d) => ({ ...d, open: true, strumento, solo: true }))} />
+          </section>
+          <aside className={cn('min-w-0 rounded-3xl border border-line bg-elev p-4', largo && 'sticky top-3')} data-testid="pedala-colonna">
+            {v.pannello ? <>
+              <h2 className="font-display text-2xl">Prepara il giro</h2>
+              {vistaD ? <div className="my-3" data-testid="pedala-destinazione"><DoveTesta vista={vistaD} leggero={leggero} /></div> : <p className="mb-3 text-sm text-muted">Puoi esplorare senza collegare il rullo.</p>}
+              <RulloPannello r={r} pannello={v.pannello} />
+              {scelta && <div className="mt-2 text-center">{avviaManuale}</div>}
+            </> : pannelloScelta}
           </aside>
         </div>
       ) : (

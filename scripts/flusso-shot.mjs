@@ -115,8 +115,8 @@ async function pagine() {
     await p.waitFor(`!!document.querySelector('[data-testid=pedala-rullo]')`, 10000);
     await sleep(400);
     await scatta(p, 'B1-mai-collegato-390x844');
-    const solo = await p.evaluate(`({ collega: !!document.querySelector('[data-testid=pedala-collega]'), altro: ['pedala-dove', 'pedala-come', 'pedala-via'].filter((t) => document.querySelector('[data-testid=' + t + ']')) })`);
-    check(solo.collega && solo.altro.length === 0, 'B1: senza rullo e senza prova solo «Collega il rullo»', JSON.stringify(solo));
+    const solo = await p.evaluate(`({ mappa: !!document.querySelector('[data-testid=dove]'), collega: !!document.querySelector('[data-testid=pedala-collega]'), altro: ['pedala-come', 'pedala-via'].filter((t) => document.querySelector('[data-testid=' + t + ']')) })`);
+    check(solo.mappa && solo.collega && solo.altro.length === 0, 'B1: senza rullo si esplora la mappa, senza avvio', JSON.stringify(solo));
     await base390(p, 'B1');
     const voci = await p.evaluate(`[...document.querySelectorAll('[data-testid=bottom-nav] li')].map((li) => { const a = li.querySelector('a'); const r = a.getBoundingClientRect(); return { t: a.textContent.trim(), h: Math.round(r.height), w: Math.round(r.width) }; })`);
     check(voci.length === 3 && voci.map((v) => v.t).join('|') === 'Pedala|Diario|Tu' && voci.every((v) => v.h >= 44 && v.w >= 44), 'navigazione: tre voci, Pedala · Diario · Tu, ≥ 44 px', JSON.stringify(voci));

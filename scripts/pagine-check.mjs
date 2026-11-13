@@ -159,8 +159,8 @@ export async function giroPagine(p, check, { shot = null } = {}) {
   // Pedala senza rullo e senza prova: solo «Collega il rullo» (A4); il link diretto a una corsa torna qui
   await base('pedala, senza rullo');
   await ellissi('pedala, senza rullo');
-  const solo = await p.evaluate(`({ collega: !!document.querySelector('[data-testid=pedala-collega]'), altro: ['pedala-dove', 'pedala-come', 'pedala-via'].filter((t) => document.querySelector('[data-testid=' + t + ']')) })`);
-  check(solo.collega && solo.altro.length === 0, 'pedala: senza rullo solo «Collega il rullo», nessun Dove, Come, Via', JSON.stringify(solo));
+  const solo = await p.evaluate(`({ mappa: !!document.querySelector('[data-testid=dove]'), collega: !!document.querySelector('[data-testid=pedala-collega]'), altro: ['pedala-come', 'pedala-via'].filter((t) => document.querySelector('[data-testid=' + t + ']')) })`);
+  check(solo.mappa && solo.collega && solo.altro.length === 0, 'pedala: senza rullo si esplorano i percorsi, Via resta indisponibile', JSON.stringify(solo));
   const pieni = await p.evaluate(PIENI);
   check(pieni.length <= 1, 'pedala: un solo tasto pieno nel primo schermo', pieni.join(' | '));
   await go('ride-senza-rullo', '/ride?world=bergamo&ride=ganda', `!location.pathname.includes('/ride')`, 600);

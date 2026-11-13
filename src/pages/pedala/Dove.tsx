@@ -12,7 +12,7 @@ import { pickRoute } from '@/open/pick';
 import { chiuso } from '@/open/passaggi';
 import { savePlan } from '@/open/plan';
 import { EMPTY_PROGRESS, loadProgress, type WorldProgress } from '@/open/progress';
-import { GANDA_LINK, GANDA_NAME, roadStart } from '@/open/partenze';
+import { GANDA_LINK, GANDA_NAME, roadStart, surveyFromPoint, type FreeStart } from '@/open/partenze';
 import { startTowns, townPoint } from '@/open/starts';
 import { loadWorld, Terrain, type RideDef, type WorldData } from '@/open/world';
 import { rememberWorld, worldInfo } from '@/open/worlds';
@@ -147,22 +147,24 @@ interface DoveProps {
   onScegli: (s: Scelto) => void;
   /** l'id della riga scelta (evidenziata) */
   scelto: string | null;
+  punto?: FreeStart;
   /** la durata dell'allenamento scelto: «Crea un anello» cerca per minuti (D2) */
   minuti?: number;
   watt?: number;
   /** sul computer: la colonna, carta più alta */
   colonna?: boolean;
+  /** Sulla home compatta, il catalogo si apre in un foglio a tutta altezza. */
+  apriPercorsi?: () => void;
   /** la scheda del percorso scelto */
   schedaRide?: string | null;
   offline?: boolean;
 }
 
-export function DoveContenuto({ mondo, setWorld, strumento, setStrumento, filtro, setFiltro, onScegli, scelto, minuti, watt, colonna, schedaRide, offline }: DoveProps) {
+export function DoveContenuto({ mondo, setWorld, strumento, setStrumento, filtro, setFiltro, onScegli, scelto, punto, minuti, watt, colonna, apriPercorsi, schedaRide, offline }: DoveProps) {
   const rides = useApp((s) => s.rides);
   const manifests = useWorldManifests();
   const [scegliMondo, setScegliMondo] = useState(false);
-  const [evidenza, setEvidenza] = useState<string | null>(null);
-  const grandi = useGrandiSalite(true);
+  const grandi = useGrandiSalite(!apriPercorsi);
   const data = mondo.data;
   const info = worldInfo(mondo.id);
   const pacco = usePacco(mondo.id);
@@ -228,7 +230,9 @@ export function DoveContenuto({ mondo, setWorld, strumento, setStrumento, filtro
 
   const mostra = (g: 'anelli' | 'salite' | 'percorsi' | 'grandi' | 'giri') =>
     filtro === 'tutti' || (filtro === 'anelli' && g === 'anelli') || (filtro === 'salite' && (g === 'salite' || g === 'grandi')) || (filtro === 'giri' && g === 'giri');
-  const visibili = data ? [...(mostra('anelli') ? gruppi.anelli : []), ...(mostra('salite') ? gruppi.salite : []), ...(mostra('percorsi') ? gruppi.percorsi : [])] : [];
+  const visibili = apriPercorsi && data ? data.rides : [...(mostra('anelli') ? gruppi.anelli : []), ...(mostra('salite') ? gruppi.salite : []), ...(mostra('percorsi') ? gruppi.percorsi : [])];
+  const preview = data?.rides.find(r => r.id === scelto) ?? data?.rides.find(r => r.id === (mondo.id === 'bergamo' ? 'ganda' : 'sellaronda')) ?? data?.rides[0];
+  const survey = punto && punto.world === mondo.id ? surveyFromPoint(punto) : preview ? '/confronto?' + new URLSearchParams({ world: mondo.id, ride: preview.id }) : null;
 
   return (
     <div className={cn(colonna ? 'flex min-h-0 flex-col gap-2' : 'mt-2')} data-testid="dove" data-world={mondo.id}>
@@ -255,14 +259,19 @@ export function DoveContenuto({ mondo, setWorld, strumento, setStrumento, filtro
         </div>
       ) : null}
       {data ? (
-        <CartaDove data={data} far={mondo.far} rides={visibili} scelto={evidenza ?? scelto} height={colonna ? 330 : 190} onPick={(id) => setEvidenza(id)} />
+        <CartaDove data={data} far={mondo.far} rides={visibili} scelto={scelto} height={colonna ? 300 : 190} onPick={id => {
+          const ride = data.rides.find(r => r.id === id);
+          if (ride) scegliPercorso(ride);
+        }} />
       ) : (
         <Caricamento mondo={mondo} offline={offline} />
       )}
-      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
-        <button type="button" disabled={!data} className="min-h-11 text-left font-semibold text-accent disabled:opacity-50" onClick={() => setStrumento('libero')} data-testid="dove-libero-mappa">Giro libero sulla mappa</button>
-        {mondo.id === 'bergamo' && <Link to={GANDA_LINK} className="inline-flex min-h-11 items-center text-left font-semibold text-accent" data-testid="dove-ganda-salita">{GANDA_NAME}</Link>}
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        {apriPercorsi && <button type="button" onClick={apriPercorsi} className="min-h-12 rounded-full bg-accent px-3 font-semibold text-accent-ink" data-testid="esplora-percorsi">Sfoglia i percorsi</button>}
+        {survey && <Link to={survey} className="grid min-h-12 place-items-center rounded-full border border-line bg-elev px-3 text-center font-semibold" data-testid="esplora-3d">Sopralluogo 3D</Link>}
+        <button type="button" disabled={!data} className={cn('min-h-11 text-sm font-semibold text-accent disabled:opacity-50', apriPercorsi && 'col-span-2')} onClick={() => setStrumento('libero')} data-testid="dove-libero-mappa">Scegli un punto sulla mappa</button>
       </div>
+      {!apriPercorsi && <>
       <div className="mt-2 grid grid-cols-3 gap-1.5">
         <Strumentino onClick={liberoSubito} disabled={!data} testId="dove-libero">
           {`Libero da ${info.home}`}
@@ -299,21 +308,22 @@ export function DoveContenuto({ mondo, setWorld, strumento, setStrumento, filtro
         {data && mostra('anelli') && gruppi.anelli.length ? (
           <Gruppo titolo="Anelli">
             {gruppi.anelli.map((r) => (
-              <RigaPercorso key={r.id} r={r} rec={mondo.progress.rides[r.id]?.bestSec} on={scelto === r.id || evidenza === r.id} onClick={() => scegliPercorso(r)} />
+              <RigaPercorso key={r.id} r={r} rec={mondo.progress.rides[r.id]?.bestSec} on={scelto === r.id} onClick={() => scegliPercorso(r)} />
             ))}
           </Gruppo>
         ) : null}
         {data && mostra('salite') && gruppi.salite.length ? (
           <Gruppo titolo="Salite">
+            {mondo.id === 'bergamo' && <li><Link to={GANDA_LINK} className="flex min-h-14 items-center border-b border-line font-semibold" data-testid="dove-ganda-salita">{GANDA_NAME}</Link></li>}
             {gruppi.salite.map((r) => (
-              <RigaPercorso key={r.id} r={r} rec={mondo.progress.rides[r.id]?.bestSec} on={scelto === r.id || evidenza === r.id} onClick={() => scegliPercorso(r)} />
+              <RigaPercorso key={r.id} r={r} rec={mondo.progress.rides[r.id]?.bestSec} on={scelto === r.id} onClick={() => scegliPercorso(r)} />
             ))}
           </Gruppo>
         ) : null}
         {data && mostra('percorsi') && gruppi.percorsi.length ? (
           <Gruppo titolo="Percorsi">
             {gruppi.percorsi.map((r) => (
-              <RigaPercorso key={r.id} r={r} rec={mondo.progress.rides[r.id]?.bestSec} on={scelto === r.id || evidenza === r.id} onClick={() => scegliPercorso(r)} />
+              <RigaPercorso key={r.id} r={r} rec={mondo.progress.rides[r.id]?.bestSec} on={scelto === r.id} onClick={() => scegliPercorso(r)} />
             ))}
           </Gruppo>
         ) : null}
@@ -364,9 +374,12 @@ export function DoveContenuto({ mondo, setWorld, strumento, setStrumento, filtro
             ) : null}
           </Gruppo>
         ) : null}
-        {data && <Link to={'/confronto?world=' + encodeURIComponent(data.graph.id) + '&ride=' + encodeURIComponent(data.rides.find(r => r.id === (evidenza ?? scelto))?.id ?? (data.graph.id === 'bergamo' ? 'ganda' : 'sellaronda'))} className="mt-4 inline-flex min-h-11 items-center text-sm font-semibold text-accent">Esplora il percorso ogni 100 m ↗</Link>}
-        {data ? <p className="mt-6 text-xs leading-relaxed text-muted" data-testid="dove-fonti">{`© OpenStreetMap contributors (ODbL), dati del ${data.graph.builtAt} · ${worldTable(data.graph.id).quoteCredits} · Colori del terreno: ortofoto © AGEA (voli 2023–2024) e ESA WorldCover, dati Copernicus Sentinel-2 modificati (2021), CC BY 4.0.`}</p> : null}
       </div>
+      </>}
+      {data && <details className="text-xs text-muted" data-testid="dove-fonti">
+        <summary className="inline-flex min-h-11 cursor-pointer items-center underline">Fonti della carta</summary>
+        <p className="pb-2">{`© OpenStreetMap contributors (ODbL), dati del ${data.graph.builtAt} · ${worldTable(data.graph.id).quoteCredits} · Colori del terreno: ortofoto © AGEA (voli 2023–2024) e ESA WorldCover / Copernicus Sentinel-2 (2021), CC BY 4.0.`}</p>
+      </details>}
     </div>
   );
 }
