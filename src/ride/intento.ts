@@ -35,6 +35,7 @@ function intero(raw: string | null): number | null {
 }
 
 function doveDa(p: URLSearchParams): Dove | null {
+  if (p.get('street') === '1') return { kind: 'street' };
   const world = p.get('world');
   if (world) {
     const ride = p.get('ride');
@@ -107,6 +108,9 @@ export function intentoInSearch(i: Intento): string {
   const tipo: Tipo = (i.manuale && i.tipo !== 'allenamento') || (i.tipo === 'allora' && d.kind !== 'giro') ? 'libera' : i.tipo;
   if (tipo === 'allenamento' && i.workout) q.set('workout', i.workout);
   switch (d.kind) {
+    case 'street':
+      q.set('street', '1');
+      break;
     case 'percorso':
       q.set('world', d.world);
       q.set('ride', d.ride);
