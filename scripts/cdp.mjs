@@ -1,18 +1,15 @@
 // Un Chrome headless pilotato via DevTools, con «telefoni» a 390×844. Lo usa ui-shot.mjs.
-import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
+import { startTestChrome } from './test-chrome.mjs';
 import { join } from 'node:path';
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export async function launch({ out, chromePath = process.env.CHROME ?? 'C:/Program Files/Google/Chrome/Application/chrome.exe' } = {}) {
-  const profile = mkdtempSync(join(tmpdir(), 'allenando-ui-'));
   const port = 9300 + Math.floor(Math.random() * 500);
-  const chrome = spawn(chromePath, [
+  const { child: chrome, closed } = startTestChrome(chromePath, [
     '--headless=new',
     `--remote-debugging-port=${port}`,
-    `--user-data-dir=${profile}`,
     '--no-first-run',
     '--no-default-browser-check',
     '--use-angle=swiftshader',
@@ -25,7 +22,11 @@ export async function launch({ out, chromePath = process.env.CHROME ?? 'C:/Progr
     await sleep(200);
     version = await fetch(`http://127.0.0.1:${port}/json/version`).then((r) => r.json()).catch(() => null);
   }
-  if (!version) throw new Error('Chrome non risponde');
+  if (!version) {
+    chrome.kill();
+    await closed;
+    throw new Error('Chrome non risponde');
+  }
   const ws = new WebSocket(version.webSocketDebuggerUrl);
   await new Promise((r) => ws.addEventListener('open', r, { once: true }));
   let seq = 0;
@@ -109,21 +110,11 @@ export async function launch({ out, chromePath = process.env.CHROME ?? 'C:/Progr
 
   // Browser.close prima di tutto: su Windows chrome.kill() ferma solo il lanciatore e i figli
   // restano vivi, con il loro GPU software, a mangiare memoria
-  // poi via il profilo di questo launch (~20 MB l'uno): prima restavano tutti in %TEMP% e riempivano
-  // il disco (67 cartelle il 12/11/2026). Su Windows Chrome tiene i file un attimo: un secondo tentativo
   const close = async () => {
     await Promise.race([send('Browser.close').catch(() => null), sleep(3000)]);
     await sleep(500);
     chrome.kill();
-    for (const wait of [0, 1000]) {
-      if (wait) await sleep(wait);
-      try {
-        rmSync(profile, { recursive: true, force: true });
-        break;
-      } catch {
-        /* ancora in uso: si riprova una volta */
-      }
-    }
+    await closed;
   };
   return { phone, close };
 }

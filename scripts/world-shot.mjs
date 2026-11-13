@@ -17,9 +17,8 @@
 // cielo al 10% dall'alto (luminanza e saturazione, R5 del PM) e lo scrive nel rapporto. TUTTE=1:
 // la schermata solo quando tutte le mattonelle dell'anello sono pronte.
 
-import { spawn } from 'node:child_process';
-import { mkdirSync, writeFileSync, mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { startTestChrome } from './test-chrome.mjs';
 import { join } from 'node:path';
 
 const [base = 'http://127.0.0.1:4173/allenando', out = 'shots'] = process.argv.slice(2).filter((a) => !a.startsWith('--'));
@@ -36,12 +35,10 @@ function check(ok, label, extra = '') {
   if (!ok) failures += 1;
 }
 
-const profile = mkdtempSync(join(tmpdir(), 'allenando-shot-'));
 const port = 9300 + Math.floor(Math.random() * 500);
-const chrome = spawn(CHROME, [
+const { child: chrome, closed } = startTestChrome(CHROME, [
   '--headless=new',
   `--remote-debugging-port=${port}`,
-  `--user-data-dir=${profile}`,
   '--no-first-run',
   '--no-default-browser-check',
   '--use-angle=swiftshader',
@@ -49,15 +46,16 @@ const chrome = spawn(CHROME, [
   '--ignore-gpu-blocklist',
   'about:blank',
 ]);
-chrome.on('error', (e) => {
-  console.error(e);
-  process.exit(2);
-});
 
 let version;
 for (let i = 0; i < 50 && !version; i++) {
   await sleep(200);
   version = await fetch(`http://127.0.0.1:${port}/json/version`).then((r) => r.json()).catch(() => null);
+}
+if (!version) {
+  chrome.kill();
+  await closed;
+  throw new Error('Chrome non risponde');
 }
 const browser = new WebSocket(version.webSocketDebuggerUrl);
 await new Promise((r) => browser.addEventListener('open', r, { once: true }));
@@ -309,6 +307,7 @@ try {
   // Browser.close prima: su Windows chrome.kill() ferma solo il lanciatore
   await Promise.race([send('Browser.close').catch(() => null), sleep(3000)]);
   chrome.kill();
+  await closed;
 }
 console.log(failures ? `\n${failures} controlli falliti` : '\nTutto verde');
 process.exit(failures ? 1 : 0);
