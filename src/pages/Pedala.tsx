@@ -118,6 +118,7 @@ export function PedalaPage() {
     const w = params.get('world');
     if (w && isWorldId(w)) setWorldId(w);
     if (d === 'ganda') {
+      setDove(d => ({ ...d, open: false }));
       setWorldId('bergamo');
       setAttesa({ world: 'bergamo', ride: GANDA_PLAN });
     } else if (d === 'giro') {
@@ -125,8 +126,10 @@ export function PedalaPage() {
       if (ride) setScelta({ dove: { kind: 'giro', replay: ride.id }, vista: vistaGiro(ride), piano: null, tipo: scelta.tipo === 'allenamento' ? 'libera' : scelta.tipo });
     } else if (d === 'libero' && params.has('edge') && w && isWorldId(w)) {
       const point = intentoDaSearch(params)?.dove;
-      if (point?.kind === 'libero') setAttesa(point);
-      else setDove({ open: true, strumento: 'libero', filtro: 'tutti' });
+      if (point?.kind === 'libero') {
+        setDove(d => ({ ...d, open: false }));
+        setAttesa(point);
+      } else setDove({ open: true, strumento: 'libero', filtro: 'tutti' });
     } else if (d === 'percorso' && params.get('ride')) {
       setAttesa({ world: w && isWorldId(w) ? w : lastWorld(), ride: params.get('ride')! });
     } else if (d === 'salita' && params.get('route')) {
@@ -151,7 +154,6 @@ export function PedalaPage() {
       const ganda = sceltaGanda(mondo.data);
       if (ganda) {
         setScelta({ ...ganda, giri: 1 });
-        setDove(d => ({ ...d, open: false }));
       }
     } else if ('ride' in attesa) {
       const ride = mondo.data.rides.find((x) => x.id === attesa.ride);
@@ -165,7 +167,6 @@ export function PedalaPage() {
       if (start) {
         const edge = graph.edges[start.edge];
         setScelta({ dove: start, vista: vistaLibero(edge.name || edge.ref || 'Punto sulla mappa'), piano: null, giri: 1 });
-        setDove(d => ({ ...d, open: false }));
       } else setDove({ open: true, strumento: 'libero', filtro: 'tutti' });
     }
     setAttesa(null);

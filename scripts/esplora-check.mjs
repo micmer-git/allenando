@@ -42,7 +42,7 @@ try {
       const returned = await p.evaluate("document.querySelector('[data-testid=sopralluogo-pedala]').search");
       for (const field of ['world', 'edge', 'dir', 's']) assert.equal(new URLSearchParams(returned).get(field), new URLSearchParams(spot).get(field));
       await pick('sopralluogo-pedala');
-      await wait(exists('dove-libero-mappa'));
+      await wait("document.querySelector('[data-testid=dove-libero-mappa]')?.disabled === false");
       await pick('dove-libero-mappa');
       await wait("!!document.querySelector('[data-testid^=dove-paese-]')");
       await p.click('[data-testid^=dove-paese-]');
