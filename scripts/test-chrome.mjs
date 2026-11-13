@@ -1,5 +1,7 @@
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, statfsSync } from 'node:fs';
+import { mkdtempSync, statfsSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
+import { setTimeout as delay } from 'node:timers/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -13,20 +15,32 @@ export function startTestChrome(executable, args) {
   }
   const profile = mkdtempSync(join(temp, 'allenando-ui-'));
   let child;
-  const cleanup = () => {
-    try {
-      rmSync(profile, { recursive: true, force: true, maxRetries: 8, retryDelay: 200 });
-    } catch (error) {
-      console.warn(`Pulizia del profilo di test ${profile}: ${error.message}`);
+  const cleanup = async () => {
+    for (const wait of [0, 500, 1500, 3000]) {
+      if (wait) await delay(wait);
+      try {
+        await rm(profile, { recursive: true, force: true, maxRetries: 2, retryDelay: 200 });
+        return;
+      } catch (error) {
+        if (wait === 3000) throw error;
+      }
     }
   };
   try {
     child = spawn(executable, [`--user-data-dir=${profile}`, ...args], { stdio: 'ignore' });
   } catch (error) {
-    cleanup();
+    void cleanup().catch(e => console.warn(e.message));
     throw error;
   }
   child.on('error', error => console.error(error.message));
-  const closed = new Promise(resolve => child.once('close', () => { cleanup(); resolve(); }));
-  return { child, closed };
+  const ended = new Promise(resolve => child.once('close', resolve));
+  const closed = ended.then(cleanup);
+  // Il codice che attende closed riceve comunque l'errore.
+  closed.catch(() => {});
+  const finish = async () => {
+    const exited = await Promise.race([ended.then(() => true), delay(3000, false, { ref: false })]);
+    if (!exited) child.kill();
+    await closed;
+  };
+  return { child, closed, finish };
 }

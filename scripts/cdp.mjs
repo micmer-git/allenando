@@ -7,7 +7,7 @@ export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export async function launch({ out, chromePath = process.env.CHROME ?? 'C:/Program Files/Google/Chrome/Application/chrome.exe' } = {}) {
   const port = 9300 + Math.floor(Math.random() * 500);
-  const { child: chrome, closed } = startTestChrome(chromePath, [
+  const { child: chrome, closed, finish } = startTestChrome(chromePath, [
     '--headless=new',
     `--remote-debugging-port=${port}`,
     '--no-first-run',
@@ -112,9 +112,7 @@ export async function launch({ out, chromePath = process.env.CHROME ?? 'C:/Progr
   // restano vivi, con il loro GPU software, a mangiare memoria
   const close = async () => {
     await Promise.race([send('Browser.close').catch(() => null), sleep(3000)]);
-    await sleep(500);
-    chrome.kill();
-    await closed;
+    await finish();
   };
   return { phone, close };
 }
