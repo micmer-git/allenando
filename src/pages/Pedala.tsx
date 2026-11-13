@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Wordmark } from '@/components/ui';
 import { usePacco, useRete } from '@/lib/rete';
@@ -109,7 +109,7 @@ export function PedalaPage() {
 
   // ?dove=… dall'indirizzo: apre il foglio, o sceglie un Dove (piano U, § 2.6)
   const letti = useRef('');
-  useEffect(() => {
+  useLayoutEffect(() => {
     const d = params.get('dove');
     if (!d) { letti.current = ''; return; }
     const key = navigationKey;
@@ -127,7 +127,6 @@ export function PedalaPage() {
     } else if (d === 'libero' && params.has('edge') && w && isWorldId(w)) {
       const point = intentoDaSearch(params)?.dove;
       if (point?.kind === 'libero') {
-        setDove(d => ({ ...d, open: false }));
         setAttesa(point);
       } else setDove({ open: true, strumento: 'libero', filtro: 'tutti' });
     } else if (d === 'percorso' && params.get('ride')) {
