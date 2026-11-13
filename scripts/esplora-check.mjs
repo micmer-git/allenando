@@ -11,7 +11,9 @@ try {
     const p = await apri(browser, base, {
       width, height: mobile ? 844 : 840, desktop: !mobile, init: width === 320 ? SENZA_BT : '',
     });
-    const wait = async expr => assert.ok(await p.waitFor(expr, 45000), expr);
+    const wait = async expr => {
+      if (!await p.waitFor(expr, 45000)) assert.fail(expr + ' · ' + await p.evaluate("location.href + ' · ' + document.body.innerText.slice(0, 1800)") + ' · ' + p.errors.slice(-2));
+    };
     const pick = id => p.click(`[data-testid="${id}"]`);
     const exists = id => `!!document.querySelector('[data-testid="${id}"]')`;
     await wait(exists('dove-carta'));
@@ -42,7 +44,7 @@ try {
       const returned = await p.evaluate("document.querySelector('[data-testid=sopralluogo-pedala]').search");
       for (const field of ['world', 'edge', 'dir', 's']) assert.equal(new URLSearchParams(returned).get(field), new URLSearchParams(spot).get(field));
       await pick('sopralluogo-pedala');
-      await wait(exists('dove-libero-mappa'));
+      await wait("document.querySelector('[data-testid=dove-libero-mappa]')?.disabled === false");
       await pick('dove-libero-mappa');
       await wait("!!document.querySelector('[data-testid^=dove-paese-]')");
       await p.click('[data-testid^=dove-paese-]');
