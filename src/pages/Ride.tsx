@@ -973,7 +973,7 @@ function RideScreen({
                 >
                   <BackIcon />
                 </button>
-                <div className="min-w-0 flex-1 rounded-[1.375rem] bg-bg/70 px-3.5 py-1.5 backdrop-blur-md landscape:max-w-[40rem]" data-testid="ride-route">
+                <div className="ride-title-panel" data-testid="ride-route">
                   <p className="break-words font-display text-lg uppercase leading-tight lg:text-2xl">
                     {engine.prova ? (
                       <span className="mr-1.5 inline-flex translate-y-[-2px] items-center rounded-full border border-accent/60 px-2 py-px align-middle font-sans text-xs font-semibold normal-case text-accent" data-testid="ride-prova">
@@ -1136,7 +1136,7 @@ function RideScreen({
       {/* i numeri: watt, tempo e km grandi, il resto in una riga; Pausa e Termina sempre a portata */}
       <section
         ref={dockRef}
-        className="relative z-20 shrink-0 border-t border-line bg-elev px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 landscape:absolute landscape:inset-x-2 landscape:bottom-2 landscape:rounded-2xl landscape:border landscape:bg-bg/72 landscape:px-3 landscape:py-2 landscape:backdrop-blur-md"
+        className="ride-console relative z-20 shrink-0 border-line bg-elev px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 landscape:absolute landscape:inset-x-2 landscape:bottom-2 landscape:border landscape:px-3 landscape:py-2"
         data-testid="ride-dock"
       >
         {progress && engine.workout ? (

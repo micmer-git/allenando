@@ -11,8 +11,7 @@ import { sightLine, type SurveyAngles } from './sopralluogo';
 import { localShadow, makeSkyDome } from './luceStrada';
 import { OrthoWindow } from './ortofoto';
 import { landscapeUniforms, patchLandscape } from './paesaggio';
-import { canopyNames, photoCrown } from './chiome';
-import photoUrl from './chiome.webp?url';
+import { followBearing, frameRider, voxelTrees } from '@/world/isometric';
 import { patchRockShader } from './rockShader';
 import { Lifts } from './Lifts';
 import { Passi } from './Passi';
@@ -86,8 +85,10 @@ export function npcCount(quality: Quality): number {
  * più, perché le pareti si vedono da 5 km e devono entrare prima; e il terreno lontano non si
  * dimezza (look.farFine), perché l'orizzonte è il punto; e si vede più lontano (look.farExtra).
  */
-export function qualityFor(quality: Quality, look: WorldLook): (typeof QUALITY)[Quality] & { mid: number } {
+export function qualityFor(quality: Quality, look: WorldLook, isometric = false): (typeof QUALITY)[Quality] & { mid: number } {
   const q = QUALITY[quality];
+  // La camera dall'alto vede poche decine di metri. Un anello copre anche il bordo di una mattonella.
+  if (isometric) return { ...q, ring: 1, nearTrees: Math.min(q.nearTrees, 500), farStride: 4, mid: 0 };
   // la fascia di mezzo (midTerrain.ts) si accorcia con la qualità: 9 km in alta, 7,2 in media, 5,4 in bassa
   const mid = look.midRange * (quality === 'high' ? 1 : quality === 'medium' ? 0.8 : 0.6);
   return { ...q, ring: q.ring + look.ringExtra, farStride: look.farFine ? 1 : q.farStride, far: q.far + look.farExtra, mid };
@@ -106,6 +107,7 @@ export interface RemoteWorldRider {
 export interface WorldSceneProps {
   engine: Pick<RideEngine, 'distance' | 'speed' | 'power' | 'cadence'>;
   preview?: () => SurveyAngles;
+  surveyCamera?: 'iso' | 'strada';
   data: WorldData;
   path: WorldPath;
   field: WorldField;
@@ -154,7 +156,10 @@ export interface ExtraWorldRider {
 }
 
 export function WorldScene(props: WorldSceneProps) {
-  const q = qualityFor(props.quality, lookFor(props.data.graph.id));
+  const overhead = props.surveyCamera !== 'strada' && !(globalThis as { __orobiaCam?: number[] }).__orobiaCam;
+  const q = qualityFor(props.quality, lookFor(props.data.graph.id), overhead);
+  const camera = useMemo(() => overhead ? new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 240)
+    : new THREE.PerspectiveCamera(55, 1, 0.3, q.far + 2000), [overhead, q.far]);
   // il mondo leggero (senza rete): il terreno non chiede le mattonelle del DEM
   props.terrain.light = !!props.data.leggero;
   // le mattonelle contate da NearTiles: le leggono il «pronto», l'avanzamento e le misure (?stats=1)
@@ -165,7 +170,7 @@ export function WorldScene(props: WorldSceneProps) {
       dpr={q.dpr}
       shadows={props.quality !== 'low' && !props.data.leggero ? 'percentage' : false}
       gl={{ antialias: props.quality !== 'low', alpha: false, stencil: false, powerPreference: 'high-performance' }}
-      camera={{ fov: 55, near: 0.3, far: q.far + 2000, position: [0, 4, -10] }}
+      camera={camera}
       onCreated={({ gl }) => {
         gl.toneMapping = THREE.ACESFilmicToneMapping;
         gl.toneMappingExposure = 1.05;
@@ -173,7 +178,7 @@ export function WorldScene(props: WorldSceneProps) {
     >
       <color attach="background" args={[HAZE]} />
       <fog attach="fog" args={[HAZE, 350, q.far * 0.92]} />
-      <WorldContent {...props} counts={counts} status={status} />
+      <WorldContent key={overhead ? 'iso' : 'strada'} {...props} counts={counts} status={status} />
       <ReadyWhenTiles onReady={props.onReady} onProgress={props.onProgress} counts={counts} status={status} terrain={props.terrain} playerPose={props.playerPose} leggero={!!props.data.leggero} />
     </Canvas>
   );
@@ -246,7 +251,8 @@ function WorldContent(props: WorldSceneProps & { counts: TileCounts; status: Loa
   const { data, field, terrain, quality } = props;
   // l'aspetto del mondo e la stagione di oggi (look.ts): roccia, neve, bosco, case
   const ctx = useMemo(() => lookContext(data.graph.id), [data]);
-  const q = qualityFor(quality, ctx.look);
+  const overhead = props.surveyCamera !== 'strada' && !(globalThis as { __orobiaCam?: number[] }).__orobiaCam;
+  const q = qualityFor(quality, ctx.look, overhead);
   // le mattonelle vicine possono essere fino a ring + 1 dal centro: tante per lato nella maschera
   const farMask = useMemo(() => createFarMask(2 * q.ring + 3), [q.ring]);
   useEffect(() => () => farMask.uReady.value.dispose(), [farMask]);
@@ -296,8 +302,8 @@ function WorldContent(props: WorldSceneProps & { counts: TileCounts; status: Loa
       <Landmarks data={data} playerPose={props.playerPose} names={names} />
       <Declutter names={names} terrain={terrain} playerPose={props.playerPose} occluders={occluders} />
       {props.ride ? <RideSigns data={data} ride={props.ride} /> : null}
-      {!props.preview && <PlayerRider {...props} />}
-      {!props.preview && <ContactShadow playerPose={props.playerPose} />}
+      {props.surveyCamera !== 'strada' && <PlayerRider {...props} />}
+      {props.surveyCamera !== 'strada' && <ContactShadow playerPose={props.playerPose} />}
       {props.extraRiders?.map((r) => (
         <ExtraRider key={r.id} rider={r} />
       ))}
@@ -357,10 +363,10 @@ function useMaterials(mask: FarMask, cut: TunnelCut, look: WorldLook, midMask: M
       far,
       mid,
       terrain: terrainMaterial(groundTex, cut, look.rock.bands, look.triplanar, satellite),
-      asphalt: new THREE.MeshLambertMaterial({ map: asphaltTex, color: '#c9cbd0', polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
+      asphalt: new THREE.MeshLambertMaterial({ map: asphaltTex, color: '#b4c6cf', polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
       stone: new THREE.MeshLambertMaterial({ map: stoneTex, color: '#d8cfc2', polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
       gravel: new THREE.MeshLambertMaterial({ map: gravelTex, color: '#ede6d8', polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
-      paint: new THREE.MeshLambertMaterial({ color: '#efeee6', polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }),
+      paint: new THREE.MeshLambertMaterial({ color: '#fff2cc', polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }),
       verge: cemento(new THREE.MeshLambertMaterial({ color: '#8f8574', side: THREE.DoubleSide }), chips),
       concrete: cemento(new THREE.MeshLambertMaterial({ color: '#b3b1aa', side: THREE.DoubleSide }), chips),
       /** dentro le gallerie la luce è cotta nei colori (tunnels.ts): niente sole sotto il monte */
@@ -371,7 +377,7 @@ function useMaterials(mask: FarMask, cut: TunnelCut, look: WorldLook, midMask: M
       rails: new THREE.MeshLambertMaterial({ color: '#7d756b' }),
       buildings: new THREE.MeshLambertMaterial({ vertexColors: true, map: facadeTex }),
       roofs: new THREE.MeshLambertMaterial({ vertexColors: true, map: tilesTex }),
-      water: new THREE.MeshLambertMaterial({ color: '#4f8199', emissive: '#0d2430', transparent: true, opacity: 0.92, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }),
+      water: new THREE.MeshLambertMaterial({ color: '#3c999b', emissive: '#0d2430', transparent: true, opacity: 0.92, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }),
       post: new THREE.MeshLambertMaterial({ color: '#8e949b' }),
       trees: {
         spruce: new THREE.MeshLambertMaterial(),
@@ -567,7 +573,7 @@ function Atmosphere({ weather, daytime, data, far, mats, counts, quality }: { we
     if (hemi.current) {
       hemi.current.color.copy(a.hemiSky);
       hemi.current.groundColor.copy(a.hemiGround);
-      hemi.current.intensity = a.hemiIntensity;
+      hemi.current.intensity = camera instanceof THREE.OrthographicCamera ? Math.max(0.9, a.hemiIntensity) : a.hemiIntensity;
     }
     gl.toneMappingExposure = a.exposure;
     // nuvole: più fitte col cielo coperto, tinte dalla luce del momento
@@ -874,7 +880,8 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
   const { data, field, terrain, quality, mats, mask, cut, playerPose, counts, status, occluders, ctx } = props;
   /** dove e con quante liste di case si sono raccolti gli ultimi volumi che coprono i nomi */
   const occAt = useRef({ x: Infinity, z: Infinity, lists: -1, mon: -1 });
-  const q = qualityFor(quality, ctx.look);
+  const overhead = props.surveyCamera !== 'strada' && !(globalThis as { __orobiaCam?: number[] }).__orobiaCam;
+  const q = qualityFor(quality, ctx.look, overhead);
   const root = useRef<THREE.Group>(null);
   const tiles = useRef(new Map<string, TileEntry>());
   const buildings = useRef(new Map<string, Building[] | Promise<Building[]>>());
@@ -1420,52 +1427,15 @@ const TREE_COLORS: Record<TreeKind, string[]> = {
   rock: ['#8b877f', '#7a766f', '#9b968c'],
 };
 
-/** Una corona di latifoglia: due sfere basse fuse e sfalsate, non un icosaedro solo (40 triangoli). */
-function broadleafCrown(): THREE.BufferGeometry {
-  const parts: THREE.BufferGeometry[] = [];
-  const blobs: [number, number, number, number][] = [
-    [0, 5.4, 0.2, 2.8],
-    [-0.9, 6.5, -0.5, 2.1],
-  ];
-  for (const [x, y, z, r] of blobs) {
-    const g = new THREE.IcosahedronGeometry(r, 0);
-    g.scale(1, 0.82, 1);
-    g.translate(x, y, z);
-    parts.push(g);
-  }
-  const out = mergeGeometries(parts, false)!;
-  parts.forEach((g) => g.dispose());
-  return out;
+// Lontano restano due sagome condivise per l'intero bosco.
+function farGeometries() {
+  return {
+    conifer: new THREE.BoxGeometry(3.3, 7.8, 3.3).translate(0, 5.5, 0),
+    broadleaf: new THREE.BoxGeometry(4.7, 4, 4.6).translate(0, 5.5, 0),
+  };
 }
 
-/** Un abete a due palchi, aperto sotto: più abete di un cono solo, con pochi triangoli in più. */
-function spruceTiers(): THREE.BufferGeometry {
-  const a = new THREE.ConeGeometry(2.3, 6, 7, 1, true);
-  a.translate(0, 5.2, 0);
-  const b = new THREE.ConeGeometry(1.6, 5, 7, 1, true);
-  b.translate(0, 8.4, 0);
-  const out = mergeGeometries([a, b], false)!;
-  a.dispose();
-  b.dispose();
-  return out;
-}
-
-/**
- * Le chiome lontane: quattro facce bastano, e il tronco non si vede. Abeti, larici e cipressi
- * lontani sono un'istanza sola (un cono, allargato o stretto per specie: FAR_CONE), le latifoglie
- * un ottaedro: due chiamate di disegno per tutto il bosco lontano.
- */
-function farGeometries(): { conifer: THREE.BufferGeometry; broadleaf: THREE.BufferGeometry } {
-  const conifer = new THREE.ConeGeometry(2.2, 9.5, 4, 1, true);
-  conifer.translate(0, 6.1, 0);
-  const broadleaf = new THREE.OctahedronGeometry(3.2, 0);
-  broadleaf.scale(1, 0.9, 1);
-  broadleaf.translate(0, 5.6, 0);
-  return { conifer, broadleaf };
-}
-
-/** Larghezza e altezza del cono lontano per specie, rispetto all'abete. */
-const FAR_CONE: Partial<Record<TreeKind, [number, number]>> = { spruce: [1, 1], larch: [2.4 / 2.2, 8 / 9.5], cypress: [0.5, 1.05] };
+const FAR_CONE: Partial<Record<TreeKind, [number, number]>> = { spruce: [1, 1], larch: [1, 0.87], cypress: [0.5, 1.05] };
 
 /** La chiave dell'istanza di un albero: piena per specie, lontana per forma (i sassi sono sempre pieni). */
 function treeKey(kind: TreeKind, full: boolean): string {
@@ -1486,39 +1456,19 @@ interface ForestPatch {
 function Forest({ handle, mats, season }: { handle: React.MutableRefObject<ForestHandle | null>; mats: Mats; season: LookCtx['season']['larch'] }) {
   const group = useRef<THREE.Group>(null);
   const geos = useMemo(() => {
-    const larch = new THREE.ConeGeometry(2.4, 8, 6, 1, true);
-    larch.translate(0, 6, 0);
-    const cypress = new THREE.ConeGeometry(1.1, 10, 6, 1, true);
-    cypress.translate(0, 6.2, 0);
-    const trunk = new THREE.CylinderGeometry(0.18, 0.3, 3.2, 5, 1, true);
-    trunk.translate(0, 1.4, 0);
-    const rock = new THREE.DodecahedronGeometry(1, 0);
-    rock.scale(1.3, 0.7, 1);
-    const near: Record<TreeKind, THREE.BufferGeometry> = { spruce: spruceTiers(), larch, broadleaf: broadleafCrown(), cypress, rock };
+    const { trunk, ...near } = voxelTrees();
     return { near, far: farGeometries(), trunk };
   }, []);
   const meshes = useRef(new Map<string, THREE.InstancedMesh>());
   useEffect(() => {
     const g = group.current;
     const current = meshes.current;
-    let ready = false;
-    let alive = true;
-    let last: Parameters<ForestHandle['set']> | undefined;
-    const photo = new THREE.TextureLoader().load(photoUrl, () => {
-      if (!alive) return;
-      ready = true;
-      if (last) handle.current?.set(...last);
-    });
-    photo.colorSpace = THREE.SRGBColorSpace;
-    const foliage = new THREE.MeshLambertMaterial({ map: photo, alphaTest: 0.34 });
-    const crowns = canopyNames.map(name => ({ name, geometry: photoCrown(name) }));
     const leaves = season === 'oro' ? ['#7c8153','#938246','#896d43','#627347'] :
       season === 'spoglio' ? ['#746651','#695f50','#7f705b'] : TREE_COLORS.broadleaf;
     const KINDS: TreeKind[] = ['spruce', 'larch', 'broadleaf', 'cypress', 'rock'];
     handle.current = {
       set(patches, px, pz, cap) {
         if (!g) return;
-        last = [patches, px, pz, cap];
         const by = new Map<string, TileMeshes['trees']>();
         const push = (key: string, t: TileMeshes['trees'][number]) => {
           const l = by.get(key);
@@ -1539,12 +1489,8 @@ function Forest({ handle, mats, season }: { handle: React.MutableRefObject<Fores
           for (const t of p.trees) {
             const dist2 = (t.x - px) ** 2 + (t.z - pz) ** 2;
             const full = p.near && dist2 <= limit;
-            const photographed = full && ready && t.kind !== 'rock' && dist2 < 280 ** 2;
-            const name = t.kind === 'spruce' && t.tint > .53 ? 'dense' :
-              t.kind === 'broadleaf' && season === 'spoglio' ? 'bare' : t.kind;
-            push(photographed ? 'foto:' + name : treeKey(t.kind, full), t);
-            // il tronco solo vicino: da lontano è meno di un pixel
-            if (full && !photographed && t.kind !== 'rock') push('trunk', t);
+            push(treeKey(t.kind, full), t);
+            if (full && t.kind !== 'rock') push('trunk', t);
             if (full) nNear++;
             else nFar++;
           }
@@ -1568,7 +1514,7 @@ function Forest({ handle, mats, season }: { handle: React.MutableRefObject<Fores
           const cone = key === 'conifer:f';
           items.forEach((it, i) => {
             d.position.set(it.x, it.y, it.z);
-            d.rotation.set(rock ? it.tint : 0, it.r, 0);
+            d.rotation.set(0, Math.round(it.r / (Math.PI / 2)) * Math.PI / 2, 0);
             // chiome più alte o più tozze, e colori un po' diversi da un albero all'altro
             const tall = rock ? 1 : 0.85 + ((it.tint * 7.31) % 1) * 0.35;
             const [wide, high] = (cone && FAR_CONE[it.kind]) || [1, 1];
@@ -1579,7 +1525,6 @@ function Forest({ handle, mats, season }: { handle: React.MutableRefObject<Fores
               const colors = it.kind === 'larch' ? LARCH_PALETTE[season] : it.kind === 'broadleaf' ? leaves : TREE_COLORS[it.kind];
               c.set(colors[Math.floor(it.tint * colors.length) % colors.length]);
               c.offsetHSL(0, (((it.tint * 13.7) % 1) - 0.5) * 0.08, (((it.tint * 29.3) % 1) - 0.5) * 0.07);
-              if (key.startsWith('foto:')) c.multiplyScalar(1.45);
               m.setColorAt(i, c);
             }
           });
@@ -1589,7 +1534,6 @@ function Forest({ handle, mats, season }: { handle: React.MutableRefObject<Fores
           current.set(key, m);
           g.add(m);
         };
-        for (const crown of crowns) make('foto:' + crown.name, crown.geometry, foliage);
         for (const k of KINDS) make(`${k}:n`, geos.near[k], mats.trees[k]);
         make('conifer:f', geos.far.conifer, mats.trees.spruce);
         make('broadleaf:f', geos.far.broadleaf, mats.trees.broadleaf);
@@ -1598,10 +1542,6 @@ function Forest({ handle, mats, season }: { handle: React.MutableRefObject<Fores
     };
     return () => {
       handle.current = null;
-      alive = false;
-      photo.dispose();
-      foliage.dispose();
-      crowns.forEach(crown => crown.geometry.dispose());
       for (const m of current.values()) { g?.remove(m); m.dispose(); }
       current.clear();
       Object.values(geos.near).forEach((x) => x.dispose());
@@ -1995,28 +1935,28 @@ function TurnArrow({ nextTurn }: { nextTurn: WorldSceneProps['nextTurn'] }) {
 
 /** Camera alle spalle. Fuori resta sopra il terreno; in galleria resta sotto la volta. */
 function WorldCam({ engine, path, field, playerPose, preview }: WorldSceneProps) {
-  const { camera } = useThree();
+  const { camera, size } = useThree();
   const look = useRef(new THREE.Vector3());
   const desired = useRef(new THREE.Vector3());
   const heading = useRef<number | null>(null);
   const place = (dt: number) => {
     const pose = playerPose();
-    if (preview) {
-      const {heading: h, pitch} = sightLine(pose,preview());
-      camera.position.set(pose.x, pose.y + 1.65, pose.z);
-      camera.lookAt(pose.x + 20 * Math.sin(h), pose.y + 1.65 + 20 * Math.tan(pitch), pose.z + 20 * Math.cos(h));
-      return;
-    }
-    if (heading.current == null) heading.current = pose.heading;
-    let dh = pose.heading - heading.current;
-    while (dh > Math.PI) dh -= Math.PI * 2;
-    while (dh < -Math.PI) dh += Math.PI * 2;
-    heading.current += dh * (1 - Math.exp(-Math.min(1, dt) * 2.6));
-    const h = heading.current;
     const at = path.edgeAt(engine.distance);
     const e = path.graph.edges[at.edge];
     const covered = (e.flags & FLAG.tunnel) !== 0;
     const raised = (e.flags & FLAG.bridge) !== 0;
+    const angles = preview?.();
+    const h = heading.current = (heading.current == null || preview) ? pose.heading : followBearing(heading.current, pose.heading, dt);
+    if (camera instanceof THREE.OrthographicCamera) {
+      frameRider(camera, pose, h, size.height, look.current, field.height, angles?.yaw, angles?.pitch, covered);
+      return;
+    }
+    if (angles) {
+      const direction = sightLine(pose, angles);
+      camera.position.set(pose.x, pose.y + 1.65, pose.z);
+      camera.lookAt(pose.x + 20 * Math.sin(direction.heading), pose.y + 1.65 + 20 * Math.tan(direction.pitch), pose.z + 20 * Math.cos(direction.heading));
+      return;
+    }
     // collaudo: scripts/world-shot.mjs con CAM="indietro,su[,lato[,gradi[,inclinazione]]]" guarda la strada da un
     // altro punto; i gradi girano lo sguardo (negativi a sinistra), per guardare una parete di lato
     const dbg = (globalThis as { __orobiaCam?: number[] }).__orobiaCam;

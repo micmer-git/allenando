@@ -18,8 +18,10 @@ export function patchLandscape(shader: { fragmentShader: string; uniforms: Recor
   shader.fragmentShader = shader.fragmentShader
     .replace('#include <common>', '#include <common>\nuniform sampler2D uLandscape;\nuniform vec4 uLandscapeBox;\nuniform float uLandscapeReady;\nuniform sampler2D uOrtho;\nuniform vec4 uOrthoBox;\nuniform float uOrthoReady;')
     .replace('#include <color_fragment>', `#include <color_fragment>
+      // Le zone di prato e pietra conservano il disegno del rilievo, in tessere da 75 cm.
+      vec2 cell = (floor(vRockP.xz / 0.75) + 0.5) * 0.75;
       if (uLandscapeReady > 0.5) {
-        vec2 st = (vRockP.xz - uLandscapeBox.xy) * uLandscapeBox.zw;
+        vec2 st = (cell - uLandscapeBox.xy) * uLandscapeBox.zw;
         vec4 observed = texture2D(uLandscape, vec2(st.x, 1.0 - st.y));
         // Vicino restano la grana, i colori stagionali e il terreno sotto la neve.
         float w = mix(0.46, 0.78, smoothstep(150.0, 1500.0, distance(cameraPosition, vRockP)));
@@ -27,15 +29,17 @@ export function patchLandscape(shader: { fragmentShader: string; uniforms: Recor
         diffuseColor.rgb = mix(diffuseColor.rgb, observed.rgb, observed.a * w);
       }
       if (uOrthoReady > 0.5) {
-        vec2 st = (vRockP.xz-uOrthoBox.xy)*uOrthoBox.zw;
+        vec2 st = (cell-uOrthoBox.xy)*uOrthoBox.zw;
         float edge = min(min(st.x,st.y), min(1.0-st.x,1.0-st.y));
         if (edge > 0.0) {
           vec4 air = texture2D(uOrtho,vec2(st.x,1.0-st.y));
           // Aerial shadows already contain some lighting; lift the toe before the live sun relights the mesh.
           vec3 albedo = pow(max(air.rgb,vec3(0.0)),vec3(0.84));
           float snow = smoothstep(0.52,0.85,min(vColor.r,min(vColor.g,vColor.b)));
-          float w = air.a * smoothstep(0.0,0.035,edge) * (1.0-snow) * mix(0.70,0.42,vRock);
+          float w = air.a * smoothstep(0.0,0.035,edge) * (1.0-snow) * mix(0.45,0.32,vRock);
           diffuseColor.rgb = mix(diffuseColor.rgb,albedo,w);
         }
-      }`);
+      }
+      vec3 bands = floor(sqrt(max(diffuseColor.rgb, vec3(0.0))) * 24.0 + 0.5) / 24.0;
+      diffuseColor.rgb = mix(diffuseColor.rgb, bands * bands, 0.65);`);
 }

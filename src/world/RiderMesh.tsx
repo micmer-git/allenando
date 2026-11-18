@@ -4,7 +4,8 @@ import * as THREE from 'three';
 import type { TrackPose } from '@/domain/track';
 import { DEFAULT_LOOK, lookFromColor, type Look } from '@/game/look';
 import { labelTexture, shadowTexture } from './rider';
-import { riderGeometry, type RiderDetail } from './riderBuild';
+import type { RiderDetail } from './riderBuild';
+import { voxelRiderGeometry } from './riderVoxel';
 import { kitMaterial, lookKey } from './riderKit';
 import { RiderRig, riderMesh } from './riderRig';
 
@@ -71,14 +72,14 @@ export function Rider({
   // una maglia creata a parte si porterebbe via le ossa dell'altra (restando ferma all'origine)
   const { rig, mesh } = useMemo(() => {
     const r = new RiderRig();
-    return { rig: r, mesh: riderMesh(riderGeometry(detail, look.rim), GHOST_MAT, r) };
+    return { rig: r, mesh: riderMesh(voxelRiderGeometry(detail, look.rim), GHOST_MAT, r) };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const far = useRef(false);
   const last = useRef<{ heading: number | null }>({ heading: null });
 
   // aspetto e dettaglio: si cambiano geometria (condivisa) e materiale (condiviso per aspetto)
   useLayoutEffect(() => {
-    mesh.geometry = riderGeometry(far.current ? 'bassa' : detail, look.rim);
+    mesh.geometry = voxelRiderGeometry(far.current ? 'bassa' : detail, look.rim);
     mesh.material = ghost ? GHOST_MAT : kitMaterial(look, detail);
     rig.glasses = !!look.glasses;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -111,7 +112,7 @@ export function Rider({
       const wantFar = far.current ? dist > lodDistance * 0.85 : dist > lodDistance;
       if (wantFar !== far.current) {
         far.current = wantFar;
-        mesh.geometry = riderGeometry(wantFar ? 'bassa' : detail, look.rim);
+        mesh.geometry = voxelRiderGeometry(wantFar ? 'bassa' : detail, look.rim);
       }
     }
     // lontanissimo (dietro una collina, sotto la strada): non serve animarlo

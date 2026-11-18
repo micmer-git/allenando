@@ -757,8 +757,16 @@ function curbAlong(graph: WorldGraph, kerb: Mesh, line: CurbPt[], urban: boolean
     const prof: [number, number, THREE.Color][] = measuredWidth === undefined ? defaultProfile : measuredWidth === 0
       ? [[0, -.02, RING_VERGE], [.12, -.03, RING_VERGE], [.35, -.06, RING_VERGE], [.8, -.11, RING_VERGE], [2.1, -2.8, RING_VERGE]]
       : [[0, -.04, KERB], [0, .14, KERB], [.2, .14, walk], [measuredWidth, .14, WALK_EDGE], [measuredWidth + .35, -2.8, WALK_EDGE]];
-    for (const [o, dy, c] of prof) kerb.vertex(p.x + p.ox * o, p.y + dy, p.z + p.oz * o, 0, 0, c);
-    if (prev >= 0) for (let j = 0; j < prof.length - 1; j++) kerb.idx.push(prev + j, base + j, prev + j + 1, prev + j + 1, base + j, base + j + 1);
+    // Ogni fascia ha la propria coppia di vertici: la testa piana e il fianco
+    // verticale non condividono normali (prima sembravano una lamiera piegata).
+    for (let j = 0; j < prof.length - 1; j++) {
+      for (const [o, dy, c] of [prof[j], prof[j + 1]]) kerb.vertex(p.x + p.ox * o, p.y + dy, p.z + p.oz * o, 0, 0, c);
+      if (prev >= 0) {
+        const a = prev + j * 2;
+        const b = base + j * 2;
+        kerb.idx.push(a, b, a + 1, a + 1, b, b + 1);
+      }
+    }
     prev = base;
   }
 }

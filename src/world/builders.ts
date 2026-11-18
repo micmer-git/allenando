@@ -1,3 +1,4 @@
+import { pixelTexture } from './isometric';
 import * as THREE from 'three';
 import type { DemGrid } from '@/domain/routes';
 import type { Track, TrackPoint, TrackPose } from '@/domain/track';
@@ -235,91 +236,24 @@ export const ASPHALT_REPEAT_M = 20;
  * colore vero lo dà il materiale (asciutto o bagnato).
  */
 export function asphaltTexture(): THREE.CanvasTexture {
-  const W = 256;
-  const H = 1024;
-  const canvas = document.createElement('canvas');
-  canvas.width = W;
-  canvas.height = H;
-  const g = canvas.getContext('2d');
-  if (g) {
-    let seed = 11;
-    const rnd = () => {
-      seed = (seed * 16807) % 2147483647;
-      return seed / 2147483647;
-    };
-    // macchie larghe (stesure diverse, umidità) su una griglia di 32 px, interpolate
-    const GX = W / 32 + 1;
-    const GY = H / 32 + 1;
-    const blot = Array.from({ length: GX * GY }, () => (rnd() - 0.5) * 12);
-    const tracks = [0.17, 0.33, 0.67, 0.83];
-    const img = g.createImageData(W, H);
-    const d = img.data;
-    for (let y = 0; y < H; y++) {
-      const gy = y / 32;
-      const j = Math.floor(gy);
-      const v = gy - j;
-      for (let x = 0; x < W; x++) {
-        const gx = x / 32;
-        const i = Math.floor(gx);
-        const u = gx - i;
-        const k = j * GX + i;
-        const big = blot[k] * (1 - u) * (1 - v) + blot[k + 1] * u * (1 - v) + blot[k + GX] * (1 - u) * v + blot[k + GX + 1] * u * v;
-        // tracce delle ruote: lisce (meno grana) e un filo più scure
-        const ux = x / W;
-        let wear = 0;
-        for (const t of tracks) wear = Math.max(wear, Math.max(0, 1 - Math.abs(ux - t) / 0.055));
-        const oil = Math.max(0, 1 - Math.abs(Math.abs(ux - 0.5) - 0.25) / 0.03) * 0.5;
-        const grain = (rnd() - 0.5) * (34 - wear * 16);
-        let l = 90 + big + grain - wear * 7 - oil * 6;
-        // sassolini dell'inerte, più radi nelle tracce consumate
-        if (rnd() < 0.035 * (1 - wear * 0.6)) l += 26 + rnd() * 22;
-        const o = (y * W + x) * 4;
-        d[o] = l;
-        d[o + 1] = l + 1;
-        d[o + 2] = l + 4;
-        d[o + 3] = 255;
-      }
+  // Un texel ogni 15 cm circa. Due fasce consumate, graniglia e un rattoppo.
+  return pixelTexture(48, 96, g => {
+    g.fillStyle = '#88959a';
+    g.fillRect(0, 0, 48, 96);
+    g.fillStyle = '#849196';
+    g.fillRect(8, 0, 4, 96);
+    g.fillRect(36, 0, 4, 96);
+    for (let i = 0; i < 115; i++) {
+      const x = (i * 23 + Math.floor(i / 11) * 7) % 48;
+      const y = (i * i * 7 + i * 13) % 96;
+      g.fillStyle = ['#93a0a5', '#7c898f', '#909ba0'][i % 3];
+      g.fillRect(x, y, i % 5 === 0 ? 2 : 1, 1);
     }
-    g.putImageData(img, 0, 0);
-    // rattoppi: rettangoli di asfalto più nuovo, appena più scuri, col giunto sigillato attorno
-    for (let p = 0; p < 3; p++) {
-      const w = 26 + rnd() * 50;
-      const h = 50 + rnd() * 120;
-      const x = rnd() * (W - w);
-      const y = rnd() * (H - h);
-      g.fillStyle = `rgba(30,32,35,${0.08 + rnd() * 0.07})`;
-      g.fillRect(x, y, w, h);
-      g.strokeStyle = 'rgba(18,19,21,0.18)';
-      g.lineWidth = 2;
-      g.strokeRect(x, y, w, h);
-    }
-    // crepe: spezzate sottili, e qualche sigillatura di catrame lucido (più larga)
-    for (let c = 0; c < 12; c++) {
-      const seal = c < 3;
-      g.strokeStyle = seal ? 'rgba(16,17,19,0.32)' : 'rgba(20,21,24,0.4)';
-      g.lineWidth = seal ? 2.2 : 1;
-      g.beginPath();
-      let x = rnd() * W;
-      let y = rnd() * H;
-      g.moveTo(x, y);
-      const along = rnd() < 0.6;
-      for (let s = 0; s < 14; s++) {
-        x += along ? (rnd() - 0.5) * 10 : 6 + rnd() * 10;
-        y += along ? 6 + rnd() * 14 : (rnd() - 0.5) * 8;
-        g.lineTo(x, y);
-      }
-      g.stroke();
-    }
-    // la mezzeria vecchia cancellata col fresatore: una banda appena più scura al centro
-    g.fillStyle = 'rgba(30,32,36,0.08)';
-    g.fillRect(W * 0.485, 0, W * 0.03, H);
-  }
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.wrapS = THREE.ClampToEdgeWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
-  return tex;
+    g.fillStyle = '#7c898e';
+    g.fillRect(28, 36, 8, 13);
+    g.fillStyle = '#828f94';
+    g.fillRect(29, 37, 7, 12);
+  });
 }
 
 /** Mezzeria tratteggiata (4,5 m pieno, 7,5 m vuoto), solo dove la strada è larga. */

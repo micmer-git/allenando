@@ -387,6 +387,45 @@ describe('innesto degli incroci (M.3)', () => {
     expect(junctionCut(g, 0, 0)).toBe(0);
   });
 
+  it('al bivio stretto di via Deledda i cordoli restano fuori dalle carreggiate sovrapposte', () => {
+    // Punto di partenza reale del Ganda: il vecchio fallback piegava il cordolo
+    // attraverso la strada quando fra i due rami non entrava un raccordo.
+    const j = junctionAt(graph, 2589)!;
+    expect(j.curbs.length).toBeGreaterThan(0);
+    for (const curb of j.curbs) for (let i = 1; i < curb.pts.length; i++) {
+      const a = curb.pts[i - 1];
+      const b = curb.pts[i];
+      const steps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / .2));
+      for (let k = 0; k <= steps; k++) {
+        const u = k / steps;
+        const intrusion = graph.asphaltMargin(a.x + (b.x - a.x) * u, a.z + (b.z - a.z) * u, a.y + (b.y - a.y) * u);
+        expect(intrusion).toBeLessThan(.05);
+      }
+    }
+  });
+
+  it('la testa piana del cordolo non prende le normali dei fianchi verticali', () => {
+    const g = tee();
+    const terrain = { graph: g, cover: () => 0, height: () => 0 } as unknown as Terrain;
+    const features = decodeFeatures({ rivers: [], lakes: [], peaks: [], places: [], rails: [], walls: [], cables: [], landmarks: [] });
+    const job = roadsJob(g, createWorldField(g, terrain, features), { tx: 0, tz: 0, x0: -40, z0: -40, size: 80, spacing: 10, trees: 0, buildings: false, ring: 0 });
+    let part = job.next();
+    while (!part.done) part = job.next();
+    const kerb = part.value.kerb!;
+    const pos = kerb.getAttribute('position');
+    const normal = kerb.getAttribute('normal');
+    const idx = kerb.index!;
+    let flat = 0;
+    for (let i = 0; i < idx.count; i += 3) {
+      const ids = [idx.getX(i), idx.getX(i + 1), idx.getX(i + 2)];
+      if (ids.some(v => Math.abs(pos.getY(v) - pos.getY(ids[0])) > .0001)) continue;
+      flat++;
+      for (const v of ids) expect(Math.abs(normal.getY(v))).toBeGreaterThan(.99);
+    }
+    expect(flat).toBeGreaterThan(0);
+    for (const geo of Object.values(part.value)) geo?.dispose();
+  });
+
   it('nel mondo vero ogni incrocio di tre o più strade (fuori da rotatorie e gallerie) ha il suo innesto, con numeri sani', () => {
     let nodes = 0;
     let built = 0;

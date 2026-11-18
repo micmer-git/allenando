@@ -1,3 +1,4 @@
+import { followBearing, frameRider, voxelTrees } from './isometric';
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
@@ -69,10 +70,10 @@ export function RideScene({
   const q = QUALITY[quality];
   const fogFar = route.dem ? q.far * 0.9 : 1400;
   return (
-    <Canvas
+    <Canvas orthographic
       dpr={q.dpr}
       gl={{ antialias: quality !== 'low', alpha: false, stencil: false, powerPreference: 'high-performance' }}
-      camera={{ fov: 55, near: 0.3, far: q.far + 1000, position: [0, 4, -10] }}
+      camera={{ near: 0.1, far: 240, position: [0, 4, -10] }}
       onCreated={({ gl }) => {
         gl.toneMapping = THREE.ACESFilmicToneMapping;
         gl.toneMappingExposure = 1.05;
@@ -302,7 +303,7 @@ function Road({ track }: { track: Track }) {
   return (
     <group>
       <mesh geometry={parts.asphalt}>
-        <meshLambertMaterial map={asphalt} color="#c9cbd0" polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-2} />
+        <meshLambertMaterial map={asphalt} color="#b4c6cf" polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-2} />
       </mesh>
       <mesh geometry={parts.edgeL}>
         <meshLambertMaterial color="#efeee6" polygonOffset polygonOffsetFactor={-2} polygonOffsetUnits={-4} />
@@ -341,18 +342,9 @@ function Props({ track, field, density }: { track: Track; field: HeightField; de
     return by;
   }, [items]);
   const geos = useMemo(() => {
-    const spruce = new THREE.ConeGeometry(2.2, 9, 7);
-    spruce.translate(0, 6.3, 0);
-    const larch = new THREE.ConeGeometry(2.4, 8, 6);
-    larch.translate(0, 6, 0);
-    const broad = new THREE.IcosahedronGeometry(3.2, 0);
-    broad.scale(1, 0.85, 1);
-    broad.translate(0, 5.6, 0);
-    const trunk = new THREE.CylinderGeometry(0.18, 0.3, 3.2, 5);
-    trunk.translate(0, 1.4, 0);
-    const rock = new THREE.DodecahedronGeometry(1, 0);
-    rock.scale(1.3, 0.7, 1);
-    return { spruce, larch, broad, trunk, rock };
+    const { cypress, broadleaf, ...trees } = voxelTrees();
+    cypress.dispose();
+    return { ...trees, broad: broadleaf };
   }, []);
   useEffect(() => () => Object.values(geos).forEach((g) => g.dispose()), [geos]);
   return (
@@ -636,30 +628,13 @@ function RemoteRiderView({ id, nick, color, track, source }: { id: string; nick:
 
 /** Camera alle spalle; non entra mai nel versante, nemmeno nei tornanti stretti. */
 function FollowCam({ engine, field }: { engine: RideEngine; field: HeightField }) {
-  const { camera } = useThree();
+  const { camera, size } = useThree();
   const look = useRef(new THREE.Vector3());
-  const desired = useRef(new THREE.Vector3());
   const heading = useRef<number | null>(null);
   const place = (dt: number) => {
     const pose = engine.pose();
-    // la direzione della camera insegue quella della strada con un po' di ritardo
-    if (heading.current == null) heading.current = pose.heading;
-    let dh = pose.heading - heading.current;
-    while (dh > Math.PI) dh -= Math.PI * 2;
-    while (dh < -Math.PI) dh += Math.PI * 2;
-    heading.current += dh * (1 - Math.exp(-Math.min(1, dt) * 2.6));
-    const h = heading.current;
-    const fx = Math.sin(h);
-    const fz = Math.cos(h);
-    desired.current.set(pose.x - fx * 8.5, pose.y + 3.1, pose.z - fz * 8.5);
-    const ground = field.height(desired.current.x, desired.current.z, 4);
-    desired.current.y = Math.max(desired.current.y, ground + 1.8);
-    const k = 1 - Math.exp(-Math.min(1, dt) * 4);
-    camera.position.lerp(desired.current, k);
-    const groundNow = field.height(camera.position.x, camera.position.z, 4);
-    if (camera.position.y < groundNow + 1.5) camera.position.y = groundNow + 1.5;
-    look.current.set(pose.x + Math.sin(pose.heading) * 7, pose.y + 1.2, pose.z + Math.cos(pose.heading) * 7);
-    camera.lookAt(look.current);
+    heading.current = followBearing(heading.current ?? pose.heading, pose.heading, dt);
+    if (camera instanceof THREE.OrthographicCamera) frameRider(camera, pose, heading.current, size.height, look.current, field.height);
   };
   useLayoutEffect(() => {
     place(1);
