@@ -27,7 +27,7 @@ export function frameRider(camera: THREE.OrthographicCamera, pose: TrackPose, he
       camera.position.y = Math.max(camera.position.y, target.y + (terrain + 1.2 - target.y) / u);
     }
   }
-  const span = tunnel ? 5 : THREE.MathUtils.clamp(height / 30, 14, 24);
+  const span = tunnel ? 5 : THREE.MathUtils.clamp(height / 36, 12, 20);
   const zoom = height / span;
   if (zoom !== camera.zoom) {
     camera.zoom = zoom;

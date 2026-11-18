@@ -28,6 +28,9 @@ import { ClimbRoadside } from './ClimbRoadside';
 import { StatsProbe, statsWanted } from '@/open/StatsProbe';
 import { localShadow } from '@/open/luceStrada';
 import { createPropWindow, type PropGroup } from './propWindow';
+import { RiderLighting } from './RiderLighting';
+import { VergeDetail } from './VergeDetail';
+import { classicVergeSurface } from './vergePlacement';
 
 // il ciclista vive in RiderMesh.tsx: lo si riesporta per chi lo prendeva da qui
 export { Rider };
@@ -84,7 +87,8 @@ export function RideScene({
       <color attach="background" args={[HAZE]} />
       {/* foschia dello stesso colore dell'orizzonte: le creste lontane sfumano nel cielo, senza bande */}
       <fog attach="fog" args={[HAZE, route.dem ? 260 : 120, fogFar]} />
-      <hemisphereLight args={['#e6f0fb', '#8c9b79', 0.85]} />
+      <hemisphereLight args={['#e6f0fb', '#8c9b79', 1.05]} />
+      <RiderLighting />
       <LocalSun quality={quality} />
       <World engine={engine} route={route} quality={quality} ghostDistance={ghostDistance} remote={remote} selfColor={selfColor} arches={arches} look={look} />
       <Ready onReady={onReady} />
@@ -143,6 +147,7 @@ function World({
   const track = route.track;
   const q = QUALITY[quality];
   const field = useMemo(() => createHeightField(track, route.dem), [track, route.dem]);
+  const verge = useMemo(() => classicVergeSurface(field, q.spacing), [field, q.spacing]);
   const tile = useRef({ value: new THREE.Vector3(0, 0, -1) });
   return (
     <group>
@@ -153,6 +158,7 @@ function World({
       <ClimbRoadside track={track} field={field} />
       {arches && arches.length > 0 ? <Arches specs={arches} /> : null}
       <Props track={track} field={field} density={q.density} />
+      <VergeDetail surface={verge} playerPose={() => engine.pose()} budget={quality === 'low' ? 100 : 320} />
       <Signs track={track} title={route.title} />
       <Rider getPose={() => engine.pose()} getCadence={() => engine.cadence} getSpeed={() => engine.speed} getPower={() => engine.power} look={look ?? (selfColor ? lookFromColor(selfColor) : DEFAULT_LOOK)} />
       {ghostDistance ? <Ghost track={track} ghostDistance={ghostDistance} /> : null}
