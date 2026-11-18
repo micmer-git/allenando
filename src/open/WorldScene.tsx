@@ -9,6 +9,9 @@ import { asphaltTexture, smoothNoise } from '@/world/builders';
 import { groundLook, LARCH_PALETTE, lookContext, lookFor, type LookCtx, type WorldLook } from './look';
 import { sightLine, type SurveyAngles } from './sopralluogo';
 import { buildingCamera } from './buildingCamera';
+import { RiderLighting } from '@/world/RiderLighting';
+import { VergeDetail } from '@/world/VergeDetail';
+import { worldVergeSurface } from '@/world/vergePlacement';
 import { localShadow, makeSkyDome } from './luceStrada';
 import { OrthoWindow } from './ortofoto';
 import { landscapeUniforms, patchLandscape } from './paesaggio';
@@ -285,15 +288,23 @@ function WorldContent(props: WorldSceneProps & { counts: TileCounts; status: Loa
   const { counts } = props;
   // le case e i monumenti intorno al ciclista: coprono i nomi (WorldLabels)
   const occluders = useMemo<Occluders>(() => ({ list: [] }), []);
+  const verge = useMemo(() => worldVergeSurface(field, ctx, q.spacing, q.tile, () => occluders.list), [field, ctx, q.spacing, q.tile, occluders]);
+  const vergePalette = useMemo(() => ({
+    grass: '#' + new THREE.Color('#7e9653').lerp(new THREE.Color('#a19359'), ctx.season.meadowOcra).getHexString(),
+    rock: ctx.look.rock.light,
+  }), [ctx]);
   const stats = useMemo(() => statsWanted(), []);
   return (
     <group>
       {stats ? <StatsProbe tiles={() => ({ ...counts, orthoSheets: ortho.current?.sheets ?? 0, treesNear: treeCount.near, treesFar: treeCount.far })} /> : null}
       <Atmosphere weather={props.weather} daytime={props.daytime} data={data} far={q.far} mats={mats} counts={counts} quality={quality} />
+      <RiderLighting />
       {props.weather && props.weather.rain >= 0.1 ? <Rain mmh={props.weather.rain} weather={props.weather} /> : null}
       <FarTerrain terrain={terrain} stride={q.farStride} material={mats.far} ctx={ctx} />
       {midMask ? <MidTerrain terrain={terrain} material={mats.mid} ctx={ctx} mask={midMask} range={q.mid} nearCover={(q.ring - 0.5) * q.tile} playerPose={props.playerPose} status={props.status} /> : null}
       <NearTiles {...props} mats={mats} mask={farMask} cut={cut} occluders={occluders} ctx={ctx} />
+      {overhead ? <VergeDetail surface={verge} playerPose={props.playerPose} revision={() => counts.shadowRevision}
+        palette={vergePalette} budget={quality === 'low' ? 100 : 320} /> : null}
       <Lakes data={data} />
       <Walls data={data} field={field} />
       <Lifts data={data} terrain={terrain} playerPose={props.playerPose} />
@@ -579,7 +590,7 @@ function Atmosphere({ weather, daytime, data, far, mats, counts, quality }: { we
       hemi.current.color.copy(a.hemiSky);
       hemi.current.groundColor.copy(a.hemiGround);
       if (overhead) hemi.current.groundColor.lerp(new THREE.Color('#9aa88c'), 0.38);
-      hemi.current.intensity = overhead ? Math.max(0.82, a.hemiIntensity) : a.hemiIntensity;
+      hemi.current.intensity = overhead ? Math.max(1.05, a.hemiIntensity) : a.hemiIntensity;
     }
     gl.toneMappingExposure = a.exposure;
     // nuvole: più fitte col cielo coperto, tinte dalla luce del momento
@@ -1970,7 +1981,7 @@ function WorldCam({ engine, path, field, playerPose, preview, occluders }: World
     const angles = preview?.();
     const h = heading.current = (heading.current == null || preview) ? pose.heading : followBearing(heading.current, pose.heading, dt);
     if (camera instanceof THREE.OrthographicCamera) {
-      frameBuildings(camera, pose, h, size.height, look.current, field.height, occluders.list, angles?.yaw, angles?.pitch, covered);
+      frameBuildings(camera, pose, h, size.height, look.current, field.height, occluders.list, angles?.yaw, angles?.pitch, covered, dt);
       return;
     }
     if (angles) {
