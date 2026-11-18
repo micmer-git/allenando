@@ -8,10 +8,11 @@ import type { RideEngine } from '@/sim/engine';
 import { asphaltTexture, smoothNoise } from '@/world/builders';
 import { groundLook, LARCH_PALETTE, lookContext, lookFor, type LookCtx, type WorldLook } from './look';
 import { sightLine, type SurveyAngles } from './sopralluogo';
+import { buildingCamera } from './buildingCamera';
 import { localShadow, makeSkyDome } from './luceStrada';
 import { OrthoWindow } from './ortofoto';
 import { landscapeUniforms, patchLandscape } from './paesaggio';
-import { followBearing, frameRider, voxelTrees } from '@/world/isometric';
+import { followBearing, voxelTrees } from '@/world/isometric';
 import { patchRockShader } from './rockShader';
 import { Lifts } from './Lifts';
 import { Passi } from './Passi';
@@ -87,8 +88,9 @@ export function npcCount(quality: Quality): number {
  */
 export function qualityFor(quality: Quality, look: WorldLook, isometric = false): (typeof QUALITY)[Quality] & { mid: number } {
   const q = QUALITY[quality];
-  // La camera dall'alto vede poche decine di metri. Un anello copre anche il bordo di una mattonella.
-  if (isometric) return { ...q, ring: 1, nearTrees: Math.min(q.nearTrees, 500), farStride: 4, mid: 0 };
+  // La camera dall'alto vede poche decine di metri: celle da 200 m coprono vista e ombre
+  // anche sul bordo, evitando di disegnare interi quartieri fuori inquadratura.
+  if (isometric) return { ...q, tile: 200, ring: 1, nearTrees: Math.min(q.nearTrees, 500), farStride: 4, mid: 0 };
   // la fascia di mezzo (midTerrain.ts) si accorcia con la qualità: 9 km in alta, 7,2 in media, 5,4 in bassa
   const mid = look.midRange * (quality === 'high' ? 1 : quality === 'medium' ? 0.8 : 0.6);
   return { ...q, ring: q.ring + look.ringExtra, farStride: look.farFine ? 1 : q.farStride, far: q.far + look.farExtra, mid };
@@ -314,7 +316,7 @@ function WorldContent(props: WorldSceneProps & { counts: TileCounts; status: Loa
       ))}
       <TurnArrow nextTurn={props.nextTurn} />
       <WorldArches arches={props.arches} path={props.path} engine={props.engine} />
-      <WorldCam {...props} />
+      <WorldCam {...props} occluders={occluders} />
     </group>
   );
 }
@@ -363,7 +365,7 @@ function useMaterials(mask: FarMask, cut: TunnelCut, look: WorldLook, midMask: M
       far,
       mid,
       terrain: terrainMaterial(groundTex, cut, look.rock.bands, look.triplanar, satellite),
-      asphalt: new THREE.MeshLambertMaterial({ map: asphaltTex, color: '#b4c6cf', polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
+      asphalt: new THREE.MeshPhongMaterial({ map: asphaltTex, color: '#d2d7d5', shininess: 9, specular: '#283230', polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
       stone: new THREE.MeshLambertMaterial({ map: stoneTex, color: '#d8cfc2', polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
       gravel: new THREE.MeshLambertMaterial({ map: gravelTex, color: '#ede6d8', polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
       paint: new THREE.MeshLambertMaterial({ color: '#fff2cc', polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }),
@@ -380,12 +382,12 @@ function useMaterials(mask: FarMask, cut: TunnelCut, look: WorldLook, midMask: M
       water: new THREE.MeshLambertMaterial({ color: '#3c999b', emissive: '#0d2430', transparent: true, opacity: 0.92, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }),
       post: new THREE.MeshLambertMaterial({ color: '#8e949b' }),
       trees: {
-        spruce: new THREE.MeshLambertMaterial(),
-        larch: new THREE.MeshLambertMaterial(),
-        broadleaf: new THREE.MeshLambertMaterial(),
-        cypress: new THREE.MeshLambertMaterial(),
-        rock: new THREE.MeshLambertMaterial({ flatShading: true }),
-        trunk: new THREE.MeshLambertMaterial({ color: '#5a4331' }),
+        spruce: new THREE.MeshLambertMaterial({ vertexColors: true }),
+        larch: new THREE.MeshLambertMaterial({ vertexColors: true }),
+        broadleaf: new THREE.MeshLambertMaterial({ vertexColors: true }),
+        cypress: new THREE.MeshLambertMaterial({ vertexColors: true }),
+        rock: new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }),
+        trunk: new THREE.MeshLambertMaterial({ color: '#71533b', vertexColors: true }),
       },
       /** cordoli, marciapiedi e aiuole delle rotatorie: colori di vertice, visti anche da sotto */
       kerb: cemento(new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }), chips),
@@ -527,7 +529,10 @@ function Atmosphere({ weather, daytime, data, far, mats, counts, quality }: { we
   const direction = useMemo(() => new THREE.Vector3(), []);
   const updateShadow = useMemo(localShadow, []);
   const shaded = quality !== 'low' && !data.leggero;
-  const extent = quality === 'high' ? 105 : 76;
+  const overhead = camera instanceof THREE.OrthographicCamera;
+  // Con la camera vicina tutta la risoluzione serve intorno al ciclista, non su 200 m di mondo.
+  const extent = overhead ? 38 : quality === 'high' ? 105 : 76;
+  const shadowSize = overhead ? (quality === 'high' ? 2048 : 1024) : quality === 'high' ? 1024 : 512;
   const cloudGeo = useMemo(() => new THREE.SphereGeometry(940, 48, 16, 0, Math.PI * 2, 0, Math.PI * 0.47), []);
   const cloudTex = useMemo(() => cloudTexture(), []);
   const cloudMat = useMemo(() => new THREE.MeshBasicMaterial({ map: cloudTex, transparent: true, depthWrite: false, fog: false, side: THREE.BackSide, opacity: 0 }), [cloudTex]);
@@ -564,7 +569,7 @@ function Atmosphere({ weather, daytime, data, far, mats, counts, quality }: { we
       scene.fog.far = far * 0.92 * a.fogFar;
     }
     if (sun.current) {
-      if (shaded) updateShadow(sun.current,camera.position,dir,counts.ready*4096+counts.detail,performance.now(),true);
+      if (shaded) updateShadow(sun.current,camera.position,dir,counts.ready*4096+counts.detail+(counts.shadowRevision??0)*1000000,performance.now(),true);
       else sun.current.position.copy(dir).multiplyScalar(200);
       sun.current.shadow.intensity = 0.78 * Math.max(0, Math.min(1,dir.y*10)) * (1-look.cloud*0.87);
       sun.current.color.copy(a.sunColor);
@@ -573,7 +578,8 @@ function Atmosphere({ weather, daytime, data, far, mats, counts, quality }: { we
     if (hemi.current) {
       hemi.current.color.copy(a.hemiSky);
       hemi.current.groundColor.copy(a.hemiGround);
-      hemi.current.intensity = camera instanceof THREE.OrthographicCamera ? Math.max(0.9, a.hemiIntensity) : a.hemiIntensity;
+      if (overhead) hemi.current.groundColor.lerp(new THREE.Color('#9aa88c'), 0.38);
+      hemi.current.intensity = overhead ? Math.max(0.82, a.hemiIntensity) : a.hemiIntensity;
     }
     gl.toneMappingExposure = a.exposure;
     // nuvole: più fitte col cielo coperto, tinte dalla luce del momento
@@ -584,7 +590,8 @@ function Atmosphere({ weather, daytime, data, far, mats, counts, quality }: { we
     mats.lampHead.emissive.set(dusk ? '#ffcf8a' : '#000000');
     // asfalto e porfido bagnati: più scuri
     const wet = look.rain >= 0.1;
-    mats.asphalt.color.set(wet ? '#7f8186' : '#c9cbd0');
+    mats.asphalt.color.set(wet ? '#929b9c' : '#d2d7d5');
+    mats.asphalt.shininess = wet ? 48 : 9;
     mats.stone.color.set(wet ? '#a39a8e' : '#d8cfc2');
     mats.gravel.color.set(wet ? '#aa9d84' : '#ede6d8');
   };
@@ -593,7 +600,7 @@ function Atmosphere({ weather, daytime, data, far, mats, counts, quality }: { we
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weather, daytime]);
   useFrame((_, dt) => {
-    if (shaded && sun.current) updateShadow(sun.current,camera.position,direction,counts.ready*4096+counts.detail,performance.now());
+    if (shaded && sun.current) updateShadow(sun.current,camera.position,direction,counts.ready*4096+counts.detail+(counts.shadowRevision??0)*1000000,performance.now());
     if (dome.current) dome.current.position.copy(camera.position);
     if (clouds.current) {
       clouds.current.position.copy(camera.position);
@@ -612,10 +619,10 @@ function Atmosphere({ weather, daytime, data, far, mats, counts, quality }: { we
     <>
       <hemisphereLight ref={hemi} args={['#e6f0fb', '#4f5a3c', 0.62]} />
       <directionalLight ref={sun} position={[-700, 760, 520]} intensity={1.85} color="#fff0d6"
-        castShadow={shaded} shadow-autoUpdate={false} shadow-mapSize-width={quality === 'high' ? 1024 : 512}
-        shadow-mapSize-height={quality === 'high' ? 1024 : 512} shadow-camera-left={-extent} shadow-camera-right={extent}
+        castShadow={shaded} shadow-autoUpdate={false} shadow-mapSize-width={shadowSize}
+        shadow-mapSize-height={shadowSize} shadow-camera-left={-extent} shadow-camera-right={extent}
         shadow-camera-top={extent} shadow-camera-bottom={-extent} shadow-camera-near={5} shadow-camera-far={410}
-        shadow-normalBias={0.17} shadow-bias={-0.00018} />
+        shadow-normalBias={overhead ? 0.065 : 0.17} shadow-bias={-0.00012} />
       <mesh ref={dome} geometry={geo} material={sky} frustumCulled={false} renderOrder={-100} />
       <mesh ref={clouds} geometry={cloudGeo} material={cloudMat} frustumCulled={false} renderOrder={-99} />
     </>
@@ -1023,7 +1030,12 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
   function* detailJob(entry: TileEntry, spec: TileSpec): Generator<void, void, void> {
     const g = new THREE.Group();
     const add = (geo: THREE.BufferGeometry | null, mat: THREE.Material) => {
-      if (geo) g.add(new THREE.Mesh(geo, mat));
+      if (geo) {
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.receiveShadow = true;
+        mesh.castShadow = mat === mats.road.beam || mat === mats.road.lit || mat === mats.road.signBack;
+        g.add(mesh);
+      }
     };
     const street = yield* streetJob(data.graph, field, data.features, spec);
     add(street.beam, mats.road.beam);
@@ -1277,6 +1289,8 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
           return true;
         }
         endFade(f);
+        // Il caster è finalmente alla quota corretta, anche se il ciclista è fermo.
+        counts.shadowRevision = (counts.shadowRevision ?? 0) + 1;
         if (f.part === 'tile') f.tile.shown = true;
         else f.tile.dshown = true;
         return false;
@@ -1289,6 +1303,7 @@ function NearTiles(props: WorldSceneProps & { mats: Mats; mask: FarMask; cut: Tu
       const all: ForestPatch[] = [];
       for (const t of map.values()) if (t.state === 'ready') all.push({ trees: t.trees, near: near(t) <= DENSE_RING });
       forest.current.set(all, pose.x, pose.z, q.nearTrees);
+      counts.shadowRevision = (counts.shadowRevision ?? 0) + 1;
     }
     if (dirtyProps.current && roadside.current) {
       dirtyProps.current = false;
@@ -1420,19 +1435,24 @@ interface ForestHandle {
 }
 
 const TREE_COLORS: Record<TreeKind, string[]> = {
-  spruce: ['#24452c', '#2c5233', '#1f3d29'],
-  larch: ['#5b7a3a', '#6b8a40', '#4f6e35'],
-  broadleaf: ['#4f7d36', '#5f8c3c', '#6d9443', '#577f33'],
-  cypress: ['#2f4a2a', '#34512d'],
+  spruce: ['#3d684b', '#477653', '#365e43'],
+  larch: ['#719a4b', '#85a853', '#628642'],
+  broadleaf: ['#62984b', '#75a855', '#8bb65c', '#6b9349'],
+  cypress: ['#4b6d43', '#547b46'],
   rock: ['#8b877f', '#7a766f', '#9b968c'],
 };
 
 // Lontano restano due sagome condivise per l'intero bosco.
 function farGeometries() {
-  return {
+  const shapes = {
     conifer: new THREE.BoxGeometry(3.3, 7.8, 3.3).translate(0, 5.5, 0),
     broadleaf: new THREE.BoxGeometry(4.7, 4, 4.6).translate(0, 5.5, 0),
   };
+  // Condividono i materiali colorati delle chiome vicine: anche i LOD devono avere l'attributo.
+  for (const shape of Object.values(shapes)) {
+    shape.setAttribute('color', new THREE.BufferAttribute(new Float32Array(shape.getAttribute('position').count * 3).fill(1), 3));
+  }
+  return shapes;
 }
 
 const FAR_CONE: Partial<Record<TreeKind, [number, number]>> = { spruce: [1, 1], larch: [1, 0.87], cypress: [0.5, 1.05] };
@@ -1463,7 +1483,7 @@ function Forest({ handle, mats, season }: { handle: React.MutableRefObject<Fores
   useEffect(() => {
     const g = group.current;
     const current = meshes.current;
-    const leaves = season === 'oro' ? ['#7c8153','#938246','#896d43','#627347'] :
+    const leaves = season === 'oro' ? ['#b5b35f','#c2a351','#aa874c','#88a566'] :
       season === 'spoglio' ? ['#746651','#695f50','#7f705b'] : TREE_COLORS.broadleaf;
     const KINDS: TreeKind[] = ['spruce', 'larch', 'broadleaf', 'cypress', 'rock'];
     handle.current = {
@@ -1510,6 +1530,7 @@ function Forest({ handle, mats, season }: { handle: React.MutableRefObject<Fores
           if (items.length === 0) return;
           const m = new THREE.InstancedMesh(geo, mat, items.length);
           m.castShadow = key.endsWith(':n') || key === 'trunk';
+          m.receiveShadow = true;
           const rock = key.startsWith('rock');
           const cone = key === 'conifer:f';
           items.forEach((it, i) => {
@@ -1934,11 +1955,12 @@ function TurnArrow({ nextTurn }: { nextTurn: WorldSceneProps['nextTurn'] }) {
 // ---------- camera ----------
 
 /** Camera alle spalle. Fuori resta sopra il terreno; in galleria resta sotto la volta. */
-function WorldCam({ engine, path, field, playerPose, preview }: WorldSceneProps) {
+function WorldCam({ engine, path, field, playerPose, preview, occluders }: WorldSceneProps & { occluders: Occluders }) {
   const { camera, size } = useThree();
   const look = useRef(new THREE.Vector3());
   const desired = useRef(new THREE.Vector3());
   const heading = useRef<number | null>(null);
+  const frameBuildings = useMemo(buildingCamera, []);
   const place = (dt: number) => {
     const pose = playerPose();
     const at = path.edgeAt(engine.distance);
@@ -1948,7 +1970,7 @@ function WorldCam({ engine, path, field, playerPose, preview }: WorldSceneProps)
     const angles = preview?.();
     const h = heading.current = (heading.current == null || preview) ? pose.heading : followBearing(heading.current, pose.heading, dt);
     if (camera instanceof THREE.OrthographicCamera) {
-      frameRider(camera, pose, h, size.height, look.current, field.height, angles?.yaw, angles?.pitch, covered);
+      frameBuildings(camera, pose, h, size.height, look.current, field.height, occluders.list, angles?.yaw, angles?.pitch, covered);
       return;
     }
     if (angles) {

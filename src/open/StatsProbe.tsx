@@ -29,6 +29,8 @@ export interface TileCounts {
   treesNear?: number;
   treesFar?: number;
   orthoSheets?: number;
+  /** Revisioni della geometria che proietta ombra, comprese entrate e bosco fitto. */
+  shadowRevision?: number;
 }
 
 export interface OrobiaStats {

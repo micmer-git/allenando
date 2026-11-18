@@ -236,23 +236,25 @@ export const ASPHALT_REPEAT_M = 20;
  * colore vero lo dà il materiale (asciutto o bagnato).
  */
 export function asphaltTexture(): THREE.CanvasTexture {
-  // Un texel ogni 15 cm circa. Due fasce consumate, graniglia e un rattoppo.
-  return pixelTexture(48, 96, g => {
-    g.fillStyle = '#88959a';
-    g.fillRect(0, 0, 48, 96);
-    g.fillStyle = '#849196';
-    g.fillRect(8, 0, 4, 96);
-    g.fillRect(36, 0, 4, 96);
-    for (let i = 0; i < 115; i++) {
-      const x = (i * 23 + Math.floor(i / 11) * 7) % 48;
-      const y = (i * i * 7 + i * 13) % 96;
-      g.fillStyle = ['#93a0a5', '#7c898f', '#909ba0'][i % 3];
-      g.fillRect(x, y, i % 5 === 0 ? 2 : 1, 1);
+  // Graniglia fine, due fasce consumate e riparazioni discrete sulla stessa trama condivisa.
+  return pixelTexture(96, 192, g => {
+    g.fillStyle = '#929895';
+    g.fillRect(0, 0, 96, 192);
+    g.fillStyle = '#8c9290';
+    g.fillRect(16, 0, 9, 192);
+    g.fillRect(71, 0, 9, 192);
+    let seed = 41;
+    const rnd = () => (seed = seed * 16807 % 2147483647) / 2147483647;
+    for (let i = 0; i < 1100; i++) {
+      const x = Math.floor(rnd() * 96);
+      const y = Math.floor(rnd() * 192);
+      g.fillStyle = ['#9ca19c', '#858e8a', '#969d98', '#a2a7a0'][i % 4];
+      g.fillRect(x, y, i % 7 === 0 ? 2 : 1, 1);
     }
-    g.fillStyle = '#7c898e';
-    g.fillRect(28, 36, 8, 13);
-    g.fillStyle = '#828f94';
-    g.fillRect(29, 37, 7, 12);
+    g.fillStyle = '#858c88';
+    g.fillRect(56, 72, 16, 26);
+    g.fillStyle = '#8b928e';
+    g.fillRect(57, 73, 14, 24);
   });
 }
 

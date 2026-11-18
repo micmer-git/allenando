@@ -3,7 +3,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { Look } from '@/game/look';
-import { riderGeometry } from '@/world/riderBuild';
+import { voxelRiderGeometry } from '@/world/riderVoxel';
 import { kitMaterial, lookKey } from '@/world/riderKit';
 import { RiderRig, riderMesh } from '@/world/riderRig';
 
@@ -88,10 +88,20 @@ function Framing() {
   const aspect = useThree((s) => s.size.width / Math.max(1, s.size.height));
   useEffect(() => {
     const t = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
-    // 1,75 m d'altezza (casco e ombra), 2 m di larghezza (la bici di traverso mentre gira)
-    const d = Math.max(0.875 / t, 1 / (t * aspect)) + 0.15;
-    camera.position.set(0.3 * (d / 4.2), 0.78 + 0.47 * (d / 4.2), d);
-    camera.lookAt(0, 0.8, 0);
+    const target = new THREE.Vector3(0, .86, 0);
+    const direction = new THREE.Vector3(.3, .5, 4.2).normalize();
+    camera.position.copy(target).add(direction);
+    camera.lookAt(target);
+    const viewRotation = camera.quaternion.clone().invert();
+    let d = 0;
+    // Il volume include la bici mentre gira e il casco mentre pedala. Si tiene conto
+    // anche della profondità: la parte vicina alla camera appare più grande.
+    for (const x of [-1.08, 1.08]) for (const y of [-.04, 1.82]) for (const z of [-1.08, 1.08]) {
+      const p = new THREE.Vector3(x, y, z).sub(target).applyQuaternion(viewRotation);
+      d = Math.max(d, p.z + Math.abs(p.x) / (t * Math.max(.1, aspect) * .88), p.z + Math.abs(p.y) / (t * .88));
+    }
+    camera.position.copy(target).addScaledVector(direction, d);
+    camera.lookAt(target);
     camera.updateProjectionMatrix();
   }, [camera, aspect]);
   return null;
@@ -179,14 +189,14 @@ function PreviewRider({
   // scheletro e maglia insieme: vedi RiderMesh.tsx (StrictMode chiama due volte)
   const { rig, mesh } = useMemo(() => {
     const r = new RiderRig(0.37);
-    const m = riderMesh(riderGeometry('alta', look.rim), kitMaterial(look, 'alta'), r);
+    const m = riderMesh(voxelRiderGeometry('alta', look.rim), kitMaterial(look, 'alta'), r);
     m.castShadow = true;
     m.receiveShadow = true;
     return { rig: r, mesh: m };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const key = lookKey(look);
   useEffect(() => {
-    mesh.geometry = riderGeometry('alta', look.rim);
+    mesh.geometry = voxelRiderGeometry('alta', look.rim);
     mesh.material = kitMaterial(look, 'alta');
     rig.glasses = !!look.glasses;
     rig.update({ dt: 0, cadence: 0, speed: 0, grade: 0 });

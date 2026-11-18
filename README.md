@@ -2,6 +2,10 @@
 
 Le strade vere di Bergamo e del Sellaronda, sul rullo, nel browser. Un mondo aperto (Bergamo, Val Brembana, Val Seriana) con volate, GPM, cronometro e sessioni di gruppo; quattro salite verificate (Selvino, Mortirolo, Stelvio da Prato e da Bormio); i tuoi giri veri, rifatti sul rullo.
 
+## Mondo isometrico
+
+La camera dall'alto segue il ciclista voxel su tutti i 29 percorsi disponibili, nel giro libero, negli allenamenti e nei replay. Anche il Garage mostra lo stesso modello con il kit scelto. Vegetazione a blocchi, ombre locali e materiali a pixel condividono i dati geografici reali; il dettaglio viene costruito intorno al ciclista. In Sopralluogo puoi passare fra **Isometrica** e **Strada**, spostarti lungo il percorso e partire dal punto scelto.
+
 ## Street View
 
 In **Pedala → Dove** scegli **Street View**, collega il rullo o scegli i watt manuali e premi **Via**. Parti da via Marconi a Gazzaniga. Agli incroci puoi scegliere la direzione. **Jump** accetta una strada sulla mappa, un indirizzo o coordinate in formato `latitudine, longitudine`. Il contachilometri misura la pedalata. Il motore simula un terreno pianeggiante.

@@ -38,21 +38,85 @@ export function frameRider(camera: THREE.OrthographicCamera, pose: TrackPose, he
 
 type Block = [number, number, number, number, number, number];
 function cluster(blocks: Block[]) {
-  const boxes = blocks.map(([x,y,z,w,h,d]) => new THREE.BoxGeometry(w,h,d).translate(x,y,z));
-  const geometry = mergeGeometries(boxes)!;
+  const boxes = blocks.map(([x,y,z,w,h,d], index) => {
+    const box = new THREE.BoxGeometry(w,h,d).translate(x,y,z);
+    const normal = box.getAttribute('normal');
+    const color = new Float32Array(normal.count * 3);
+    // Il rilievo resta leggibile anche nella qualità senza ombre. I colori neutri
+    // moltiplicano la tinta dell'istanza: nessuna texture o materiale per singola foglia.
+    const variation = 0.96 + ((index * 7) % 5) * 0.015;
+    for (let i = 0; i < normal.count; i++) {
+      const shade = normal.getY(i) > 0 ? 1.06 : normal.getY(i) < 0 ? 0.72
+        : normal.getX(i) > 0 ? 0.92 : normal.getZ(i) > 0 ? 0.98 : 0.86;
+      color.fill(shade * variation, i * 3, i * 3 + 3);
+    }
+    box.setAttribute('color', new THREE.BufferAttribute(color, 3));
+    return box;
+  });
+  const geometry = mergeGeometries(boxes, false)!;
   boxes.forEach(g => g.dispose());
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
   return geometry;
 }
 
-/** Bordi a gradoni e sagome distinguibili anche senza ombre. Una geometria istanziata per specie. */
+/** Un palco di aghi: il centro e quattro branche sfalsate lasciano leggere il vuoto
+ * sotto ogni gradino. La sagoma esterna conserva le misure usate dallo scatter. */
+function needleTier(y: number, width: number, height: number, offset = 0): Block[] {
+  const core = width * 0.64;
+  const wing = width * 0.24;
+  const side = (width - wing) / 2;
+  return [
+    [offset,y,0,core,height,core],
+    [-side,y - height * 0.16,0,wing,height * 0.62,width * 0.58],
+    [side,y - height * 0.04,0.13,wing,height * 0.78,width * 0.48],
+    [0.10,y - height * 0.10,-side,width * 0.53,height * 0.70,wing],
+    [-0.10,y - height * 0.20,side,width * 0.63,height * 0.58,wing],
+  ];
+}
+
+/** Piccole sculture a blocchi, una geometria istanziata per specie. Tutte le
+ * varianti restano sotto 320 triangoli: il dettaglio non aggiunge draw call. */
 export function voxelTrees() {
   return {
-    spruce: cluster([[0,3.6,0,4.8,2.5,4.8],[0,6.1,0,3.4,2.5,3.4],[0,8.2,0,2.2,1.8,2.2],[0,9.8,0,1,1.4,1]]),
-    larch: cluster([[0,4.1,0,4.3,2,4.1],[-0.3,6,0,3,2,3.1],[0.1,8,0.2,1.6,2,1.8]]),
-    broadleaf: cluster([[0,5,0,4.8,3.6,4.2],[-1.3,6.5,-0.4,2.7,2.1,3.7],[1.6,5.7,0.8,2.4,2.7,3.2],[0.4,7.5,0.1,2.7,1.4,2.6]]),
-    cypress: cluster([[0,4.8,0,1.9,6.8,2],[0,9.1,0,1.2,2.2,1.3]]),
-    trunk: new THREE.BoxGeometry(0.55,4,0.55).translate(0,1.9,0),
-    rock: cluster([[0,0.3,0,2.2,1.1,1.8],[0.2,0.97,-0.1,1.5,0.35,1.1]]),
+    spruce: cluster([
+      ...needleTier(3.30,4.8,1.6), ...needleTier(4.95,3.9,1.5,-0.12),
+      ...needleTier(6.55,3.0,1.5,0.08), ...needleTier(8.05,2.0,1.4),
+      [0,9.30,0,1.02,1.2,1.02], [0.06,10.05,-0.04,0.48,0.65,0.48],
+    ]),
+    larch: cluster([
+      ...needleTier(3.8,4.3,1.15), ...needleTier(5.45,3.25,1.15,-0.12),
+      ...needleTier(6.95,2.35,1.15,0.1),
+      [0.1,8.15,0.08,1.3,1.1,1.25], [0.1,8.95,0.08,0.65,0.65,0.65],
+    ]),
+    broadleaf: cluster([
+      [0,4.25,0,3.4,2.0,3.15], [-1.6,4.75,-0.45,1.65,1.65,2.4],
+      [1.7,5.05,0.45,1.9,1.8,2.65], [-0.25,4.65,1.7,2.6,1.45,1.0],
+      [0.55,5.1,-1.65,2.3,1.6,1.25], [-0.8,6.0,-0.35,2.25,1.65,2.85],
+      [1.1,6.25,0.75,2.0,1.35,2.1], [-1.7,6.05,-0.7,1.25,1.0,1.4],
+      [0.0,6.55,-1.3,1.6,1.1,1.5], [0.15,7.15,0.0,2.1,1.1,2.15],
+      [-0.6,7.65,-0.35,1.25,0.55,1.1], [1.75,6.5,0.35,0.65,0.65,1.2],
+      [-0.9,5.65,1.7,1.25,0.8,0.8], [0.75,7.65,0.4,0.8,0.5,0.95],
+    ]),
+    cypress: cluster([
+      [0,3.1,0,1.6,3.35,1.7], [0,5.55,0,1.8,1.8,1.85],
+      [-0.12,7.2,0.08,1.45,1.6,1.55], [0.04,8.55,0,1.15,1.35,1.2],
+      [0.08,9.65,0,0.65,1.1,0.75], [0.08,10.35,0,0.3,0.45,0.35],
+      [-0.82,4.1,0.1,0.35,1.4,0.8], [0.8,5.8,-0.1,0.3,1.05,0.7],
+      [0.15,6.25,0.85,0.7,0.8,0.3], [-0.2,7.9,-0.65,0.55,0.65,0.3],
+    ]),
+    trunk: cluster([
+      [0,1.9,0,0.48,4,0.48], [0,0.12,0,0.8,0.38,0.75],
+      [-0.35,0.02,0.08,0.55,0.22,0.25], [0.30,0.04,-0.15,0.48,0.25,0.27],
+      [-0.35,3.05,0,0.55,0.28,0.28], [-0.58,3.32,0,0.24,0.60,0.24],
+      [0.34,3.6,0.12,0.55,0.25,0.28], [0.57,3.82,0.12,0.22,0.5,0.24],
+    ]),
+    rock: cluster([
+      [-0.1,0.11,0.05,2.15,0.62,1.75], [0.04,0.58,-0.1,1.8,0.4,1.55],
+      [0.2,0.91,-0.16,1.25,0.28,1.05], [-0.75,0.40,0.2,0.65,0.38,0.85],
+      [0.75,0.36,-0.45,0.65,0.28,0.65], [0.15,1.07,-0.2,0.65,0.08,0.6],
+      [-0.7,-0.08,0.68,0.55,0.22,0.48],
+    ]),
   };
 }
 
