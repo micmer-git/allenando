@@ -1,3 +1,4 @@
+import { followBearing, frameRider, voxelTrees } from './isometric';
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
@@ -16,7 +17,6 @@ import {
   scatterProps,
   strip,
   tileJob,
-  type Prop,
   type TileSpec,
 } from './builders';
 import { createHeightField, type HeightField } from './heightfield';
@@ -26,6 +26,8 @@ import type { ArchSpec } from '@/game/arches';
 import { Arches } from './Arches';
 import { ClimbRoadside } from './ClimbRoadside';
 import { StatsProbe, statsWanted } from '@/open/StatsProbe';
+import { localShadow } from '@/open/luceStrada';
+import { createPropWindow, type PropGroup } from './propWindow';
 
 // il ciclista vive in RiderMesh.tsx: lo si riesporta per chi lo prendeva da qui
 export { Rider };
@@ -69,10 +71,11 @@ export function RideScene({
   const q = QUALITY[quality];
   const fogFar = route.dem ? q.far * 0.9 : 1400;
   return (
-    <Canvas
+    <Canvas orthographic
       dpr={q.dpr}
+      shadows={quality === 'low' ? false : 'percentage'}
       gl={{ antialias: quality !== 'low', alpha: false, stencil: false, powerPreference: 'high-performance' }}
-      camera={{ fov: 55, near: 0.3, far: q.far + 1000, position: [0, 4, -10] }}
+      camera={{ near: 0.1, far: 240, position: [0, 4, -10] }}
       onCreated={({ gl }) => {
         gl.toneMapping = THREE.ACESFilmicToneMapping;
         gl.toneMappingExposure = 1.05;
@@ -81,14 +84,30 @@ export function RideScene({
       <color attach="background" args={[HAZE]} />
       {/* foschia dello stesso colore dell'orizzonte: le creste lontane sfumano nel cielo, senza bande */}
       <fog attach="fog" args={[HAZE, route.dem ? 260 : 120, fogFar]} />
-      <hemisphereLight args={['#e6f0fb', '#4f5a3c', 0.62]} />
-      {/* sole da sud-ovest, non troppo alto: i versanti del DEM prendono rilievo */}
-      <directionalLight position={SUN} intensity={1.85} color="#fff0d6" />
+      <hemisphereLight args={['#e6f0fb', '#8c9b79', 0.85]} />
+      <LocalSun quality={quality} />
       <World engine={engine} route={route} quality={quality} ghostDistance={ghostDistance} remote={remote} selfColor={selfColor} arches={arches} look={look} />
       <Ready onReady={onReady} />
       {statsWanted() ? <StatsProbe /> : null}
     </Canvas>
   );
+}
+
+/** Ombre locali anche sulle salite singole e sui replay: una sola mappa, aggiornata muovendosi. */
+function LocalSun({ quality }: { quality: Quality }) {
+  const ref = useRef<THREE.DirectionalLight>(null);
+  const { camera } = useThree();
+  const update = useMemo(localShadow, []);
+  const direction = useMemo(() => new THREE.Vector3(...SUN).normalize(), []);
+  useFrame(() => {
+    if (ref.current) update(ref.current, camera.position, direction, 0, performance.now());
+  });
+  const size = quality === 'high' ? 2048 : 1024;
+  return <directionalLight ref={ref} position={SUN} intensity={1.85} color="#fff0d6"
+    castShadow={quality !== 'low'} shadow-autoUpdate={false}
+    shadow-mapSize-width={size} shadow-mapSize-height={size}
+    shadow-camera-left={-38} shadow-camera-right={38} shadow-camera-top={38} shadow-camera-bottom={-38}
+    shadow-camera-near={5} shadow-camera-far={410} shadow-normalBias={0.065} shadow-bias={-0.00012} />;
 }
 
 function Ready({ onReady }: { onReady: () => void }) {
@@ -266,7 +285,7 @@ function NearTerrain({
     }
   });
   return (
-    <mesh ref={mesh} geometry={first.geo} frustumCulled={false}>
+    <mesh ref={mesh} geometry={first.geo} frustumCulled={false} receiveShadow>
       <meshLambertMaterial vertexColors />
     </mesh>
   );
@@ -301,24 +320,24 @@ function Road({ track }: { track: Track }) {
   );
   return (
     <group>
-      <mesh geometry={parts.asphalt}>
-        <meshLambertMaterial map={asphalt} color="#c9cbd0" polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-2} />
+      <mesh geometry={parts.asphalt} receiveShadow>
+        <meshPhongMaterial map={asphalt} color="#d2d7d5" shininess={9} specular="#283230" polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-2} />
       </mesh>
-      <mesh geometry={parts.edgeL}>
+      <mesh geometry={parts.edgeL} receiveShadow>
         <meshLambertMaterial color="#efeee6" polygonOffset polygonOffsetFactor={-2} polygonOffsetUnits={-4} />
       </mesh>
-      <mesh geometry={parts.edgeR}>
+      <mesh geometry={parts.edgeR} receiveShadow>
         <meshLambertMaterial color="#efeee6" polygonOffset polygonOffsetFactor={-2} polygonOffsetUnits={-4} />
       </mesh>
       {parts.dashes ? (
-        <mesh geometry={parts.dashes}>
+        <mesh geometry={parts.dashes} receiveShadow>
           <meshLambertMaterial color="#efeee6" polygonOffset polygonOffsetFactor={-2} polygonOffsetUnits={-4} />
         </mesh>
       ) : null}
-      <mesh geometry={parts.shoulderL}>
+      <mesh geometry={parts.shoulderL} receiveShadow>
         <meshLambertMaterial color="#8f8574" side={THREE.DoubleSide} />
       </mesh>
-      <mesh geometry={parts.shoulderR}>
+      <mesh geometry={parts.shoulderR} receiveShadow>
         <meshLambertMaterial color="#8f8574" side={THREE.DoubleSide} />
       </mesh>
       <mesh geometry={parts.skirtL}>
@@ -335,58 +354,58 @@ function Road({ track }: { track: Track }) {
 
 function Props({ track, field, density }: { track: Track; field: HeightField; density: number }) {
   const items = useMemo(() => scatterProps(track, field, density), [track, field, density]);
-  const groups = useMemo(() => {
-    const by: Record<Prop['kind'], Prop[]> = { spruce: [], larch: [], broadleaf: [], rock: [] };
-    for (const it of items) by[it.kind].push(it);
-    return by;
-  }, [items]);
+  const window = useMemo(() => createPropWindow(items), [items]);
   const geos = useMemo(() => {
-    const spruce = new THREE.ConeGeometry(2.2, 9, 7);
-    spruce.translate(0, 6.3, 0);
-    const larch = new THREE.ConeGeometry(2.4, 8, 6);
-    larch.translate(0, 6, 0);
-    const broad = new THREE.IcosahedronGeometry(3.2, 0);
-    broad.scale(1, 0.85, 1);
-    broad.translate(0, 5.6, 0);
-    const trunk = new THREE.CylinderGeometry(0.18, 0.3, 3.2, 5);
-    trunk.translate(0, 1.4, 0);
-    const rock = new THREE.DodecahedronGeometry(1, 0);
-    rock.scale(1.3, 0.7, 1);
-    return { spruce, larch, broad, trunk, rock };
+    const { cypress, broadleaf, ...trees } = voxelTrees();
+    cypress.dispose();
+    return { ...trees, broad: broadleaf };
   }, []);
   useEffect(() => () => Object.values(geos).forEach((g) => g.dispose()), [geos]);
   return (
     <group>
-      <Instances items={groups.spruce} geometry={geos.spruce} colors={['#24452c', '#2c5233', '#1f3d29']} />
-      <Instances items={groups.larch} geometry={geos.larch} colors={['#5b7a3a', '#6b8a40', '#4f6e35']} />
-      <Instances items={groups.broadleaf} geometry={geos.broad} colors={['#4f7d36', '#5f8c3c', '#6d9443']} />
-      <Instances
-        items={[...groups.spruce, ...groups.larch, ...groups.broadleaf]}
-        geometry={geos.trunk}
-        colors={['#5a4331']}
-      />
-      <Instances items={groups.rock} geometry={geos.rock} colors={['#8b877f', '#7a766f', '#9b968c']} rock />
+      <Instances window={window} kind="spruce" geometry={geos.spruce} colors={['#3d684b', '#477653', '#365e43']} />
+      <Instances window={window} kind="larch" geometry={geos.larch} colors={['#719a4b', '#85a853', '#628642']} />
+      <Instances window={window} kind="broadleaf" geometry={geos.broad} colors={['#62984b', '#75a855', '#8bb65c']} />
+      <Instances window={window} kind="trunk" geometry={geos.trunk} colors={['#71533b']} />
+      <Instances window={window} kind="rock" geometry={geos.rock} colors={['#8b877f', '#7a766f', '#9b968c']} rock />
     </group>
   );
 }
 
 function Instances({
-  items,
+  window,
+  kind,
   geometry,
   colors,
   rock = false,
 }: {
-  items: Prop[];
+  window: ReturnType<typeof createPropWindow>;
+  kind: PropGroup;
   geometry: THREE.BufferGeometry;
   colors: string[];
   rock?: boolean;
 }) {
   const ref = useRef<THREE.InstancedMesh>(null);
+  const { camera, scene } = useThree();
+  const written = useRef(-1);
+  const scratch = useMemo(() => ({ d: new THREE.Object3D(), c: new THREE.Color() }), []);
   useLayoutEffect(() => {
+    written.current = -1;
+    ref.current?.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  }, [window, kind, colors, rock]);
+  useFrame(() => {
+    if (window.update(camera.position.x, camera.position.z)) {
+      // Il cambio della finestra può precedere il prossimo scatto della luce:
+      // invalida anche la mappa statica quando cambia l'insieme dei caster.
+      scene.traverse(object => {
+        if (object instanceof THREE.DirectionalLight && object.castShadow) object.shadow.needsUpdate = true;
+      });
+    }
+    if (written.current === window.revision) return;
     const m = ref.current;
     if (!m) return;
-    const d = new THREE.Object3D();
-    const c = new THREE.Color();
+    const { d, c } = scratch;
+    const items = window.groups[kind];
     items.forEach((it, i) => {
       d.position.set(it.x, it.y, it.z);
       d.rotation.set(rock ? it.tint : 0, it.r, 0);
@@ -397,11 +416,14 @@ function Instances({
     });
     m.instanceMatrix.needsUpdate = true;
     if (m.instanceColor) m.instanceColor.needsUpdate = true;
-  }, [items, colors, rock]);
-  if (items.length === 0) return null;
+    m.count = items.length;
+    written.current = window.revision;
+  });
+  const capacity = window.capacity[kind];
+  if (capacity === 0) return null;
   return (
-    <instancedMesh ref={ref} args={[geometry, undefined, items.length]} frustumCulled={false}>
-      <meshLambertMaterial flatShading={rock} />
+    <instancedMesh ref={ref} args={[geometry, undefined, capacity]} count={0} frustumCulled={false} castShadow receiveShadow>
+      <meshLambertMaterial vertexColors flatShading={rock} />
     </instancedMesh>
   );
 }
@@ -636,30 +658,13 @@ function RemoteRiderView({ id, nick, color, track, source }: { id: string; nick:
 
 /** Camera alle spalle; non entra mai nel versante, nemmeno nei tornanti stretti. */
 function FollowCam({ engine, field }: { engine: RideEngine; field: HeightField }) {
-  const { camera } = useThree();
+  const { camera, size } = useThree();
   const look = useRef(new THREE.Vector3());
-  const desired = useRef(new THREE.Vector3());
   const heading = useRef<number | null>(null);
   const place = (dt: number) => {
     const pose = engine.pose();
-    // la direzione della camera insegue quella della strada con un po' di ritardo
-    if (heading.current == null) heading.current = pose.heading;
-    let dh = pose.heading - heading.current;
-    while (dh > Math.PI) dh -= Math.PI * 2;
-    while (dh < -Math.PI) dh += Math.PI * 2;
-    heading.current += dh * (1 - Math.exp(-Math.min(1, dt) * 2.6));
-    const h = heading.current;
-    const fx = Math.sin(h);
-    const fz = Math.cos(h);
-    desired.current.set(pose.x - fx * 8.5, pose.y + 3.1, pose.z - fz * 8.5);
-    const ground = field.height(desired.current.x, desired.current.z, 4);
-    desired.current.y = Math.max(desired.current.y, ground + 1.8);
-    const k = 1 - Math.exp(-Math.min(1, dt) * 4);
-    camera.position.lerp(desired.current, k);
-    const groundNow = field.height(camera.position.x, camera.position.z, 4);
-    if (camera.position.y < groundNow + 1.5) camera.position.y = groundNow + 1.5;
-    look.current.set(pose.x + Math.sin(pose.heading) * 7, pose.y + 1.2, pose.z + Math.cos(pose.heading) * 7);
-    camera.lookAt(look.current);
+    heading.current = followBearing(heading.current ?? pose.heading, pose.heading, dt);
+    if (camera instanceof THREE.OrthographicCamera) frameRider(camera, pose, heading.current, size.height, look.current, field.height);
   };
   useLayoutEffect(() => {
     place(1);

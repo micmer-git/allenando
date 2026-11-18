@@ -194,6 +194,7 @@ function buildJunction(graph: WorldGraph, node: number): JunctionGeo | null {
     alpha: number;
   }
   const wedges: (Wedge | null)[] = [];
+  const overlapping = new Set<number>();
   for (let i = 0; i < n; i++) {
     const A = arms[i];
     const B = arms[(i + 1) % n];
@@ -229,6 +230,10 @@ function buildJunction(graph: WorldGraph, node: number): JunctionGeo | null {
       // il nastro è corto o lo spigolo è lontano: raccordo più piccolo, o niente
       const room = Math.min(limA - t1, limB - t2);
       if (room < 0.4) {
+        // Le carreggiate si sovrappongono ancora al taglio: qui non esiste un bordo
+        // fra i due rami. Il fallback per angoli piatti attraverserebbe l'asfalto
+        // tornando al nodo (es. il bivio stretto di via Deledda a Nembro).
+        overlapping.add(i);
         wedges.push(null);
         continue;
       }
@@ -330,7 +335,10 @@ function buildJunction(graph: WorldGraph, node: number): JunctionGeo | null {
       push(kx, kz, cy, cy, ox, oz);
       curb.pts.push({ x: cx + B.ux * B.cut + B.lx * B.hw, y: yAlong(B, B.cut), z: cz + B.uz * B.cut + B.lz * B.hw, ox: B.lx, oz: B.lz });
     }
-    curbs.push(curb);
+    // Il riempimento resta quello dell'innesto: accorciarne il contorno allargherebbe
+    // il poligono verso gli edifici. Nella sovrapposizione dei rami manca invece
+    // un bordo fisico su cui appoggiare il cordolo.
+    if (!overlapping.has(i)) curbs.push(curb);
   }
   const out: JunctionGeo = { node, cx, cz, cy, cls, stone, gravel, arms: arms.map(({ edge, atA, ux, uz, hw, cls: c, cut }) => ({ edge, atA, ux, uz, hw, cls: c, cut })), ring, curbs };
   return out;

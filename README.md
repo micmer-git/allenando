@@ -2,6 +2,16 @@
 
 Le strade vere di Bergamo e del Sellaronda, sul rullo, nel browser. Un mondo aperto (Bergamo, Val Brembana, Val Seriana) con volate, GPM, cronometro e sessioni di gruppo; quattro salite verificate (Selvino, Mortirolo, Stelvio da Prato e da Bormio); i tuoi giri veri, rifatti sul rullo.
 
+## Mondo isometrico
+
+La camera dall'alto segue il ciclista voxel su tutti i 29 percorsi disponibili, nel giro libero, negli allenamenti e nei replay. Anche il Garage mostra lo stesso modello con il kit scelto. Vegetazione a blocchi, ombre locali e materiali a pixel condividono i dati geografici reali; il dettaglio viene costruito intorno al ciclista. In Sopralluogo puoi passare fra **Isometrica** e **Strada**, spostarti lungo il percorso e partire dal punto scelto.
+
+## Street View
+
+In **Pedala → Dove** scegli **Street View**, collega il rullo o scegli i watt manuali e premi **Via**. Parti da via Marconi a Gazzaniga. Agli incroci puoi scegliere la direzione. **Jump** accetta una strada sulla mappa, un indirizzo o coordinate in formato `latitudine, longitudine`. Il contachilometri misura la pedalata. Il motore simula un terreno pianeggiante.
+
+Il visore richiede una chiave browser di un progetto Google Cloud con fatturazione attiva e Maps JavaScript API abilitata. La ricerca per indirizzo usa anche Geocoding API. Limita la chiave ai referrer dell'app e alle API utilizzate. Inseriscila nel modulo di Street View per la scheda corrente oppure imposta `VITE_GOOGLE_MAPS_API_KEY` in `.env.local` prima di avviare Vite o creare la build.
+
 ## Pedala · Diario · Tu (piano U, 11/11/2026)
 
 La barra ha tre voci. **Pedala** è la casa (`/`): «Collega il rullo», poi **Dove · Come · Via**; la scelta si ricorda (kv `pedala`) e ripetere l'ultimo giro è un tocco. **Diario**: i giri, la settimana, la forma, «Importa». **Tu**: livello, punti, oro, Garage, Traguardi, Classifiche, Allenamenti e Programmi, Impostazioni (`/impostazioni`: Tu, Rullo e sensori, Modalità prova, Mondi senza rete, Grafica, Aspetto, Meteo e luce, Dati). Le rotte di prima (`/mondo`, `/salite`, `/giri`, `/giri/:id`, `/profile`) portano alla pagina nuova (`redirectFor` in `src/App.tsx`).

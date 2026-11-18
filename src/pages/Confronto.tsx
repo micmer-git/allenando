@@ -14,9 +14,12 @@ import { luoghiPercorso, type SurveyStop } from '@/open/luoghiPercorso';
 import { TerrenoPercorso } from './TerrenoPercorso';
 import { SurveyViewport } from './SurveyViewport';
 import { WorldScene } from '@/open/WorldScene';
+import { Wordmark } from '@/components/ui';
+import { ProfileChart, RouteMap } from '@/components/RouteViz';
+import { formatGrade, formatKm } from '@/domain/format';
 
 const none = () => null;
-const control = 'min-h-11 max-w-full rounded-xl border border-line bg-elev px-3 text-sm text-ink';
+const control = 'survey-control';
 
 export default function Confronto() {
   const [params, set] = useSearchParams();
@@ -34,11 +37,13 @@ export default function Confronto() {
   const point = current && requested?.kind === 'libero' ? roadStart(current.graph, requested.edge, requested.s, requested.dir) : null;
   const street = point && current?.graph.edges[point.edge];
   const ride = current?.rides.find(r => r.id === params.get('ride')) ?? current?.rides[0];
-  return <main className="flex min-h-dvh flex-col bg-bg text-ink">
-    <header className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-1 border-b border-line px-4 py-2 md:flex">
-      <Link to={'/?dove=lista&world=' + world.id} className="inline-flex min-h-11 items-center font-semibold text-accent">‹ Mappa</Link>
-      <h1 className="font-display text-2xl uppercase md:mr-auto">Sopralluogo 3D</h1>
-      <div className="col-span-2 grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-2 md:flex">
+  return <main className="survey-page">
+    <header className="survey-header">
+      <Wordmark />
+      <h1 className="survey-section-title">Sopralluogo 3D</h1>
+      <Link to={'/?dove=lista&world=' + world.id} className="survey-back">← Mappa</Link>
+    </header>
+      <div className="survey-selectors">
         <select aria-label="Mondo" value={world.id} className={control+' min-w-0'} onChange={e => set({world:e.target.value})}>
           {WORLDS.map(w => <option key={w.id} value={w.id}>{worldInfo(w.id).short}</option>)}
         </select>
@@ -47,7 +52,6 @@ export default function Confronto() {
           {current.rides.map(r => <option key={r.id} value={r.id}>{r.name} · {r.side}</option>)}
         </select>}
       </div>
-    </header>
     {current && params.has('edge') && !point ? <p role="status" className="p-4">Questo punto non si trova sulla rete stradale del mondo selezionato.</p> : current && ride ? <Survey key={world.id+'-'+(point ? [point.edge,point.s,point.dir].join('-') : ride.id)} data={current} ride={ride} point={point} place={params.get('luogo')} station={Number(params.get('punto'))}
       select={(n,place) => { const q=new URLSearchParams(params); if(place) q.set('luogo',place); else q.delete('luogo'); q.set('world',world.id); if (!point) q.set('ride',ride.id); q.set('punto',String(n)); set(q,{replace:true}); }} /> :
       <p role="status" className="p-4">{error ? 'Il mondo non è disponibile. Riprova con la rete attiva.' : 'Carico il percorso…'}</p>}
@@ -80,8 +84,10 @@ function Survey({data, ride, point, place, station, select}: {data: WorldData; r
   const here = stops.filter(s=>s.station===index);
   const stop = landmark ?? here.find(s=>s.kind==='Arte lungo la strada') ?? here[0];
   const groups:SurveyStop['kind'][]=['Arte lungo la strada','Luoghi','Tornanti dei campioni'];
+  const [camera, setCamera] = useState<'iso' | 'strada'>('iso');
   useEffect(()=>{
     if(!landmark) return;
+    if(landmark.target) setCamera('strada');
     const p=path.poseAt(landmark.viewAt ?? landmark.station*100);
     const target=landmark.target;
     const dir=target && Math.hypot(target.x-p.x,target.z-p.z)>1
@@ -95,32 +101,42 @@ function Survey({data, ride, point, place, station, select}: {data: WorldData; r
   const changed = () => setAngles({...orientation.current});
   const reset = () => { orientation.current=FORWARD; changed(); };
   const [ready, setReady] = useState(false);
-  return <>
-    <div className="relative h-[48dvh] min-h-52 md:h-[56dvh]">
+  const road = data.graph.edges[start.edge];
+  return <div className="survey-layout">
+    <div className="survey-stage">
       <SurveyViewport orientation={orientation} changed={changed}>
-        <WorldScene preview={() => orientation.current} data={data} terrain={terrain} field={field} path={path} quality="medium"
+        <WorldScene preview={() => orientation.current} surveyCamera={camera} data={data} terrain={terrain} field={field} path={path} quality="medium"
           engine={{distance, speed:0, cadence:0, power:0}} crowd={crowd} remote={[]} nextTurn={none}
           playerPose={() => pose} onReady={() => setReady(true)} weather={null} daytime="mezzogiorno" ride={null} />
       </SurveyViewport>
-      {(angles.yaw !== 0 || angles.pitch !== 0) && <button className="absolute right-3 top-3 min-h-11 rounded-xl bg-black/75 px-3 text-sm text-white" onClick={reset}>Guarda la strada</button>}
-      {!ready && <span className="pointer-events-none absolute left-4 top-4 rounded bg-black/70 px-2 py-1 text-sm text-white" role="status">Carico il paesaggio…</span>}
-    </div>
-    <div className="mx-auto grid w-full max-w-4xl gap-2 px-4 pb-6 pt-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-        <strong className="num text-xl">{(distance/1000).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})} km</strong>
-        <span className="num text-sm text-muted">{Math.round(pose.altitude)} m s.l.m.</span>
+      <div className="survey-cameras" role="group" aria-label="Inquadratura">
+        <button type="button" aria-pressed={camera === 'iso'} onClick={() => { setCamera('iso'); reset(); }}>Isometrica</button>
+        <button type="button" aria-pressed={camera === 'strada'} onClick={() => { setCamera('strada'); reset(); }}>Strada</button>
       </div>
-      <div className="flex items-center gap-3">
+      <div className="survey-locator" aria-label="Posizione sul percorso"><RouteMap track={path} position={distance} /></div>
+      {(angles.yaw !== 0 || angles.pitch !== 0) && <button className="survey-recenter" onClick={reset}>Guarda la strada</button>}
+      {!ready && <span className="survey-loading" role="status">Carico il paesaggio…</span>}
+      {ready && (road.name || road.ref) && <div className="survey-road"><span aria-hidden="true" />{road.name || road.ref}</div>}
+    </div>
+    <section className="survey-instruments" aria-label="Controlli del percorso">
+      <div className="survey-km">
+        <span className="survey-caption">Posizione sul percorso</span>
+        <strong className="num">{formatKm(distance)} <small>km</small></strong>
+      </div>
+      <div className="survey-facts">
+        <div><span className="survey-caption">Quota</span><strong className="num">{Math.round(pose.altitude)} <small>m</small></strong></div>
+        <div><span className="survey-caption">Pendenza</span><strong className="num">{formatGrade(pose.grade)}</strong></div>
+      </div>
+      <div className="survey-profile">
+        <ProfileChart track={path} position={distance} bin={Math.max(100,path.length/95)} height={62} className="h-full w-full" />
+      </div>
+      <div className="survey-range">
         <button className={control+' shrink-0 disabled:opacity-40'} disabled={!index} onClick={() => select(index-1)}>−100 m</button>
         <input className="h-11 min-w-0 flex-1 accent-[var(--accent)]" aria-label="Punto sul percorso" type="range" min={0} max={max} value={index} onChange={e => select(Number(e.target.value))} />
         <button className={control+' shrink-0 disabled:opacity-40'} disabled={index===max} onClick={() => select(index+1)}>+100 m</button>
       </div>
-      <div className="flex flex-wrap items-center justify-between gap-x-3 border-b border-line pb-2">
-        <Link to={pedalaFromPoint({ kind: 'libero', world: data.graph.id, edge: start.edge, s: start.s, dir: start.dir })} className="inline-flex min-h-11 items-center rounded-full bg-accent px-4 font-semibold text-accent-ink" data-testid="sopralluogo-pedala">Prepara il giro da qui</Link>
-        <a className="inline-flex min-h-11 items-center font-semibold text-accent" href={url} target="_blank" rel="noreferrer">Street View ↗</a>
-      </div>
-      {stops.length > 0 && <label className="flex flex-wrap items-center gap-2 text-sm text-muted">
-        Vai a un luogo
+      {stops.length > 0 && <label className="survey-place">
+        <span className="survey-caption">Vai a un luogo</span>
         <select className={control} aria-label="Luogo lungo il percorso" value={stop?.id ?? ''} onChange={e=>{
           const selected=stops.find(s=>s.id===e.target.value); if(selected) select(selected.station,selected.id);
         }}>
@@ -128,6 +144,12 @@ function Survey({data, ride, point, place, station, select}: {data: WorldData; r
           {groups.map(group=>stops.some(s=>s.kind===group) && <optgroup key={group} label={group}>{stops.filter(s=>s.kind===group).map(s=><option key={s.id} value={s.id}>{s.name} · {(s.station/10).toLocaleString('it-IT')} km</option>)}</optgroup>)}
         </select>
       </label>}
+      <div className="survey-actions">
+        <Link to={pedalaFromPoint({ kind: 'libero', world: data.graph.id, edge: start.edge, s: start.s, dir: start.dir })} className="survey-start" data-testid="sopralluogo-pedala">Prepara il giro da qui <span aria-hidden="true">→</span></Link>
+        <a className="survey-street" href={url} target="_blank" rel="noreferrer">Street View ↗</a>
+      </div>
+    </section>
+    <div className="survey-notes">
       {stop?.plate && <div role="img" aria-label={stop.name} className="h-[126px] w-[90px] rounded-sm" style={{
         backgroundImage:'url('+worldBase('bergamo')+'campioni-v1/targhe.webp)',backgroundSize:'500% 400%',
         backgroundPosition:((stop.plate-1)%5)*25+'% '+Math.floor((stop.plate-1)/5)*100/3+'%'
@@ -136,7 +158,7 @@ function Survey({data, ride, point, place, station, select}: {data: WorldData; r
       <TerrenoPercorso terrain={terrain} pose={pose} edge={data.graph.edges[path.edgeAt(distance).edge]} />
       {stop?.id==='palazzo-roncalli' && <p className="text-xs text-muted">Facciata fotografata da <a href="https://commons.wikimedia.org/?curid=43474545" className="underline">Sailko</a>, ritagliata e raddrizzata · <a href="https://creativecommons.org/licenses/by/3.0/" className="underline">CC BY 3.0</a>.</p>}
       <FotoSopralluogo data={data} path={path} distance={distance} selectStation={select} />
-      <p className="text-xs text-muted">Street View apre il panorama disponibile più vicino. Terreno: ortofoto © AGEA (voli 2023–2024) e ESA WorldCover / Copernicus Sentinel-2 (2021), colori rielaborati · <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Targhe di Selvino: foto © Amadvance, ritaglio e prospettiva · <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a>. Strade e arredi: © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>.</p>
+      <details className="survey-sources"><summary>Fonti e attribuzioni</summary><p className="text-xs text-muted">Terreno da ortofoto © AGEA (voli 2023–2024) ed ESA WorldCover / Copernicus Sentinel-2 (2021), colori rielaborati · <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Targhe di Selvino da foto © Amadvance, ritaglio e prospettiva · <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a>. Strade e arredi © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>.</p></details>
     </div>
-  </>;
+  </div>;
 }

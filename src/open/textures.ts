@@ -1,3 +1,4 @@
+import { pixelTexture } from '@/world/isometric';
 import { paintFacade } from './facadePaint';
 import * as THREE from 'three';
 import { canvasTex } from '@/world/Scene';
@@ -19,94 +20,60 @@ export function facadeTexture(style: 'lombardo' | 'ladino' = 'lombardo'): THREE.
   const t = canvasTex(1024, 512, (g) => paintFacade(g, style === 'ladino', rnd));
   t.wrapS = THREE.RepeatWrapping;
   t.wrapT = THREE.RepeatWrapping;
-  t.anisotropy = 4;
+  t.magFilter = THREE.NearestFilter;
+  t.anisotropy = 2;
   return t;
 }
 
 /** Coppi lombardi: canali che scendono la falda, file sovrapposte, qualche coppo più scuro. 2 m × 2 m. */
 export function roofTilesTexture(style: 'lombardo' | 'ladino' = 'lombardo'): THREE.CanvasTexture {
-  seed = 23;
-  const S = 256;
-  const cols = 13;
-  const rows = 6;
-  const t = canvasTex(S, S, (g) => {
-    g.fillStyle = '#c9c4bd';
-    g.fillRect(0, 0, S, S);
-    if (style === 'ladino') {
-      // Scandole e lastre a giunti sfalsati. Il colore misurato o scelto per l'edificio resta nei vertici.
-      const w = 32, h = 32;
-      for (let row = 0; row < S / h; row++) {
-        const offset = (row % 2) * w / 2;
-        for (let c = 0; c < S / w; c++) {
-          const light = Math.round(205 + rnd() * 40);
-          const x = c * w + offset;
-          for (const at of [x, x - S]) {
-            g.fillStyle = `rgb(${light},${light - 2},${light - 4})`;
-            g.fillRect(at, row*h, w-1, h-2);
-            g.fillStyle = 'rgba(56,50,42,.25)';
-            g.fillRect(at, row*h, w, 3);
-          }
+  seed = style === 'ladino' ? 23 : 19;
+  const t = pixelTexture(64, 64, g => {
+    const shale = style === 'ladino';
+    g.fillStyle = shale ? '#8c9294' : '#a69b90';
+    g.fillRect(0, 0, 64, 64);
+    for (let row = 0; row < 8; row++) {
+      const offset = row % 2 * 4;
+      for (let col = -1; col < 8; col++) {
+        const x = col * 8 + offset;
+        const y = row * 8;
+        const tone = Math.floor(rnd() * 4);
+        g.fillStyle = shale ? ['#c4cbca','#d0d5d0','#bbc4c3','#d5dad3'][tone]
+          : ['#e2d9cd','#dbd0c3','#ede2d5','#d9d0c4'][tone];
+        g.fillRect(x, y, 7, 7);
+        // Il bordo inferiore copre la fila successiva; il canale del coppo prende luce di lato.
+        g.fillStyle = shale ? '#e1e5dc' : '#f8eee0';
+        g.fillRect(x + 1, y, shale ? 5 : 2, 1);
+        if (!shale) g.fillRect(x + 1, y + 1, 2, 5);
+        g.fillStyle = shale ? '#939e9c' : '#bdb0a2';
+        g.fillRect(x + 6, y + 1, 1, 6);
+        g.fillRect(x, y + 6, 6, 1);
+        if (tone === 1) {
+          g.fillStyle = shale ? '#b4beb9' : '#cec2b3';
+          g.fillRect(x + 4, y + 3, 1, 2);
         }
-      }
-      return;
-    }
-    const cw = S / cols;
-    const rh = S / rows;
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        const x = c * cw;
-        const y = r * rh + (c % 2) * rh * 0.5;
-        const l = 0.82 + rnd() * 0.2 - (rnd() < 0.08 ? 0.18 : 0);
-        // coppo: cilindro, più chiaro al centro
-        const grd = g.createLinearGradient(x, 0, x + cw, 0);
-        grd.addColorStop(0, `rgba(${Math.round(150 * l)},${Math.round(145 * l)},${Math.round(140 * l)},1)`);
-        grd.addColorStop(0.5, `rgba(${Math.round(255 * l)},${Math.round(250 * l)},${Math.round(244 * l)},1)`);
-        grd.addColorStop(1, `rgba(${Math.round(135 * l)},${Math.round(130 * l)},${Math.round(125 * l)},1)`);
-        g.fillStyle = grd;
-        for (const dy of [0, S]) g.fillRect(x + 1, y - dy, cw - 2, rh - 2);
-        // ombra della fila sopra
-        g.fillStyle = 'rgba(30,20,10,0.32)';
-        for (const dy of [0, S]) g.fillRect(x + 1, y - dy, cw - 2, 4);
       }
     }
   });
-  t.wrapS = THREE.RepeatWrapping;
-  t.wrapT = THREE.RepeatWrapping;
   t.repeat.set(0.5, 0.5);
-  t.anisotropy = 4;
   return t;
 }
 
-/** Dettaglio del suolo: grana di erba e terra, ripetuta ogni 12 m. Quasi bianca. */
+/** Dodici metri di suolo: tasselli piccoli, quasi neutri, senza trasformare il prato in una scacchiera. */
 export function groundDetailTexture(): THREE.CanvasTexture {
   seed = 37;
-  const S = 256;
-  const t = canvasTex(S, S, (g) => {
-    g.fillStyle = '#f4f4f4';
-    g.fillRect(0, 0, S, S);
-    for (let i = 0; i < 2600; i++) {
-      const x = rnd() * S;
-      const y = rnd() * S;
-      const dark = rnd() < 0.6;
-      g.fillStyle = dark ? `rgba(40,45,20,${0.05 + rnd() * 0.12})` : `rgba(255,255,230,${0.05 + rnd() * 0.1})`;
-      const w = 1 + rnd() * 3;
-      const h = 2 + rnd() * 7;
-      // anche sui bordi opposti, così la ripetizione non si vede
-      for (const dx of [0, -S, S]) for (const dy of [0, -S, S]) g.fillRect(x + dx, y + dy, w, h);
-    }
-    for (let i = 0; i < 40; i++) {
-      const x = rnd() * S;
-      const y = rnd() * S;
-      const r = 10 + rnd() * 30;
-      const grd = g.createRadialGradient(x, y, 0, x, y, r);
-      grd.addColorStop(0, `rgba(60,50,30,${0.06 + rnd() * 0.06})`);
-      grd.addColorStop(1, 'rgba(60,50,30,0)');
-      g.fillStyle = grd;
-      for (const dx of [0, -S, S]) for (const dy of [0, -S, S]) g.fillRect(x - r + dx, y - r + dy, r * 2, r * 2);
+  return pixelTexture(64, 64, g => {
+    g.fillStyle = '#f2f4ec';
+    g.fillRect(0, 0, 64, 64);
+    for (let i = 0; i < 420; i++) {
+      const x = Math.floor(rnd() * 64), y = Math.floor(rnd() * 64);
+      const w = 1 + Math.floor(rnd() * 3);
+      g.fillStyle = ['#e4e9dd','#edf0e5','#fbfcf2','#dce3d7'][i % 4];
+      g.fillRect(x, y, w, 1);
+      if (i % 5 === 0) {
+        g.fillStyle = '#f9fbf3';
+        g.fillRect(x, (y + 1) % 64, 1, 1);
+      }
     }
   });
-  t.wrapS = THREE.RepeatWrapping;
-  t.wrapT = THREE.RepeatWrapping;
-  t.anisotropy = 4;
-  return t;
 }

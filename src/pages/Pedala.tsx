@@ -196,7 +196,7 @@ export function PedalaPage() {
   /** secondi per un passaggio del Dove, ai watt del tipo (A14) */
   const giroSec = useMemo(() => (vistaD && vistaD.profilo.length > 1 && wattStima > 0 ? stimaGiro(vistaD.profilo, wattStima, fisica) : null), [vistaD, wattStima, fisica]);
   const durataAll = workout ? workoutDuration(workout) : null;
-  const aperto = !!vistaD && !vistaD.anello && scelta?.dove?.kind !== 'libero' && scelta?.dove?.kind !== 'giro' && scelta?.dove?.kind !== 'salita';
+  const aperto = !!vistaD && !vistaD.anello && (scelta?.dove?.kind === 'percorso' || scelta?.dove?.kind === 'piano');
   const giriSi = !!vistaD?.anello || (aperto && tipo === 'allenamento' && !!workout);
   const now = useNow();
   const sessione = useSessioneAperta(now);
@@ -233,6 +233,7 @@ export function PedalaPage() {
   };
   const intento = scelta && scelta.dove ? intentoDi({ ...scelta, tipo, manuale, wattManuali: wattManuale, watt: tipo === 'fissa' ? watt : scelta.watt, giri: giriSi ? scelta.giri : 1 }, vv.tipi, giriSi) : null;
   let via = puo && !attesa && intento && (tipo !== 'allenamento' || workout) ? `/ride?${intentoInSearch(intento)}` : null;
+  if (v.offline && intento?.dove.kind === 'street') via = null;
   // la salita col fantasma: il giro piu' veloce del diario (?route=R&ghost=ID, par. 2.2)
   if (via && intento?.dove.kind === 'salita' && intento.fantasma !== false && vistaD?.record?.ghost && tipo !== 'allenamento') via += `&ghost=${encodeURIComponent(vistaD.record.ghost)}`;
   const minutiAll = tipo === 'allenamento' && durataAll ? durataAll / 60 : undefined;
@@ -302,7 +303,7 @@ export function PedalaPage() {
       ) : null}
       {fineInCima && giroSec && durataAll ? <p className="mt-2 text-sm font-semibold text-warn" data-testid="pedala-fine-in-cima">{`⚠ Finisce in cima · ${Math.round(giroSec / 60)} di ${Math.round(durataAll / 60)} min`}</p> : null}
       <Occhiello>Come</Occhiello>
-      <ComeSegmento tipi={vv.tipi} tipo={tipo} sa={r.sa} prova={r.prova} manuale={manuale} onChange={sceltaTipo} />
+      <ComeSegmento tipi={vv.tipi} tipo={tipo} sa={r.sa} prova={r.prova} manuale={manuale} inPiano={scelta.dove?.kind === 'street'} onChange={sceltaTipo} />
       {manuale && tipo !== 'allenamento' ? <WattManuali watt={wattManuale} onChange={(w) => setScelta({ wattManuali: w })} /> : null}
       {r.prova && !r.sa.potenza && !manuale ? <div className="mt-2">{avviaManuale}</div> : null}
       {tipo === 'fissa' ? <WattFissi watt={watt} ftp={profile.ftp} durataSec={giroSec ? giroSec * (giriSi ? scelta.giri : 1) : null} onChange={(w) => setScelta({ watt: clampWatt(w) })} /> : null}

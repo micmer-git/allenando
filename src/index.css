@@ -35,19 +35,19 @@
   --color-danger: var(--danger);
 }
 
-/* OROBIA: notte calda e oro. Il giallo è il marchio, l'ambra il suo secondo tono. */
+/* Oro Orobia, ardesia e verde di quota. */
 :root {
   color-scheme: dark;
-  --bg: #0c0b09;
-  --elev: #17150f;
-  --elev2: #221f17;
-  --ink: #f6f2e6;
-  --muted: #9d9686;
+  --bg: #0e181d;
+  --elev: #18262b;
+  --elev2: #21343a;
+  --ink: #f4f4df;
+  --muted: #a6b9b6;
   --accent: #ffc814;
   --accent-2: #ff9f1c;
   --accent-ink: #1a1505;
   --mark-ink: #16130a;
-  --line: rgba(246, 242, 230, 0.1);
+  --line: #35494c;
   --sky: #7cc7ff;
   --good: #5fe0a8;
   --warn: #ff8a3d;
@@ -55,22 +55,22 @@
   --volata: #d6267a;
   --gpm: #1f7fe0;
   /* la scelta fatta in un gruppo di opzioni: chiara sul binario, non gialla */
-  --thumb: #3d382c;
+  --thumb: #354c50;
 }
 
 :root[data-theme="light"] {
   color-scheme: light;
-  --bg: #f6f3ea;
-  --elev: #fffdf6;
-  --elev2: #ece6d6;
-  --ink: #16130a;
-  --muted: #6b6455;
+  --bg: #eaf0e8;
+  --elev: #fbfcf1;
+  --elev2: #dde7dc;
+  --ink: #152b2c;
+  --muted: #4e6460;
   /* sul chiaro l'oro scende di tono: il giallo puro non si legge come testo */
   --accent: #9a6f00;
   --accent-2: #b8560b;
   --accent-ink: #fffaf0;
   --mark-ink: #16130a;
-  --line: rgba(22, 19, 10, 0.12);
+  --line: #b5c6bc;
   --sky: #1d6a9e;
   --good: #0c7a52;
   --warn: #a1450c;
@@ -213,6 +213,114 @@ textarea {
 
 .rise-in {
   animation: orobia-rise 360ms ease-out both;
+}
+
+/* Sopralluogo: il percorso e i suoi strumenti occupano la stessa plancia. */
+.survey-page {
+  background: var(--bg);
+  color: var(--ink);
+  min-height: 100dvh;
+  padding: 0 clamp(.8rem, 2.8vw, 3rem) max(2rem, env(safe-area-inset-bottom));
+}
+.survey-header, .survey-selectors, .survey-layout { max-width: 96rem; margin-inline: auto; }
+.survey-header { display: flex; align-items: center; gap: 1rem; min-height: 3.9rem; border-bottom: 1px solid var(--line); }
+.survey-section-title, .survey-caption {
+  font: 600 .72rem/1.4 ui-monospace, Consolas, monospace;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.survey-section-title { border-left: 1px solid var(--line); padding-left: 1rem; }
+.survey-back { display: inline-flex; align-items: center; min-height: 44px; margin-left: auto; font-size: .88rem; font-weight: 600; }
+.survey-back:hover, .survey-street:hover { color: var(--accent); }
+.survey-selectors { display: flex; align-items: center; gap: .75rem; padding-block: .8rem; }
+.survey-control {
+  min-width: 0; max-width: 100%; min-height: 44px; padding: .45rem .8rem; border: 1px solid var(--line);
+  border-radius: 4px; background: var(--elev); color: var(--ink); font-size: .88rem; font-weight: 600;
+}
+.survey-control:hover:enabled { border-color: var(--muted); }
+.survey-selectors select:last-child { flex: 1; max-width: 38rem; }
+.survey-layout { display: grid; gap: .7rem; align-items: stretch; }
+.survey-stage {
+  position: relative; isolation: isolate; min-width: 0; height: clamp(17rem, 43dvh, 34rem);
+  background-color: #293f44; border: 1px solid var(--line); border-radius: 6px; overflow: hidden;
+}
+.survey-cameras, .survey-recenter, .survey-road, .survey-loading, .survey-locator {
+  position: absolute; color: #f3f5e7; background-color: #14252bf2;
+  border: 1px solid #80978a80; border-radius: 3px; box-shadow: 2px 2px 0 #0c1a1f88;
+}
+.survey-cameras { top: .7rem; left: .7rem; display: flex; padding: 2px; }
+.survey-cameras button { min-height: 44px; padding-inline: .85rem; font-size: .82rem; font-weight: 600; }
+.survey-cameras button[aria-pressed=true] { color: #122320; background: #b9ebbf; border-radius: 1px; }
+.survey-locator {
+  pointer-events: none; right: .7rem; top: .7rem; width: clamp(4.5rem, 8vw, 7rem); aspect-ratio: 1; padding: .5rem;
+  --line: #40595a; --ink: #d6e4cf; --bg: #192c31; --sky: #ffcd44;
+  background-image: linear-gradient(#bce0cd12 1px, transparent 1px), linear-gradient(90deg,#bce0cd12 1px,transparent 1px);
+  background-size: 14px 14px;
+}
+.survey-locator svg { height: 100%; width: 100%; }
+.survey-road, .survey-loading { pointer-events: none; left: .7rem; bottom: .7rem; padding: .4rem .65rem; font-size: .82rem; font-weight: 600; }
+.survey-road { display: flex; align-items: center; gap: .5rem; max-width: calc(100% - 11rem); }
+.survey-road span { width: .45rem; height: .45rem; flex: none; background: #ffcf45; }
+.survey-recenter { bottom: .7rem; right: .7rem; min-height: 44px; padding-inline: .7rem; font-size: .82rem; }
+.survey-instruments {
+  display: grid; grid-template-columns: minmax(0, 1fr); align-content: center; gap: .7rem; min-width: 0;
+  padding: clamp(.85rem, 2vw, 1.6rem); border: 1px solid var(--line); border-radius: 6px; background: var(--elev);
+}
+.survey-km, .survey-facts > div, .survey-place { display: grid; gap: .2rem; min-width: 0; }
+.survey-km strong, .survey-facts strong { font-family: var(--font-display); line-height: 1; font-weight: 700; }
+.survey-km strong { font-size: clamp(2.7rem, 4.7vw, 4.4rem); }
+.survey-instruments small { font: 600 .85rem var(--font-sans); color: var(--muted); }
+.survey-facts { display: flex; align-items: start; gap: 1.3rem; }
+.survey-facts strong { font-size: 1.6rem; }
+.survey-profile { height: 3.7rem; border-bottom: 1px solid var(--line); background: repeating-linear-gradient(to top, transparent 0 14px, var(--line) 14px 15px); }
+.survey-range { display: flex; align-items: center; gap: .65rem; }
+.survey-range input { width: 100%; }
+.survey-range button { background: var(--elev2); }
+.survey-place select { width: 100%; }
+.survey-start, .survey-street { display: flex; align-items: center; justify-content: center; min-height: 44px; text-align: center; font-weight: 600; }
+.survey-start { gap: 1rem; background: var(--accent); color: var(--accent-ink); border-radius: 4px; box-shadow: inset 0 -3px #53360038; }
+.survey-start span { font-size: 1.2rem; }
+.survey-start:hover { filter: brightness(1.08); }
+.survey-start:active { transform: translateY(1px); }
+.survey-street { font-size: .86rem; }
+.survey-notes { grid-column: 1 / -1; display: grid; gap: .65rem; border-top: 1px solid var(--line); padding-top: .75rem; }
+.survey-sources summary { width: fit-content; cursor: pointer; min-height: 44px; padding-block: .75rem; font-size: .84rem; color: var(--muted); }
+.survey-sources a { text-decoration: underline; }
+@media (min-width: 820px) {
+  .survey-layout { grid-template-columns: minmax(0, 1fr) clamp(16rem, 24vw, 23rem); gap: 1rem; }
+  .survey-stage { height: auto; min-height: clamp(29rem, 67dvh, 52rem); }
+  .survey-instruments { align-content: start; gap: 1.15rem; }
+  .survey-actions { border-top: 1px solid var(--line); padding-top: 1.25rem; }
+}
+@media (max-width: 819px) {
+  .survey-header { min-height: 3.2rem; gap: .6rem; }
+  .survey-section-title { padding-left: .65rem; font-size: .64rem; }
+  .survey-selectors { gap: .45rem; padding-block: .5rem; }
+  .survey-instruments { grid-template-columns: minmax(0, 1fr) auto; column-gap: .8rem; }
+  .survey-facts { align-self: center; }
+  .survey-profile, .survey-range, .survey-place, .survey-actions { grid-column: 1 / -1; }
+  .survey-profile { height: 2.6rem; }
+  .survey-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .8rem; }
+}
+@media (max-width: 370px) {
+  .survey-facts { gap: .6rem; }
+  .survey-km strong { font-size: 2.25rem; }
+  .survey-road { max-width: 54%; }
+}
+
+/* Bordo dei pannelli e griglia strumenti riprendono la pianta del sopralluogo. */
+.ride-console { border-top: 2px solid var(--line); }
+.ride-console dl > div + div { border-left: 1px solid var(--line); padding-left: clamp(.45rem, 1vw, 1rem); }
+.ride-console dl .font-display { letter-spacing: .01em; }
+.ride-console button { border-radius: 5px; }
+.ride-title-panel {
+  min-width: 0; flex: 1; border: 1px solid var(--line); border-left: 3px solid var(--accent);
+  border-radius: 4px; padding: .35rem .75rem; background: color-mix(in srgb, var(--bg) 93%, transparent);
+}
+@media (orientation: landscape) {
+  .ride-title-panel { max-width: 34rem; }
+  .ride-console { border-radius: 6px; background: color-mix(in srgb, var(--bg) 94%, transparent); }
 }
 
 @media (min-width: 768px) {

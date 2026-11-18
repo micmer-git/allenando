@@ -24,7 +24,7 @@ export function sottoTipo(t: Tipo, sa: Capacita, prova: boolean, manuale = false
   return erg ? 'ERG' : 'A bersaglio';
 }
 
-export function ComeSegmento({ tipi, tipo, sa, prova, manuale = false, onChange }: { tipi: Tipo[]; tipo: Tipo; sa: Capacita; prova: boolean; manuale?: boolean; onChange: (t: Tipo) => void }) {
+export function ComeSegmento({ tipi, tipo, sa, prova, manuale = false, inPiano = false, onChange }: { tipi: Tipo[]; tipo: Tipo; sa: Capacita; prova: boolean; manuale?: boolean; inPiano?: boolean; onChange: (t: Tipo) => void }) {
   return (
     <div role="radiogroup" aria-label="Come" className="grid overflow-hidden rounded-[26px] border border-line bg-elev" style={{ gridTemplateColumns: `repeat(${tipi.length}, minmax(0, 1fr))` }} data-testid="pedala-come">
       {tipi.map((t) => (
@@ -38,7 +38,7 @@ export function ComeSegmento({ tipi, tipo, sa, prova, manuale = false, onChange 
           data-testid={`pedala-come-${t}`}
         >
           <span className="text-[14px] font-semibold">{NOMI[t]}</span>
-          <span className="text-[11px] font-medium text-muted">{sottoTipo(t, sa, prova, manuale)}</span>
+          <span className="text-[11px] font-medium text-muted">{inPiano && t === 'libera' && !manuale ? 'In piano' : sottoTipo(t, sa, prova, manuale)}</span>
         </button>
       ))}
     </div>

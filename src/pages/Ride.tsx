@@ -1,4 +1,6 @@
 import { RideClock } from '@/sim/clock';
+import { StreetViewRide } from './StreetViewRide';
+import { StreetRide } from '@/ride/streetNavigation';
 import { Component, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { rideKey as sessionKey, RideView } from '@/ride/activeRide';
@@ -109,6 +111,7 @@ function useQuickTitle(params: URLSearchParams): { title?: string; subtitle?: st
       alive = false;
     };
   }, [rideId]);
+  if (params.get('street') === '1') return { title: 'Street View', subtitle: 'Gazzaniga' };
   if (params.get('world')) {
     if (rideId) return fetched?.id === rideId ? fetched : {};
     const planKey = params.get('plan');
@@ -482,6 +485,7 @@ function RideScreen({
   const [, bump] = useState(0);
   const look = useLook();
   const [ready, setReady] = useState(false);
+  const [street] = useState(() => setup.intento.dove.kind === 'street' ? new StreetRide() : null);
   const [slow, setSlow] = useState(false);
   // l'avanzamento del mondo, da 0 a 1, da WorldScene (onProgress): finché non arriva, la barra è indeterminata
   const [worldProgress, setWorldProgress] = useState<number | undefined>(undefined);
@@ -533,7 +537,7 @@ function RideScreen({
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (!visible) return;
-      if (event.code !== 'Space' || event.target instanceof HTMLInputElement || !readyRef.current || summaryRef.current) return;
+      if (event.code !== 'Space' || event.target instanceof HTMLInputElement || (street && event.target instanceof HTMLElement && event.target.closest('button, [role="dialog"]')) || !readyRef.current || summaryRef.current) return;
       event.preventDefault();
       if (engine.phase === 'riding') engine.pause();
       else if (engine.phase === 'paused') engine.resume();
@@ -914,7 +918,7 @@ function RideScreen({
             goLive();
           }}
         >
-          {webgl && world && session && terrainField ? (
+          {street ? <StreetViewRide ride={street} odometer={engine.odometer} onReady={goLive} /> : webgl && world && session && terrainField ? (
             <WorldScene
               key={quality}
               engine={engine}
@@ -969,7 +973,7 @@ function RideScreen({
                 >
                   <BackIcon />
                 </button>
-                <div className="min-w-0 flex-1 rounded-[1.375rem] bg-bg/70 px-3.5 py-1.5 backdrop-blur-md landscape:max-w-[40rem]" data-testid="ride-route">
+                <div className="ride-title-panel" data-testid="ride-route">
                   <p className="break-words font-display text-lg uppercase leading-tight lg:text-2xl">
                     {engine.prova ? (
                       <span className="mr-1.5 inline-flex translate-y-[-2px] items-center rounded-full border border-accent/60 px-2 py-px align-middle font-sans text-xs font-semibold normal-case text-accent" data-testid="ride-prova">
@@ -985,7 +989,7 @@ function RideScreen({
                     ) : null}
                   </p>
                   <p className="break-words text-[13px] leading-tight text-muted lg:text-[15px]" data-testid="ride-where">
-                    {where}
+                    {street ? 'Giro libero in piano' : where}
                     {session && engine.aero < 0.93 ? <span className="font-semibold text-good"> · In scia −{Math.round((1 - engine.aero) * 100)}% aria</span> : null}
                     {session && engine.rolling > 1.2 ? <span className="text-warn"> · {engine.rolling > 2 ? 'Sterrato' : 'Porfido'}</span> : null}
                   </p>
@@ -1087,7 +1091,7 @@ function RideScreen({
             ) : null}
             {/* il telefono in orizzontale: l'altimetria a sinistra, sotto la scelta all'incrocio; nel
                 mezzo c'è il ciclista, che col blocco dell'allenamento nel pannello finiva sotto (O3) */}
-            <div className="pointer-events-none absolute bottom-[calc(var(--dock)+0.5rem)] left-2.5 right-[calc(var(--simw)+0.625rem)] z-10 rounded-xl bg-bg/55 p-1 backdrop-blur-md rail:right-[56%]" data-testid="ride-profile">
+            {!street && <div className="pointer-events-none absolute bottom-[calc(var(--dock)+0.5rem)] left-2.5 right-[calc(var(--simw)+0.625rem)] z-10 rounded-xl bg-bg/55 p-1 backdrop-blur-md rail:right-[56%]" data-testid="ride-profile">
               {session && !session.onRoute ? (
                 <AheadProfile session={session} engine={engine} />
               ) : (
@@ -1103,7 +1107,7 @@ function RideScreen({
                   peaks={passMarks}
                 />
               )}
-            </div>
+            </div>}
             <SessionGrid game={game} />
           </>
         ) : null}
@@ -1132,7 +1136,7 @@ function RideScreen({
       {/* i numeri: watt, tempo e km grandi, il resto in una riga; Pausa e Termina sempre a portata */}
       <section
         ref={dockRef}
-        className="relative z-20 shrink-0 border-t border-line bg-elev px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 landscape:absolute landscape:inset-x-2 landscape:bottom-2 landscape:rounded-2xl landscape:border landscape:bg-bg/72 landscape:px-3 landscape:py-2 landscape:backdrop-blur-md"
+        className="ride-console relative z-20 shrink-0 border-line bg-elev px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 landscape:absolute landscape:inset-x-2 landscape:bottom-2 landscape:border landscape:px-3 landscape:py-2"
         data-testid="ride-dock"
       >
         {progress && engine.workout ? (
@@ -1191,7 +1195,7 @@ function RideScreen({
                 {formatKm(engine.odometer)}
               </dd>
               <dd className="mt-0.5 text-xs leading-tight text-muted">km fatti
-                {traguardo != null ? ` · ${formatKm(traguardo)} km al traguardo` : onRoute ? ` · ${formatKm(kmLeft)} km all’arrivo` : ''}
+                {traguardo != null ? ` · ${formatKm(traguardo)} km al traguardo` : onRoute && !street ? ` · ${formatKm(kmLeft)} km all’arrivo` : ''}
               </dd>
             </div>
           </dl>
@@ -1242,7 +1246,7 @@ function RideScreen({
         </div>
       </section>
 
-      {veil.mounted ? (
+      {veil.mounted && !street ? (
         <LoadingVeil
           title={setup.route.title}
           subtitle={setup.route.subtitle}

@@ -3,6 +3,7 @@ export type Tipo = 'libera' | 'fissa' | 'allenamento' | 'allora';
 
 /** Dove si pedala: uno solo. */
 export type Dove =
+  | { kind: 'street' }
   | { kind: 'percorso'; world: string; ride: string }
   | { kind: 'piano'; world: string; plan: string }        // anello suggerito o A → B (savePlan)
   | { kind: 'libero'; world: string; edge: number; dir: 1 | -1; s: number }

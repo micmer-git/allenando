@@ -267,6 +267,11 @@ export function DoveContenuto({ mondo, setWorld, strumento, setStrumento, filtro
         <Caricamento mondo={mondo} offline={offline} />
       )}
       <div className="mt-2 grid grid-cols-2 gap-2">
+        <button type="button" disabled={offline} aria-pressed={scelto === 'street'} data-testid="dove-street"
+          className="min-h-12 rounded-full border border-line bg-elev px-3 font-semibold aria-pressed:border-accent disabled:opacity-50"
+          onClick={() => onScegli({ dove: { kind: 'street' }, vista: { ...vistaLibero('Gazzaniga'), titolo: 'Street View', sotto: 'Da Gazzaniga · Jump nel mondo' }, piano: null })}>
+          Street View
+        </button>
         {apriPercorsi && <button type="button" onClick={apriPercorsi} className="min-h-12 rounded-full bg-accent px-3 font-semibold text-accent-ink" data-testid="esplora-percorsi">Sfoglia i percorsi</button>}
         {survey && <Link to={survey} className="grid min-h-12 place-items-center rounded-full border border-line bg-elev px-3 text-center font-semibold" data-testid="esplora-3d">Sopralluogo 3D</Link>}
         <button type="button" disabled={!data} className={cn('min-h-11 text-sm font-semibold text-accent disabled:opacity-50', apriPercorsi && 'col-span-2')} onClick={() => setStrumento('libero')} data-testid="dove-libero-mappa">Scegli un punto sulla mappa</button>
@@ -477,6 +482,7 @@ function CartaDove({ data, far, rides, scelto, height, onPick }: { data: WorldDa
 /** Il nome della riga scelta, per l'evidenza nella lista. */
 export function idScelto(d: Dove | null): string | null {
   if (!d) return null;
+  if (d.kind === 'street') return 'street';
   if (d.kind === 'percorso') return d.ride;
   if (d.kind === 'salita') return d.route;
   if (d.kind === 'giro') return d.replay;

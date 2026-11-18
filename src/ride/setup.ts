@@ -93,6 +93,15 @@ export function useRideSetup(): { setup: RideSetup | null; error: string | null 
     const prova = !!intento.manuale || rulloAdesso().prova;
     const base: { intento: Intento; prova: boolean; pacco: PaccoMondo } = { intento, prova, pacco: 'intero' };
     const dove = intento.dove;
+    if (dove.kind === 'street') {
+      const route = neutralRoute([]);
+      route.id = 'street';
+      route.title = 'Street View';
+      route.subtitle = 'Giro libero in piano';
+      route.track.closed = true;
+      done({ ...base, route, label: route.title });
+      return;
+    }
     if (dove.kind === 'percorso' || dove.kind === 'piano' || dove.kind === 'libero') {
       // senza rete e senza il mondo intero sul telefono: il mondo leggero (strade e terreno lontano)
       const offline = reteAdesso() === 'offline';
