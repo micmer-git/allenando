@@ -1,6 +1,6 @@
 import { haversine, type LatLon } from '@/domain/geo';
 import { headingToBearing } from '@/domain/routes';
-import type { WorldPath } from './path';
+import type { Track } from '@/domain/track';
 
 export interface SurveyPhoto extends LatLon {
   id: string;
@@ -8,6 +8,9 @@ export interface SurveyPhoto extends LatLon {
   position: 'camera' | 'subject';
   /** North-clockwise azimuth recorded by the source. Omitted for an undocumented view. */
   bearing?: number;
+  panorama?: boolean;
+  /** Mapped subject visible in the photo, also used to aim the 3D camera. */
+  viewTarget?: string;
   date?: string;
   author: string;
   license: string;
@@ -49,7 +52,7 @@ export interface PhotoStation extends LatLon { bearing: number; distance: number
 export interface PhotoMatch { photo: SurveyPhoto; off: number; subjectOff?: number }
 export interface StationPhotos { station: number; distance: number; matches: PhotoMatch[] }
 
-export function surveyStations(path: WorldPath, toGeo: (x: number, z: number) => LatLon): PhotoStation[] {
+export function surveyStations(path: Pick<Track,'length'|'poseAt'>, toGeo: (x: number, z: number) => LatLon): PhotoStation[] {
   return Array.from({length: Math.ceil(path.length / 100) + 1}, (_, index) => {
     const distance = Math.min(index * 100, path.length);
     const pose = path.poseAt(distance);

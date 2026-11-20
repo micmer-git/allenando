@@ -10,11 +10,18 @@ import { WorldPath } from '@/open/path';
 import { loadWorld, Terrain, type RideDef, type WorldData } from '@/open/world';
 import { WORLDS } from '@/open/world-table';
 import { createHeightField } from '@/world/heightfield';
-import { chaseRider, frameRider } from '@/world/isometric';
+import { bendHeading, chaseRider, frameRider } from '@/world/isometric';
+import { projector } from '@/domain/geo';
+import { matchSurveyPhotos, surveyStations, type PhotoAtlas } from '@/open/fotoSopralluogo';
 import { fitRideViewport } from '@/world/rideCamera';
 
 const publicDir = join(__dirname, '..', 'public');
 const fractions = [0, .25, .5, .75, 1];
+function expectPhotos(track: Track, geo: ReturnType<typeof projector>, atlasDir: string) {
+  const atlas = JSON.parse(readFileSync(join(publicDir, atlasDir, 'foto/atlante-v1.json'), 'utf8')) as PhotoAtlas;
+  const photos = matchSurveyPhotos(atlas, surveyStations(track, geo.toGeo));
+  expect(photos.some(p => p.matches.some(m => m.photo.id.startsWith('commons-')))).toBe(true);
+}
 const viewports = [[1200, 540], [390, 844], [844, 390], [320, 360]];
 
 beforeAll(() => {
@@ -85,6 +92,7 @@ for (const world of WORLDS) {
         const path = new WorldPath(data.graph, { edge: first[0], dir: first[1], s: first[1] > 0 ? 0 : data.graph.edges[first[0]].length });
         for (const [edge, dir] of rest) path.append(edge, dir);
         expect(path.length).toBeGreaterThan(100);
+        expectPhotos(path, data.proj, 'world/' + data.graph.id);
         for (const fraction of fractions) {
           const distance = Math.min(path.length - .1, path.length * fraction);
           const pose = path.poseAt(distance);
@@ -103,6 +111,7 @@ describe('camera isometrica: salite, replay e allenamento senza GPS', () => {
       const file = JSON.parse(readFileSync(join(publicDir, 'routes', `${meta.id}.json`), 'utf8')) as RouteFile;
       const route = trackFromRouteFile(file, meta.halfWidth);
       const field = createHeightField(route.track, route.dem);
+      expectPhotos(route.track, projector(route.origin), route.id === 'selvino-nembro' ? 'world/bergamo' : 'routes');
       for (const fraction of fractions) checkFrame(route.track, route.track.length * fraction, field.height);
     });
   }
@@ -119,5 +128,17 @@ describe('camera isometrica: salite, replay e allenamento senza GPS', () => {
     const track = createRouteTrack([{ x: 0, z: 0, ele: 0 }, { x: 0, z: 1000, ele: 0 }]);
     const field = createHeightField(track, null);
     for (const fraction of fractions) checkFrame(track, track.length * fraction, field.height);
+  });
+
+  it('la terza persona anticipa la curva dal rettilineo e si ferma alla fine della salita', () => {
+    const track = createRouteTrack([{x:0,z:0,ele:0},{x:0,z:100,ele:0},{x:60,z:102,ele:0},{x:62,z:15,ele:0}]);
+    const straight = track.poseAt(20);
+    expect(bendHeading(track,straight,12)).toBeCloseTo(straight.heading,5);
+    const beforeBend = track.poseAt(88);
+    const turn = bendHeading(track,beforeBend,15) - beforeBend.heading;
+    expect(turn).toBeGreaterThan(0.04);
+    expect(turn).toBeLessThanOrEqual(Math.PI/8 + 1e-8);
+    const finish = track.poseAt(track.length);
+    expect(bendHeading(track,finish,20)).toBe(finish.heading);
   });
 });

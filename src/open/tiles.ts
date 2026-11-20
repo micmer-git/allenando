@@ -1,7 +1,8 @@
 import { BUILT_SURFACE } from './suoloGanda';
+import { foregroundInTile } from './scorci';
 import type { indexRoadPoints } from './puntiStrada';
 import * as THREE from 'three';
-import { ASPHALT_REPEAT_M, hash2, smoothNoise } from '@/world/builders';
+import { ROAD_TEXTURE_METERS, hash2, smoothNoise } from '@/world/builders';
 import { CLS, FLAG, type Edge, type EdgePose, type WorldGraph } from './graph';
 import type { WorldField } from './field';
 import { BUILDING_KIND, COVER, type Building, type Place, type WorldFeatures } from './world';
@@ -60,6 +61,7 @@ export type TreeKind = 'spruce' | 'larch' | 'broadleaf' | 'rock' | 'cypress';
 
 /** Un accumulatore di triangoli, con colori facoltativi. */
 export class Mesh {
+  constructor(private readonly surfaceMeters?: readonly [number, number]) {}
   pos: number[] = [];
   uv: number[] = [];
   col: number[] = [];
@@ -69,7 +71,8 @@ export class Mesh {
   }
   vertex(x: number, y: number, z: number, u = 0, v = 0, c?: THREE.Color): number {
     this.pos.push(x, y, z);
-    this.uv.push(u, v);
+    if (this.surfaceMeters) this.uv.push(x / this.surfaceMeters[0], z / this.surfaceMeters[1]);
+    else this.uv.push(u, v);
     if (c) this.col.push(c.r, c.g, c.b);
     return this.pos.length / 3 - 1;
   }
@@ -506,17 +509,17 @@ function walkStrips(kerb: Mesh, pts: P[], hw: number, lift: number, top: number,
 
 /** Strade, ponti, gallerie, cordoli e marciapiedi della mattonella. Il guardrail sta nell'arredo vicino. */
 export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec): Generator<void, Omit<TileMeshes, 'terrain' | 'buildings' | 'trees' | 'water' | 'rails'>, void> {
-  const asphalt = new Mesh();
-  const stone = new Mesh();
-  const gravel = new Mesh();
+  const asphalt = new Mesh(ROAD_TEXTURE_METERS.asphalt);
+  const stone = new Mesh(ROAD_TEXTURE_METERS.stone);
+  const gravel = new Mesh(ROAD_TEXTURE_METERS.gravel);
   const paint = new Mesh();
   const verge = new Mesh();
   const concrete = new Mesh();
   const kerb = new Mesh();
   const tunnel = new Mesh();
-  const tunnelRoad = new Mesh();
-  const tunnelStone = new Mesh();
-  const tunnelGravel = new Mesh();
+  const tunnelRoad = new Mesh(ROAD_TEXTURE_METERS.asphalt);
+  const tunnelStone = new Mesh(ROAD_TEXTURE_METERS.stone);
+  const tunnelGravel = new Mesh(ROAD_TEXTURE_METERS.gravel);
   const x0 = spec.x0;
   const z0 = spec.z0;
   const x1 = spec.x0 + spec.size;
@@ -580,7 +583,7 @@ export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec):
       // un punto esatto sul taglio dell'innesto: banchine e cordoli finiscono dove comincia il raccordo
       const pts = withCuts(graph, e, raw, [jA, e.length - jB]);
       const past = (p: P) => p.d >= jA - 1e-6 && p.d <= e.length - jB + 1e-6;
-      strip(surface, pts, hw, lift, -hw, lift, surface === stone ? 4 : surface === asphalt ? ASPHALT_REPEAT_M : 5);
+      strip(surface, pts, hw, lift, -hw, lift);
       if (e.cls <= CLS.unclassified && !tun && surface !== gravel) {
         // le linee di margine si fermano dove passano sull'asfalto di un'altra strada (due sensi
         // unici che confluiscono, una via che si affianca): prima si incrociavano a X
@@ -683,15 +686,14 @@ function drawJunction(g: JunctionGeo, graph: WorldGraph, field: WorldField, m: {
   lift += 0.02;
   const n = g.ring.length;
   if (n < 3) return;
-  const uv = (x: number, z: number): [number, number] => [x / 6, z / ASPHALT_REPEAT_M];
-  const c = m.surface.vertex(g.cx, g.cy + lift, g.cz, ...uv(g.cx, g.cz));
+  const c = m.surface.vertex(g.cx, g.cy + lift, g.cz);
   const half: number[] = [];
   const full: number[] = [];
   for (const v of g.ring) {
     const hx = (g.cx + v.x) / 2;
     const hz = (g.cz + v.z) / 2;
-    half.push(m.surface.vertex(hx, v.yh + lift, hz, ...uv(hx, hz)));
-    full.push(m.surface.vertex(v.x, v.y + lift, v.z, ...uv(v.x, v.z)));
+    half.push(m.surface.vertex(hx, v.yh + lift, hz));
+    full.push(m.surface.vertex(v.x, v.y + lift, v.z));
   }
   for (let i = 0; i < n; i++) {
     const j = (i + 1) % n;
@@ -812,20 +814,14 @@ function drawRing(g: RingGeo, graph: WorldGraph, field: WorldField, m: { surface
     return { x: g.cx + Math.cos(th) * r, y: a.y, z: g.cz + Math.sin(th) * r };
   };
   const TAU = Math.PI * 2;
-  // la carreggiata, con la trama che scorre lungo l'anello
+  // la carreggiata
   let prev = -1;
-  let run = 0;
-  let last: { x: number; z: number } | null = null;
   for (let k = 0; k <= g.n; k++) {
     const th = -Math.PI + (k / g.n) * TAU;
     const i = at(th, -g.hw);
     const o = at(th, g.hw);
-    const mx = (i.x + o.x) / 2;
-    const mz = (i.z + o.z) / 2;
-    if (last) run += Math.hypot(mx - last.x, mz - last.z);
-    last = { x: mx, z: mz };
-    const a = m.surface.vertex(i.x, i.y + lift, i.z, 0, run / ASPHALT_REPEAT_M);
-    m.surface.vertex(o.x, o.y + lift, o.z, 1, run / ASPHALT_REPEAT_M);
+    const a = m.surface.vertex(i.x, i.y + lift, i.z);
+    m.surface.vertex(o.x, o.y + lift, o.z);
     if (prev >= 0) quadUp(m.surface, prev, prev + 1, a, a + 1);
     prev = a;
   }
@@ -868,7 +864,7 @@ function drawRing(g: RingGeo, graph: WorldGraph, field: WorldField, m: { surface
       const yB = graph.pose(b.edge, b.atA ? tb : e.length - tb, 1).y;
       const yP = ringAt(g, Math.atan2(f.pz - g.cz, f.px - g.cx)).y;
       const steps = Math.max(2, Math.ceil(Math.abs(da) * f.r));
-      const c = m.surface.vertex(f.px, yP + fl, f.pz, f.px / 6, f.pz / ASPHALT_REPEAT_M);
+      const c = m.surface.vertex(f.px, yP + fl, f.pz);
       const curb: CurbPt[] = [];
       let p = -1;
       for (let k = 0; k <= steps; k++) {
@@ -877,7 +873,7 @@ function drawRing(g: RingGeo, graph: WorldGraph, field: WorldField, m: { surface
         const x = f.fx + Math.cos(ang) * f.r;
         const z = f.fz + Math.sin(ang) * f.r;
         const y = yA + (yB - yA) * u;
-        const q = m.surface.vertex(x, y + fl, z, x / 6, z / ASPHALT_REPEAT_M);
+        const q = m.surface.vertex(x, y + fl, z);
         if (p >= 0) triUpIdx(m.surface, c, p, q);
         p = q;
         curb.push({ x, y: y + fl, z, ox: -Math.cos(ang), oz: -Math.sin(ang) });
@@ -1118,6 +1114,7 @@ function trisGeometry(t: Tris): THREE.BufferGeometry | null {
  */
 export function* treesJob(field: WorldField, spec: TileSpec, seed = 0, forestOnly = false, ctx: LookCtx = lookContext(field.terrain?.graph?.id ?? 'bergamo'), roadPoints?: ReturnType<typeof indexRoadPoints>): Generator<void, TileMeshes['trees'], void> {
   const out: TileMeshes['trees'] = [];
+  const openForeground = foregroundInTile(field.terrain?.graph?.id ?? '', spec);
   const cell = 25;
   const n = Math.round(spec.size / cell);
   const look = ctx.look;
@@ -1146,7 +1143,7 @@ export function* treesJob(field: WorldField, spec: TileSpec, seed = 0, forestOnl
         // né sull'asfalto, né nell'acqua, né dentro una galleria, né sotto un ponte (la chioma bucava l'impalcato)
         if (field.lastRoadDist() < 4 || field.lastWater() || field.inTube(x, z, y) || field.nearBridge(x, z)) continue;
         const kind = cov === COVER.rock ? 'rock' : treeSpecies(look, y, hash2(x * 1.7, z * 2.3));
-        if (!kind) continue;
+        if (!kind || (kind !== 'rock' && cov !== COVER.forest && actual !== COVER.forest && openForeground(x,z))) continue;
         // pendenza dal terreno: sulle pareti non cresce un bosco (sui versanti ripidi sì)
         const sx = field.height(x + 4, z, spec.spacing) - y;
         const sz = field.height(x, z + 4, spec.spacing) - y;

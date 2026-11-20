@@ -72,6 +72,13 @@ describe('Fondo dei nastri stradali', () => {
     while (!part.done) part = job.next();
     const result = part.value;
     expect(result[surface]?.index?.count).toBeGreaterThan(0);
+    const geo = result[surface]!;
+    const {position,uv} = geo.attributes;
+    const repeat = flags & FLAG.unpaved ? [3,3] : flags & FLAG.cobbles ? [0.96,0.96] : [4.8,9.6];
+    for (let i=0; i<position.count; i++) {
+      expect(uv.getX(i)*repeat[0]).toBeCloseTo(position.getX(i),4);
+      expect(uv.getY(i)*repeat[1]).toBeCloseTo(position.getZ(i),4);
+    }
     if (surface !== 'asphalt') expect(result.asphalt).toBeNull();
     if (flags & FLAG.unpaved) expect(result.paint).toBeNull();
   });

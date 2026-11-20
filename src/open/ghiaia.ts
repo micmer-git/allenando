@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { canvasTex } from '@/world/Scene';
 
-/** Aggregato chiaro e terra battuta. Il disegno occupa la larghezza della pista per 5 metri. */
+/** Aggregato chiaro e terra battuta su una mattonella quadrata di tre metri. */
 export function gravelTexture(): THREE.CanvasTexture {
   let seed = 3289;
   const random = () => {
@@ -14,8 +14,8 @@ export function gravelTexture(): THREE.CanvasTexture {
     for (let z = 0; z < size; z++) {
       for (let x = 0; x < size; x++) {
         const u = x / size, v = z / size;
-        const rut = Math.cos(4 * Math.PI * u + .16 * Math.sin(2 * Math.PI * v));
-        const grade = 153 + 6 * Math.sin(2 * Math.PI * (u + v)) + 4 * rut + (random() - .5) * 24;
+        const mottling = Math.cos(2*Math.PI*u) * Math.sin(4*Math.PI*v) + Math.sin(4*Math.PI*u) * Math.cos(2*Math.PI*v);
+        const grade = 153 + 4*mottling + (random() - .5) * 24;
         const k = (z * size + x) * 4;
         pixels.data[k] = grade + 13;
         pixels.data[k + 1] = grade + 4;

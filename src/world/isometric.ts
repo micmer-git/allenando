@@ -1,12 +1,23 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { volumeBlocks, type Volume } from '@/open/labels';
-import type { TrackPose } from '@/domain/track';
+import type { Track, TrackPose } from '@/domain/track';
 
 /** L'azimut segue la strada con inerzia; a velocità diverse la bici resta ferma nel quadro. */
 export function followBearing(heading: number, goal: number, dt: number) {
   const delta = Math.atan2(Math.sin(goal - heading), Math.cos(goal - heading));
   return heading + delta * (1 - Math.exp(-dt * 2.65));
+}
+
+/** La corda del tratto che si sta per percorrere anticipa la curva anche in discesa. */
+export function bendHeading(track: Track, pose: TrackPose, speed: number) {
+  const cursor = pose.distance;
+  const ahead = THREE.MathUtils.clamp(7 + speed * 0.85, 7, 22);
+  const a = track.poseAt(cursor);
+  const b = track.poseAt(track.closed ? (cursor + ahead) % track.length : Math.min(cursor + ahead, track.length));
+  if (Math.hypot(b.x - a.x, b.z - a.z) < 0.5) return pose.heading;
+  const delta = Math.atan2(b.x - a.x, b.z - a.z) - pose.heading;
+  return pose.heading + THREE.MathUtils.clamp(Math.atan2(Math.sin(delta), Math.cos(delta)), -Math.PI / 8, Math.PI / 8);
 }
 
 export function frameRider(camera: THREE.OrthographicCamera, pose: TrackPose, heading: number, height: number,

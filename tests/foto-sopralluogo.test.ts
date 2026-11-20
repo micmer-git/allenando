@@ -28,18 +28,18 @@ describe('Foto geolocalizzate del sopralluogo', () => {
     expect(result[1].matches[0].off).toBeCloseTo(11.12, 1);
   });
 
-  for (const world of ['bergamo', 'sellaronda']) {
+  for (const world of ['bergamo', 'sellaronda', 'classiche']) {
     it(`verifica sorgenti, date e file distribuiti per ${world}`, () => {
-      const base = join('public/world', world, 'foto');
+      const base = world === 'classiche' ? 'public/routes/foto' : join('public/world', world, 'foto');
       const atlas = JSON.parse(readFileSync(join(base, 'atlante-v1.json'), 'utf8')) as PhotoAtlas;
       const assets: string[] = [];
       expect(atlas.places.length).toBeGreaterThan(0);
-      expect(atlas.frames.length).toBeGreaterThan(0);
+      if (world !== 'classiche') expect(atlas.frames.length).toBeGreaterThan(0);
       for (const photo of atlas.places) {
         expect(photo.source).toMatch(/^https:\/\/commons\.wikimedia\.org\/wiki\/File:/);
-        expect(photo.licenseUrl).toMatch(/^https:\/\/creativecommons\.org\/licenses\//);
+        expect(photo.licenseUrl).toMatch(/^https:\/\/creativecommons\.org\/(licenses\/|publicdomain\/zero\/)/);
         expect(photo.author.trim().length).toBeGreaterThan(0);
-        expect(photo.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        if (photo.date) expect(photo.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
         if (photo.position === 'subject') expect(photo.positionSource).toContain('openstreetmap.org/');
         assets.push(photo.image);
       }

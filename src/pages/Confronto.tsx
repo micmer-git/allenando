@@ -78,14 +78,18 @@ function Survey({data, ride, point, place, station, select}: {data: WorldData; r
   const index = landmark?.station ?? (Number.isFinite(station) ? Math.min(max, Math.max(0, Math.round(station))) : 0);
   const distance = landmark?.viewAt ?? Math.min(path.length, index * 100);
   const [camera, setCamera] = useState<RideView | 'strada'>('iso');
+  const [viewpoint, setViewpoint] = useState<{station:number; x:number; z:number; y:number; photographed:boolean} | null>(null);
   const [zoom, setZoom] = useState(2);
   const detail = camera === 'strada' ? landmark?.detailRoad : undefined;
   const start = detail ?? path.edgeAt(distance);
   const onRoute = path.poseAt(distance);
   const streetPose = detail && data.graph.pose(detail.edge,detail.s,detail.dir);
-  const pose = streetPose ? { ...onRoute,...streetPose,altitude:streetPose.y } : onRoute;
+  const fromPhoto = camera === 'strada' && !landmark && viewpoint?.station === index ? viewpoint : null;
+  const pose = fromPhoto ? {...onRoute, x:fromPhoto.x, z:fromPhoto.z, y:fromPhoto.y, altitude:fromPhoto.y} :
+    streetPose ? { ...onRoute,...streetPose,altitude:streetPose.y } : onRoute;
   const geo = data.toGeo(pose.x, pose.z);
   const orientation = useRef<SurveyAngles>(FORWARD);
+  const stage = useRef<HTMLDivElement>(null);
   const [angles,setAngles] = useState<SurveyAngles>(FORWARD);
   const direction = sightLine(pose,angles);
   const url = streetViewUrl(geo,headingToBearing(direction.heading),direction.pitch * 180 / Math.PI);
@@ -107,20 +111,21 @@ function Survey({data, ride, point, place, station, select}: {data: WorldData; r
     setAngles({...orientation.current});
   },[data,path,landmark]);
   const changed = () => setAngles({...orientation.current});
-  const reset = () => { orientation.current=FORWARD; changed(); };
+  const reset = () => { setViewpoint(null); orientation.current=FORWARD; changed(); };
+  const move = (n:number, id?:string) => { if (viewpoint) reset(); select(n,id); };
   const [ready, setReady] = useState(false);
   const road = data.graph.edges[start.edge];
   return <div className="survey-layout">
-    <div className="survey-stage">
+    <div className="survey-stage" ref={stage}>
       <SurveyViewport orientation={orientation} changed={changed}>
         <WorldScene preview={() => orientation.current} surveyCamera={camera} magnification={ISO_ZOOM[zoom]} data={data} terrain={terrain} field={field} path={path} quality="medium"
           engine={{distance, speed:0, cadence:0, power:0}} crowd={crowd} remote={[]} nextTurn={none}
           playerPose={() => pose} onReady={() => setReady(true)} weather={null} daytime="mezzogiorno" ride={null} />
       </SurveyViewport>
       <div className="survey-locator" aria-label="Posizione sul percorso"><RouteMap track={path} position={distance} /></div>
-      {(angles.yaw !== 0 || angles.pitch !== 0) && <button className="survey-recenter" onClick={reset}>Guarda la strada</button>}
+      {(fromPhoto || angles.yaw !== 0 || angles.pitch !== 0) && <button className="survey-recenter" onClick={reset}>Guarda la strada</button>}
       {!ready && <span className="survey-loading" role="status">Carico il paesaggio…</span>}
-      {ready && (road.name || road.ref) && <div className="survey-road"><span aria-hidden="true" />{detail && 'Affaccio · '}{road.name || road.ref}</div>}
+      {ready && (fromPhoto || road.name || road.ref) && <div className="survey-road"><span aria-hidden="true" />{detail && 'Affaccio · '}{fromPhoto ? (fromPhoto.photographed ? 'Dal punto di scatto' : 'Dalla strada vicina al soggetto') : road.name || road.ref}</div>}
     </div>
     <section className="survey-instruments" aria-label="Controlli del percorso">
       <CameraControls view={camera} change={v => { setCamera(v); reset(); }} zoom={zoom} setZoom={setZoom} survey />
@@ -136,14 +141,14 @@ function Survey({data, ride, point, place, station, select}: {data: WorldData; r
         <ProfileChart track={path} position={distance} bin={Math.max(100,path.length/95)} height={62} className="h-full w-full" />
       </div>
       <div className="survey-range">
-        <button className={control+' shrink-0 disabled:opacity-40'} disabled={!index} onClick={() => select(index-1)}>−100 m</button>
-        <input className="h-11 min-w-0 flex-1 accent-[var(--accent)]" aria-label="Punto sul percorso" type="range" min={0} max={max} value={index} onChange={e => select(Number(e.target.value))} />
-        <button className={control+' shrink-0 disabled:opacity-40'} disabled={index===max} onClick={() => select(index+1)}>+100 m</button>
+        <button className={control+' shrink-0 disabled:opacity-40'} disabled={!index} onClick={() => move(index-1)}>−100 m</button>
+        <input className="h-11 min-w-0 flex-1 accent-[var(--accent)]" aria-label="Punto sul percorso" type="range" min={0} max={max} value={index} onChange={e => move(Number(e.target.value))} />
+        <button className={control+' shrink-0 disabled:opacity-40'} disabled={index===max} onClick={() => move(index+1)}>+100 m</button>
       </div>
       {stops.length > 0 && <label className="survey-place">
         <span className="survey-caption">Vai a un luogo</span>
         <select className={control} aria-label="Luogo lungo il percorso" value={landmark?.id ?? ''} onChange={e=>{
-          const selected=stops.find(s=>s.id===e.target.value); if(selected) select(selected.station,selected.id);
+          const selected=stops.find(s=>s.id===e.target.value); if(selected) move(selected.station,selected.id);
         }}>
           <option value="">Scegli lungo la strada…</option>
           {groups.map(group=>stops.some(s=>s.kind===group) && <optgroup key={group} label={group}>{stops.filter(s=>s.kind===group).map(s=><option key={s.id} value={s.id}>{s.name} · {(s.station/10).toLocaleString('it-IT')} km</option>)}</optgroup>)}
@@ -162,7 +167,26 @@ function Survey({data, ride, point, place, station, select}: {data: WorldData; r
       {stop?.note && <p className="text-sm">{stop.note} {stop.source && <a className="font-semibold text-accent underline" href={stop.source} target="_blank" rel="noreferrer">Vedi l’originale ↗</a>}</p>}
       <TerrenoPercorso terrain={terrain} pose={pose} edge={data.graph.edges[path.edgeAt(distance).edge]} />
       {stop?.id==='palazzo-roncalli' && <p className="text-xs text-muted">Facciata fotografata da <a href="https://commons.wikimedia.org/?curid=43474545" className="underline">Sailko</a>, ritagliata e raddrizzata · <a href="https://creativecommons.org/licenses/by/3.0/" className="underline">CC BY 3.0</a>.</p>}
-      <FotoSopralluogo data={data} path={path} distance={distance} selectStation={select} />
+      <FotoSopralluogo base={worldBase(data.graph.id)+'foto/'} path={path} toGeo={data.toGeo} distance={distance} selectStation={move}
+        lookAtPhoto={photo => {
+          const peak = photo.viewTarget ? data.features.landmarks.find(l => l.id === photo.viewTarget) : undefined;
+          const subject = photo.position === 'subject' ? photo : photo.subject;
+          const target = peak ?? (subject && data.proj.toLocal(subject));
+          const photographed = photo.position === 'camera';
+          const near = !photographed && target ? data.graph.nearest(target.x,target.z,65) : null;
+          const nearbyRoad = near && data.graph.pose(near.edge,near.s);
+          const at = nearbyRoad || (photographed && (photo.panorama || photo.subject) ? data.proj.toLocal(photo) : onRoute);
+          const eyeY = nearbyRoad?.y ?? (at === onRoute ? onRoute.y : field.height(at.x,at.z,4));
+          setViewpoint(at === onRoute ? null : {...at,y:eyeY,station:index,photographed});
+          const dir = target ? Math.atan2(target.x-at.x, target.z-at.z)
+            : Math.PI - (photo.bearing ?? 0)*Math.PI/180;
+          const elevation = target ? Math.atan2((peak?.y ?? field.height(target.x,target.z,4)+2)-eyeY-1.65, Math.hypot(target.x-at.x, target.z-at.z)) : 0;
+          orientation.current = {yaw:wrapYaw((onRoute.heading-dir)*180/Math.PI), pitch:(elevation-Math.atan(onRoute.grade))*180/Math.PI};
+          if (landmark) select(index);
+          setCamera('strada');
+          changed();
+          stage.current?.scrollIntoView({block:'center'});
+        }} />
       <details className="survey-sources"><summary>Fonti e attribuzioni</summary><p className="text-xs text-muted">Terreno da ortofoto © AGEA (voli 2023–2024) ed ESA WorldCover / Copernicus Sentinel-2 (2021), colori rielaborati · <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Targhe di Selvino da foto © Amadvance, ritaglio e prospettiva · <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a>. Strade e arredi © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>.</p></details>
     </div>
   </div>;

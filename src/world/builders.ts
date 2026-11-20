@@ -190,12 +190,12 @@ export function strip(
   liftA: number,
   b: number,
   liftB: number,
-  opts: { uvLength?: number; filter?: (p: TrackPoint, i: number) => boolean } = {},
+  opts: { surfaceMeters?: readonly [number, number]; filter?: (p: TrackPoint, i: number) => boolean } = {},
 ): THREE.BufferGeometry {
   const pos: number[] = [];
   const uv: number[] = [];
   const idx: number[] = [];
-  const uvLength = opts.uvLength ?? 8;
+  const meters = opts.surfaceMeters;
   let prevKept = false;
   for (let i = 0; i < points.length; i++) {
     const p = points[i];
@@ -208,7 +208,10 @@ export function strip(
     const lz = -Math.sin(p.heading);
     const base = pos.length / 3;
     pos.push(p.x + lx * a, p.y + liftA, p.z + lz * a, p.x + lx * b, p.y + liftB, p.z + lz * b);
-    uv.push(0, p.distance / uvLength, 1, p.distance / uvLength);
+    if (meters) {
+      uv.push((p.x + lx * a) / meters[0], (p.z + lz * a) / meters[1],
+        (p.x + lx * b) / meters[0], (p.z + lz * b) / meters[1]);
+    } else uv.push(0, p.distance / 8, 1, p.distance / 8);
     if (prevKept) {
       const pa = base - 2;
       const pb = base - 1;
@@ -226,23 +229,18 @@ export function strip(
   return geo;
 }
 
-/** L'asfalto si ripete ogni tanti metri lungo la strada: la trama copre tutta la larghezza. */
-export const ASPHALT_REPEAT_M = 20;
+// Metri di terreno per ripetizione. Otto cubetti da 12 cm occupano una mattonella di porfido.
+export const ROAD_TEXTURE_METERS = {
+  asphalt: [4.8, 9.6],
+  stone: [0.96, 0.96],
+  gravel: [3, 3],
+} as const;
 
-/**
- * Asfalto disegnato a canvas, tutta la carreggiata × 20 m: grana dell'inerte a due scale, sassolini
- * chiari, le quattro tracce delle ruote più lisce e scure (due corsie), la riga d'olio in mezzo alla
- * corsia, rattoppi più neri coi bordi netti, crepe e sigillature di catrame. Quasi grigio: il
- * colore vero lo dà il materiale (asciutto o bagnato).
- */
 export function asphaltTexture(): THREE.CanvasTexture {
-  // Graniglia fine, due fasce consumate e riparazioni discrete sulla stessa trama condivisa.
+  // Graniglia e rattoppi, con pixel quadrati da cinque centimetri su tutta la carreggiata.
   return pixelTexture(96, 192, g => {
     g.fillStyle = '#929895';
     g.fillRect(0, 0, 96, 192);
-    g.fillStyle = '#8c9290';
-    g.fillRect(16, 0, 9, 192);
-    g.fillRect(71, 0, 9, 192);
     let seed = 41;
     const rnd = () => (seed = seed * 16807 % 2147483647) / 2147483647;
     for (let i = 0; i < 1100; i++) {

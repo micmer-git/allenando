@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { GRADE_LEGEND, gradeColor, ProfileChart, RouteMap, useVerifiedRoute } from '@/components/RouteViz';
 import { Button, PageHeader } from '@/components/ui';
 import { BoardPanel } from '@/components/Board';
+import { FotoSalita } from '@/components/FotoSopralluogo';
 import { Chevron } from '@/components/Glyph';
 import { cap, formatAlt, formatAltText, formatKm, formatNumber } from '@/domain/format';
 import { projector } from '@/domain/geo';
@@ -102,6 +103,9 @@ export function ClimbDetailPage() {
             </div>
           </section>
 
+          <section aria-label="Fotografie della salita" className="mt-6">
+            <FotoSalita key={route.id} route={route} />
+          </section>
           <section className="mt-6 rounded-2xl border border-line bg-elev p-4" data-testid="climb-board">
             <BoardPanel id={`salita:${id}`} title="Classifica della salita" />
             {route.track.length > 6500 ? (

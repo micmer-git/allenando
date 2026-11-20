@@ -52,7 +52,7 @@ export default defineConfig({
         runtimeCaching: [
           {
             // Il catalogo e i luoghi si aggiornano anche sui telefoni che hanno già scaricato il mondo.
-            urlPattern: ({ url }) => /\/world\/[^/]+\/(manifest|rides|features)\.json$/.test(url.pathname) || url.pathname.endsWith('/world/bergamo/b/6_20.json'),
+            urlPattern: ({ url }) => /\/world\/[^/]+\/(manifest|rides|features|monumenti|foto\/atlante-v1)\.json$/.test(url.pathname) || url.pathname.endsWith('/world/bergamo/b/6_20.json'),
             handler: 'NetworkFirst',
             options: {
               cacheName: 'allenando-world-v1',
@@ -61,7 +61,7 @@ export default defineConfig({
             },
           },
           {
-            urlPattern: ({ url }) => url.pathname.includes('/world/'),
+            urlPattern: ({ url }) => url.pathname.includes('/world/') || url.pathname.includes('/routes/foto/'),
             handler: 'CacheFirst',
             options: {
               cacheName: 'allenando-world-v1',

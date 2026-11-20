@@ -168,20 +168,12 @@ export function Landmarks({ data, playerPose, names }: { data: WorldData; player
     const g = group.current;
     if (!g || built.current) return;
     built.current = true;
-    const pole = new THREE.CylinderGeometry(0.12, 0.12, 9, 6);
-    pole.translate(0, 4.5, 0);
-    const poleMat = new THREE.MeshLambertMaterial({ color: '#20242b' });
     for (const l of data.features.landmarks) {
       const tall = l.kind === 'cima' || l.kind === 'passo' || l.kind === 'fiume' || l.kind === 'paese' || l.kind === 'citta';
       const s = labelSprite(l.name, landmarkSub(l.kind), l.kind === 'cima' || l.kind === 'passo', l.x, l.y + (tall ? 30 : 16), l.z, { prio: 0, range: Math.min(tall ? 6000 : 1600, LABEL_GONE), ground: l.y });
       s.visible = false;
       names.add(s);
       g.add(s);
-      if (!tall) {
-        const m = new THREE.Mesh(pole, poleMat);
-        m.position.set(l.x, l.y - 1, l.z);
-        g.add(m);
-      }
     }
     return () => {
       g.traverse((o) => {
@@ -190,8 +182,6 @@ export function Landmarks({ data, playerPose, names }: { data: WorldData; player
           disposeSprite(o);
         }
       });
-      pole.dispose();
-      poleMat.dispose();
       g.clear();
       built.current = false;
     };

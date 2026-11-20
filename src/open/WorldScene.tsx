@@ -16,7 +16,7 @@ import { worldVergeSurface } from '@/world/vergePlacement';
 import { localShadow, makeSkyDome } from './luceStrada';
 import { OrthoWindow } from './ortofoto';
 import { landscapeUniforms, patchLandscape } from './paesaggio';
-import { chaseRider, followBearing, voxelTrees, type RideView } from '@/world/isometric';
+import { bendHeading, chaseRider, followBearing, voxelTrees, type RideView } from '@/world/isometric';
 import { patchRockShader } from './rockShader';
 import { Lifts } from './Lifts';
 import { Passi } from './Passi';
@@ -518,7 +518,8 @@ function settTexture(): THREE.CanvasTexture {
         const y = row * 16;
         const l = 52 + rnd() * 22;
         g.fillStyle = `hsl(${24 + rnd() * 14}, ${10 + rnd() * 10}%, ${l}%)`;
-        g.fillRect((x % 128) + 1, y + 1, 14, 14);
+          g.fillRect(x + 1, y + 1, 14, 14);
+          if (x + 15 > 128) g.fillRect(x + 1 - 128, y + 1, 14, 14);
       }
     }
   });
@@ -1984,7 +1985,8 @@ function WorldCam({ engine, path, field, playerPose, preview, surveyCamera, magn
     const covered = (e.flags & FLAG.tunnel) !== 0;
     const raised = (e.flags & FLAG.bridge) !== 0;
     const angles = preview?.();
-    const h = heading.current = (heading.current == null || preview) ? pose.heading : followBearing(heading.current, pose.heading, dt);
+    const goal = surveyCamera === 'chase' && !angles?.yaw ? bendHeading(path, pose, engine.speed) : pose.heading;
+    const h = heading.current = (heading.current == null || preview) ? goal : followBearing(heading.current, goal, dt);
     if (camera instanceof THREE.OrthographicCamera) {
       frameBuildings(camera, pose, h, size.height, look.current, field.height, occluders.list, angles?.yaw, angles?.pitch, covered, dt, magnification);
       return;

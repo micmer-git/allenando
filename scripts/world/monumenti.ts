@@ -18,7 +18,7 @@ import type { Archetipo, MonumentiFile, MonumentoFile, Params } from '../../src/
 import { italianize } from './nomi';
 
 type Tags = Record<string, string>;
-type Front = 'n' | 's' | 'e' | 'w' | 'strada';
+type Front = 'n' | 's' | 'e' | 'w' | 'se' | 'strada';
 
 export interface MonumentoSpec {
   /** «w», «r» o «n» + id OSM */
@@ -135,7 +135,7 @@ export const SPECS_SELLARONDA: MonumentoSpec[] = [
   // Passo Pordoi
   { ref: 'w199516793', osm: 'Hotel Savoia', name: 'Hotel Savoia, Passo Pordoi', kind: 'rifugio', h: 14, p: { stile: 'hotel-alpino', mat: 'bianco', trim: 'legno', piani: 4, balconi: true, tetto: 'falde' } },
   { ref: 'w199516854', osm: '', name: 'Cappella del Passo Pordoi', kind: 'chiesetta', h: 7, p: { stile: 'alpina', mat: 'bianco', tetto: 'scandole', campaniletto: true } },
-  { ref: 'n796380013', osm: 'Fausto Coppi', name: 'Monumento a Fausto Coppi', kind: 'statua', h: 3.2, p: { posa: 'busto', mat: 'bronzo', piedistallo: 1.8, piedistalloL: 1.2, figura: 1 } },
+  { ref: 'n796380013', osm: 'Fausto Coppi', name: 'Monumento a Fausto Coppi', kind: 'statua', front: 'se', h: 3.2, p: { posa: 'rilievo-coppi' } },
   { ref: 'n29916899', osm: 'Sass Pordoi', name: 'Funivia del Sass Pordoi, Passo Pordoi', kind: 'stazione', h: 10, edificio: true, lato: [22, 14], p: { tipo: 'funivia', mat: 'cemento' } },
   { ref: 'n29916900', osm: 'Sass Pordoi', name: 'Funivia del Sass Pordoi, Sass Pordoi', kind: 'stazione', h: 12, edificio: true, lato: [20, 14], p: { tipo: 'funivia', mat: 'cemento', terrazza: true } },
   { ref: 'w42257301', osm: 'Rifugio Maria', name: 'Rifugio Maria, Sass Pordoi', kind: 'rifugio', h: 10, p: { stile: 'rifugio', mat: 'pietra', tetto: 'scandole', piani: 3 } },
@@ -282,7 +282,7 @@ function simplify(r: P2[], tol: number, max = 40): P2[] {
   return out;
 }
 
-const DIRS: Record<Exclude<Front, 'strada'>, P2> = { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0] };
+const DIRS: Record<Exclude<Front, 'strada'>, P2> = { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0], se: [Math.SQRT1_2, Math.SQRT1_2] };
 const r1 = (v: number) => Math.round(v * 10) / 10;
 
 export interface MonumentiBuild {

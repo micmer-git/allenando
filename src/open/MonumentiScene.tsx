@@ -4,6 +4,8 @@ import * as THREE from 'three';
 import type { TrackPose } from '@/domain/track';
 import { LOD_NEAR, monumentoGeometry } from '@/world/monumenti/archetipi';
 import { loadMonumenti, type Monumento } from './monumenti';
+import { worldBase } from './world';
+import { mapCoppiRelief } from '@/world/monumenti/rilievoCoppi';
 
 /**
  * I monumenti nella scena del mondo aperto. Si costruiscono a richiesta, uno per giro: il
@@ -29,6 +31,21 @@ export function Monumenti({ playerPose, world }: { world: string; playerPose: ()
   const entries = useRef(new Map<string, Entry>());
   const clock = useRef(0);
   const material = useMemo(() => new THREE.MeshLambertMaterial({ vertexColors: true }), []);
+  const bronze = useRef<THREE.MeshLambertMaterial | null>(null);
+
+  useEffect(() => {
+    if (world !== 'sellaronda') return;
+    let active = true;
+    const texture = new THREE.TextureLoader().load(worldBase(world)+'foto/commons-81859236.webp', map => {
+      if (!active) return;
+      map.colorSpace = THREE.SRGBColorSpace;
+      map.magFilter = THREE.NearestFilter;
+      bronze.current = new THREE.MeshLambertMaterial({map});
+      const hi = entries.current.get('n796380013')?.hi;
+      if (hi) hi.material = [material,bronze.current];
+    });
+    return () => { active = false; texture.dispose(); bronze.current?.dispose(); bronze.current = null; };
+  }, [material,world]);
 
   useEffect(() => {
     let on = true;
@@ -90,7 +107,9 @@ export function Monumenti({ playerPose, world }: { world: string; playerPose: ()
         budget--;
       }
       if (d < LOD_NEAR + 120 && !e.hi && budget > 0) {
-        e.hi = new THREE.Mesh(monumentoGeometry(m, 'alta'), material);
+        const geo = monumentoGeometry(m, 'alta');
+        const relief = m.p.posa === 'rilievo-coppi';
+        e.hi = new THREE.Mesh(relief ? mapCoppiRelief(geo) : geo, relief && bronze.current ? [material,bronze.current] : material);
         e.hi.castShadow = e.hi.receiveShadow = true;
         e.obj.add(e.hi);
         budget--;

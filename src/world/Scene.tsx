@@ -1,15 +1,16 @@
 import { useRideCamera } from '@/world/rideCamera';
-import { chaseRider, followBearing, frameRider, voxelTrees, type RideView } from './isometric';
+import { bendHeading, chaseRider, followBearing, frameRider, voxelTrees, type RideView } from './isometric';
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { LoadedRoute } from '@/domain/routes';
+import { MuroPantani } from './MuroPantani';
 import type { Track, TrackPose } from '@/domain/track';
 import type { Quality } from '@/domain/types';
 import type { RideEngine } from '@/sim/engine';
 import { estimateDistance, type RemoteRider } from '@/multiplayer/room';
 import {
-  ASPHALT_REPEAT_M,
+  ROAD_TEXTURE_METERS,
   asphaltTexture,
   buildFarTerrain,
   centerDashes,
@@ -165,6 +166,7 @@ function World({
       <NearTerrain engine={engine} field={field} track={track} size={q.tile} spacing={q.spacing} tile={tile.current} />
       <Road track={track} />
       <ClimbRoadside track={track} field={field} />
+      {route.verified && route.id === 'mortirolo-mazzo' && <MuroPantani route={route} field={field} />}
       {arches && arches.length > 0 ? <Arches specs={arches} /> : null}
       <Props track={track} field={field} density={q.density} />
       <VergeDetail surface={verge} playerPose={() => engine.pose()} budget={quality === 'low' ? 100 : 320} />
@@ -314,7 +316,7 @@ function Road({ track }: { track: Track }) {
     const pts = track.points;
     const wide = hw >= 2.7;
     return {
-      asphalt: strip(pts, hw, 0, -hw, 0, { uvLength: ASPHALT_REPEAT_M }),
+      asphalt: strip(pts, hw, 0, -hw, 0, { surfaceMeters: ROAD_TEXTURE_METERS.asphalt }),
       edgeL: strip(pts, hw - 0.12, 0.012, hw - 0.24, 0.012),
       edgeR: strip(pts, -hw + 0.24, 0.012, -hw + 0.12, 0.012),
       dashes: wide ? centerDashes(track) : null,
@@ -678,7 +680,8 @@ function FollowCam({ engine, field, magnification }: { engine: RideEngine; field
   const heading = useRef<number | null>(null);
   const place = (dt: number) => {
     const pose = engine.pose();
-    heading.current = followBearing(heading.current ?? pose.heading, pose.heading, dt);
+    const goal = camera instanceof THREE.PerspectiveCamera ? bendHeading(engine.track, pose, engine.speed) : pose.heading;
+    heading.current = followBearing(heading.current ?? goal, goal, dt);
     if (camera instanceof THREE.OrthographicCamera) frameRider(camera, pose, heading.current, size.height, look.current, field.height, 0, 0, false, magnification);
     else if (camera instanceof THREE.PerspectiveCamera) chaseRider(camera, pose, heading.current, look.current, field.height);
   };

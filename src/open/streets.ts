@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { projector } from '@/domain/geo';
 import { GIMONDI, marconiIsland } from './arteStrada';
 import { gandaSurvey } from './rilievoGanda';
+import { grottaRoscianoGeometry } from '@/world/monumenti/grotta';
 import { drawGandaBoundaries, nearGandaBoundary } from './confiniGanda';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { hash2 } from '@/world/builders';
@@ -178,7 +179,7 @@ const POI_SETBACK: Partial<Record<PoiKind, number>> = {
 /** I luoghi che si vedono dalla strada solo davanti alla porta: a quanti metri dal ciglio. */
 const POI_FRONT: Partial<Record<PoiKind, number>> = { bar: 3.4, bici: 2.6 };
 
-const poiGeoCache = new Map<PoiKind, THREE.BufferGeometry | null>();
+const poiGeoCache = new Map<string, THREE.BufferGeometry | null>();
 const plateCache = new Map<string, THREE.BufferGeometry>();
 const m4 = new THREE.Matrix4();
 const q4 = new THREE.Quaternion();
@@ -752,10 +753,12 @@ export function* streetJob(graph: WorldGraph, field: WorldField, features: World
   // --- i luoghi da passare ---
   for (const poi of features.pois) {
     if (!own(poi.x, poi.z) || poi.building) continue;
-    let geo = poiGeoCache.get(poi.kind);
+    const rosciano = poi.id === 'n6627743214';
+    const key = rosciano ? poi.id : poi.kind;
+    let geo = poiGeoCache.get(key);
     if (geo === undefined) {
-      geo = poiGeometry(poi.kind);
-      poiGeoCache.set(poi.kind, geo);
+      geo = rosciano ? grottaRoscianoGeometry() : poiGeometry(poi.kind);
+      poiGeoCache.set(key, geo);
     }
     const e = graph.edges[poi.edge];
     if (!e) continue;

@@ -1047,6 +1047,36 @@ function castello(c: Ctx): void {
 
 function statua(c: Ctx): void {
   const { m, p, hi, ring } = c;
+  if (p.posa === 'rilievo-coppi') {
+    const patina = PAL.bronzoVerde;
+    m.box(-1.55, -c.drop, -0.52, 1.55, 0.95, 0.52, PAL.travertino);
+    m.panel(-0.45,0.33,0.45,0.78,0.52,PAL.marmo,0.025);
+    // Lastra di bronzo con il profilo delle Dolomiti e la figura di Coppi vista di fronte.
+    const crest: V2[] = [[-1.04,2.32],[-0.90,2.9],[-0.35,3.08],[0.12,3.23],[0.32,3.1],[0.60,3.2],[1.04,2.42]];
+    for (let i=1; i<crest.length; i++) {
+      const [a,h] = crest[i-1], [b,k] = crest[i];
+      for (const z of [-0.12,0.12]) m.quad([a,0.95,z],[b,0.95,z],[b,k,z],[a,h,z],patina,[0,1.5,0]);
+      m.quad([a,h,-0.12],[a,h,0.12],[b,k,0.12],[b,k,-0.12],tone(patina,1.12),[a,1,0]);
+    }
+    for (const [x,h] of [crest[0],crest[crest.length-1]])
+      m.quad([x,0.95,-0.12],[x,h,-0.12],[x,h,0.12],[x,0.95,0.12],patina,[0,1.5,0]);
+    const raised = tone(patina,0.81);
+    m.ball(-0.16,2.29,0.21,0.12,raised);
+    m.beam([-0.2,2.16,0.20],[0.07,1.94,0.28],0.23,raised);
+    for (const side of [-1,1]) {
+      m.beam([-0.15 + side*0.09,2.11,0.23],[-0.20 + side*0.20,1.82,0.36],0.075,raised);
+      m.beam([0.04 + side*0.09,1.95,0.26],[-0.08+side*0.15,1.42 + side*0.10,0.27],0.11,raised);
+    }
+    m.beam([-0.43,1.83,0.37],[0.05,1.83,0.37],0.04,raised);
+    m.beam([-0.18,1.14,0.34],[-0.18,1.78,0.39],0.09,raised);
+    if (hi) {
+      for (const x of [-0.78,-0.54,0.49,0.74,0.91]) {
+        m.ball(x,1.8+0.15*Math.cos(x*7),0.15,0.078,patina);
+        m.beam([x,1.65,0.17],[x*0.92,1.11,0.16],0.11,tone(patina,0.92));
+      }
+    }
+    return;
+  }
   const fig = mat(p, 'mat', 'bronzo');
   const stone = mat(p, 'pietra', 'pietra');
   const area = Math.abs(ringArea(ring));

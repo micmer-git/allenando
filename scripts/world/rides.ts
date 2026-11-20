@@ -457,7 +457,7 @@ const LM = {
   cappSella: { q: { monumento: 'w233233503' }, kind: 'cappella' as const, name: 'Cappella del Passo Sella', note: 'La cappella bianca col tetto a scandole, accanto al rifugio.', within: 900 },
   cappPordoi: { q: { monumento: 'w199516854' }, kind: 'cappella' as const, name: 'Cappella del Passo Pordoi', note: 'La cappella del passo, fra gli alberghi e il piazzale della funivia.', within: 500 },
   cappGardena: { q: { poi: /^San Mauriz$/ }, kind: 'cappella' as const, name: 'Cappella di San Maurizio', note: 'La cappella del Passo Gardena, dedicata a San Maurizio.', within: 500 },
-  coppi: { q: { monumento: 'n796380013' }, kind: 'luogo' as const, name: 'Monumento a Fausto Coppi', note: 'Il busto del Campionissimo sul passo: la cima Coppi del Giro d’Italia porta il suo nome.', within: 500 },
+  coppi: { q: { monumento: 'n796380013' }, kind: 'luogo' as const, name: 'Monumento a Fausto Coppi', note: 'Il bassorilievo in bronzo del Campionissimo sul passo: la cima Coppi del Giro d’Italia porta il suo nome.', within: 500 },
   funiviaPordoi: { q: { monumento: 'n29916899' }, kind: 'funivia' as const, name: 'Funivia del Sass Pordoi', note: 'In quattro minuti dal passo ai 2950 metri della terrazza delle Dolomiti.', within: 500 },
   chiesaCorvara: { q: { monumento: 'w42210743' }, kind: 'chiesa' as const, name: 'Chiesa del Sacro Cuore', note: 'La parrocchiale di Corvara, sulla strada del paese.', within: 500 },
   chiesaSelva: { q: { monumento: 'w255592975' }, kind: 'chiesa' as const, name: 'Chiesa di Selva', note: 'La chiesa di Maria Ausiliatrice, col campanile a punta nel centro del paese.', within: 500 },

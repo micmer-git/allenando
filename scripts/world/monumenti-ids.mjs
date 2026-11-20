@@ -8,7 +8,7 @@ const IDS = {
   bergamo: { nodes: [], ways: [], relations: [] },
   sellaronda: {
     nodes: [
-      796380013, // Fausto Coppi, il busto al Passo Pordoi
+      796380013, // Fausto Coppi, il bassorilievo al Passo Pordoi
       29916900, // Sass Pordoi, stazione a monte della funivia
       29916899, // Sass Pordoi, stazione a valle (al passo)
       1642475077, // Arabba, stazione della funivia di Porta Vescovo
