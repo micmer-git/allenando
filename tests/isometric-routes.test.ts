@@ -10,11 +10,12 @@ import { WorldPath } from '@/open/path';
 import { loadWorld, Terrain, type RideDef, type WorldData } from '@/open/world';
 import { WORLDS } from '@/open/world-table';
 import { createHeightField } from '@/world/heightfield';
-import { frameRider } from '@/world/isometric';
+import { chaseRider, frameRider } from '@/world/isometric';
+import { fitRideViewport } from '@/world/rideCamera';
 
 const publicDir = join(__dirname, '..', 'public');
 const fractions = [0, .25, .5, .75, 1];
-const viewports = [[1200, 540], [390, 360], [320, 360]];
+const viewports = [[1200, 540], [390, 844], [844, 390], [320, 360]];
 
 beforeAll(() => {
   // Gli stessi dati del gioco, dal disco: la prova non dipende dalla rete.
@@ -33,12 +34,26 @@ beforeAll(() => {
 });
 afterAll(() => vi.unstubAllGlobals());
 
+// Un quadrato parallelo allo schermo deve mantenere i lati uguali in pixel.
+function expectSquarePixels(camera: THREE.Camera, width: number, height: number) {
+  camera.updateMatrixWorld();
+  const lower = new THREE.Vector3(-0.5, -0.5, -8).applyMatrix4(camera.matrixWorld).project(camera);
+  const upper = new THREE.Vector3(0.5, 0.5, -8).applyMatrix4(camera.matrixWorld).project(camera);
+  expect((upper.x - lower.x) * width / ((upper.y - lower.y) * height)).toBeCloseTo(1, 6);
+}
+
 function checkFrame(track: Track, distance: number, ground: WorldField['height'], tunnel = false) {
   const pose = track.poseAt(distance);
   for (const [width, height] of viewports) {
-    const camera = new THREE.OrthographicCamera(-width / 2, width / 2, height / 2, -height / 2, .1, 240);
+    // Come nel gioco, la camera appena selezionata nasce quadrata anche se il canvas è già largo.
+    const chase = new THREE.PerspectiveCamera(55, 1, 0.12, 2000);
+    fitRideViewport(chase, width, height);
+    chaseRider(chase, pose, pose.heading, new THREE.Vector3(), ground, [], tunnel);
+    expectSquarePixels(chase, width, height);
+    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, .1, 240);
+    fitRideViewport(camera, width, height);
     frameRider(camera, pose, pose.heading, height, new THREE.Vector3(), ground, 0, 0, tunnel);
-    camera.updateMatrixWorld(true);
+    expectSquarePixels(camera, width, height);
     expect([...camera.position, ...camera.quaternion, camera.zoom].every(Number.isFinite)).toBe(true);
     // Ingombro del ciclista completo: ruote, casco e busto devono restare nel quadro.
     for (const x of [-.55, .55]) for (const y of [0, 1.8]) for (const z of [-1, 1]) {

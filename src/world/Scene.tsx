@@ -1,3 +1,4 @@
+import { useRideCamera } from '@/world/rideCamera';
 import { chaseRider, followBearing, frameRider, voxelTrees, type RideView } from './isometric';
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
@@ -672,7 +673,7 @@ function RemoteRiderView({ id, nick, color, track, source }: { id: string; nick:
 
 /** Camera alle spalle; non entra mai nel versante, nemmeno nei tornanti stretti. */
 function FollowCam({ engine, field, magnification }: { engine: RideEngine; field: HeightField; magnification: number }) {
-  const { camera, size } = useThree();
+  const { camera, size } = useRideCamera();
   const look = useRef(new THREE.Vector3());
   const heading = useRef<number | null>(null);
   const place = (dt: number) => {

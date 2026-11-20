@@ -1,3 +1,4 @@
+import { useRideCamera } from '@/world/rideCamera';
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
@@ -1971,7 +1972,7 @@ function TurnArrow({ nextTurn }: { nextTurn: WorldSceneProps['nextTurn'] }) {
 
 /** Camera alle spalle. Fuori resta sopra il terreno; in galleria resta sotto la volta. */
 function WorldCam({ engine, path, field, playerPose, preview, surveyCamera, magnification, occluders }: WorldSceneProps & { occluders: Occluders }) {
-  const { camera, size } = useThree();
+  const { camera, size } = useRideCamera();
   const look = useRef(new THREE.Vector3());
   const desired = useRef(new THREE.Vector3());
   const heading = useRef<number | null>(null);
