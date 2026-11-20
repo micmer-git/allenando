@@ -12,7 +12,7 @@ import { pickRoute } from '@/open/pick';
 import { chiuso } from '@/open/passaggi';
 import { savePlan } from '@/open/plan';
 import { EMPTY_PROGRESS, loadProgress, type WorldProgress } from '@/open/progress';
-import { GANDA_LINK, GANDA_NAME, roadStart, surveyFromPoint, type FreeStart } from '@/open/partenze';
+import { GANDA_LINK, GANDA_NAME, GANDA_PLAN, roadStart, surveyFromPoint, type FreeStart } from '@/open/partenze';
 import { startTowns, townPoint } from '@/open/starts';
 import { loadWorld, Terrain, type RideDef, type WorldData } from '@/open/world';
 import { rememberWorld, worldInfo } from '@/open/worlds';
@@ -319,7 +319,9 @@ export function DoveContenuto({ mondo, setWorld, strumento, setStrumento, filtro
         ) : null}
         {data && mostra('salite') && gruppi.salite.length ? (
           <Gruppo titolo="Salite">
-            {mondo.id === 'bergamo' && <li><Link to={GANDA_LINK} className="flex min-h-14 items-center border-b border-line font-semibold" data-testid="dove-ganda-salita">{GANDA_NAME}</Link></li>}
+            {mondo.id === 'bergamo' && !data.rides.some(r => r.id === GANDA_PLAN) && (
+              <li><Link to={GANDA_LINK} className="flex min-h-14 items-center border-b border-line font-semibold" data-testid="dove-ganda-salita">{GANDA_NAME}</Link></li>
+            )}
             {gruppi.salite.map((r) => (
               <RigaPercorso key={r.id} r={r} rec={mondo.progress.rides[r.id]?.bestSec} on={scelto === r.id} onClick={() => scegliPercorso(r)} />
             ))}

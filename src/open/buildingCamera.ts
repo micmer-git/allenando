@@ -36,12 +36,12 @@ export function buildingCamera() {
   const offset = new THREE.Vector3(), desired = new THREE.Vector3(), start = new THREE.Vector3();
   return (camera: THREE.OrthographicCamera, pose: TrackPose, heading: number, height: number,
     target: THREE.Vector3, ground: (x: number, z: number, stride: number) => number,
-    volumes: readonly Volume[], yaw = 0, pitch = 0, tunnel = false, dt = 1 / 60) => {
+    volumes: readonly Volume[], yaw = 0, pitch = 0, tunnel = false, dt = 1 / 60, magnification = 1) => {
     if (tunnel || Math.abs(yaw) > .001 || Math.abs(pitch) > .001) {
       previous = null;
       initialized = false;
       pending = -1; clearFor = 0;
-      frameRider(camera, pose, heading, height, target, ground, yaw, pitch, tunnel);
+      frameRider(camera, pose, heading, height, target, ground, yaw, pitch, tunnel, magnification);
       return;
     }
     const step = Number.isFinite(dt) ? THREE.MathUtils.clamp(dt, 0, .1) : 0;
@@ -53,7 +53,7 @@ export function buildingCamera() {
       if (placed === index) return;
       placed = index;
       const [viewYaw, viewPitch] = VIEWS[Math.min(index, VIEWS.length - 1)];
-      frameRider(camera, pose, heading, height, target, ground, viewYaw, viewPitch);
+      frameRider(camera, pose, heading, height, target, ground, viewYaw, viewPitch, false, magnification);
       if (index === VIEWS.length) {
         // Vicoli curvi e cortili stretti: vista quasi verticale, senza tagliare le case.
         let lift = Math.max(24, camera.position.y - target.y);

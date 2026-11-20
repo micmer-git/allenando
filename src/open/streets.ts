@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { projector } from '@/domain/geo';
+import { GIMONDI, marconiIsland } from './arteStrada';
 import { gandaSurvey } from './rilievoGanda';
 import { drawGandaBoundaries, nearGandaBoundary } from './confiniGanda';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -279,6 +281,7 @@ export function wallAlong(m: Mesh, pts: WallPt[]): void {
 
 export function* streetJob(graph: WorldGraph, field: WorldField, features: WorldFeatures, spec: TileSpec): Generator<void, StreetDetail, void> {
   const survey = gandaSurvey(graph);
+  const memorial = graph.id === 'bergamo' ? projector(graph.origin).toLocal(GIMONDI) : null;
   const mapped = (x: number, z: number) => survey && nearGandaBoundary(survey, x, z);
   const ix = streetIndex(graph, features);
   const x0 = spec.x0;
@@ -359,7 +362,9 @@ export function* streetJob(graph: WorldGraph, field: WorldField, features: World
           if (!near(p.x, p.z, 50)) continue;
           const lx = Math.cos(p.heading) * side;
           const lz = -Math.sin(p.heading) * side;
-          if (mapped(p.x + lx * (e.hw + 0.85), p.z + lz * (e.hw + 0.85))) continue;
+          const postX = p.x + lx * (e.hw + 0.85), postZ = p.z + lz * (e.hw + 0.85);
+          // Nella foto del 2026 la piazzola è accessibile dalla strada e la staccionata sta dietro l'arco.
+          if (mapped(postX,postZ) || (memorial && Math.hypot(postX-memorial.x,postZ-memorial.z)<7)) continue;
           const px = p.x + lx * (e.hw + 6);
           const pz = p.z + lz * (e.hw + 6);
           const other = field.roadAt(px, pz, 6);
@@ -640,6 +645,7 @@ export function* streetJob(graph: WorldGraph, field: WorldField, features: World
   // --- aiuole delle rotatorie ---
   // il bordo dell'aiuola è il bordo interno dell'asfalto, senza fessura: prima stava 30 cm più in
   // dentro e lì si vedeva la banchina grigia (o il terreno, più in basso)
+  const obelisk = marconiIsland(graph);
   for (const r of ringsIn(graph, x0, z0, x1, z1)) {
     const rLift = ringLift(r);
     const inner = r.smooth
@@ -713,15 +719,16 @@ export function* streetJob(graph: WorldGraph, field: WorldField, features: World
       const d2 = onRing(q, rq - 0.25, q.y + top);
       triUp(island, c, d, c2, undefined, CURB);
       triUp(island, d, d2, c2, undefined, CURB);
-      const bedR = meanR > 4 ? 1.1 : 0.5;
+      const bedR = r === obelisk ? 0.15 : meanR > 4 ? 1.1 : 0.5;
       const c3 = onRing(p, Math.max(0.3, rp - 0.25 - bedR), p.y + top + 0.05);
       const d3 = onRing(q, Math.max(0.3, rq - 0.25 - bedR), q.y + top + 0.05);
       triUp(island, c2, d2, c3, undefined, BED);
       triUp(island, d2, d3, c3, undefined, BED);
-      triUp(island, c3, d3, { x: r.cx, y: mound, z: r.cz }, undefined, i % 2 ? GRASS : GRASS2);
+      triUp(island, c3, d3, { x: r.cx, y: mound, z: r.cz }, undefined, r === obelisk || i % 2 ? GRASS : GRASS2);
     }
     // cespugli e fiori lungo l'aiuola, ogni 2,2 m circa, seguendo il bordo vero (le rotatorie
     // allungate non sono cerchi)
+    if (r === obelisk) continue;
     if (meanR > 3) {
       let run = 0;
       for (let i = 0; i < n; i++) {

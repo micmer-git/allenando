@@ -163,6 +163,7 @@ export interface BuildingColors {
   pitch?: number;
   /** sporto della gronda, metri (0,45 di norma; le case ladine 1,1) */
   eaves?: number;
+  balconyDepth?: number;
   /** tetto a falde anche sugli edifici grandi (gli hotel tirolesi fino a 2200 m²) */
   wide?: boolean;
   /**
@@ -188,7 +189,10 @@ export function addBuilding(walls: Tris, roofs: Tris, b: Building, ground: numbe
   const m = r.length / 2;
   const area = Math.abs(ringArea(r));
   const obb = minRect(r);
-  const shape = b.upperRing ? 'flat' : roofShape(b, obb, area, c.wide, !!c.alpine);
+  const proposed = b.upperRing ? 'flat' : roofShape(b, obb, area, c.wide, !!c.alpine);
+  // Un rettangolo orientato su coordinate Float32 può differire dalla pianta di pochi millimetri.
+  const cut = proposed !== 'flat' && obb.area - area > 0.012 * (obb.hl + obb.hs);
+  const shape = cut ? 'gable' : proposed;
   const bottom = ground + b.minH;
   // dove comincia la facciata: sui portici (minH) resta sospesa, altrimenti scende verso lo zoccolo
   const face = b.minH > 0 || plinth >= bottom - 0.05 ? bottom : Math.max(plinth + 1, bottom - FLOOR);
@@ -223,8 +227,8 @@ export function addBuilding(walls: Tris, roofs: Tris, b: Building, ground: numbe
     // sopra il piano terra (anche l'ultimo, sotto la gronda)
     if (c.alpine?.balconies && !b.architecture?.kind && !blind && len >= BALCONY.minLen) {
       const ol = Math.hypot(ox, oz);
-      const nx = (ox / ol) * BALCONY.depth;
-      const nz = (oz / ol) * BALCONY.depth;
+      const nx = (ox / ol) * (c.balconyDepth ?? BALCONY.depth);
+      const nz = (oz / ol) * (c.balconyDepth ?? BALCONY.depth);
       const ta = BALCONY.inset;
       const tb = 1 - BALCONY.inset;
       const p0x = ax + (bx - ax) * ta;
@@ -262,7 +266,8 @@ export function addBuilding(walls: Tris, roofs: Tris, b: Building, ground: numbe
     return { top: wallTop, shape };
   }
   const ridge = wallTop + rise;
-  pitchedRoof(walls, roofs, obb, wallTop, ridge, shape, c);
+  if (cut) footprintRoof(walls, roofs, r, obb, wallTop, ridge, c);
+  else pitchedRoof(walls, roofs, obb, wallTop, ridge, shape, c);
   return { top: ridge, shape };
 }
 
@@ -275,6 +280,47 @@ function flatRoof(t: Tris, r: Float32Array, y: number, col: Rgb, normalY = 1): v
     const c = idx[i + 2];
     if (a >= m || b >= m || c >= m) continue;
     t.facing(v(r[a * 2], y, r[a * 2 + 1]), v(r[b * 2], y, r[b * 2 + 1]), v(r[c * 2], y, r[c * 2 + 1]), [0, normalY, 0], col);
+  }
+}
+
+/** Taglia ogni triangolo della pianta lungo il colmo. Anche una rientranza concava
+ * resta aperta, e i timpani seguono il filo della parete fino al colmo. */
+function footprintRoof(walls: Tris, roofs: Tris, ring: Float32Array, o: Obb, eave: number, ridge: number, c: BuildingColors) {
+  const vertex = (x: number, z: number) => {
+    const along = (x-o.cx)*o.ax + (z-o.cz)*o.az;
+    const across = (z-o.cz)*o.ax - (x-o.cx)*o.az;
+    return { x, z, u: along, v: across, y: ridge - (ridge-eave)*Math.abs(across)/o.hs };
+  };
+  const corners: V[] = [];
+  for (let i=0; i<ring.length; i+=2) corners.push(vertex(ring[i],ring[i+1]));
+  function crest(a: V, b: V): V {
+    const t = a.v/(a.v-b.v);
+    return { x:a.x+(b.x-a.x)*t, z:a.z+(b.z-a.z)*t, u:a.u+(b.u-a.u)*t, v:0, y:ridge };
+  }
+  const indices = earcut(ring);
+  for (let i=0; i<indices.length; i+=3) {
+    const tri = indices.slice(i,i+3).map(j => corners[j]);
+    for (const sign of [-1,1]) {
+      const face: V[] = [];
+      for (let j=0; j<3; j++) {
+        const a=tri[j], b=tri[(j+1)%3];
+        if (a.v*sign >= 0) face.push(a);
+        if (a.v*b.v < 0) face.push(crest(a,b));
+      }
+      for (let k=2; k<face.length; k++) roofs.facing(face[0],face[k-1],face[k],[0,1,0],c.tiles);
+    }
+  }
+  const winding = Math.sign(ringArea(ring));
+  for (let i=0; i<corners.length; i++) {
+    const a=corners[i], b=corners[(i+1)%corners.length];
+    const edge = a.v*b.v < 0 ? [a,crest(a,b),b] : [a,b];
+    const out: [number,number,number] = [(b.z-a.z)*winding,0,(a.x-b.x)*winding];
+    for (let j=1; j<edge.length; j++) {
+      const p=edge[j-1], q=edge[j];
+      const P=v(p.x,eave,p.z), Q=v(q.x,eave,q.z);
+      walls.facing(P,Q,v(q.x,q.y,q.z),out,c.wall);
+      walls.facing(P,v(q.x,q.y,q.z),v(p.x,p.y,p.z),out,c.wall);
+    }
   }
 }
 

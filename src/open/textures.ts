@@ -1,7 +1,6 @@
 import { pixelTexture } from '@/world/isometric';
 import { paintFacade } from './facadePaint';
 import * as THREE from 'three';
-import { canvasTex } from '@/world/Scene';
 
 /*
  * Trame disegnate a canvas per il mondo aperto. Sono quasi bianche: il colore vero (intonaco,
@@ -17,7 +16,10 @@ const rnd = () => {
 /** Intonaco, finestre e materiali di finitura condividono una sola trama per mondo. */
 export function facadeTexture(style: 'lombardo' | 'ladino' = 'lombardo'): THREE.CanvasTexture {
   seed = style === 'ladino' ? 13 : 11;
-  const t = canvasTex(1024, 512, (g) => paintFacade(g, style === 'ladino', rnd));
+  const t = pixelTexture(512, 256, g => {
+    g.scale(0.5, 0.5);
+    paintFacade(g, style === 'ladino', rnd);
+  });
   t.wrapS = THREE.RepeatWrapping;
   t.wrapT = THREE.RepeatWrapping;
   t.magFilter = THREE.NearestFilter;
@@ -68,8 +70,8 @@ export function groundDetailTexture(): THREE.CanvasTexture {
     for (let i = 0; i < 420; i++) {
       const x = Math.floor(rnd() * 64), y = Math.floor(rnd() * 64);
       const w = 1 + Math.floor(rnd() * 3);
-      g.fillStyle = ['#e4e9dd','#edf0e5','#fbfcf2','#dce3d7'][i % 4];
-      g.fillRect(x, y, w, 1);
+      g.fillStyle = ['#c9d2bf','#e4e9d9','#fbfcf2','#b8c3b0'][i % 4];
+      g.fillRect(x, y, w, i % 3 === 0 ? 2 : 1);
       if (i % 5 === 0) {
         g.fillStyle = '#f9fbf3';
         g.fillRect(x, (y + 1) % 64, 1, 1);

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { buildingCamera, riderBlocked } from '@/open/buildingCamera';
 import { boxVolume } from '@/open/labels';
-import { frameRider } from '@/world/isometric';
+import { chaseRider, frameRider, ISO_ZOOM } from '@/world/isometric';
 import type { TrackPose } from '@/domain/track';
 
 const pose: TrackPose = { x: 0, y: 0, z: 0, heading: 0, grade: 0, altitude: 0, distance: 0 };
@@ -120,5 +120,32 @@ describe('camera isometrica fra gli edifici', () => {
     expect(camera.position.toArray()).toEqual(expected.position.toArray());
     expect(camera.quaternion.toArray()).toEqual(expected.quaternion.toArray());
     expect(camera.zoom).toBe(expected.zoom);
+  });
+});
+
+describe('comandi della camera in pedalata', () => {
+  it('mantiene la stessa scala relativa dello zoom sia fuori che in galleria', () => {
+    const camera = new THREE.OrthographicCamera();
+    const target = new THREE.Vector3();
+    for (const tunnel of [false, true]) {
+      frameRider(camera, pose, 0, 600, target, ground, 0, 0, tunnel);
+      const base = camera.zoom;
+      for (const zoom of ISO_ZOOM) {
+        frameRider(camera, pose, 0, 600, target, ground, 0, 0, tunnel, zoom);
+        expect(camera.zoom / base).toBeCloseTo(zoom);
+      }
+    }
+  });
+
+  it('guarda avanti e accorcia la distanza dal ciclista prima di un muro', () => {
+    const camera = new THREE.PerspectiveCamera(55, 1.6, 0.1, 900);
+    const target = new THREE.Vector3();
+    chaseRider(camera, pose, 0, target, ground);
+    expect(camera.position.z).toBeLessThan(-6);
+    expect(target.z).toBeGreaterThan(3);
+    const barrier = boxVolume(0, -4, 8, 2, 0, -1, 8);
+    chaseRider(camera, pose, 0, target, ground, [barrier]);
+    expect(camera.position.z).toBeGreaterThan(barrier.maxZ);
+    expect(camera.position.z).toBeLessThan(0);
   });
 });

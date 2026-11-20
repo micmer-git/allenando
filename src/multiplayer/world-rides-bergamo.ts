@@ -69,5 +69,9 @@ export const WORLD_RIDES: Record<string, { timedM: number; minSec: number }> = {
   "due-valli": {
     "timedM": 87837,
     "minSec": 5880
+  },
+  "ganda-da-gazzaniga": {
+    "timedM": 9582,
+    "minSec": 1140
   }
 };

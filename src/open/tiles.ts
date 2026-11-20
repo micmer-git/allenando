@@ -546,7 +546,10 @@ export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec):
     const nearEnd = (p: P) => p.d > Math.max(10, jA) && p.d < e.length - Math.max(10, jB);
     /** il punto a `off` di lato (sinistra positiva) non cade sulla carreggiata di un'altra strada */
     // (le strade si sovrappongono vicino ai nodi: a metà arco non si chiede, costa)
-    const offOthers = (p: P, off: number) => (p.d > 60 && p.d < e.length - 60) || graph.asphaltMargin(p.x + Math.cos(p.h) * off, p.z - Math.sin(p.h) * off, p.y, 1.5, id) < -0.05;
+    const offOthers = (p: P, off: number, buffer = 0.05) => {
+      const offset = off * (p.w ?? 1);
+      return graph.asphaltMargin(p.x + Math.cos(p.h)*offset, p.z - Math.sin(p.h)*offset, p.y, 2.5, id) < -buffer;
+    };
     // ai rami delle rotatorie i cordoli ripartono dopo il raccordo (o dopo l'isola spartitraffico)
     // e dentro la galleria artificiale davanti a un imbocco (tunnels.ts) niente marciapiedi
     const ringA = ringBranch(graph, id, true)?.clear ?? 0;
@@ -570,7 +573,7 @@ export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec):
     // e mai sopra un'altra strada: due sensi unici che si uniscono, o una via che corre accanto,
     // si prendevano il marciapiede dell'altra in mezzo alla carreggiata
     const walkSide = (side: number) => (p: P) =>
-      p.d > walkA && p.d < e.length - walkB && widthAt(p, side) > 0 && ((p.d > 60 && p.d < e.length - 60) || graph.asphaltMargin(p.x + Math.cos(p.h) * side * (hw + 1), p.z - Math.sin(p.h) * side * (hw + 1), p.y, 2.5, id) < -0.4);
+      p.d > walkA && p.d < e.length - walkB && widthAt(p, side) > 0 && offOthers(p, side*(hw + widthAt(p,side)/2), widthAt(p,side)/2 + 0.2);
     const lineW = e.cls <= CLS.primary ? 0.15 : 0.12;
     for (const raw of runs) {
       if (raw.length < 2) continue;
@@ -611,11 +614,18 @@ export function* roadsJob(graph: WorldGraph, field: WorldField, spec: TileSpec):
           return sections ? trimmed.map((value, i) => surveyedWalk(sections, pts[i].d, side) === undefined ? value : on[i]) : trimmed;
         }) : null;
         const onWalk = sides ? sides.map((on) => new Set(pts.filter((_, i) => on[i]))) : null;
-        const bank = (i: number) => (p: P) => past(p) && (!onWalk || !onWalk[i].has(p));
-        strip(verge, pts, hw + 0.8, lift - 0.1, hw, lift - 0.02, 8, bank(0));
-        strip(verge, pts, -hw, lift - 0.02, -hw - 0.8, lift - 0.1, 8, bank(1));
-        strip(verge, pts, hw + 2, -3.4, hw + 0.8, lift - 0.1, 8, bank(0));
-        strip(verge, pts, -hw - 0.8, lift - 0.1, -hw - 2, -3.4, 8, bank(1));
+        // La banchina può emergere attraverso il ramo adiacente quando questo scende.
+        const bank = (i: number) => {
+          const side = i === 0 ? 1 : -1;
+          const clear = new Set(pts.filter(p => past(p) && (!onWalk || !onWalk[i].has(p))
+            && offOthers(p, side*(hw+1), 1.1)));
+          return (p: P) => clear.has(p);
+        };
+        const leftBank = bank(0), rightBank = bank(1);
+        strip(verge, pts, hw + 0.8, lift - 0.1, hw, lift - 0.02, 8, leftBank);
+        strip(verge, pts, -hw, lift - 0.02, -hw - 0.8, lift - 0.1, 8, rightBank);
+        strip(verge, pts, hw + 2, -3.4, hw + 0.8, lift - 0.1, 8, leftBank);
+        strip(verge, pts, -hw - 0.8, lift - 0.1, -hw - 2, -3.4, 8, rightBank);
         if (sides) {
           // cordolo alto 14 cm, marciapiede di 1,6 m in masselli, e il fianco che scende nel terreno
           const top = lift + 0.14;
@@ -1007,6 +1017,15 @@ export function* buildingsJob(field: WorldField, list: Building[], spec: TileSpe
     const wood = ladino && civil ? tmpW.set(LADIN_WOOD[Math.floor(hash2(cz * 1.3, cx) * LADIN_WOOD.length) % LADIN_WOOD.length]) : null;
     // i tetti in coppi sono quasi tutti rossi: il grigio dei dati OSM resta ai tetti piani
     const pitchedRoof = b.architecture?.roofColour || b.sampledRoof !== undefined || (ladino && civil) ? roof : b.roof === 0 || b.kind === BUILDING_KIND.house ? roof : tmpC.set(ROOFS[0][Math.floor(seed * 4) % 4]);
+    // Negli abitati la gronda (anche in diagonale) e il balcone rientrano nella banchina di 80 cm.
+    let nearRoad = false;
+    if (ladino && civil && field.terrain) {
+      let radius = 0;
+      for (let i = 0; i < r.length; i += 2) radius = Math.max(radius, Math.hypot(r[i] - cx, r[i + 1] - cz));
+      const graph = field.terrain.graph;
+      const hit = graph.nearestBorder(cx, cz, radius + 35);
+      nearRoad = !!hit && hit.d - graph.edges[hit.edge].hw <= radius + 2;
+    }
     const { top, shape } = addBuilding(
       walls,
       roofs,
@@ -1021,7 +1040,8 @@ export function* buildingsJob(field: WorldField, list: Building[], spec: TileSpe
         blind: stone || b.kind === BUILDING_KIND.industrial,
         ribbon: b.kind === BUILDING_KIND.industrial ? RIBBON : undefined,
         pitch: ladino && civil ? LADIN_PITCH : undefined,
-        eaves: ladino && civil ? 1.3 : undefined,
+        eaves: ladino && civil ? (nearRoad ? 0.4 : 1.3) : undefined,
+        balconyDepth: nearRoad ? 0.5 : undefined,
         wide: ladino && civil ? true : undefined,
         // i balconi in rilievo solo nelle mattonelle vicine: più in là sono meno di un pixel
         alpine: wood ? { wood, balconies: spec.ring <= 2 } : undefined,

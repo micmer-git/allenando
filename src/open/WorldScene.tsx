@@ -15,7 +15,7 @@ import { worldVergeSurface } from '@/world/vergePlacement';
 import { localShadow, makeSkyDome } from './luceStrada';
 import { OrthoWindow } from './ortofoto';
 import { landscapeUniforms, patchLandscape } from './paesaggio';
-import { followBearing, voxelTrees } from '@/world/isometric';
+import { chaseRider, followBearing, voxelTrees, type RideView } from '@/world/isometric';
 import { patchRockShader } from './rockShader';
 import { Lifts } from './Lifts';
 import { Passi } from './Passi';
@@ -39,6 +39,7 @@ import type { ArchSpec } from '@/game/arches';
 import { Arches } from '@/world/Arches';
 import { aggregatoTexture, cemento } from './materialiBordo';
 import { fitRoncalliRoof, addRoncalliFacade } from './palazzoRoncalli';
+import { MonumentiGanda } from './MonumentiGanda';
 import { CartelliSelvino } from './CartelliSelvino';
 import { campioni } from './campioni';
 import { HairpinSigns, hairpinSigns } from '@/world/HairpinSigns';
@@ -112,7 +113,8 @@ export interface RemoteWorldRider {
 export interface WorldSceneProps {
   engine: Pick<RideEngine, 'distance' | 'speed' | 'power' | 'cadence'>;
   preview?: () => SurveyAngles;
-  surveyCamera?: 'iso' | 'strada';
+  surveyCamera?: RideView | 'strada';
+  magnification?: number;
   data: WorldData;
   path: WorldPath;
   field: WorldField;
@@ -163,8 +165,9 @@ export interface ExtraWorldRider {
 export function WorldScene(props: WorldSceneProps) {
   const overhead = props.surveyCamera !== 'strada' && !(globalThis as { __orobiaCam?: number[] }).__orobiaCam;
   const q = qualityFor(props.quality, lookFor(props.data.graph.id), overhead);
-  const camera = useMemo(() => overhead ? new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 240)
-    : new THREE.PerspectiveCamera(55, 1, 0.3, q.far + 2000), [overhead, q.far]);
+  const ortho = overhead && props.surveyCamera !== 'chase';
+  const camera = useMemo(() => ortho ? new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 240)
+    : new THREE.PerspectiveCamera(55, 1, 0.12, q.far + 2000), [ortho, q.far]);
   // il mondo leggero (senza rete): il terreno non chiede le mattonelle del DEM
   props.terrain.light = !!props.data.leggero;
   // le mattonelle contate da NearTiles: le leggono il «pronto», l'avanzamento e le misure (?stats=1)
@@ -308,6 +311,7 @@ function WorldContent(props: WorldSceneProps & { counts: TileCounts; status: Loa
       <Lakes data={data} />
       <Walls data={data} field={field} />
       <Lifts data={data} terrain={terrain} playerPose={props.playerPose} />
+      {data.graph.id === 'bergamo' && <MonumentiGanda data={data} field={field} />}
       <Passi data={data} field={field} playerPose={props.playerPose} />
       {data.graph.id === 'bergamo' && <CartelliSelvino data={data} field={field} playerPose={props.playerPose} />}
       <Monumenti world={data.graph.id} playerPose={props.playerPose} />
@@ -1966,7 +1970,7 @@ function TurnArrow({ nextTurn }: { nextTurn: WorldSceneProps['nextTurn'] }) {
 // ---------- camera ----------
 
 /** Camera alle spalle. Fuori resta sopra il terreno; in galleria resta sotto la volta. */
-function WorldCam({ engine, path, field, playerPose, preview, occluders }: WorldSceneProps & { occluders: Occluders }) {
+function WorldCam({ engine, path, field, playerPose, preview, surveyCamera, magnification, occluders }: WorldSceneProps & { occluders: Occluders }) {
   const { camera, size } = useThree();
   const look = useRef(new THREE.Vector3());
   const desired = useRef(new THREE.Vector3());
@@ -1981,7 +1985,11 @@ function WorldCam({ engine, path, field, playerPose, preview, occluders }: World
     const angles = preview?.();
     const h = heading.current = (heading.current == null || preview) ? pose.heading : followBearing(heading.current, pose.heading, dt);
     if (camera instanceof THREE.OrthographicCamera) {
-      frameBuildings(camera, pose, h, size.height, look.current, field.height, occluders.list, angles?.yaw, angles?.pitch, covered, dt);
+      frameBuildings(camera, pose, h, size.height, look.current, field.height, occluders.list, angles?.yaw, angles?.pitch, covered, dt, magnification);
+      return;
+    }
+    if (surveyCamera === 'chase' && camera instanceof THREE.PerspectiveCamera) {
+      chaseRider(camera, pose, h, look.current, field.height, occluders.list, covered, raised, angles?.yaw, angles?.pitch);
       return;
     }
     if (angles) {

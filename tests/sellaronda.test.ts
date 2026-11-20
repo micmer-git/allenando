@@ -155,8 +155,8 @@ describe('S1.3 · il mondo Sellaronda', () => {
 });
 
 describe('S1.4 · i percorsi del Sellaronda', () => {
-  it('nove percorsi, con gli id del piano', () => {
-    expect(rides.map((r) => r.id)).toEqual(['sellaronda', 'sellaronda-orario', 'sella-canazei', 'pordoi-arabba', 'pordoi-canazei', 'gardena-corvara', 'gardena-selva', 'campolongo-corvara', 'fedaia-canazei']);
+  it('il catalogo comprende anche i versanti da Selva e da Arabba', () => {
+    expect(rides.map((r) => r.id)).toEqual(['sellaronda', 'sellaronda-orario', 'sella-canazei', 'pordoi-arabba', 'pordoi-canazei', 'gardena-corvara', 'gardena-selva', 'campolongo-corvara', 'fedaia-canazei', 'sella-selva', 'campolongo-arabba']);
   });
 
   it('il giro antiorario da Selva: 60–66 km (BRouter 63,7), D+ 1900–2300 (BRouter 2140), i quattro passi in ordine', () => {

@@ -245,13 +245,18 @@ textarea {
   position: relative; isolation: isolate; min-width: 0; height: clamp(17rem, 43dvh, 34rem);
   background-color: #293f44; border: 1px solid var(--line); border-radius: 6px; overflow: hidden;
 }
-.survey-cameras, .survey-recenter, .survey-road, .survey-loading, .survey-locator {
+.survey-recenter, .survey-road, .survey-loading, .survey-locator {
   position: absolute; color: #f3f5e7; background-color: #14252bf2;
   border: 1px solid #80978a80; border-radius: 3px; box-shadow: 2px 2px 0 #0c1a1f88;
 }
-.survey-cameras { top: .7rem; left: .7rem; display: flex; padding: 2px; }
-.survey-cameras button { min-height: 44px; padding-inline: .85rem; font-size: .82rem; font-weight: 600; }
-.survey-cameras button[aria-pressed=true] { color: #122320; background: #b9ebbf; border-radius: 1px; }
+.camera-controls { width: fit-content; max-width: 100%; background: #14252bf5; color: #f3f5e7; border: 1px solid #80978a80; border-radius: 4px; overflow: hidden; }
+.camera-controls button { min-width: 44px; min-height: 44px; padding-inline: .75rem; font-size: .82rem; font-weight: 600; }
+.camera-controls button[aria-pressed=true] { color: #122320; background: #b9ebbf; }
+.camera-controls button:disabled { opacity: .4; }
+.ride-view .camera-controls { width: max-content; }
+.survey-instruments .camera-controls { grid-column: 1 / -1; width: 100%; }
+.survey-instruments .camera-controls > div:first-child { display: grid; grid-template-columns: 1fr 1.3fr .75fr; }
+.survey-instruments .camera-controls button { padding-inline: .25rem; }
 .survey-locator {
   pointer-events: none; right: .7rem; top: .7rem; width: clamp(4.5rem, 8vw, 7rem); aspect-ratio: 1; padding: .5rem;
   --line: #40595a; --ink: #d6e4cf; --bg: #192c31; --sky: #ffcd44;

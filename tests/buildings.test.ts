@@ -62,6 +62,20 @@ describe('edifici', () => {
     }
   });
 
+  it('il tetto a falde lascia libero lo spigolo ritagliato su un incrocio', () => {
+    const ring = new Float32Array([0,0, 16,0, 16,6, 12,10, 0,10]);
+    const roof = new Tris();
+    const result = addBuilding(new Tris(), roof, house(ring), 0, C);
+    expect(result.shape).toBe('gable');
+    expect(roof.count).toBeGreaterThan(2);
+    for (let i=0; i<roof.pos.length; i+=3) {
+      const [x,,z] = roof.pos.slice(i,i+3);
+      expect(x+z).toBeLessThanOrEqual(22.0001);
+    }
+    const projectedArea = normals(roof).reduce((sum,n) => sum + n[1]/2, 0);
+    expect(projectedArea).toBeCloseTo(Math.abs(ringArea(ring)), 5);
+  });
+
   it('case lunghe a due falde, tozze a padiglione, capannoni e piante strane piatte', () => {
     const shape = (b: Building) => roofShape(b, minRect(b.ring), Math.abs(ringArea(b.ring)));
     expect(shape(house(rect(18, 8, 0.3)))).toBe('gable');

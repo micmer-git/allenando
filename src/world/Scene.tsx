@@ -1,4 +1,4 @@
-import { followBearing, frameRider, voxelTrees } from './isometric';
+import { chaseRider, followBearing, frameRider, voxelTrees, type RideView } from './isometric';
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
@@ -54,6 +54,8 @@ export function RideScene({
   selfColor,
   onReady,
   arches,
+  view = 'iso',
+  magnification = 1,
   look,
 }: {
   engine: RideEngine;
@@ -68,17 +70,21 @@ export function RideScene({
   onReady: () => void;
   /** archi e cartelli dei traguardi (volata, GPM, crono), calcolati dal gioco */
   arches?: ArchSpec[];
+  view?: RideView;
+  magnification?: number;
   /** quello che indossi nel garage */
   look?: Look;
 }) {
   const q = QUALITY[quality];
   const fogFar = route.dem ? q.far * 0.9 : 1400;
+  const camera = useMemo(() => view === 'iso' ? new THREE.OrthographicCamera(-1,1,1,-1,0.1,240)
+    : new THREE.PerspectiveCamera(55,1,0.12,q.far), [view,q.far]);
   return (
-    <Canvas orthographic
+    <Canvas
       dpr={q.dpr}
       shadows={quality === 'low' ? false : 'percentage'}
       gl={{ antialias: quality !== 'low', alpha: false, stencil: false, powerPreference: 'high-performance' }}
-      camera={{ near: 0.1, far: 240, position: [0, 4, -10] }}
+      camera={camera}
       onCreated={({ gl }) => {
         gl.toneMapping = THREE.ACESFilmicToneMapping;
         gl.toneMappingExposure = 1.05;
@@ -90,7 +96,7 @@ export function RideScene({
       <hemisphereLight args={['#e6f0fb', '#8c9b79', 1.05]} />
       <RiderLighting />
       <LocalSun quality={quality} />
-      <World engine={engine} route={route} quality={quality} ghostDistance={ghostDistance} remote={remote} selfColor={selfColor} arches={arches} look={look} />
+      <World magnification={magnification} engine={engine} route={route} quality={quality} ghostDistance={ghostDistance} remote={remote} selfColor={selfColor} arches={arches} look={look} />
       <Ready onReady={onReady} />
       {statsWanted() ? <StatsProbe /> : null}
     </Canvas>
@@ -133,6 +139,7 @@ function World({
   remote,
   selfColor,
   arches,
+  magnification = 1,
   look,
 }: {
   engine: RideEngine;
@@ -142,6 +149,7 @@ function World({
   remote?: { source: RemoteSource; list: { id: string; nick: string; color: number }[] };
   selfColor?: string;
   arches?: ArchSpec[];
+  magnification?: number;
   look?: Look;
 }) {
   const track = route.track;
@@ -163,7 +171,7 @@ function World({
       <Rider getPose={() => engine.pose()} getCadence={() => engine.cadence} getSpeed={() => engine.speed} getPower={() => engine.power} look={look ?? (selfColor ? lookFromColor(selfColor) : DEFAULT_LOOK)} />
       {ghostDistance ? <Ghost track={track} ghostDistance={ghostDistance} /> : null}
       {remote && remote.list.length > 0 ? <RemoteRiders track={track} source={remote.source} list={remote.list} /> : null}
-      <FollowCam engine={engine} field={field} />
+      <FollowCam engine={engine} field={field} magnification={magnification} />
     </group>
   );
 }
@@ -663,14 +671,15 @@ function RemoteRiderView({ id, nick, color, track, source }: { id: string; nick:
 // ---------- camera ----------
 
 /** Camera alle spalle; non entra mai nel versante, nemmeno nei tornanti stretti. */
-function FollowCam({ engine, field }: { engine: RideEngine; field: HeightField }) {
+function FollowCam({ engine, field, magnification }: { engine: RideEngine; field: HeightField; magnification: number }) {
   const { camera, size } = useThree();
   const look = useRef(new THREE.Vector3());
   const heading = useRef<number | null>(null);
   const place = (dt: number) => {
     const pose = engine.pose();
     heading.current = followBearing(heading.current ?? pose.heading, pose.heading, dt);
-    if (camera instanceof THREE.OrthographicCamera) frameRider(camera, pose, heading.current, size.height, look.current, field.height);
+    if (camera instanceof THREE.OrthographicCamera) frameRider(camera, pose, heading.current, size.height, look.current, field.height, 0, 0, false, magnification);
+    else if (camera instanceof THREE.PerspectiveCamera) chaseRider(camera, pose, heading.current, look.current, field.height);
   };
   useLayoutEffect(() => {
     place(1);

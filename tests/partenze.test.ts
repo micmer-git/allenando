@@ -56,6 +56,11 @@ describe('partenze sulla rete stradale', () => {
     const session = new WorldSession(data, { legs, name: GANDA_NAME }, 0);
     expect(session.path.length).toBeGreaterThan(9560);
     expect(session.path.length).toBeLessThan(9600);
+    const listed = data.rides.find(r => r.id === GANDA_PLAN)!;
+    expect(listed.kind).toBe('salita');
+    expect(listed.legs).toEqual(legs.map(l => [l.edge, l.dir]));
+    expect(listed.lengthM).toBe(Math.round(session.path.length));
+    expect(listed.timed).toEqual([0, listed.lengthM]);
     const scelta = sceltaGanda(data);
     expect(scelta?.dove).toEqual({ kind: 'piano', world: 'bergamo', plan: GANDA_PLAN });
     expect(scelta?.vista.lunghezzaM).toBeCloseTo(session.path.length, -1);

@@ -1,3 +1,5 @@
+import { CameraControls } from '@/components/CameraControls';
+import { ISO_ZOOM, type RideView as CameraMode } from '@/world/isometric';
 import { RideClock } from '@/sim/clock';
 import { StreetViewRide } from './StreetViewRide';
 import { StreetRide } from '@/ride/streetNavigation';
@@ -485,6 +487,8 @@ function RideScreen({
   const [, bump] = useState(0);
   const look = useLook();
   const [ready, setReady] = useState(false);
+  const [view, setView] = useState<CameraMode>('iso');
+  const [zoom, setZoom] = useState(2);
   const [street] = useState(() => setup.intento.dove.kind === 'street' ? new StreetRide() : null);
   const [slow, setSlow] = useState(false);
   // l'avanzamento del mondo, da 0 a 1, da WorldScene (onProgress): finché non arriva, la barra è indeterminata
@@ -919,7 +923,7 @@ function RideScreen({
           }}
         >
           {street ? <StreetViewRide ride={street} odometer={engine.odometer} onReady={goLive} /> : webgl && world && session && terrainField ? (
-            <WorldScene
+            <WorldScene surveyCamera={view} magnification={ISO_ZOOM[zoom]}
               key={quality}
               engine={engine}
               data={world.data}
@@ -942,7 +946,7 @@ function RideScreen({
               ghost={ghosts.pose}
             />
           ) : webgl ? (
-            <RideScene
+            <RideScene view={view} magnification={ISO_ZOOM[zoom]}
               key={quality}
               engine={engine}
               route={setup.route}
@@ -1039,6 +1043,12 @@ function RideScreen({
                   ) : null}
                 </div>
                 <div className={cn('flex shrink-0 flex-col items-end gap-1.5', session && 'landscape:pt-[calc(var(--mini)+0.5rem)]')} data-testid="ride-hud-right">
+                  {!street && webgl && <details className="ride-view pointer-events-auto relative">
+                    <summary className="cursor-pointer rounded-full bg-bg/85 px-3 py-3 text-sm font-semibold">Vista</summary>
+                    <div className="absolute right-0 top-full z-20 mt-1">
+                      <CameraControls view={view} change={v => { if (v !== 'strada') setView(v); }} zoom={zoom} setZoom={setZoom} />
+                    </div>
+                  </details>}
                   {session ? <WeatherChip session={session} engine={engine} /> : null}
                   {pass ? (
                     <p className="num max-w-[14rem] rounded-xl bg-bg/70 px-2.5 py-1 text-right text-xs font-semibold leading-tight backdrop-blur-md" data-testid="ride-next-pass">

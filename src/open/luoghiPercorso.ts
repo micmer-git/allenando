@@ -1,12 +1,12 @@
 import type { WorldPath } from './path';
 import type { RideDef, WorldData } from './world';
 import { campioni, commonsFile } from './campioni';
-import { arteStrada } from './arteStrada';
+import { arteStrada, GIMONDI, OBELISCO } from './arteStrada';
 import { surveyStops } from './sopralluogo';
 
 export interface SurveyStop {
   id:string; name:string; station:number; kind:'Luoghi'|'Arte lungo la strada'|'Tornanti dei campioni';
-  note?:string; source?:string; target?:{x:number;z:number}; viewAt?:number; heightOffset?:number; plate?:number;
+  note?:string; source?:string; target?:{x:number;z:number}; viewAt?:number; detailRoad?:{edge:number;s:number;dir:1}; heightOffset?:number; plate?:number;
 }
 function along(path:WorldPath, target:{x:number;z:number}, reach:number) {
   let distance: number | undefined;
@@ -43,7 +43,12 @@ export function luoghiPercorso(data:WorldData, ride:RideDef | null, path:WorldPa
   }
   for(const a of arteStrada(data)) {
     const at=along(path,a,a.id==='palazzo-roncalli'?65:35);
-    if(at!==undefined) stops.push({viewAt:at,heightOffset:a.id==='palazzo-roncalli'?6:undefined,id:a.id,name:a.name,station:Math.round(at/100),kind:'Arte lungo la strada',note:a.note,source:a.source,target:a});
+    if(at===undefined) continue;
+    const viewAt = a.id === GIMONDI.id ? Math.max(0, at-7) : at;
+    const heightOffset = a.id === 'palazzo-roncalli' ? 6 : a.id === OBELISCO.id ? 2.5 : a.id === GIMONDI.id ? -0.45 : undefined;
+    const near = a.id === GIMONDI.id ? data.graph.nearest(a.x,a.z,12) : null;
+    const detailRoad = near ? { edge:near.edge, s:Math.min(data.graph.edges[near.edge].length, near.s+3), dir:1 as const } : undefined;
+    stops.push({viewAt,heightOffset,detailRoad,id:a.id,name:a.name,station:Math.round(at/100),kind:'Arte lungo la strada',note:a.note,source:a.source,target:a});
   }
   return stops.sort((a,b)=>a.station-b.station);
 }

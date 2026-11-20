@@ -258,7 +258,9 @@ describe('case fuori dalla carreggiata (M.2)', () => {
     expect(ringPenetration(fit.ring, probe).max).toBeLessThanOrEqual(0.05);
   });
 
-  it('nel mondo vero nessuna impronta entra nella fascia della strada né nell’asfalto di un incrocio', () => {
+  it.each(['bergamo','sellaronda'])('%s: tutte le impronte a raso restano fuori da strade e incroci', (world) => {
+    const dir = join(__dirname, '..', 'public', 'world', world);
+    const graph = new WorldGraph(JSON.parse(readFileSync(join(dir,'graph.json'),'utf8')) as WorldGraphFile);
     const center: RoadProbe = (x, z) => {
       const hit = graph.nearestBorder(x, z, 12, (e) => !(e.flags & FLAG.tunnel));
       if (!hit) return null;
@@ -273,7 +275,7 @@ describe('case fuori dalla carreggiata (M.2)', () => {
       if (!j || j.arms.some((a) => graph.edges[a.edge].flags & FLAG.bridge)) continue;
       shapes.push({ cx: j.cx, cz: j.cz, ring: j.ring });
     }
-    expect(shapes.length).toBeGreaterThan(10000);
+    expect(shapes.length).toBeGreaterThan(world === 'bergamo' ? 10000 : 100);
     const probe = deeperProbe(center, junctionProbe(shapes));
     let buildings = 0;
     let passages = 0;
@@ -304,8 +306,8 @@ describe('case fuori dalla carreggiata (M.2)', () => {
         else if (!(graph.edges[pen.edge].flags & FLAG.bridge)) bad.push(`${at} in ${graph.edges[pen.edge].name}`);
       }
     }
-    expect(buildings).toBeGreaterThan(100000);
-    expect(passages).toBeGreaterThan(50);
+    expect(buildings).toBeGreaterThan(world === 'bergamo' ? 100000 : 1000);
+    if (world === 'bergamo') expect(passages).toBeGreaterThan(50);
     expect(bad.length, bad.slice(0, 20).join('\n')).toBe(0);
     // un punto al metro su 140 000 case: da sola ci mette un minuto, nella suite intera fino a quattro
   }, 420000);

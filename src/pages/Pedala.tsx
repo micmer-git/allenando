@@ -149,7 +149,7 @@ export function PedalaPage() {
       return;
     }
     if (!mondo.data) return;
-    if ('ride' in attesa && attesa.ride === GANDA_PLAN) {
+    if ('ride' in attesa && attesa.ride === GANDA_PLAN && !mondo.data.rides.some(r => r.id === GANDA_PLAN)) {
       const ganda = sceltaGanda(mondo.data);
       if (ganda) {
         setScelta({ ...ganda, giri: 1 });

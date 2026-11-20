@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { volumeBlocks, type Volume } from '@/open/labels';
 import type { TrackPose } from '@/domain/track';
 
 /** L'azimut segue la strada con inerzia; a velocità diverse la bici resta ferma nel quadro. */
@@ -9,10 +10,10 @@ export function followBearing(heading: number, goal: number, dt: number) {
 }
 
 export function frameRider(camera: THREE.OrthographicCamera, pose: TrackPose, heading: number, height: number,
-  target: THREE.Vector3, ground: (x: number, z: number, stride: number) => number, yaw = 0, pitch = 0, tunnel = false) {
+  target: THREE.Vector3, ground: (x: number, z: number, stride: number) => number, yaw = 0, pitch = 0, tunnel = false, magnification = 1) {
   // La strada attraversa il quadro in diagonale. Il margine davanti serve per leggere le curve.
   const azimuth = heading + (tunnel ? 0 : Math.PI / 4) - yaw * Math.PI / 180;
-  const elevation = THREE.MathUtils.degToRad(tunnel ? 12 : THREE.MathUtils.clamp(40 - pitch, 19, 72));
+  const elevation = THREE.MathUtils.degToRad(tunnel ? 12 : THREE.MathUtils.clamp(32 - pitch, 16, 72));
   const boom = tunnel ? 5 : 22;
   target.set(pose.x + Math.sin(heading) * 1.7, pose.y + 0.85, pose.z + Math.cos(heading) * 1.7);
   camera.position.set(target.x - Math.sin(azimuth) * boom * Math.cos(elevation),
@@ -27,12 +28,42 @@ export function frameRider(camera: THREE.OrthographicCamera, pose: TrackPose, he
       camera.position.y = Math.max(camera.position.y, target.y + (terrain + 1.2 - target.y) / u);
     }
   }
-  const span = tunnel ? 5 : THREE.MathUtils.clamp(height / 36, 12, 20);
+  const span = (tunnel ? 5 : THREE.MathUtils.clamp(height / 24, 17, 30)) / magnification;
   const zoom = height / span;
   if (zoom !== camera.zoom) {
     camera.zoom = zoom;
     camera.updateProjectionMatrix();
   }
+  camera.lookAt(target);
+}
+
+export type RideView = 'iso' | 'chase';
+export const ISO_ZOOM = [0.65, 0.8, 1, 1.3, 1.7, 2.2] as const;
+
+/** Camera dietro la bici. Accorcia il braccio in un vicolo e segue il pendio nei tornanti. */
+export function chaseRider(camera: THREE.PerspectiveCamera, pose: TrackPose, heading: number,
+  target: THREE.Vector3, ground: (x: number, z: number, stride: number) => number,
+  volumes: readonly Volume[] = [], tunnel = false, bridge = false, yaw = 0, pitch = 0) {
+  const bearing = heading - THREE.MathUtils.degToRad(yaw);
+  const dx = Math.sin(bearing), dz = Math.cos(bearing);
+  const eye = pose.y + 1.3;
+  let back = tunnel ? 4.4 : 8.2;
+  for (;;) {
+    let cameraY = eye + (tunnel ? 0.7 : 2.5);
+    if (!tunnel && !bridge) {
+      for (let i = 1; i <= 5; i++) {
+        const u = i / 5;
+        const y = ground(pose.x - dx * back * u, pose.z - dz * back * u, 4);
+        cameraY = Math.max(cameraY, eye + (y + 0.65 - eye) / u);
+      }
+    }
+    camera.position.set(pose.x - dx * back, cameraY, pose.z - dz * back);
+    if (back < 1.2 || !volumes.some(v => volumeBlocks(camera.position.x, cameraY, camera.position.z, pose.x, eye, pose.z, v))) break;
+    back *= 0.65;
+  }
+  const ahead = tunnel ? 3 : 5;
+  target.set(pose.x + dx * ahead, eye + ahead * (pose.grade + Math.tan(THREE.MathUtils.degToRad(pitch))),
+    pose.z + dz * ahead);
   camera.lookAt(target);
 }
 

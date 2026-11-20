@@ -41,5 +41,13 @@ export const WORLD_RIDES: Record<string, { timedM: number; minSec: number }> = {
   "fedaia-canazei": {
     "timedM": 11375,
     "minSec": 1184
+  },
+  "sella-selva": {
+    "timedM": 10337,
+    "minSec": 1178
+  },
+  "campolongo-arabba": {
+    "timedM": 3964,
+    "minSec": 467
   }
 };

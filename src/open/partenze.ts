@@ -35,17 +35,20 @@ export function gandaClimb(data: WorldData): Leg[] {
   const ride = data.rides.find(r => r.id === 'ganda');
   const pass = data.features.landmarks.find(l => l.id === 'passo-di-ganda');
   if (data.graph.id !== 'bergamo' || !ride || !pass) return [];
-  const { graph } = data;
-  const last = ride.legs.findIndex(([edge, dir]) => {
+  return gandaAscent(data.graph, ride.legs, pass);
+}
+
+export function gandaAscent(graph: WorldGraph, legs: [number, Dir][], pass: { x: number; z: number }): Leg[] {
+  const last = legs.findIndex(([edge, dir]) => {
     const node = graph.endNode(edge, dir);
     return Math.hypot(pass.x - graph.nodeX[node], pass.z - graph.nodeZ[node]) < 15;
   });
   // Il giro attraversa altre vie Marconi prima di Gazzaniga. Risaliamo dal passo fino al suo piede.
   for (let first = last; first > 0; first--) {
-    const [edge] = ride.legs[first];
-    const [previous] = ride.legs[first - 1];
+    const [edge] = legs[first];
+    const [previous] = legs[first - 1];
     if (graph.edges[edge].name === 'Via Guglielmo Marconi' && (graph.edges[previous].flags & FLAG.roundabout)) {
-      return ride.legs.slice(first, last + 1).map(([edge, dir]) => ({ edge, dir }));
+      return legs.slice(first, last + 1).map(([edge, dir]) => ({ edge, dir }));
     }
   }
   return [];

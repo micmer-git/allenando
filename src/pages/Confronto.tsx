@@ -1,3 +1,5 @@
+import { CameraControls } from '@/components/CameraControls';
+import { ISO_ZOOM, type RideView } from '@/world/isometric';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { headingToBearing, streetViewUrl } from '@/domain/routes';
@@ -75,8 +77,14 @@ function Survey({data, ride, point, place, station, select}: {data: WorldData; r
   const landmark=stops.find(s=>s.id===place);
   const index = landmark?.station ?? (Number.isFinite(station) ? Math.min(max, Math.max(0, Math.round(station))) : 0);
   const distance = landmark?.viewAt ?? Math.min(path.length, index * 100);
-  const start = path.edgeAt(distance);
-  const pose = path.poseAt(distance), geo = data.toGeo(pose.x, pose.z);
+  const [camera, setCamera] = useState<RideView | 'strada'>('iso');
+  const [zoom, setZoom] = useState(2);
+  const detail = camera === 'strada' ? landmark?.detailRoad : undefined;
+  const start = detail ?? path.edgeAt(distance);
+  const onRoute = path.poseAt(distance);
+  const streetPose = detail && data.graph.pose(detail.edge,detail.s,detail.dir);
+  const pose = streetPose ? { ...onRoute,...streetPose,altitude:streetPose.y } : onRoute;
+  const geo = data.toGeo(pose.x, pose.z);
   const orientation = useRef<SurveyAngles>(FORWARD);
   const [angles,setAngles] = useState<SurveyAngles>(FORWARD);
   const direction = sightLine(pose,angles);
@@ -84,11 +92,11 @@ function Survey({data, ride, point, place, station, select}: {data: WorldData; r
   const here = stops.filter(s=>s.station===index);
   const stop = landmark ?? here.find(s=>s.kind==='Arte lungo la strada') ?? here[0];
   const groups:SurveyStop['kind'][]=['Arte lungo la strada','Luoghi','Tornanti dei campioni'];
-  const [camera, setCamera] = useState<'iso' | 'strada'>('iso');
   useEffect(()=>{
     if(!landmark) return;
     if(landmark.target) setCamera('strada');
-    const p=path.poseAt(landmark.viewAt ?? landmark.station*100);
+    const near = landmark.detailRoad;
+    const p = near ? data.graph.pose(near.edge, near.s, near.dir) : path.poseAt(landmark.viewAt ?? landmark.station*100);
     const target=landmark.target;
     const dir=target && Math.hypot(target.x-p.x,target.z-p.z)>1
       ? Math.atan2(target.x-p.x,target.z-p.z) : p.heading;
@@ -97,7 +105,7 @@ function Survey({data, ride, point, place, station, select}: {data: WorldData; r
       ? (Math.atan2(landmark.heightOffset,range)-Math.atan(p.grade))*180/Math.PI : 0;
     orientation.current = {yaw:wrapYaw((p.heading-dir)*180/Math.PI),pitch};
     setAngles({...orientation.current});
-  },[path,landmark]);
+  },[data,path,landmark]);
   const changed = () => setAngles({...orientation.current});
   const reset = () => { orientation.current=FORWARD; changed(); };
   const [ready, setReady] = useState(false);
@@ -105,20 +113,17 @@ function Survey({data, ride, point, place, station, select}: {data: WorldData; r
   return <div className="survey-layout">
     <div className="survey-stage">
       <SurveyViewport orientation={orientation} changed={changed}>
-        <WorldScene preview={() => orientation.current} surveyCamera={camera} data={data} terrain={terrain} field={field} path={path} quality="medium"
+        <WorldScene preview={() => orientation.current} surveyCamera={camera} magnification={ISO_ZOOM[zoom]} data={data} terrain={terrain} field={field} path={path} quality="medium"
           engine={{distance, speed:0, cadence:0, power:0}} crowd={crowd} remote={[]} nextTurn={none}
           playerPose={() => pose} onReady={() => setReady(true)} weather={null} daytime="mezzogiorno" ride={null} />
       </SurveyViewport>
-      <div className="survey-cameras" role="group" aria-label="Inquadratura">
-        <button type="button" aria-pressed={camera === 'iso'} onClick={() => { setCamera('iso'); reset(); }}>Isometrica</button>
-        <button type="button" aria-pressed={camera === 'strada'} onClick={() => { setCamera('strada'); reset(); }}>Strada</button>
-      </div>
       <div className="survey-locator" aria-label="Posizione sul percorso"><RouteMap track={path} position={distance} /></div>
       {(angles.yaw !== 0 || angles.pitch !== 0) && <button className="survey-recenter" onClick={reset}>Guarda la strada</button>}
       {!ready && <span className="survey-loading" role="status">Carico il paesaggio…</span>}
-      {ready && (road.name || road.ref) && <div className="survey-road"><span aria-hidden="true" />{road.name || road.ref}</div>}
+      {ready && (road.name || road.ref) && <div className="survey-road"><span aria-hidden="true" />{detail && 'Affaccio · '}{road.name || road.ref}</div>}
     </div>
     <section className="survey-instruments" aria-label="Controlli del percorso">
+      <CameraControls view={camera} change={v => { setCamera(v); reset(); }} zoom={zoom} setZoom={setZoom} survey />
       <div className="survey-km">
         <span className="survey-caption">Posizione sul percorso</span>
         <strong className="num">{formatKm(distance)} <small>km</small></strong>
@@ -137,7 +142,7 @@ function Survey({data, ride, point, place, station, select}: {data: WorldData; r
       </div>
       {stops.length > 0 && <label className="survey-place">
         <span className="survey-caption">Vai a un luogo</span>
-        <select className={control} aria-label="Luogo lungo il percorso" value={stop?.id ?? ''} onChange={e=>{
+        <select className={control} aria-label="Luogo lungo il percorso" value={landmark?.id ?? ''} onChange={e=>{
           const selected=stops.find(s=>s.id===e.target.value); if(selected) select(selected.station,selected.id);
         }}>
           <option value="">Scegli lungo la strada…</option>

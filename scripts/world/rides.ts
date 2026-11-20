@@ -8,6 +8,7 @@
 
 import { stepSpeed, STANDARD_AIR } from '../../src/domain/physics';
 import type { RoutePrefs, Leg, WorldGraph } from '../../src/open/graph';
+import { gandaAscent } from '../../src/open/partenze';
 import { CLS } from '../../src/open/graph';
 import type { Landmark, LandmarkKind, RideDef } from '../../src/open/world';
 
@@ -692,40 +693,7 @@ export function buildRides(ctx: Ctx): { rides: RideDef[]; landmarks: Landmark[];
       if (!part) throw new Error(`${spec.id}: non trovo la strada da ${pts[i].name} a ${pts[i + 1].name}`);
       legs.push(...part);
     }
-    // campionamento a 10 m: quota, distanza, pianta
-    const xs: number[] = [];
-    const zs: number[] = [];
-    const ys: number[] = [];
-    const ds: number[] = [];
-    let dist = 0;
-    for (const l of legs) {
-      const e = graph.edges[l.edge];
-      const n = Math.max(1, Math.ceil(e.length / 10));
-      for (let k = xs.length ? 1 : 0; k <= n; k++) {
-        const s = l.dir > 0 ? (e.length * k) / n : e.length - (e.length * k) / n;
-        const p = graph.pose(l.edge, s, l.dir);
-        if (xs.length) dist += Math.hypot(p.x - xs[xs.length - 1], p.z - zs[zs.length - 1]);
-        xs.push(p.x);
-        zs.push(p.z);
-        ys.push(p.y);
-        ds.push(dist);
-      }
-    }
-    const lengthM = dist;
-    let gain = 0;
-    for (let i = 1; i < ys.length; i++) if (ys[i] > ys[i - 1]) gain += ys[i] - ys[i - 1];
-    let maxGrade = 0;
-    let maxAt = 0;
-    for (let i = 0, j = 0; i < ds.length; i++) {
-      while (j < ds.length - 1 && ds[j] - ds[i] < 200) j++;
-      if (ds[j] - ds[i] >= 190) {
-        const g = (ys[j] - ys[i]) / (ds[j] - ds[i]);
-        if (g > maxGrade) {
-          maxGrade = g;
-          maxAt = i;
-        }
-      }
-    }
+    const { xs, zs, ys, ds, stats, climb, maxAt } = sampleRide(graph, legs);
     if (process.env.WORLD_DEBUG) {
       const roads: string[] = [];
       let acc = 0;
@@ -746,8 +714,6 @@ export function buildRides(ctx: Ctx): { rides: RideDef[]; landmarks: Landmark[];
       const geo = ctx.toGeo(xs[maxAt], zs[maxAt]);
       ctx.log(`    pendenza massima a km ${(ds[maxAt] / 1000).toFixed(2)} ${geo.lat.toFixed(5)},${geo.lon.toFixed(5)} ${hit ? graph.edges[hit.edge].name + ' cls ' + graph.edges[hit.edge].cls : ''}`);
     }
-    const climb = longestClimb(ds, ys);
-
     const ride: RideDef = {
       id: spec.id,
       name: spec.name,
@@ -756,15 +722,8 @@ export function buildRides(ctx: Ctx): { rides: RideDef[]; landmarks: Landmark[];
       kind: spec.kind,
       blurb: spec.blurb,
       legs: legs.map((l) => [l.edge, l.dir]),
-      lengthM: Math.round(lengthM),
-      gainM: Math.round(gain),
-      startAlt: Math.round(ys[0]),
-      endAlt: Math.round(ys[ys.length - 1]),
-      maxAlt: Math.round(Math.max(...ys)),
-      climbGrade: Math.round(climb.grade * 1000) / 1000,
-      maxGrade: Math.round(maxGrade * 1000) / 1000,
+      ...stats,
       landmarks: [],
-      timed: [0, Math.round(lengthM)],
     };
 
     // i luoghi, ognuno proiettato sul percorso
@@ -793,10 +752,115 @@ export function buildRides(ctx: Ctx): { rides: RideDef[]; landmarks: Landmark[];
     limits[spec.id] = { timedM: ride.timed[1] - ride.timed[0], minSec: Math.floor(proTime(ds, ys) * 0.85) };
     rides.push(ride);
     ctx.log(
-      `  ${spec.id.padEnd(16)} ${(lengthM / 1000).toFixed(1).padStart(5)} km  D+ ${String(Math.round(gain)).padStart(4)} m  ${ride.startAlt}→${ride.endAlt} m  salita ${(climb.grade * 100).toFixed(1)}% su ${(climb.len / 1000).toFixed(1)} km  max200 ${(maxGrade * 100).toFixed(1)}%  luoghi ${ride.landmarks.length}`,
+      `  ${spec.id.padEnd(16)} ${(ride.lengthM / 1000).toFixed(1).padStart(5)} km  D+ ${String(ride.gainM).padStart(4)} m  ${ride.startAlt}→${ride.endAlt} m  salita ${(climb.grade * 100).toFixed(1)}% su ${(climb.len / 1000).toFixed(1)} km  max200 ${(ride.maxGrade * 100).toFixed(1)}%  luoghi ${ride.landmarks.length}`,
     );
   }
-  return { rides, landmarks: [...landmarks.values()], limits };
+  const allLandmarks = [...landmarks.values()];
+  appendPassClimbs(graph, rides, allLandmarks, limits, ctx.places);
+  return { rides, landmarks: allLandmarks, limits };
+}
+
+/** Isola i versanti sulle strade già presenti, con gli stessi campioni e limiti delle altre schede. */
+export function appendPassClimbs(graph: WorldGraph, rides: RideDef[], landmarks: Landmark[],
+  limits: Record<string, { timedM: number; minSec: number }>, places: { name: string; x: number; z: number; y: number }[]) {
+  const ride = (id: string) => {
+    const found = rides.find(r => r.id === id);
+    if (!found) throw new Error('Percorso mancante: ' + id);
+    return found;
+  };
+  const landmark = (id: string) => {
+    const found = landmarks.find(l => l.id === id);
+    if (!found) throw new Error('Luogo mancante: ' + id);
+    return found;
+  };
+  function add(id: string, name: string, side: string, blurb: string, legs: Leg[], ids: string[]) {
+    if (!legs.length) throw new Error(id + ': versante vuoto');
+    const { xs, zs, ys, ds, stats } = sampleRide(graph, legs, true);
+    const stops = ids.map(id => {
+      const p = landmark(id);
+      let nearest = 0;
+      for (let i = 1; i < xs.length; i++) {
+        if ((xs[i]-p.x)**2 + (zs[i]-p.z)**2 < (xs[nearest]-p.x)**2 + (zs[nearest]-p.z)**2) nearest = i;
+      }
+      return { id, at: Math.round(ds[nearest]), off: Math.round(Math.hypot(xs[nearest]-p.x, zs[nearest]-p.z)) };
+    }).sort((a,b) => a.at-b.at);
+    rides.push({ id, name, side, blurb, area: graph.id === 'bergamo' ? 'seriana' : 'sella', kind: 'salita',
+      legs: legs.map(l => [l.edge, l.dir]), ...stats, landmarks: stops });
+    limits[id] = { timedM: stats.lengthM, minSec: Math.floor(proTime(ds,ys)*0.85) };
+  }
+  if (graph.id === 'bergamo') {
+    const town = landmark('gazzaniga');
+    const village = places.find(p => p.name === 'Masserini' && Math.hypot(p.x-town.x,p.z-town.z) < 3000);
+    if (!village) throw new Error('Masserini assente dal mondo di Bergamo');
+    landmarks.push({id:'masserini', name:village.name, kind:'paese', x:village.x,z:village.z,y:village.y,
+      note:'La provinciale sale fra le case dei Masserini prima dei tornanti di Orezzo.'});
+    add('ganda-da-gazzaniga','Passo di Ganda','da Gazzaniga',
+      'Da via Marconi attraverso Masserini e Orezzo fino al Valico Felice Gimondi.',
+      gandaAscent(graph,ride('ganda').legs,landmark('passo-di-ganda')),
+      ['gazzaniga','masserini','orezzo','monte-misma','passo-di-ganda']);
+  }
+  if (graph.id !== 'sellaronda') return;
+  function between(approach: string, summit: string) {
+    const start = ride(approach).legs[0], end = ride(summit).legs.at(-1)!;
+    const legs = graph.route(graph.startNode(...start), graph.endNode(...end));
+    if (!legs) throw new Error(approach + ' → ' + summit + ': strada interrotta');
+    return legs;
+  }
+  add('sella-selva','Passo Sella','da Selva',
+    'Da Selva di Val Gardena si sale per Plan de Gralba, con il Sassolungo sopra i tornanti.',
+    between('gardena-selva','sella-canazei'), ['selva-di-val-gardena','chiesa-di-selva','plan-de-gralba','sassolungo','passo-sella']);
+  add('campolongo-arabba','Passo Campolongo','da Arabba',
+    'Da Arabba si lascia il Cordevole e si sale tra prati e tornanti fino al valico verso Corvara.',
+    between('pordoi-arabba','campolongo-corvara'), ['arabba','torrente-cordevole','piz-boe','rifugio-bec-de-roces','passo-campolongo']);
+}
+
+function sampleRide(graph: WorldGraph, legs: Leg[], useEdgeDistance = false) {
+  // Le nuove salite misurano gli archi come WorldPath. I tempi storici usano ancora le corde tra campioni.
+  const xs: number[] = [];
+  const zs: number[] = [];
+  const ys: number[] = [];
+  const ds: number[] = [];
+  let dist = 0;
+  for (const l of legs) {
+    const e = graph.edges[l.edge];
+    const n = Math.max(1, Math.ceil(e.length / 10));
+    for (let k = xs.length ? 1 : 0; k <= n; k++) {
+      const s = l.dir > 0 ? (e.length * k) / n : e.length - (e.length * k) / n;
+      const p = graph.pose(l.edge, s, l.dir);
+      if (xs.length) dist += useEdgeDistance ? e.length / n : Math.hypot(p.x - xs[xs.length - 1], p.z - zs[zs.length - 1]);
+      xs.push(p.x);
+      zs.push(p.z);
+      ys.push(p.y);
+      ds.push(dist);
+    }
+  }
+  const lengthM = dist;
+  let gain = 0;
+  for (let i = 1; i < ys.length; i++) if (ys[i] > ys[i - 1]) gain += ys[i] - ys[i - 1];
+  let maxGrade = 0;
+  let maxAt = 0;
+  for (let i = 0, j = 0; i < ds.length; i++) {
+    while (j < ds.length - 1 && ds[j] - ds[i] < 200) j++;
+    if (ds[j] - ds[i] >= 190) {
+      const g = (ys[j] - ys[i]) / (ds[j] - ds[i]);
+      if (g > maxGrade) {
+        maxGrade = g;
+        maxAt = i;
+      }
+    }
+  }
+  const climb = longestClimb(ds, ys);
+  const stats = {
+    lengthM: Math.round(lengthM),
+    gainM: Math.round(gain),
+    startAlt: Math.round(ys[0]),
+    endAlt: Math.round(ys[ys.length - 1]),
+    maxAlt: Math.round(Math.max(...ys)),
+    climbGrade: Math.round(climb.grade * 1000) / 1000,
+    maxGrade: Math.round(maxGrade * 1000) / 1000,
+    timed: [0, Math.round(lengthM)] as [number,number],
+  };
+  return { xs, zs, ys, ds, stats, climb, maxAt };
 }
 
 /** Il tratto in salita più lungo (dislivello), tollerando contropendenze di 15 m. */

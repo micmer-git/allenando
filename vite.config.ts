@@ -51,8 +51,8 @@ export default defineConfig({
         globIgnores: ['**/world/**', '**/prima-dopo/**'],
         runtimeCaching: [
           {
-            // Anche la vecchia mattonella della Cittadella deve aggiornarsi sui telefoni che l'hanno già scaricata.
-            urlPattern: ({ url }) => (url.pathname.includes('/world/') && url.pathname.endsWith('/manifest.json')) || url.pathname.endsWith('/world/bergamo/b/6_20.json'),
+            // Il catalogo e i luoghi si aggiornano anche sui telefoni che hanno già scaricato il mondo.
+            urlPattern: ({ url }) => /\/world\/[^/]+\/(manifest|rides|features)\.json$/.test(url.pathname) || url.pathname.endsWith('/world/bergamo/b/6_20.json'),
             handler: 'NetworkFirst',
             options: {
               cacheName: 'allenando-world-v1',

@@ -146,7 +146,7 @@ describe('F.1 · i due mondi e l’ultimo ricordato', () => {
     expect(m.files.some(([p]) => p === 'graph.json')).toBe(true);
     expect(m.files.some(([p]) => p === 'far.bin')).toBe(true);
     expect(m.bytes).toBe(m.files.reduce((s, f) => s + f[1], 0));
-    expect(worldFacts(m)).toMatch(/^\d{1,2}\.\d{3} km di strade · 16 percorsi$/);
+    expect(worldFacts(m)).toMatch(/^\d{1,2}\.\d{3} km di strade · 17 percorsi$/);
   });
   it('fetchManifest: un mondo non costruito dà null senza lanciare', async () => {
     const fetcher = (async () => new Response('', { status: 404 })) as unknown as typeof fetch;

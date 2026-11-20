@@ -248,8 +248,8 @@ export function asphaltTexture(): THREE.CanvasTexture {
     for (let i = 0; i < 1100; i++) {
       const x = Math.floor(rnd() * 96);
       const y = Math.floor(rnd() * 192);
-      g.fillStyle = ['#9ca19c', '#858e8a', '#969d98', '#a2a7a0'][i % 4];
-      g.fillRect(x, y, i % 7 === 0 ? 2 : 1, 1);
+      g.fillStyle = ['#a0a59f', '#808985', '#969d98', '#a6aaa3'][i % 4];
+      g.fillRect(x, y, i % 4 === 0 ? 3 : 2, i % 3 === 0 ? 2 : 1);
     }
     g.fillStyle = '#858c88';
     g.fillRect(56, 72, 16, 26);
